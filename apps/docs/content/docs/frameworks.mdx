@@ -1,0 +1,139 @@
+---
+title: Framework Integration
+description: Integrate ocpp-ws-io with Express, Fastify, and other frameworks.
+---
+
+`ocpp-ws-io` is framework-agnostic. You can attach it to any Node.js HTTP server.
+
+## With Express
+
+```typescript
+import express from "express";
+import { createServer } from "http";
+import { OCPPServer } from "ocpp-ws-io";
+
+const app = express();
+const httpServer = createServer(app);
+
+const ocppServer = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+// 'server' option handles the 'upgrade' event automatically
+await ocppServer.listen(0, undefined, { server: httpServer });
+
+ocppServer.on("client", (client) => {
+  console.log(`${client.identity} connected`);
+});
+
+httpServer.listen(3000, () => {
+  console.log("Express + OCPP on port 3000");
+});
+```
+
+## With Fastify
+
+```typescript
+import Fastify from "fastify";
+import { OCPPServer } from "ocpp-ws-io";
+
+const app = Fastify();
+const ocppServer = new OCPPServer({ protocols: ["ocpp2.0.1"] });
+
+app.ready().then(async () => {
+  // Attach to the underlying specific Node.js HTTP server
+  await ocppServer.listen(0, undefined, { server: app.server });
+});
+
+ocppServer.on("client", (client) => {
+  console.log(`${client.identity} connected`);
+});
+
+await app.listen({ port: 3000 });
+```
+
+## With NestJS
+
+`ocpp-ws-io` can be easily integrated into a NestJS application.
+
+```typescript
+import {
+  Module,
+  OnModuleInit,
+  OnModuleDestroy,
+  Injectable,
+} from "@nestjs/common";
+import { HttpAdapterHost } from "@nestjs/core";
+import { OCPPServer } from "ocpp-ws-io";
+
+@Injectable()
+export class OCPPGateway implements OnModuleInit, OnModuleDestroy {
+  private server: OCPPServer;
+
+  constructor(private readonly adapterHost: HttpAdapterHost) {
+    this.server = new OCPPServer({ protocols: ["ocpp1.6", "ocpp2.0.1"] });
+  }
+
+  async onModuleInit() {
+    // Wait for the HTTP adapter to be ready
+    const httpServer = this.adapterHost.httpAdapter.getHttpServer();
+
+    // Attach to the NestJS HTTP server
+    await this.server.listen(0, undefined, { server: httpServer });
+
+    this.server.on("client", (client) => {
+      console.log(`Client connected: ${client.identity}`);
+
+      client.handle("BootNotification", async ({ params }) => {
+        return {
+          status: "Accepted",
+          currentTime: new Date().toISOString(),
+          interval: 300,
+        };
+      });
+    });
+  }
+
+  async onModuleDestroy() {
+    await this.server.close();
+  }
+}
+
+@Module({
+  providers: [OCPPGateway],
+})
+export class AppModule {}
+```
+
+## Standalone
+
+If you don't need a framework, `ocpp-ws-io` can create its own WebSocket server:
+
+```typescript
+const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+await server.listen(3000);
+console.log("Listening on ws://localhost:3000");
+```
+
+## Manual Upgrade Handling
+
+For maximum control, use the `handleUpgrade` getter directly. This is useful if you have complex upgrade logic or routing.
+
+```typescript
+import { createServer } from "http";
+import { OCPPServer } from "ocpp-ws-io";
+
+const httpServer = createServer();
+const ocppServer = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+// Get the upgrade handler
+const upgradeHandler = ocppServer.handleUpgrade;
+
+httpServer.on("upgrade", (req, socket, head) => {
+  if (req.url?.startsWith("/ocpp")) {
+    upgradeHandler(req, socket, head);
+  } else {
+    socket.destroy();
+  }
+});
+
+httpServer.listen(3000);
+```

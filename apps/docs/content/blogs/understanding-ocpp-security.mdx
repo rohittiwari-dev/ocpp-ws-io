@@ -1,0 +1,50 @@
+---
+title: Understanding OCPP Security Profiles
+description: A deep dive into securing your charging infrastructure with OCPP security profiles.
+date: 2024-05-20
+author:
+  name: Rohit Tiwari
+  avatar: https://avatars.githubusercontent.com/u/1234567?v=4
+  twitter: https://twitter.com/rohittiwari
+image: https://images.unsplash.com/photo-1555949963-ff9fe0c870eb?auto=format&fit=crop&q=80&w=1000
+tags: [ocpp, security, tls, authentication]
+---
+
+Security is paramount in EV charging infrastructure. The Open Charge Point Protocol (OCPP) defines several security profiles to ensure secure communication between Charging Stations and Central Systems. `ocpp-ws-io` makes it easy to implement these profiles.
+
+## The Profiles
+
+### Profile 0: No Security
+
+Used for development or trusted networks. Communication is plain text over `ws://`.
+
+### Profile 1: Basic Authentication
+
+Adds HTTP Basic Authentication (`Authorization: Basic <credentials>`). Communication is still plain text over `ws://`, but credentials are scrambled (Base64).
+
+### Profile 2: TLS with Basic Authentication
+
+Encrypted communication using `wss://`. Requires the server to have a valid TLS certificate. The client authenticates using HTTP Basic Auth.
+
+### Profile 3: TLS with Client Certificates
+
+The most secure profile. Uses `wss://` for encryption and mutual TLS (mTLS) for authentication. Both client and server verify each other's certificates.
+
+## Implementation in ocpp-ws-io
+
+Switching profiles is straightforward:
+
+```typescript
+// Profile 2 Example
+const client = new OCPPClient({
+  endpoint: "wss://secure-csms.com",
+  identity: "CP001",
+  securityProfile: SecurityProfile.TLS_BASIC_AUTH, // Profile 2
+  password: "super-secret-password",
+  tls: {
+    rejectUnauthorized: true,
+  },
+});
+```
+
+Check out our [Security Guide](/docs/security) for detailed implementation steps for all profiles.

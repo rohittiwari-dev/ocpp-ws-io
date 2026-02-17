@@ -1,0 +1,96 @@
+---
+title: Type Safety & Validation
+description: Using strict mode validation and generated TypeScript types.
+---
+
+## Type Safety
+
+`ocpp-ws-io` includes auto-generated TypeScript types for **all** OCPP methods across 1.6, 2.0.1, and 2.1.
+
+### Version-Aware `handle()` and `call()`
+
+When you call `handle()` or `call()` with a known method name, both request params and response types are inferred automatically.
+
+```typescript
+// ✅ Version-aware handle — params typed per version
+client.handle("ocpp1.6", "BootNotification", ({ params }) => {
+  params.chargePointVendor; // ✅ string (OCPP 1.6 shape)
+  return { status: "Accepted", currentTime: "...", interval: 300 };
+});
+
+client.handle("ocpp2.0.1", "BootNotification", ({ params }) => {
+  params.chargingStation; // ✅ { model, vendorName } (OCPP 2.0.1 shape)
+  return { status: "Accepted", currentTime: "...", interval: 300 };
+});
+
+// ✅ Version-aware call — params and response typed per version
+const res16 = await client.call("ocpp1.6", "BootNotification", {
+  chargePointVendor: "VendorX",
+  chargePointModel: "ModelY",
+});
+res16.status; // typed: "Accepted" | "Pending" | "Rejected"
+```
+
+### Type Utilities
+
+You can import generated types directly for use in your application:
+
+```typescript
+import type {
+  OCPPProtocol, // "ocpp1.6" | "ocpp2.0.1" | "ocpp2.1"
+  AllMethodNames, // All method names for a given protocol
+  OCPPRequestType, // Request type for a method
+  OCPPResponseType, // Response type for a method
+} from "ocpp-ws-io";
+
+// Example: Get request params type for BootNotification in OCPP 1.6
+type BootReq = OCPPRequestType<"ocpp1.6", "BootNotification">;
+// Result: { chargePointVendor: string; chargePointModel: string; ... }
+```
+
+## Strict Mode (Schema Validation)
+
+Enable strict mode to validate all inbound and outbound messages against the official OCPP JSON schemas.
+
+```typescript
+const client = new OCPPClient({
+  endpoint: "ws://localhost:3000",
+  identity: "CP001",
+  protocols: ["ocpp1.6"],
+  strictMode: true, // validates all calls against built-in schemas
+});
+
+// If validation fails, an RPCError is thrown automatically.
+// You can also listen for validation failures:
+client.on("strictValidationFailure", ({ message, error }) => {
+  console.error("Validation failed:", error.message);
+});
+```
+
+### Partial Strict Mode
+
+You can restrict strict mode to specific subprotocols if you support multiple versions but only want validation for some:
+
+```typescript
+const client = new OCPPClient({
+  protocols: ["ocpp1.6", "ocpp2.0.1"],
+  strictMode: ["ocpp2.0.1"], // only validate OCPP 2.0.1 messages
+});
+```
+
+### Custom Validators
+
+You can supply your own validators if you are using custom protocols or modified schemas:
+
+```typescript
+import { createValidator } from "ocpp-ws-io";
+import myCustomSchemas from "./my-schemas.json";
+
+const myValidator = createValidator("custom-protocol", myCustomSchemas);
+
+const client = new OCPPClient({
+  protocols: ["custom-protocol"],
+  strictMode: true,
+  strictModeValidators: [myValidator],
+});
+```

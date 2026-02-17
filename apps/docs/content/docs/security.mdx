@@ -1,0 +1,138 @@
+---
+title: Security Profiles
+description: Configuring OCPP Security Profiles (0-3).
+---
+
+`ocpp-ws-io` supports all OCPP security profiles out of the box.
+
+## Profile 0 — No Security (Development)
+
+Use this for local development or trusted internal networks.
+
+```typescript
+const client = new OCPPClient({
+  endpoint: "ws://localhost:3000",
+  identity: "CP001",
+  protocols: ["ocpp1.6"],
+  securityProfile: SecurityProfile.NONE,
+});
+```
+
+_Note: The server defaults to `SecurityProfile.NONE` if not specified._
+
+## Profile 1 — Basic Auth (Unsecured WS)
+
+Uses HTTP Basic Authentication over an insecure WebSocket connection.
+
+**Client:**
+
+```typescript
+const client = new OCPPClient({
+  endpoint: "ws://localhost:3000",
+  identity: "CP001",
+  protocols: ["ocpp1.6"],
+  securityProfile: SecurityProfile.BASIC_AUTH,
+  password: "my-secret-password", // Sent in Authorization header
+});
+```
+
+**Server:**
+
+```typescript
+server.auth((accept, reject, handshake) => {
+  const expectedPassword = getPasswordForStation(handshake.identity);
+
+  // Buffer comparison to avoid timing attacks is recommended
+  if (
+    !handshake.password ||
+    !handshake.password.equals(Buffer.from(expectedPassword))
+  ) {
+    return reject(401, "Invalid credentials");
+  }
+
+  accept();
+});
+```
+
+## Profile 2 — TLS + Basic Auth
+
+Uses HTTP Basic Authentication over a secure WebSocket connection (`wss://`).
+
+**Client:**
+
+```typescript
+import fs from "fs";
+
+const client = new OCPPClient({
+  endpoint: "wss://csms.example.com",
+  identity: "CP001",
+  protocols: ["ocpp2.0.1"],
+  securityProfile: SecurityProfile.TLS_BASIC_AUTH,
+  password: "my-secret-password",
+  tls: {
+    // Standard Node.js TLSOptions
+    ca: fs.readFileSync("./certs/ca.pem"),
+    rejectUnauthorized: true,
+  },
+});
+```
+
+**Server:**
+
+```typescript
+const server = new OCPPServer({
+  protocols: ["ocpp2.0.1"],
+  securityProfile: SecurityProfile.TLS_BASIC_AUTH,
+  tls: {
+    cert: fs.readFileSync("./certs/server.crt"),
+    key: fs.readFileSync("./certs/server.key"),
+  },
+});
+```
+
+## Profile 3 — Mutual TLS (Client Certificates)
+
+Uses Client Certificates for authentication. Basic Auth is skipped.
+
+**Client:**
+
+```typescript
+const client = new OCPPClient({
+  endpoint: "wss://csms.example.com",
+  identity: "CP001",
+  protocols: ["ocpp2.0.1"],
+  securityProfile: SecurityProfile.TLS_CLIENT_CERT,
+  tls: {
+    cert: fs.readFileSync("./certs/client.crt"),
+    key: fs.readFileSync("./certs/client.key"),
+    ca: fs.readFileSync("./certs/ca.pem"),
+  },
+});
+```
+
+**Server:**
+
+```typescript
+const server = new OCPPServer({
+  protocols: ["ocpp2.0.1"],
+  securityProfile: SecurityProfile.TLS_CLIENT_CERT,
+  tls: {
+    cert: fs.readFileSync("./certs/server.crt"),
+    key: fs.readFileSync("./certs/server.key"),
+    ca: fs.readFileSync("./certs/ca.pem"),
+    requestCert: true, // Required for mTLS
+    rejectUnauthorized: true, // Reject clients without valid certs
+  },
+});
+
+server.auth((accept, reject, handshake) => {
+  const cert = handshake.clientCertificate;
+
+  // Verify the certificate CN matches the identity (OCPP requirement)
+  if (!cert || cert.subject?.CN !== handshake.identity) {
+    return reject(401, "Certificate identity mismatch");
+  }
+
+  accept();
+});
+```

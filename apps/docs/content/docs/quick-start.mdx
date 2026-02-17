@@ -1,0 +1,93 @@
+---
+title: Quick Start
+description: Get started with simple Client and Server examples.
+---
+
+## Client (Charging Station Simulator)
+
+```typescript
+import { OCPPClient, SecurityProfile } from "ocpp-ws-io";
+
+const client = new OCPPClient({
+  endpoint: "ws://localhost:3000",
+  identity: "CP001",
+  protocols: ["ocpp1.6"],
+  securityProfile: SecurityProfile.NONE,
+});
+
+// Register a handler — params are auto-typed for OCPP 1.6 Reset
+client.handle("Reset", ({ params, protocol }) => {
+  console.log(`Reset requested (${protocol}):`, params.type);
+  return { status: "Accepted" };
+});
+
+// Connect and send a BootNotification — version-aware, fully typed
+await client.connect();
+
+const response = await client.call("ocpp1.6", "BootNotification", {
+  chargePointVendor: "VendorX",
+  chargePointModel: "ModelY",
+});
+
+console.log("Status:", response.status); // typed: "Accepted" | "Pending" | "Rejected"
+```
+
+## Server (Central System)
+
+```typescript
+import { OCPPServer } from "ocpp-ws-io";
+
+const server = new OCPPServer({
+  protocols: ["ocpp1.6", "ocpp2.0.1"],
+});
+
+// Optional: Add authentication
+server.auth((accept, reject, handshake) => {
+  console.log(
+    `Connection from ${handshake.identity} @ ${handshake.remoteAddress}`,
+  );
+
+  if (handshake.identity === "BLOCKED") {
+    return reject(401, "Not authorized");
+  }
+
+  accept({ session: { authorized: true } });
+});
+
+// Handle new client connections
+server.on("client", (client) => {
+  console.log(`${client.identity} connected (protocol: ${client.protocol})`);
+
+  // Version-aware handlers — params typed per OCPP version
+  client.handle("ocpp1.6", "BootNotification", ({ params }) => {
+    console.log("OCPP 1.6 Boot:", params.chargePointVendor);
+    return {
+      status: "Accepted",
+      currentTime: new Date().toISOString(),
+      interval: 300,
+    };
+  });
+
+  client.handle("ocpp2.0.1", "BootNotification", ({ params }) => {
+    console.log("OCPP 2.0.1 Boot:", params.chargingStation.vendorName);
+    return {
+      status: "Accepted",
+      currentTime: new Date().toISOString(),
+      interval: 300,
+    };
+  });
+
+  // Version-aware call from server to client
+  const config = await client.call("ocpp1.6", "GetConfiguration", {
+    key: ["HeartbeatInterval"],
+  });
+  console.log("Config:", config.configurationKey);
+
+  client.on("close", () => {
+    console.log(`${client.identity} disconnected`);
+  });
+});
+
+await server.listen(3000);
+console.log("OCPP Server listening on port 3000");
+```

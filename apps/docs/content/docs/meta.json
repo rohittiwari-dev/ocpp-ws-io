@@ -1,0 +1,11 @@
+{
+  "pages": [
+    "index",
+    "quick-start",
+    "frameworks",
+    "security",
+    "type-safety",
+    "clustering",
+    "api-reference"
+  ]
+}
