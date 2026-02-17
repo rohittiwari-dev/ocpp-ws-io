@@ -1,0 +1,27 @@
+---
+title: Introduction
+description: Type-safe OCPP WebSocket RPC client & server for Node.js.
+---
+
+# ocpp-ws-io
+
+**OCPP-WS-IO** is a Type-safe OCPP WebSocket RPC client & server for Node.js.
+
+Built with TypeScript from the ground up — supports **OCPP 1.6**, **2.0.1**, and **2.1** with full JSON schema validation, all three security profiles, and optional Redis-based clustering.
+
+## Features
+
+- ⚡ **Full OCPP-J RPC** — Call, CallResult, CallError message framing per OCPP-J spec
+- 🔒 **Security Profiles 0–3** — Plain WS, Basic Auth, TLS + Basic Auth, Mutual TLS
+- 📐 **Strict Mode** — Optional schema validation using built-in OCPP JSON schemas
+- 🔁 **Auto-Reconnect** — Exponential backoff with configurable limits
+- 🧩 **Framework Agnostic** — Use standalone, or attach to Express, Fastify, NestJS, etc.
+- 📡 **Clustering** — Optional Redis adapter for multi-instance deployments
+- 🎯 **Type-Safe** — Auto-generated types for all OCPP 1.6, 2.0.1 & 2.1 methods with full request/response inference
+- 🔀 **Version-Aware Handlers** — Register handlers per OCPP version with typed params, or use generic handlers with protocol context
+
+## Installation
+
+```bash
+npm install ocpp-ws-io
+```

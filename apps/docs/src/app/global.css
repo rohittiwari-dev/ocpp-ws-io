@@ -1,0 +1,106 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+@theme {
+  --color-fd-primary: var(--color-fd-primary);
+  --color-fd-foreground: var(--color-fd-foreground);
+  --color-fd-background: var(--color-fd-background);
+  --color-fd-muted: var(--color-fd-muted);
+  --color-fd-muted-foreground: var(--color-fd-muted-foreground);
+  --color-fd-popover: var(--color-fd-popover);
+  --color-fd-popover-foreground: var(--color-fd-popover-foreground);
+  --color-fd-card: var(--color-fd-card);
+  --color-fd-card-foreground: var(--color-fd-card-foreground);
+  --color-fd-border: var(--color-fd-border);
+  --color-fd-input: var(--color-fd-input);
+  --color-fd-accent: var(--color-fd-accent);
+  --color-fd-accent-foreground: var(--color-fd-accent-foreground);
+  --color-fd-destructive: var(--color-fd-destructive);
+  --color-fd-destructive-foreground: var(--color-fd-destructive-foreground);
+  --color-fd-ring: var(--color-fd-ring);
+  --radius-fd-radius: var(--radius-fd-radius);
+}
+
+:root {
+  --color-fd-background: hsl(0 0% 100%);
+  --color-fd-foreground: hsl(240 10% 3.9%);
+  --color-fd-card: hsl(0 0% 100%);
+  --color-fd-card-foreground: hsl(240 10% 3.9%);
+  --color-fd-popover: hsl(0 0% 100%);
+  --color-fd-popover-foreground: hsl(240 10% 3.9%);
+  --color-fd-primary: hsl(252 59% 48%);
+  --color-fd-primary-foreground: hsl(0 0% 98%);
+  --color-fd-secondary: hsl(240 4.8% 95.9%);
+  --color-fd-secondary-foreground: hsl(240 5.9% 10%);
+  --color-fd-muted: hsl(240 4.8% 95.9%);
+  --color-fd-muted-foreground: hsl(240 3.8% 46.1%);
+  --color-fd-accent: hsl(240 4.8% 95.9%);
+  --color-fd-accent-foreground: hsl(240 5.9% 10%);
+  --color-fd-destructive: hsl(0 84.2% 60.2%);
+  --color-fd-destructive-foreground: hsl(0 0% 98%);
+  --color-fd-border: hsl(240 5.9% 90%);
+  --color-fd-input: hsl(240 5.9% 90%);
+  --color-fd-ring: hsl(252 59% 48%);
+  --radius-fd-radius: 0.5rem;
+}
+
+.dark {
+  --color-fd-background: hsl(
+    240 6% 10%
+  ); /* Keep base for safety, but will be overlaid */
+  --color-fd-foreground: hsl(0 0% 98%);
+
+  /* Glassmorphic Card Backgrounds (Semi-transparent) */
+  --color-fd-card: hsl(240 4% 12% / 0.4);
+  --color-fd-card-foreground: hsl(0 0% 98%);
+  --color-fd-popover: hsl(240 4% 12% / 0.6);
+  --color-fd-popover-foreground: hsl(0 0% 98%);
+
+  --color-fd-primary: hsl(252 59% 65%);
+  --color-fd-primary-foreground: hsl(0 0% 98%);
+  --color-fd-secondary: hsl(240 3.7% 18% / 0.5);
+  --color-fd-secondary-foreground: hsl(0 0% 98%);
+  --color-fd-muted: hsl(240 3.7% 18% / 0.5);
+  --color-fd-muted-foreground: hsl(240 5% 64.9%);
+  --color-fd-accent: hsl(240 3.7% 18% / 0.5);
+  --color-fd-accent-foreground: hsl(0 0% 98%);
+  --color-fd-destructive: hsl(0 62.8% 30.6%);
+  --color-fd-destructive-foreground: hsl(0 0% 98%);
+  --color-fd-border: hsl(240 3.7% 20% / 0.5);
+  --color-fd-input: hsl(240 3.7% 20% / 0.5);
+  --color-fd-ring: hsl(252 59% 65%);
+}
+
+/* Dynamic Gradient Background */
+
+body {
+  background-color: var(--color-fd-background);
+  /* Light Mode Gradient (Subtle/Pastel) */
+  background-image:
+    radial-gradient(circle at 15% 50%, hsl(252 59% 96%), transparent 25%),
+    radial-gradient(circle at 85% 30%, hsl(270 50% 96%), transparent 25%);
+  background-attachment: fixed;
+}
+
+.dark body {
+  /* Dark Mode Gradient (Deep/Glowing) */
+  background-image:
+    radial-gradient(circle at 15% 50%, hsl(252 59% 20% / 0.5), transparent 25%),
+    radial-gradient(circle at 85% 30%, hsl(270 50% 20% / 0.5), transparent 25%);
+}
+
+/* Glassmorphism Utilities */
+.fd-card,
+.fd-popover,
+header,
+aside {
+  @apply bg-[hsla(240,15%,94%,0.2)] dark:bg-[hsla(240,6%,10%,0.4)] backdrop-blur-lg border-fd-border;
+}
+
+/* Ensure header is sticky for effect */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}

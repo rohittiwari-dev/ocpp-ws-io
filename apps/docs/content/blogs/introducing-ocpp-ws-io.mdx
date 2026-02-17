@@ -1,0 +1,47 @@
+---
+title: Introducing ocpp-ws-io
+description: A modern, type-safe library for building OCPP 1.6, 2.0.1+ applications in Node.js.
+date: 2024-05-15
+author:
+  name: Rohit Tiwari
+  avatar: https://avatars.githubusercontent.com/u/1234567?v=4
+  twitter: https://twitter.com/rohittiwari
+image: https://images.unsplash.com/photo-1593941707882-a5bba14938c7?auto=format&fit=crop&q=80&w=1000
+tags: [ocpp, typescript, nodejs, websocket]
+---
+
+We are excited to introduce **ocpp-ws-io**, a new comprehensive library designed to simplify the development of EV charging infrastructure. Whether you are building a Central System (CSMS) or a Charging Station simulator, `ocpp-ws-io` provides the tools you need to do it with confidence and type safety.
+
+## Why ocpp-ws-io?
+
+Building OCPP applications can be challenging due to the complexity of the protocol and the need for robust WebSocket handling. `ocpp-ws-io` addresses these challenges by providing:
+
+- **Type Safety**: Full TypeScript support with auto-generated types for all OCPP messages.
+- **Protocol Support**: Seamless handling of OCPP 1.6, 2.0.1, and upcoming 2.1.
+- **Security**: Built-in support for all security profiles (0-3), including TLS and mutual authentication.
+- **Validation**: strict mode to validate messages against official JSON schemas.
+
+## Getting Started
+
+Getting started is as simple as installing the package:
+
+```bash
+npm install ocpp-ws-io
+```
+
+Create a simple client:
+
+```typescript
+import { OCPPClient, SecurityProfile } from "ocpp-ws-io";
+
+const client = new OCPPClient({
+  endpoint: "ws://localhost:3000",
+  identity: "CP001",
+  protocols: ["ocpp1.6"],
+  securityProfile: SecurityProfile.NONE,
+});
+
+await client.connect();
+```
+
+Explore our [documentation](/docs) to learn more!

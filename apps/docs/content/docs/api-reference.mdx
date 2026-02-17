@@ -1,0 +1,159 @@
+---
+title: API Reference
+description: Detailed API reference for OCPPClient and OCPPServer.
+---
+
+## OCPPClient
+
+```typescript
+import { OCPPClient } from "ocpp-ws-io";
+```
+
+### Constructor
+
+```typescript
+const client = new OCPPClient(options: ClientOptions);
+```
+
+#### ClientOptions
+
+| Option            | Type                     | Default    | Description                             |
+| :---------------- | :----------------------- | :--------- | :-------------------------------------- |
+| `identity`        | `string`                 | _required_ | Charging station ID                     |
+| `endpoint`        | `string`                 | _required_ | WebSocket URL (`ws://` or `wss://`)     |
+| `protocols`       | `string[]`               | `[]`       | OCPP subprotocols to negotiate          |
+| `securityProfile` | `SecurityProfile`        | `NONE`     | Security profile (0–3)                  |
+| `password`        | `string \| Buffer`       | —          | Password for Basic Auth (Profile 1 & 2) |
+| `tls`             | `TLSOptions`             | —          | TLS/SSL options (Profile 2 & 3)         |
+| `headers`         | `Record<string, string>` | —          | Additional WebSocket headers            |
+| `query`           | `Record<string, string>` | —          | Additional URL query parameters         |
+| `reconnect`       | `boolean`                | `true`     | Auto-reconnect on disconnect            |
+| `maxReconnects`   | `number`                 | `Infinity` | Max reconnection attempts               |
+| `strictMode`      | `boolean \| string[]`    | `false`    | Enable/restrict schema validation       |
+
+### Methods
+
+#### `connect()`
+
+Connect to the OCPP server.
+
+```typescript
+await client.connect();
+```
+
+#### `call(protocol?, method, params, options?)`
+
+Make an RPC call.
+
+- `protocol`: Optional. e.g., "ocpp1.6". If omitted, generic type inference is used.
+- `method`: The OCPP method name (e.g., "BootNotification").
+- `params`: The request payload.
+- `options`: `{ timeoutMs?: number }`
+
+```typescript
+const result = await client.call("ocpp1.6", "BootNotification", { ... });
+```
+
+#### `handle(protocol?, method, handler)`
+
+Register an RPC handler.
+
+- `protocol`: Optional. If provided, handler only triggers for this protocol version.
+- `method`: The OCPP method name.
+- `handler`: `(context) => Response | Promise<Response>`
+
+```typescript
+// Version specific
+client.handle("ocpp1.6", "Reset", ({ params }) => { ... });
+
+// Generic
+client.handle("Reset", ({ params }) => { ... });
+
+// Catch-all
+client.handle((method, { params }) => { ... });
+```
+
+#### `close(code?, reason?)`
+
+Close the connection.
+
+## OCPPServer
+
+```typescript
+import { OCPPServer } from "ocpp-ws-io";
+```
+
+### Constructor
+
+```typescript
+const server = new OCPPServer(options?: ServerOptions);
+```
+
+### Methods
+
+#### `listen(port, host?, options?)`
+
+Start listening on a port. Returns the `http.Server` instance.
+
+#### `auth(handler)`
+
+Attach authentication logic.
+
+```typescript
+server.auth((accept, reject, handshake) => {
+  // handshake has .identity, .password, .headers, etc.
+  accept({ session: { ... } }); // Attach session data to client
+});
+```
+
+#### `on("client", handler)`
+
+Listen for new connections.
+
+```typescript
+server.on("client", (client) => {
+  // client is an OCPPServerClient (extends OCPPClient)
+  console.log(client.session); // Access session data
+});
+```
+
+## Protocol Constants
+
+### `NOREPLY`
+
+Return `NOREPLY` from a handler to suppress the automatic response. This is useful for asynchronous processing where you might send a response later manually, or for specific OCPP flows.
+
+```typescript
+import { NOREPLY } from "ocpp-ws-io";
+
+client.handle("StatusNotification", ({ params }) => {
+  // Process the notification but don't send a response immediately
+  return NOREPLY;
+});
+```
+
+## Error Classes
+
+All error classes are exported for `instanceof` checks:
+
+```typescript
+import {
+  // Base errors
+  TimeoutError, // Call timeout
+  UnexpectedHttpResponse, // Non-101 upgrade response
+  WebsocketUpgradeError, // WebSocket upgrade failure
+
+  // RPC errors (OCPP-J spec Section 4.3)
+  RPCGenericError,
+  RPCNotImplementedError,
+  RPCNotSupportedError,
+  RPCInternalError,
+  RPCProtocolError,
+  RPCSecurityError,
+  RPCFormationViolationError,
+  RPCPropertyConstraintViolationError,
+  RPCOccurrenceConstraintViolationError,
+  RPCTypeConstraintViolationError,
+  RPCGenericTransportError,
+} from "ocpp-ws-io";
+```
