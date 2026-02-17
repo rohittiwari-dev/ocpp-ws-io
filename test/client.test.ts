@@ -802,3 +802,155 @@ describe("OCPPClient - Advanced Features", () => {
     await srv.close({ force: true });
   });
 });
+
+describe("OCPPClient - Version-Aware Call", () => {
+  const getPort = (srv: import("node:http").Server): number => {
+    const addr = srv.address();
+    if (addr && typeof addr !== "string") return addr.port;
+    return 0;
+  };
+
+  it("should call with version-specific typed params (ocpp1.6)", async () => {
+    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
+    srv.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    srv.on("client", (sc) => {
+      sc.handle("ocpp1.6", "BootNotification", async ({ params }) => {
+        // ocpp1.6 BootNotification has chargePointModel/chargePointVendor
+        expect(params).toHaveProperty("chargePointModel");
+        expect(params).toHaveProperty("chargePointVendor");
+        return {
+          status: "Accepted",
+          currentTime: new Date().toISOString(),
+          interval: 300,
+        };
+      });
+    });
+    const httpServer = await srv.listen(0);
+    const p = getPort(httpServer);
+
+    const cl = new OCPPClient({
+      identity: "CS_VCALL16",
+      endpoint: `ws://localhost:${p}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+
+    await cl.connect();
+    const result = await cl.call("ocpp1.6", "BootNotification", {
+      chargePointModel: "ModelX",
+      chargePointVendor: "VendorY",
+    });
+
+    expect(result).toHaveProperty("status", "Accepted");
+    expect(result).toHaveProperty("interval", 300);
+    await cl.close({ force: true }).catch(() => {});
+    await srv.close({ force: true });
+  });
+
+  it("should call with version-specific typed params (ocpp2.0.1)", async () => {
+    const srv = new OCPPServer({ protocols: ["ocpp2.0.1"] });
+    srv.auth((accept) => accept({ protocol: "ocpp2.0.1" }));
+    srv.on("client", (sc) => {
+      sc.handle("ocpp2.0.1", "BootNotification", async ({ params }) => {
+        // ocpp2.0.1 BootNotification has chargingStation/reason
+        expect(params).toHaveProperty("chargingStation");
+        expect(params).toHaveProperty("reason");
+        return {
+          status: "Accepted",
+          currentTime: new Date().toISOString(),
+          interval: 600,
+        };
+      });
+    });
+    const httpServer = await srv.listen(0);
+    const p = getPort(httpServer);
+
+    const cl = new OCPPClient({
+      identity: "CS_VCALL201",
+      endpoint: `ws://localhost:${p}`,
+      protocols: ["ocpp2.0.1"],
+      reconnect: false,
+    });
+
+    await cl.connect();
+    const result = await cl.call("ocpp2.0.1", "BootNotification", {
+      chargingStation: { model: "ModelX", vendorName: "VendorY" },
+      reason: "PowerUp",
+    });
+
+    expect(result).toHaveProperty("status", "Accepted");
+    expect(result).toHaveProperty("interval", 600);
+    await cl.close({ force: true }).catch(() => {});
+    await srv.close({ force: true });
+  });
+
+  it("should still work with non-versioned call (default protocol)", async () => {
+    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
+    srv.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    srv.on("client", (sc) => {
+      sc.handle("Heartbeat", async () => ({
+        currentTime: new Date().toISOString(),
+      }));
+    });
+    const httpServer = await srv.listen(0);
+    const p = getPort(httpServer);
+
+    const cl = new OCPPClient({
+      identity: "CS_VCALL_DEF",
+      endpoint: `ws://localhost:${p}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+
+    await cl.connect();
+    // Non-versioned call should still work
+    const result = await cl.call("Heartbeat", {});
+    expect(result).toHaveProperty("currentTime");
+    await cl.close({ force: true }).catch(() => {});
+    await srv.close({ force: true });
+  });
+
+  it("should support version-aware call from server to client", async () => {
+    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
+    srv.auth((accept) => accept({ protocol: "ocpp1.6" }));
+
+    const callResult = new Promise<unknown>((resolve, reject) => {
+      srv.on("client", async (sc) => {
+        try {
+          const result = await sc.call("ocpp1.6", "GetConfiguration", {
+            key: ["HeartbeatInterval"],
+          });
+          resolve(result);
+        } catch (e) {
+          resolve(e); // Resolve with error to avoid timeout
+        }
+      });
+    });
+
+    const httpServer = await srv.listen(0);
+    const p = getPort(httpServer);
+
+    const cl = new OCPPClient({
+      identity: "CS_VCALL_SRV",
+      endpoint: `ws://localhost:${p}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+
+    cl.handle("ocpp1.6", "GetConfiguration", async ({ params }) => {
+      expect(params).toHaveProperty("key");
+      return {
+        configurationKey: [
+          { key: "HeartbeatInterval", readonly: false, value: "60" },
+        ],
+        unknownKey: [],
+      };
+    });
+
+    await cl.connect();
+    const result = await callResult;
+    expect(result).toHaveProperty("configurationKey");
+    await cl.close({ force: true }).catch(() => {});
+    await srv.close({ force: true });
+  });
+});

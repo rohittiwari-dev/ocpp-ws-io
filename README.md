@@ -41,10 +41,10 @@ client.handle("Reset", ({ params, protocol }) => {
   return { status: "Accepted" };
 });
 
-// Connect and send a BootNotification — response is auto-typed
+// Connect and send a BootNotification — version-aware, fully typed
 await client.connect();
 
-const response = await client.call("BootNotification", {
+const response = await client.call("ocpp1.6", "BootNotification", {
   chargePointVendor: "VendorX",
   chargePointModel: "ModelY",
 });
@@ -78,9 +78,9 @@ server.auth((accept, reject, handshake) => {
 server.on("client", (client) => {
   console.log(`${client.identity} connected (protocol: ${client.protocol})`);
 
-  // Handle BootNotification — params and response are auto-typed
-  client.handle("BootNotification", ({ params }) => {
-    console.log("BootNotification:", params);
+  // Version-aware handlers — params typed per OCPP version
+  client.handle("ocpp1.6", "BootNotification", ({ params }) => {
+    console.log("OCPP 1.6 Boot:", params.chargePointVendor);
     return {
       status: "Accepted",
       currentTime: new Date().toISOString(),
@@ -88,11 +88,20 @@ server.on("client", (client) => {
     };
   });
 
-  // Custom/extension methods also work (untyped)
-  client.handle("VendorCustomAction", ({ params }) => {
-    console.log("Custom action:", params);
-    return { result: "ok" };
+  client.handle("ocpp2.0.1", "BootNotification", ({ params }) => {
+    console.log("OCPP 2.0.1 Boot:", params.chargingStation.vendorName);
+    return {
+      status: "Accepted",
+      currentTime: new Date().toISOString(),
+      interval: 300,
+    };
   });
+
+  // Version-aware call from server to client
+  const config = await client.call("ocpp1.6", "GetConfiguration", {
+    key: ["HeartbeatInterval"],
+  });
+  console.log("Config:", config.configurationKey);
 
   client.on("close", () => {
     console.log(`${client.identity} disconnected`);
@@ -294,26 +303,46 @@ httpServer.listen(3000);
 
 `ocpp-ws-io` includes auto-generated TypeScript types for **all** OCPP methods across 1.6, 2.0.1, and 2.1. When you call `handle()` or `call()` with a known method name, both request params and response types are inferred automatically. Custom/vendor-specific methods are also supported — they use `Record<string, any>` params.
 
-### Auto-Typed `handle()` and `call()`
+### Version-Aware `handle()` and `call()`
+
+Both `handle()` and `call()` support **version-specific overloads** — params and response types are inferred from the OCPP version you specify:
 
 ```typescript
-// ✅ Known method — params and response are fully typed
-client.handle("BootNotification", ({ params }) => {
-  params.chargePointVendor; // string (OCPP 1.6)
-  return {
-    status: "Accepted", // typed: "Accepted" | "Pending" | "Rejected"
-    currentTime: new Date().toISOString(),
-    interval: 300,
-  };
+// ✅ Version-aware handle — params typed per version
+client.handle("ocpp1.6", "BootNotification", ({ params }) => {
+  params.chargePointVendor; // ✅ string (OCPP 1.6 shape)
+  return { status: "Accepted", currentTime: "...", interval: 300 };
 });
 
+client.handle("ocpp2.0.1", "BootNotification", ({ params }) => {
+  params.chargingStation; // ✅ { model, vendorName } (OCPP 2.0.1 shape)
+  return { status: "Accepted", currentTime: "...", interval: 300 };
+});
+
+// ✅ Version-aware call — params and response typed per version
+const res16 = await client.call("ocpp1.6", "BootNotification", {
+  chargePointVendor: "VendorX",
+  chargePointModel: "ModelY",
+});
+res16.status; // typed: "Accepted" | "Pending" | "Rejected"
+
+const res201 = await client.call("ocpp2.0.1", "BootNotification", {
+  chargingStation: { model: "ModelX", vendorName: "VendorY" },
+  reason: "PowerUp",
+});
+res201.status; // typed for 2.0.1
+```
+
+### Default Protocol and Untyped Calls
+
+```typescript
+// Default protocol — uses the client's type parameter P
 const res = await client.call("BootNotification", {
   chargePointVendor: "VendorX",
   chargePointModel: "ModelY",
 });
-res.status; // auto-typed
 
-// ✅ Custom method — also works, with loose typing
+// Custom/extension methods — loose typing
 client.handle("VendorCustomAction", ({ params }) => {
   params; // Record<string, any>
   return { result: "ok" };
@@ -325,23 +354,7 @@ const custom = await client.call<{ result: string }>("VendorCustomAction", {
 custom.result; // string
 ```
 
-### Version-Aware Handlers
-
-Register handlers for a **specific** OCPP version. Params are typed for that version only:
-
-```typescript
-// OCPP 1.6 BootNotification — has `chargePointVendor`
-client.handle("ocpp1.6", "BootNotification", ({ params }) => {
-  params.chargePointVendor; // ✅ OCPP 1.6
-  return { status: "Accepted", currentTime: "...", interval: 300 };
-});
-
-// OCPP 2.0.1 BootNotification — has `chargingStation` (different shape!)
-client.handle("ocpp2.0.1", "BootNotification", ({ params }) => {
-  params.chargingStation; // ✅ OCPP 2.0.1
-  return { status: "Accepted", currentTime: "...", interval: 300 };
-});
-```
+````
 
 **Dispatch priority**: When a call arrives, the runtime looks up handlers in this order:
 
@@ -362,7 +375,7 @@ client.handle("Reset", ({ params, protocol, method, messageId, signal }) => {
   signal; // AbortSignal
   return { status: "Accepted" };
 });
-```
+````
 
 ### `removeHandler` with Version Support
 
@@ -542,21 +555,29 @@ const client = new OCPPClient(options: ClientOptions);
 // Connect to the OCPP server
 await client.connect();
 
-// Make a typed RPC call (params and response auto-inferred)
-const result = await client.call("BootNotification", {
+// Version-aware call — fully typed params and response
+const result = await client.call("ocpp1.6", "BootNotification", {
   chargePointVendor: "VendorX",
   chargePointModel: "ModelY",
 });
 
-// Make a call with explicit response type (for custom methods)
+// OCPP 2.0.1 — different shape, still fully typed
+const result201 = await client.call("ocpp2.0.1", "BootNotification", {
+  chargingStation: { model: "ModelX", vendorName: "VendorY" },
+  reason: "PowerUp",
+});
+
+// Default protocol call (uses the client's type parameter P)
+const res = await client.call("Heartbeat", {});
+
+// Explicit response type (for custom/vendor methods)
 const custom = await client.call<{ result: string }>("VendorAction", {
   data: "hello",
 });
 
-// Make a call with options
-const result = await client.call("RemoteStartTransaction", params, {
+// Call with options
+const res2 = await client.call("ocpp1.6", "RemoteStartTransaction", params, {
   timeoutMs: 5000,
-  signal: abortController.signal,
 });
 
 // Register a typed handler for a specific method
@@ -738,9 +759,11 @@ server.on("client", (client) => {
   client.session; // Record<string, unknown> — session data from auth
   client.handshake; // HandshakeInfo — connection handshake details
 
-  // All OCPPClient methods available:
-  client.handle("Heartbeat", () => ({ currentTime: new Date().toISOString() }));
-  const result = await client.call("GetConfiguration", { key: [] });
+  // All OCPPClient methods available — version-aware:
+  client.handle("ocpp1.6", "Heartbeat", () => ({
+    currentTime: new Date().toISOString(),
+  }));
+  const result = await client.call("ocpp1.6", "GetConfiguration", { key: [] });
   await client.close();
 });
 ```
@@ -912,6 +935,10 @@ import type {
 
 - **Node.js** ≥ 18.0.0
 - **TypeScript** ≥ 5.0 (optional, but recommended)
+
+## Inspired By
+
+This project is inspired by [ocpp-rpc](https://github.com/mikuso/ocpp-rpc) — a well-crafted OCPP-J RPC library for Node.js. `ocpp-ws-io` builds on similar ideas while adding full TypeScript type safety, version-aware APIs, built-in schema validation, and clustering support.
 
 ## License
 
