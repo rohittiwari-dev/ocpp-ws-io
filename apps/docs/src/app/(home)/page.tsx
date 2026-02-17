@@ -1,5 +1,9 @@
 import Link from "next/link";
 import { blogSource } from "@/lib/blog";
+import { Hero } from "@/components/landing/hero";
+import { Features } from "@/components/landing/features";
+import { VideoDemo } from "@/components/landing/video-demo";
+import { Footer } from "@/components/landing/footer";
 
 export default function HomePage() {
   const posts = [...blogSource.getPages()]
@@ -7,48 +11,76 @@ export default function HomePage() {
     .slice(0, 3);
 
   return (
-    <div className="flex flex-col items-center justify-center text-center flex-1 py-12">
-      <h1 className="text-4xl font-bold mb-4">OCPP WS IO</h1>
-      <p className="mb-8 text-lg text-fd-muted-foreground">
-        A lightweight, performant OCPP 1.6/2.0.1 WebSocket server for Node.js.
-      </p>
-      <div className="flex gap-4 mb-16">
-        <Link
-          href="/docs"
-          className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
-        >
-          Get Started
-        </Link>
-        <Link
-          href="/blog"
-          className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
-        >
-          Read Blog
-        </Link>
-      </div>
+    <div className="flex flex-col min-h-screen max-w-7xl mx-auto">
+      <Hero />
+      <VideoDemo />
+      <Features />
 
-      <div className="w-full max-w-4xl px-4 text-left">
-        <h2 className="text-2xl font-bold mb-6">Latest from Blog</h2>
-        <div className="grid gap-6 md:grid-cols-3">
+      {/* Blog Section */}
+      <section className="container mx-auto px-4 py-18 border-t border-fd-border/50">
+        <div className="mb-12 flex items-center justify-between">
+          <div className="space-y-1">
+            <h2 className="text-3xl font-bold tracking-tight text-fd-foreground">
+              Latest from the Blog
+            </h2>
+            <p className="text-fd-muted-foreground">
+              Updates, guides, and technical deep dives.
+            </p>
+          </div>
+          <Link
+            href="/blog"
+            className="hidden text-sm font-medium text-fd-primary hover:underline md:block"
+          >
+            View all posts →
+          </Link>
+        </div>
+
+        <div className="grid gap-8 md:grid-cols-3">
           {posts.map((post) => (
             <Link
               key={post.url}
               href={post.url}
-              className="group flex flex-col rounded-lg border p-4 hover:bg-fd-accent/50 transition-colors"
+              className="group flex flex-col overflow-hidden rounded-xl border border-fd-border bg-fd-card/40 transition-all hover:bg-fd-card/60 hover:shadow-lg backdrop-blur-sm"
             >
-              <h3 className="font-semibold mb-2 group-hover:underline">
-                {post.title}
-              </h3>
-              <p className="text-sm text-fd-muted-foreground line-clamp-2 mb-4">
-                {post.description}
-              </p>
-              <div className="mt-auto text-xs text-fd-muted-foreground">
-                {new Date(post.date).toLocaleDateString()}
+              <div className="aspect-video w-full overflow-hidden bg-fd-muted">
+                {post.image ? (
+                  <img
+                    src={post.image}
+                    alt={post.title}
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-fd-muted-foreground">
+                    No Image
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-1 flex-col p-6">
+                <h3 className="mb-2 text-xl font-bold bg-clip-text text-transparent bg-linear-to-br from-fd-foreground to-fd-muted-foreground group-hover:to-fd-foreground transition-all">
+                  {post.title}
+                </h3>
+                <p className="mb-4 line-clamp-2 text-sm text-fd-muted-foreground">
+                  {post.description}
+                </p>
+                <div className="mt-auto flex items-center justify-between text-xs text-fd-muted-foreground">
+                  <span>{new Date(post.date).toLocaleDateString()}</span>
+                  <span className="font-medium text-fd-primary">Read more</span>
+                </div>
               </div>
             </Link>
           ))}
         </div>
-      </div>
+
+        <div className="mt-8 text-center md:hidden">
+          <Link
+            href="/blog"
+            className="text-sm font-medium text-fd-primary hover:underline"
+          >
+            View all posts →
+          </Link>
+        </div>
+      </section>
+      <Footer />
     </div>
   );
 }
