@@ -1,6 +1,13 @@
-import { createMDX } from 'fumadocs-mdx/next';
+import { createMDX } from "fumadocs-mdx/next";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 
-const withMDX = createMDX();
+const withMDX = createMDX({
+  mdxOptions: {
+    remarkPlugins: [remarkMath],
+    rehypePlugins: (defaultPlugins) => [rehypeKatex, ...defaultPlugins],
+  },
+});
 
 /** @type {import('next').NextConfig} */
 const config = {
@@ -8,8 +15,8 @@ const config = {
   async rewrites() {
     return [
       {
-        source: '/docs/:path*.mdx',
-        destination: '/llms.mdx/docs/:path*',
+        source: "/docs/:path*.mdx",
+        destination: "/llms.mdx/docs/:path*",
       },
     ];
   },

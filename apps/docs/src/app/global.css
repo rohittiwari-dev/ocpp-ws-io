@@ -3,6 +3,9 @@
 @import "fumadocs-ui/css/preset.css";
 
 @theme {
+  --font-sans: var(--font-inter);
+  --font-heading: var(--font-outfit);
+
   --color-fd-primary: var(--color-fd-primary);
   --color-fd-foreground: var(--color-fd-foreground);
   --color-fd-background: var(--color-fd-background);
@@ -20,6 +23,16 @@
   --color-fd-destructive-foreground: var(--color-fd-destructive-foreground);
   --color-fd-ring: var(--color-fd-ring);
   --radius-fd-radius: var(--radius-fd-radius);
+}
+
+/* Apply Heading Font Globally */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
 }
 
 :root {
@@ -73,21 +86,28 @@
 }
 
 /* Dynamic Gradient Background */
-
 body {
   background-color: var(--color-fd-background);
   /* Light Mode Gradient (Subtle/Pastel) */
   background-image:
-    radial-gradient(circle at 15% 50%, hsl(252 59% 96%), transparent 25%),
-    radial-gradient(circle at 85% 30%, hsl(270 50% 96%), transparent 25%);
+    radial-gradient(circle at 15% 50%, hsl(233, 100%, 97%), transparent 25%),
+    radial-gradient(circle at 85% 30%, lab(93.64% 0.75 -9.59), transparent 25%);
   background-attachment: fixed;
 }
 
 .dark body {
   /* Dark Mode Gradient (Deep/Glowing) */
   background-image:
-    radial-gradient(circle at 15% 50%, hsl(252 59% 20% / 0.5), transparent 25%),
-    radial-gradient(circle at 85% 30%, hsl(270 50% 20% / 0.5), transparent 25%);
+    radial-gradient(
+      circle at 15% 50%,
+      hsla(221, 59%, 20%, 0.5),
+      transparent 25%
+    ),
+    radial-gradient(
+      circle at 85% 30%,
+      hsla(234, 51%, 20%, 0.5),
+      transparent 25%
+    );
 }
 
 /* Glassmorphism Utilities */
@@ -95,10 +115,10 @@ body {
 .fd-popover,
 header,
 aside {
-  @apply bg-[hsla(240,15%,94%,0.2)] dark:bg-[hsla(240,6%,10%,0.4)] backdrop-blur-lg border-fd-border;
+  @apply bg-fd-background/70 backdrop-blur-xl border-fd-border/40 saturate-150;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.03);
 }
 
-/* Ensure header is sticky for effect */
 header {
   position: sticky;
   top: 0;
