@@ -10,7 +10,6 @@ import {
   RPCFormatViolationError,
   RPCPropertyConstraintViolationError,
   RPCOccurrenceConstraintViolationError,
-  RPCOccurenceConstraintViolationError,
   RPCTypeConstraintViolationError,
   RPCMessageTypeNotSupportedError,
   RPCFrameworkError,
@@ -97,11 +96,6 @@ describe("Error Classes", () => {
   it("RPCOccurrenceConstraintViolationError should have correct code", () => {
     const err = new RPCOccurrenceConstraintViolationError();
     expect(err.rpcErrorCode).toBe("OccurrenceConstraintViolation");
-  });
-
-  it("RPCOccurenceConstraintViolationError (legacy typo) should have correct code", () => {
-    const err = new RPCOccurenceConstraintViolationError();
-    expect(err.rpcErrorCode).toBe("OccurenceConstraintViolation");
   });
 
   it("RPCTypeConstraintViolationError should have correct code", () => {

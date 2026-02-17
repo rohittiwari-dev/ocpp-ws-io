@@ -1,64 +1,119 @@
 import * as errors from "./errors.js";
+import type { RPCError } from "./errors.js";
 
-const rpcErrorLUT: Record<
-  string,
-  new (message?: string, details?: Record<string, unknown>) => errors.RPCError
-> = {
-  GenericError: errors.RPCGenericError,
-  NotImplemented: errors.RPCNotImplementedError,
-  NotSupported: errors.RPCNotSupportedError,
-  InternalError: errors.RPCInternalError,
-  ProtocolError: errors.RPCProtocolError,
-  SecurityError: errors.RPCSecurityError,
-  FormationViolation: errors.RPCFormationViolationError,
-  FormatViolation: errors.RPCFormatViolationError,
-  PropertyConstraintViolation: errors.RPCPropertyConstraintViolationError,
-  OccurrenceConstraintViolation: errors.RPCOccurrenceConstraintViolationError,
-  OccurenceConstraintViolation: errors.RPCOccurenceConstraintViolationError,
-  TypeConstraintViolation: errors.RPCTypeConstraintViolationError,
-  MessageTypeNotSupported: errors.RPCMessageTypeNotSupportedError,
-  RpcFrameworkError: errors.RPCFrameworkError,
-};
+// ─── RPC Error Factory ──────────────────────────────────────────
 
 /**
- * Create an RPCError instance from an error code string.
- * Falls back to RPCGenericError for unknown codes.
+ * Registry mapping OCPP-J RPC error code strings to their corresponding
+ * error constructors. Organized by OCPP spec error category.
+ */
+const RPC_ERROR_REGISTRY = new Map<
+  string,
+  new (message?: string, details?: Record<string, unknown>) => RPCError
+>([
+  // Generic / framework errors
+  ["GenericError", errors.RPCGenericError],
+  ["RpcFrameworkError", errors.RPCFrameworkError],
+  ["MessageTypeNotSupported", errors.RPCMessageTypeNotSupportedError],
+
+  // Action-level errors
+  ["NotImplemented", errors.RPCNotImplementedError],
+  ["NotSupported", errors.RPCNotSupportedError],
+  ["InternalError", errors.RPCInternalError],
+
+  // Protocol / security errors
+  ["ProtocolError", errors.RPCProtocolError],
+  ["SecurityError", errors.RPCSecurityError],
+
+  // Payload validation errors
+  ["FormatViolation", errors.RPCFormatViolationError],
+  ["FormationViolation", errors.RPCFormationViolationError],
+  ["PropertyConstraintViolation", errors.RPCPropertyConstraintViolationError],
+  [
+    "OccurrenceConstraintViolation",
+    errors.RPCOccurrenceConstraintViolationError,
+  ],
+  ["TypeConstraintViolation", errors.RPCTypeConstraintViolationError],
+]);
+
+/**
+ * Instantiate a typed RPCError from a string error code.
+ * Returns an RPCGenericError if the code is not recognized.
  */
 export function createRPCError(
   code: string,
   message?: string,
   details: Record<string, unknown> = {},
-): errors.RPCError {
-  const ErrorClass = rpcErrorLUT[code] ?? errors.RPCGenericError;
-  const err = new ErrorClass(message, details);
-  return err;
+): RPCError {
+  const Ctor = RPC_ERROR_REGISTRY.get(code) ?? errors.RPCGenericError;
+  return new Ctor(message, details);
 }
 
+// ─── Error Serialization ────────────────────────────────────────
+
 /**
- * Convert an error to a safe plain object (no circular references).
+ * Known error properties to extract, in a defined order.
+ * This covers standard Error fields plus common OCPP RPC fields.
+ */
+const ERROR_PROPERTIES = [
+  "name",
+  "message",
+  "stack",
+  "code",
+  "rpcErrorCode",
+  "rpcErrorMessage",
+  "details",
+] as const;
+
+/**
+ * Convert an Error (or subclass) into a plain, JSON-safe object.
+ *
+ * Extracts well-known properties explicitly rather than relying on
+ * Object.getOwnPropertyNames to avoid exposing internal fields and
+ * to guarantee a stable output shape.
+ *
+ * If a property holds a non-serializable value (functions, symbols,
+ * circular references), it is silently skipped.
  */
 export function getErrorPlainObject(err: Error): Record<string, unknown> {
-  try {
-    const plain = JSON.parse(
-      JSON.stringify(err, Object.getOwnPropertyNames(err)),
-    );
-    return plain as Record<string, unknown>;
-  } catch {
-    return {
-      name: err.name,
-      message: err.message,
-    };
+  const result: Record<string, unknown> = {};
+
+  for (const prop of ERROR_PROPERTIES) {
+    const value = (err as unknown as Record<string, unknown>)[prop];
+    if (value !== undefined) {
+      // Skip functions and symbols — they aren't JSON-serializable
+      if (typeof value === "function" || typeof value === "symbol") continue;
+
+      // Test serializability for complex values
+      if (typeof value === "object" && value !== null) {
+        try {
+          JSON.stringify(value);
+          result[prop] = value;
+        } catch {
+          // Skip non-serializable properties (circular refs, etc.)
+        }
+      } else {
+        result[prop] = value;
+      }
+    }
   }
+
+  // Ensure we always have at least name and message
+  if (!result.name) result.name = err.name;
+  if (!result.message) result.message = err.message;
+
+  return result;
 }
 
-let _packageIdent: string | undefined;
+// ─── Package Identity ───────────────────────────────────────────
+
+const PKG_NAME = "ocpp-ws-io";
+const PKG_VERSION = "1.0.0";
 
 /**
- * Get the package identifier string (for HTTP headers, user agent, etc.)
+ * Get the package identifier string used in HTTP headers and logging.
+ * Format: `ocpp-ws-io/1.0.0`
  */
 export function getPackageIdent(): string {
-  if (!_packageIdent) {
-    _packageIdent = "ocpp-ws-io/1.0.0";
-  }
-  return _packageIdent;
+  return `${PKG_NAME}/${PKG_VERSION}`;
 }

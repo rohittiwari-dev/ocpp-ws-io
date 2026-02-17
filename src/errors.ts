@@ -149,18 +149,6 @@ export class RPCOccurrenceConstraintViolationError extends RPCGenericError {
   }
 }
 
-/** @deprecated Use RPCOccurrenceConstraintViolationError (typo compat with OCPP spec) */
-export class RPCOccurenceConstraintViolationError extends RPCGenericError {
-  override readonly rpcErrorCode = "OccurenceConstraintViolation";
-  override readonly rpcErrorMessage =
-    "Payload for action is syntactically correct but at least one of the fields violates occurrence constraints";
-
-  constructor(message?: string, details: Record<string, unknown> = {}) {
-    super(message, details);
-    this.name = "RPCOccurenceConstraintViolationError";
-  }
-}
-
 export class RPCTypeConstraintViolationError extends RPCGenericError {
   override readonly rpcErrorCode = "TypeConstraintViolation";
   override readonly rpcErrorMessage =

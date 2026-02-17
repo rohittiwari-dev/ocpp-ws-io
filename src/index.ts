@@ -33,7 +33,6 @@ export {
   RPCFormatViolationError,
   RPCPropertyConstraintViolationError,
   RPCOccurrenceConstraintViolationError,
-  RPCOccurenceConstraintViolationError,
   RPCTypeConstraintViolationError,
   RPCMessageTypeNotSupportedError,
   RPCFrameworkError,
