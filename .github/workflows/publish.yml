@@ -46,6 +46,11 @@ jobs:
           fi
           echo "Publishing $VERSION with tag: $(cat $GITHUB_OUTPUT | grep tag | cut -d= -f2)"
 
+      - name: Sync version from git tag to package.json
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
       - name: Publish to npm
         run: npm publish --provenance --access public --tag ${{ steps.dist-tag.outputs.tag }}
         env:
