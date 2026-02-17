@@ -378,6 +378,12 @@ export type ServerClientInstance<
     method: string,
     handler: (context: HandlerContext<Record<string, any>>) => any,
   ): void;
+  call<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+    version: V,
+    method: M,
+    params: OCPPRequestType<V, M>,
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<V, M>>;
   call<M extends AllMethodNames<P>>(
     method: M,
     params: OCPPRequestType<P, M>,

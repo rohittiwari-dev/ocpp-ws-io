@@ -410,7 +410,18 @@ export class OCPPClient<
 
   // ─── Call ────────────────────────────────────────────────────
 
-  /** Call a known typed method. */
+  /**
+   * Call a version-specific typed method — `call("ocpp1.6", "BootNotification", {...})`.
+   * Provides full type inference for params and response based on the OCPP version.
+   */
+  async call<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+    version: V,
+    method: M,
+    params: OCPPRequestType<V, M>,
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<V, M>>;
+
+  /** Call a known typed method using the client's default protocol. */
   async call<M extends AllMethodNames<P>>(
     method: M,
     params: OCPPRequestType<P, M>,
@@ -424,11 +435,28 @@ export class OCPPClient<
     options?: CallOptions,
   ): Promise<TResult>;
 
-  async call(
-    method: string,
-    params: unknown = {},
-    options: CallOptions = {},
-  ): Promise<unknown> {
+  async call(...args: unknown[]): Promise<unknown> {
+    let method: string;
+    let params: unknown;
+    let options: CallOptions;
+
+    if (
+      args.length >= 3 &&
+      typeof args[0] === "string" &&
+      typeof args[1] === "string"
+    ) {
+      // call(version, method, params, options?) — version-specific
+      // version is type-level only, not sent on the wire
+      method = args[1] as string;
+      params = args[2] ?? {};
+      options = (args[3] as CallOptions) ?? {};
+    } else {
+      // call(method, params?, options?)
+      method = args[0] as string;
+      params = args[1] ?? {};
+      options = (args[2] as CallOptions) ?? {};
+    }
+
     if (this._state !== OPEN) {
       throw new Error(`Cannot call: client is in state ${this._state}`);
     }
