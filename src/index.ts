@@ -65,4 +65,16 @@ export {
   type ClientEvents,
   type ServerEvents,
   type EventAdapterInterface,
+  type TypedEventEmitter,
 } from "./types.js";
+
+// ─── Generated OCPP Protocol Types ──────────────────────────────
+export type {
+  OCPPMethodMap,
+  AllMethodNames,
+  OCPPRequestType,
+  OCPPResponseType,
+} from "./generated/index.js";
+export type { OCPP16Methods } from "./generated/ocpp16.js";
+export type { OCPP201Methods } from "./generated/ocpp201.js";
+export type { OCPP21Methods } from "./generated/ocpp21.js";

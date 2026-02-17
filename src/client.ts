@@ -18,7 +18,15 @@ import {
   type OCPPCallResult,
   type OCPPCallError,
   type OCPPMessage,
+  type ClientEvents,
+  type TypedEventEmitter,
+  type OCPPProtocol,
 } from "./types.js";
+import type {
+  AllMethodNames,
+  OCPPRequestType,
+  OCPPResponseType,
+} from "./generated/index.js";
 import {
   TimeoutError,
   UnexpectedHttpResponse,
@@ -52,7 +60,9 @@ interface PendingCall {
  * - Profile 2: TLS + Basic Auth
  * - Profile 3: Mutual TLS (client certificates)
  */
-export class OCPPClient extends EventEmitter {
+export class OCPPClient<
+  P extends OCPPProtocol = OCPPProtocol,
+> extends (EventEmitter as new () => TypedEventEmitter<ClientEvents>) {
   // Static connection states
   static readonly CONNECTING = CONNECTING;
   static readonly OPEN = OPEN;
@@ -318,27 +328,77 @@ export class OCPPClient extends EventEmitter {
     });
   }
 
-  // ─── Handle ──────────────────────────────────────────────────
+  /**
+   * Register a version-specific handler — `handle("ocpp1.6", "BootNotification", handler)`.
+   * This handler is only invoked when the active protocol matches the given version.
+   */
+  handle<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+    version: V,
+    method: M,
+    handler: (
+      context: HandlerContext<OCPPRequestType<V, M>>,
+    ) => OCPPResponseType<V, M> | Promise<OCPPResponseType<V, M>>,
+  ): void;
 
-  handle<TParams = unknown, TResult = unknown>(
-    methodOrHandler: string | WildcardHandler,
-    handler?: CallHandler<TParams, TResult>,
-  ): void {
-    if (typeof methodOrHandler === "function") {
-      this._wildcardHandler = methodOrHandler;
-    } else if (typeof methodOrHandler === "string" && handler) {
-      this._handlers.set(methodOrHandler, handler as CallHandler);
+  /**
+   * Register a handler for the client's default protocol — `handle("BootNotification", handler)`.
+   * Uses the default protocol type parameter `P`.
+   */
+  handle<M extends AllMethodNames<P>>(
+    method: M,
+    handler: (
+      context: HandlerContext<OCPPRequestType<P, M>>,
+    ) => OCPPResponseType<P, M> | Promise<OCPPResponseType<P, M>>,
+  ): void;
+
+  /** Register a handler for a custom/extension method not in the typed OCPP method maps. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handle(
+    method: string,
+    handler: (context: HandlerContext<Record<string, any>>) => any,
+  ): void;
+
+  /** Register a wildcard handler for all unhandled methods. */
+  handle(handler: WildcardHandler): void;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handle(...args: any[]): void {
+    if (args.length === 1 && typeof args[0] === "function") {
+      // Wildcard handler
+      this._wildcardHandler = args[0] as WildcardHandler;
+    } else if (
+      args.length === 2 &&
+      typeof args[0] === "string" &&
+      typeof args[1] === "function"
+    ) {
+      // handle(method, handler) — default protocol
+      this._handlers.set(args[0], args[1] as CallHandler);
+    } else if (
+      args.length === 3 &&
+      typeof args[0] === "string" &&
+      typeof args[1] === "string" &&
+      typeof args[2] === "function"
+    ) {
+      // handle(version, method, handler) — version-specific
+      this._handlers.set(`${args[0]}:${args[1]}`, args[2] as CallHandler);
     } else {
       throw new Error(
-        "Invalid arguments: provide (method, handler) or (wildcardHandler)",
+        "Invalid arguments: provide (version, method, handler), (method, handler), or (wildcardHandler)",
       );
     }
   }
 
-  removeHandler(method?: string): void {
-    if (method) {
-      this._handlers.delete(method);
+  removeHandler(method?: string): void;
+  removeHandler(version: OCPPProtocol, method: string): void;
+  removeHandler(versionOrMethod?: string, method?: string): void {
+    if (versionOrMethod && method) {
+      // removeHandler(version, method) — version-specific
+      this._handlers.delete(`${versionOrMethod}:${method}`);
+    } else if (versionOrMethod) {
+      // removeHandler(method)
+      this._handlers.delete(versionOrMethod);
     } else {
+      // removeHandler() — remove wildcard
       this._wildcardHandler = null;
     }
   }
@@ -350,25 +410,37 @@ export class OCPPClient extends EventEmitter {
 
   // ─── Call ────────────────────────────────────────────────────
 
+  /** Call a known typed method. */
+  async call<M extends AllMethodNames<P>>(
+    method: M,
+    params: OCPPRequestType<P, M>,
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<P, M>>;
+
+  /** Call a known typed method with explicit response type. */
   async call<TResult = unknown>(
+    method: string,
+    params?: Record<string, unknown>,
+    options?: CallOptions,
+  ): Promise<TResult>;
+
+  async call(
     method: string,
     params: unknown = {},
     options: CallOptions = {},
-  ): Promise<TResult> {
+  ): Promise<unknown> {
     if (this._state !== OPEN) {
       throw new Error(`Cannot call: client is in state ${this._state}`);
     }
 
-    return this._callQueue.push(() =>
-      this._sendCall<TResult>(method, params, options),
-    );
+    return this._callQueue.push(() => this._sendCall(method, params, options));
   }
 
-  private async _sendCall<TResult>(
+  private async _sendCall(
     method: string,
     params: unknown,
     options: CallOptions,
-  ): Promise<TResult> {
+  ): Promise<unknown> {
     const msgId = randomUUID();
     const timeoutMs = options.timeoutMs ?? this._options.callTimeoutMs;
 
@@ -380,7 +452,7 @@ export class OCPPClient extends EventEmitter {
     const message: OCPPCall = [MessageType.CALL, msgId, method, params];
     const messageStr = JSON.stringify(message);
 
-    return new Promise<TResult>((resolve, reject) => {
+    return new Promise<unknown>((resolve, reject) => {
       const timeoutHandle = setTimeoutCb(() => {
         this._pendingCalls.delete(msgId);
         reject(
@@ -524,7 +596,11 @@ export class OCPPClient extends EventEmitter {
         );
       }
 
-      let handler = this._handlers.get(method);
+      // Try version-specific handler first, then fall back to generic
+      let handler = this._protocol
+        ? (this._handlers.get(`${this._protocol}:${method}`) ??
+          this._handlers.get(method))
+        : this._handlers.get(method);
       let isWildcard = false;
       if (!handler) {
         if (this._wildcardHandler) {
@@ -548,6 +624,7 @@ export class OCPPClient extends EventEmitter {
       const context: HandlerContext = {
         messageId: msgId,
         method,
+        protocol: this._protocol,
         params,
         signal: ac.signal,
       };
@@ -631,6 +708,22 @@ export class OCPPClient extends EventEmitter {
   private _onBadMessage(rawMessage: string, error: Error): void {
     this._badMessageCount++;
     this.emit("badMessage", { message: rawMessage, error });
+
+    // Best-effort: try to extract messageId from the raw string and respond
+    // with a proper CALLERROR so the sender isn't left waiting.
+    // Pattern matches OCPP-J CALL format: [2, "messageId", ...]
+    const match = rawMessage.match(/^\s*\[\s*2\s*,\s*"([^"]+)"/);
+    if (match?.[1] && this._ws) {
+      const errorResponse: OCPPCallError = [
+        MessageType.CALLERROR,
+        match[1],
+        "FormatViolation",
+        error.message || "Invalid message format",
+        {},
+      ];
+      this._ws.send(JSON.stringify(errorResponse));
+      this.emit("callError", errorResponse);
+    }
 
     if (this._badMessageCount >= this._options.maxBadMessages) {
       this.close({ code: 1002, reason: "Too many bad messages" }).catch(

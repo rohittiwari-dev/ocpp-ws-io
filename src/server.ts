@@ -22,6 +22,8 @@ import {
   type AuthAccept,
   type EventAdapterInterface,
   type ClientOptions,
+  type ServerEvents,
+  type TypedEventEmitter,
 } from "./types.js";
 
 /**
@@ -32,7 +34,7 @@ import {
  * - Profile 2: TLS + Basic Auth (HTTPS server)
  * - Profile 3: Mutual TLS (HTTPS server with requestCert)
  */
-export class OCPPServer extends EventEmitter {
+export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<ServerEvents>) {
   private _options: ServerOptions;
   private _authCallback: AuthCallback | null = null;
   private _clients = new Set<OCPPServerClient>();
@@ -208,7 +210,11 @@ export class OCPPServer extends EventEmitter {
     const serverProtocols = this._options.protocols ?? [];
     let selectedProtocol: string | undefined;
 
-    if (serverProtocols.length > 0 && protocols.size > 0) {
+    if (serverProtocols.length > 0) {
+      if (protocols.size === 0) {
+        abortHandshake(socket, 400, "Missing subprotocol");
+        return;
+      }
       selectedProtocol = serverProtocols.find((p) => protocols.has(p));
       if (!selectedProtocol) {
         abortHandshake(socket, 400, "No matching subprotocol");
@@ -305,6 +311,7 @@ export class OCPPServer extends EventEmitter {
         ws,
         handshake,
         session: {},
+        protocol: selectedProtocol,
       });
 
       this._clients.add(client);

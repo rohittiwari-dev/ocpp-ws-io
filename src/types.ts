@@ -1,7 +1,80 @@
 import type { IncomingMessage } from "node:http";
 import type { TLSSocket } from "node:tls";
 import type { Duplex } from "node:stream";
+import type { EventEmitter } from "node:events";
 import type { Validator } from "./validator.js";
+import type {
+  AllMethodNames,
+  OCPPRequestType,
+  OCPPResponseType,
+} from "./generated/index.js";
+
+// ─── Typed EventEmitter ──────────────────────────────────────────
+
+/**
+ * Utility type that overlays typed `.on()`, `.off()`, `.emit()` etc.
+ * on top of Node.js EventEmitter. This is the foundation for type-safe
+ * event handling throughout the library.
+ */
+export type TypedEventEmitter<TEvents extends Record<string, unknown[]>> = Omit<
+  EventEmitter,
+  | "on"
+  | "once"
+  | "off"
+  | "emit"
+  | "removeListener"
+  | "addListener"
+  | "removeAllListeners"
+> & {
+  on<K extends keyof TEvents & string>(
+    event: K,
+    listener: (...args: TEvents[K]) => void,
+  ): TypedEventEmitter<TEvents>;
+  on(
+    event: string,
+    listener: (...args: unknown[]) => void,
+  ): TypedEventEmitter<TEvents>;
+  once<K extends keyof TEvents & string>(
+    event: K,
+    listener: (...args: TEvents[K]) => void,
+  ): TypedEventEmitter<TEvents>;
+  once(
+    event: string,
+    listener: (...args: unknown[]) => void,
+  ): TypedEventEmitter<TEvents>;
+  off<K extends keyof TEvents & string>(
+    event: K,
+    listener: (...args: TEvents[K]) => void,
+  ): TypedEventEmitter<TEvents>;
+  off(
+    event: string,
+    listener: (...args: unknown[]) => void,
+  ): TypedEventEmitter<TEvents>;
+  emit<K extends keyof TEvents & string>(
+    event: K,
+    ...args: TEvents[K]
+  ): boolean;
+  emit(event: string, ...args: unknown[]): boolean;
+  addListener<K extends keyof TEvents & string>(
+    event: K,
+    listener: (...args: TEvents[K]) => void,
+  ): TypedEventEmitter<TEvents>;
+  addListener(
+    event: string,
+    listener: (...args: unknown[]) => void,
+  ): TypedEventEmitter<TEvents>;
+  removeListener<K extends keyof TEvents & string>(
+    event: K,
+    listener: (...args: TEvents[K]) => void,
+  ): TypedEventEmitter<TEvents>;
+  removeListener(
+    event: string,
+    listener: (...args: unknown[]) => void,
+  ): TypedEventEmitter<TEvents>;
+  removeAllListeners<K extends keyof TEvents & string>(
+    event?: K,
+  ): TypedEventEmitter<TEvents>;
+};
 
 // ─── OCPP Protocol ───────────────────────────────────────────────
 
@@ -76,9 +149,15 @@ export interface TLSOptions {
 // ─── Handler Types ───────────────────────────────────────────────
 
 export interface HandlerContext<T = unknown> {
+  /** Unique message ID */
   messageId: string;
+  /** OCPP method name (e.g. "BootNotification") */
   method: string;
+  /** Active OCPP protocol version (e.g. "ocpp1.6") */
+  protocol: string | undefined;
+  /** Request parameters */
   params: T;
+  /** Abort signal */
   signal: AbortSignal;
 }
 
@@ -259,33 +338,58 @@ export interface ClientEvents {
   ping: [];
   pong: [];
   strictValidationFailure: [{ message: unknown; error: Error }];
+  [key: string]: unknown[];
 }
 
 export interface ServerEvents<TSession = Record<string, unknown>> {
   client: [ServerClientInstance<TSession>];
   error: [Error];
   upgradeError: [{ error: Error; socket: Duplex }];
+  [key: string]: unknown[];
 }
 
 // Forward reference for ServerClient (resolved at runtime)
-export type ServerClientInstance<TSession = Record<string, unknown>> = {
+export type ServerClientInstance<
+  TSession = Record<string, unknown>,
+  P extends OCPPProtocol = OCPPProtocol,
+> = {
   readonly identity: string;
   readonly protocol: string | undefined;
   readonly session: TSession;
   readonly handshake: HandshakeInfo;
   readonly state: ConnectionState;
   close(options?: CloseOptions): Promise<{ code: number; reason: string }>;
-  handle<TParams, TResult>(
-    method: string,
-    handler: CallHandler<TParams, TResult>,
+  handle<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+    version: V,
+    method: M,
+    handler: (
+      context: HandlerContext<OCPPRequestType<V, M>>,
+    ) => OCPPResponseType<V, M> | Promise<OCPPResponseType<V, M>>,
+  ): void;
+  handle<M extends AllMethodNames<P>>(
+    method: M,
+    handler: (
+      context: HandlerContext<OCPPRequestType<P, M>>,
+    ) => OCPPResponseType<P, M> | Promise<OCPPResponseType<P, M>>,
   ): void;
   handle(handler: WildcardHandler): void;
-  call<TResult>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handle(
     method: string,
-    params?: unknown,
+    handler: (context: HandlerContext<Record<string, any>>) => any,
+  ): void;
+  call<M extends AllMethodNames<P>>(
+    method: M,
+    params: OCPPRequestType<P, M>,
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<P, M>>;
+  call<TResult = unknown>(
+    method: string,
+    params?: Record<string, unknown>,
     options?: CallOptions,
   ): Promise<TResult>;
   removeHandler(method?: string): void;
+  removeHandler(version: OCPPProtocol, method: string): void;
   removeAllHandlers(): void;
   reconfigure(options: Partial<ClientOptions>): void;
   on<K extends keyof ClientEvents>(

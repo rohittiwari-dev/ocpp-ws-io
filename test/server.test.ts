@@ -77,7 +77,7 @@ describe("OCPPServer", () => {
     port = getPort(httpServer);
 
     const clientReceived = new Promise<OCPPServerClient>((resolve) => {
-      server.on("client", (sc) => resolve(sc));
+      server.on("client", (sc) => resolve(sc as OCPPServerClient));
     });
 
     const client = new OCPPClient({
@@ -200,7 +200,7 @@ describe("OCPPServerClient", () => {
     port = getPort(httpServer);
 
     const clientReceived = new Promise<OCPPServerClient>((resolve) => {
-      server.on("client", (sc) => resolve(sc));
+      server.on("client", (sc) => resolve(sc as OCPPServerClient));
     });
 
     const client = new OCPPClient({
@@ -227,7 +227,7 @@ describe("OCPPServerClient", () => {
     port = getPort(httpServer);
 
     const clientReceived = new Promise<OCPPServerClient>((resolve) => {
-      server.on("client", (sc) => resolve(sc));
+      server.on("client", (sc) => resolve(sc as OCPPServerClient));
     });
 
     const client = new OCPPClient({
@@ -253,7 +253,7 @@ describe("OCPPServerClient", () => {
     port = getPort(httpServer);
 
     const clientReceived = new Promise<OCPPServerClient>((resolve) => {
-      server.on("client", (sc) => resolve(sc));
+      server.on("client", (sc) => resolve(sc as OCPPServerClient));
     });
 
     const client = new OCPPClient({
@@ -270,5 +270,105 @@ describe("OCPPServerClient", () => {
     expect(typeof sc.session).toBe("object");
 
     await client.close({ force: true });
+  });
+});
+
+describe("OCPPServer - handleUpgrade, reconfigure, adapter, signal", () => {
+  afterEach(async () => {
+    if (server) await server.close({ force: true }).catch(() => {});
+  });
+
+  it("should expose handleUpgrade getter for external HTTP servers", async () => {
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    const upgradeFn = server.handleUpgrade;
+    expect(typeof upgradeFn).toBe("function");
+  });
+
+  it("should allow handleUpgrade to be called from an external server", async () => {
+    const http = await import("node:http");
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+
+    // listen(0) initializes the internal WSS needed by handleUpgrade
+    await server.listen(0);
+
+    const externalServer = http.createServer();
+    await new Promise<void>((resolve) => externalServer.listen(0, resolve));
+    const addr = externalServer.address();
+    const externalPort = addr && typeof addr !== "string" ? addr.port : 0;
+
+    externalServer.on("upgrade", server.handleUpgrade);
+
+    const client = new OCPPClient({
+      identity: "CS_EXT",
+      endpoint: `ws://localhost:${externalPort}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+
+    const connected = new Promise<void>((resolve) => {
+      server.on("client", () => resolve());
+    });
+
+    await client.connect();
+    await connected;
+    expect(client.state).toBe(OCPPClient.OPEN);
+
+    await client.close({ force: true });
+    externalServer.close();
+  });
+
+  it("should reconfigure server options at runtime", async () => {
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    server.reconfigure({ callTimeoutMs: 15000 });
+    // Should not throw and should be usable
+    const httpServer = await server.listen(0);
+    expect(httpServer).toBeDefined();
+  });
+
+  it("should set and use a custom adapter", async () => {
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+    const publishedData: Array<{ channel: string; data: unknown }> = [];
+
+    const mockAdapter = {
+      connect: async () => {},
+      disconnect: async () => {},
+      publish: async (channel: string, data: unknown) => {
+        publishedData.push({ channel, data });
+      },
+      subscribe: async () => {},
+      unsubscribe: async () => {},
+      onMessage: () => {},
+    };
+
+    server.setAdapter(mockAdapter);
+    await server.publish("test-channel", { type: "broadcast" });
+
+    expect(publishedData).toEqual([
+      { channel: "test-channel", data: { type: "broadcast" } },
+    ]);
+  });
+
+  it("should no-op publish when no adapter is set", async () => {
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    // Should not throw even without an adapter
+    await expect(server.publish("channel", {})).resolves.toBeUndefined();
+  });
+
+  it("should close server via abort signal", async () => {
+    const ac = new AbortController();
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+    const httpServer = await server.listen(0, undefined, { signal: ac.signal });
+    expect(httpServer).toBeDefined();
+
+    // Aborting should close the HTTP server
+    ac.abort();
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Server should be closed — new connections should fail
+    const addr = httpServer.address();
+    expect(addr).toBeNull(); // address() returns null on closed server
   });
 });

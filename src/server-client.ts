@@ -22,6 +22,7 @@ export class OCPPServerClient extends OCPPClient {
       ws: WebSocket;
       handshake: HandshakeInfo;
       session: Record<string, unknown>;
+      protocol?: string;
     },
   ) {
     super(options);
@@ -33,7 +34,7 @@ export class OCPPServerClient extends OCPPClient {
     this._state = ConnectionState.OPEN;
     this._identity = this._options.identity;
     this._ws = context.ws;
-    this._protocol = context.ws.protocol;
+    this._protocol = context.protocol ?? context.ws.protocol;
 
     // Attach WebSocket handlers
     this._attachWebsocket(context.ws);
