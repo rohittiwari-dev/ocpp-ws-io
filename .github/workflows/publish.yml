@@ -36,10 +36,10 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        run: npm test
+        run: npm test -w packages/ocpp-ws-io
 
       - name: Build
-        run: npm run build
+        run: npm run build -w packages/ocpp-ws-io
 
       - name: Determine npm dist-tag
         id: dist-tag
@@ -59,9 +59,9 @@ jobs:
       - name: Sync version from git tag to package.json
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          npm version "$VERSION" --no-git-tag-version --allow-same-version -w packages/ocpp-ws-io
 
       - name: Publish to npm
-        run: npm publish --provenance --access public --tag ${{ steps.dist-tag.outputs.tag }}
+        run: npm publish --provenance --access public --tag ${{ steps.dist-tag.outputs.tag }} -w packages/ocpp-ws-io
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
