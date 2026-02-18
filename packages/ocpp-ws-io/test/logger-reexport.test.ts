@@ -4,25 +4,25 @@ import type { LoggerLike } from "../src/types.js";
 
 // ─── Re-export Tests ──────────────────────────────────────────────
 describe("ocpp-ws-io/logger re-export", () => {
-  it("should re-export createLogger from voltlog", async () => {
+  it("should re-export createLogger from voltlog-io", async () => {
     const mod = await import("../src/logger/index.js");
     expect(mod.createLogger).toBeDefined();
     expect(typeof mod.createLogger).toBe("function");
   });
 
-  it("should re-export consoleTransport from voltlog", async () => {
+  it("should re-export consoleTransport from voltlog-io", async () => {
     const mod = await import("../src/logger/index.js");
     expect(mod.consoleTransport).toBeDefined();
     expect(typeof mod.consoleTransport).toBe("function");
   });
 
-  it("should re-export prettyTransport from voltlog", async () => {
+  it("should re-export prettyTransport from voltlog-io", async () => {
     const mod = await import("../src/logger/index.js");
     expect(mod.prettyTransport).toBeDefined();
     expect(typeof mod.prettyTransport).toBe("function");
   });
 
-  it("should re-export middleware from voltlog", async () => {
+  it("should re-export middleware from voltlog-io", async () => {
     const mod = await import("../src/logger/index.js");
     expect(mod.redactionMiddleware).toBeDefined();
     expect(mod.samplingMiddleware).toBeDefined();
@@ -63,7 +63,7 @@ describe("initLogger utility", () => {
     expect(result).toBeNull();
   });
 
-  it("should return default voltlog logger when config is undefined", () => {
+  it("should return default voltlog-io logger when config is undefined", () => {
     const logger = initLogger(undefined);
     expect(logger).not.toBeNull();
     expect(typeof logger!.info).toBe("function");
@@ -132,7 +132,7 @@ describe("initLogger utility", () => {
   it("should respect custom level", () => {
     const logger = initLogger({ level: "ERROR" });
     expect(logger).not.toBeNull();
-    // Logger should exist and work — level filtering is internal to voltlog
+    // Logger should exist and work — level filtering is internal to voltlog-io
     expect(typeof logger!.error).toBe("function");
   });
 

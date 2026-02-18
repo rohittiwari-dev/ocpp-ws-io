@@ -10,4 +10,4 @@
  *
  * Instead of installing `voltlog` separately.
  */
-export * from "voltlog";
+export * from "voltlog-io";
