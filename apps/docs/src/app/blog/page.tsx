@@ -1,56 +1,70 @@
 import { blogSource } from "@/lib/blog";
 import Link from "next/link";
+import { Footer } from "@/components/landing/footer";
+import { BlogPostsList } from "@/components/blog/blog-posts-list";
+import { BookOpen, Code, Home, Shield } from "lucide-react";
 
 export default function BlogPage() {
-  const posts = [...blogSource.getPages()].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-  );
+  const posts = [...blogSource.getPages()]
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .map((p) => ({
+      url: p.url,
+      title: p.title,
+      description: p.description,
+      date: p.date,
+      image: p.image,
+      tags: p.tags,
+    }));
 
   return (
-    <main className="container max-w-[1100px] py-12 px-4 md:px-6">
-      <h1 className="mb-4 text-4xl font-bold text-fd-foreground">Blog</h1>
-      <p className="mb-8 text-lg text-fd-muted-foreground">
-        Latest updates and guides.
-      </p>
+    <>
+      <main className="container max-w-[1260px] mx-auto py-12 px-4 md:px-6">
+        {/* Header */}
+        <div className="mb-10">
+          <div className="mb-4 flex items-center gap-2 text-sm text-fd-muted-foreground">
+            <Link
+              href="/"
+              className="hover:text-fd-foreground transition-colors"
+            >
+              ← Back to Home
+            </Link>
+          </div>
+          <h1 className="mb-3 text-4xl font-bold text-fd-foreground">Blog</h1>
+          <p className="mb-6 text-lg text-fd-muted-foreground">
+            Latest updates, guides, and deep dives into OCPP and EV charging
+            infrastructure.
+          </p>
 
-      <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-        {posts.map((post) => (
-          <Link
-            key={post.url}
-            href={post.url}
-            className="flex flex-col overflow-hidden rounded-lg border bg-fd-card text-fd-card-foreground shadow-sm transition-all hover:shadow-md"
-          >
-            {post.image && (
-              <img
-                src={post.image}
-                alt={post.title}
-                className="aspect-video w-full object-cover"
-              />
-            )}
-            <div className="flex flex-1 flex-col p-6">
-              <h2 className="mb-2 text-xl font-semibold">{post.title}</h2>
-              <p className="mb-4 text-sm text-fd-muted-foreground line-clamp-3">
-                {post.description}
-              </p>
-              <div className="mt-auto flex items-center text-xs text-fd-muted-foreground">
-                <span>{new Date(post.date).toLocaleDateString()}</span>
-                {post.tags && (
-                  <div className="ml-auto flex gap-2">
-                    {post.tags.slice(0, 2).map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-full bg-fd-primary/10 px-2.5 py-0.5 text-fd-primary font-medium"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </Link>
-        ))}
-      </div>
-    </main>
+          {/* Navigation Pills */}
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/docs"
+              className="inline-flex items-center gap-2 rounded-full border border-fd-border bg-fd-card/50 px-4 py-2 text-sm font-medium text-fd-muted-foreground transition-all hover:bg-fd-card hover:text-fd-foreground hover:shadow-sm"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              Documentation
+            </Link>
+            <Link
+              href="/docs/quick-start"
+              className="inline-flex items-center gap-2 rounded-full border border-fd-border bg-fd-card/50 px-4 py-2 text-sm font-medium text-fd-muted-foreground transition-all hover:bg-fd-card hover:text-fd-foreground hover:shadow-sm"
+            >
+              <Code className="h-3.5 w-3.5" />
+              Quick Start
+            </Link>
+            <Link
+              href="/docs/security"
+              className="inline-flex items-center gap-2 rounded-full border border-fd-border bg-fd-card/50 px-4 py-2 text-sm font-medium text-fd-muted-foreground transition-all hover:bg-fd-card hover:text-fd-foreground hover:shadow-sm"
+            >
+              <Shield className="h-3.5 w-3.5" />
+              Security Guide
+            </Link>
+          </div>
+        </div>
+
+        {/* Interactive Search + Posts */}
+        <BlogPostsList posts={posts} />
+      </main>
+      <Footer />
+    </>
   );
 }

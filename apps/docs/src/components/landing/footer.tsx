@@ -6,7 +6,7 @@ import { Github } from "lucide-react";
 export function Footer() {
   return (
     <footer className="border-t border-fd-border py-12 text-fd-muted-foreground">
-      <div className="container mx-auto flex flex-col items-center justify-between gap-6 px-4 md:flex-row">
+      <div className="container max-w-[1400px] mx-auto flex flex-col items-center justify-between gap-6 px-4 md:flex-row">
         <div className="flex flex-col items-center gap-2 md:items-start">
           <p className="text-sm font-medium text-fd-foreground">ocpp-ws-io</p>
           <p className="text-xs">
