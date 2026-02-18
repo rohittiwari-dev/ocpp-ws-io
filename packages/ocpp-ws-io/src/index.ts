@@ -45,6 +45,7 @@ export {
   MessageType,
   NOREPLY,
   type OCPPProtocol,
+  type AnyOCPPProtocol,
   type OCPPCall,
   type OCPPCallResult,
   type OCPPCallError,
@@ -71,6 +72,7 @@ export {
 // ─── Generated OCPP Protocol Types ──────────────────────────────
 export type {
   OCPPMethodMap,
+  OCPPProtocolKey,
   AllMethodNames,
   OCPPRequestType,
   OCPPResponseType,

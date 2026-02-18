@@ -1,0 +1,162 @@
+---
+title: Type Generation
+description: Auto-generated TypeScript types for OCPP 1.6, 2.0.1, and 2.1.
+---
+
+`ocpp-ws-io` ships with **auto-generated TypeScript types** for all OCPP methods across 1.6, 2.0.1, and 2.1 — generated directly from the official OCPP JSON schemas.
+
+You don't need to generate anything yourself. All types are included in the package and ready to use.
+
+## What's Included
+
+Every OCPP method has typed request and response interfaces:
+
+- **OCPP 1.6**: `Authorize`, `BootNotification`, `Heartbeat`, `MeterValues`, `StartTransaction`, `StopTransaction`, `Reset`, and all others
+- **OCPP 2.0.1**: `BootNotification`, `TransactionEvent`, `StatusNotification`, `RequestStartTransaction`, and all others
+- **OCPP 2.1**: Full method coverage including the latest spec additions
+
+Each method is mapped in `OCPPMethodMap` — the single interface that powers all type inference for `handle()`, `call()`, and `protocols`.
+
+## Type Utilities
+
+```typescript
+import type {
+  OCPPProtocol, // "ocpp1.6" | "ocpp2.0.1" | "ocpp2.1"
+  OCPPProtocolKey, // keyof OCPPMethodMap — extensible via module augmentation
+  OCPPMethodMap, // { "ocpp1.6": OCPP16Methods; "ocpp2.0.1": ...; "ocpp2.1": ... }
+  AllMethodNames, // Union of all method names for a given protocol
+  OCPPRequestType, // Request type for a specific protocol + method
+  OCPPResponseType, // Response type for a specific protocol + method
+} from "ocpp-ws-io";
+```
+
+### Examples
+
+```typescript
+// Get all method names for OCPP 1.6
+type Methods16 = AllMethodNames<"ocpp1.6">;
+// "Authorize" | "BootNotification" | "ChangeAvailability" | ...
+
+// Get the request type for BootNotification
+type BootReq = OCPPRequestType<"ocpp1.6", "BootNotification">;
+// { chargePointVendor: string; chargePointModel: string; ... }
+
+// Get the response type
+type BootRes = OCPPResponseType<"ocpp1.6", "BootNotification">;
+// { status: "Accepted" | "Pending" | "Rejected"; currentTime: string; interval: number }
+```
+
+## Typed Protocols
+
+The `protocols` field on both `OCPPClient` and `OCPPServer` is typed as `OCPPProtocol[]`, giving you autocomplete and compile-time safety:
+
+```typescript
+const client = new OCPPClient({
+  endpoint: "ws://localhost:3000",
+  identity: "CP001",
+  protocols: ["ocpp1.6", "ocpp2.0.1"], // ✅ Autocomplete for all valid protocols
+});
+
+// ❌ TypeScript error — "invalid" is not a valid protocol
+const bad = new OCPPClient({
+  protocols: ["invalid"],
+});
+```
+
+## How It All Fits Together
+
+The type system flows through a single interface chain:
+
+```
+OCPPMethodMap → OCPPProtocolKey → OCPPProtocol → handle() / call() / protocols
+```
+
+When you write `handle("ocpp1.6", "BootNotification", ...)`, TypeScript:
+
+1. Looks up `"ocpp1.6"` in `OCPPMethodMap`
+2. Finds `OCPP16Methods`
+3. Looks up `"BootNotification"` in `OCPP16Methods`
+4. Infers `request` and `response` types for your handler
+
+All of this happens at compile-time — zero runtime overhead.
+
+## Extending with Custom Protocols
+
+Since `OCPPMethodMap` is a TypeScript **interface**, you can extend it with your own protocols using [module augmentation](https://www.typescriptlang.org/docs/handbook/declaration-merging.html#module-augmentation). This gives your custom protocols the same type-safe experience as the built-in OCPP protocols.
+
+### Step 1: Define Your Method Types
+
+```typescript
+// src/vendor-types.ts
+export interface MyVendorMethods {
+  VendorAction: {
+    request: { data: string; priority: number };
+    response: { status: "Accepted" | "Rejected" };
+  };
+}
+```
+
+### Step 2: Augment OCPPMethodMap
+
+```typescript
+// src/ocpp-extensions.d.ts
+import type { MyVendorMethods } from "./vendor-types";
+
+declare module "ocpp-ws-io" {
+  interface OCPPMethodMap {
+    "vendor-proto": MyVendorMethods;
+  }
+}
+```
+
+### Step 3: Use — Fully Typed
+
+```typescript
+import { OCPPClient, createValidator } from "ocpp-ws-io";
+import vendorSchemas from "./vendor-schemas.json";
+
+const vendorValidator = createValidator("vendor-proto", vendorSchemas);
+
+const client = new OCPPClient({
+  endpoint: "ws://localhost:3000",
+  identity: "CP001",
+  protocols: ["ocpp1.6", "vendor-proto"], // ✅ Autocompletes
+  strictMode: true,
+  strictModeValidators: [vendorValidator], // Runtime validation
+});
+
+// ✅ Fully typed handle
+client.handle("vendor-proto", "VendorAction", ({ params }) => {
+  console.log(params.data); // string
+  console.log(params.priority); // number
+  return { status: "Accepted" }; // typed
+});
+
+// ✅ Fully typed call
+const res = await client.call("vendor-proto", "VendorAction", {
+  data: "hello",
+  priority: 1,
+});
+console.log(res.status); // "Accepted" | "Rejected"
+```
+
+### What This Gives You
+
+| Feature                       | Without Augmentation                  | With Augmentation              |
+| ----------------------------- | ------------------------------------- | ------------------------------ |
+| `protocols`                   | `"ocpp1.6"` `"ocpp2.0.1"` `"ocpp2.1"` | + `"vendor-proto"`             |
+| `handle("vendor-proto", ...)` | No autocomplete                       | ✅ Method names + typed params |
+| `call("vendor-proto", ...)`   | No autocomplete                       | ✅ Typed params + response     |
+| Runtime validation            | ✅ via `strictModeValidators`         | ✅ Same                        |
+
+> **Note:** Module augmentation only affects the **type system** (compile-time). You still need a runtime `Validator` via `strictModeValidators` for actual schema validation.
+
+## For Contributors: Re-generating Types
+
+If you are contributing to `ocpp-ws-io` and need to regenerate types from updated JSON schemas:
+
+```bash
+npm run generate
+```
+
+This reads schemas from `src/schemas` and outputs to `src/generated/`. You should not need to do this unless you are modifying the OCPP schemas themselves.

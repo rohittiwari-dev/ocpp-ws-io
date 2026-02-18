@@ -11,6 +11,8 @@ You need to allow `ocpp-ws-io` to access your Redis client. The adapter is compa
 
 ## Usage
 
+### Usage with `ioredis` (Recommended)
+
 ```typescript
 import { OCPPServer } from "ocpp-ws-io";
 import { RedisAdapter } from "ocpp-ws-io/adapters/redis";
@@ -19,20 +21,44 @@ import Redis from "ioredis";
 const server = new OCPPServer({ protocols: ["ocpp2.0.1"] });
 
 // Create two clients: one for publishing, one for subscribing
-const pub = new Redis();
-const sub = new Redis();
+const pub = new Redis(process.env.REDIS_URL);
+const sub = new Redis(process.env.REDIS_URL);
 
 server.setAdapter(
   new RedisAdapter({
     pubClient: pub,
     subClient: sub,
-    prefix: "ocpp:", // optional, default: 'ocpp-ws-io:'
+    prefix: "ocpp-cluster:", // Optional custom prefix
   }),
 );
 
 server.on("client", (client) => {
   console.log(`${client.identity} connected`);
 });
+
+await server.listen(3000);
+```
+
+### Usage with `node-redis`
+
+```typescript
+import { createClient } from "redis";
+import { OCPPServer } from "ocpp-ws-io";
+import { RedisAdapter } from "ocpp-ws-io/adapters/redis";
+
+const server = new OCPPServer({ protocols: ["ocpp2.0.1"] });
+
+const pub = createClient({ url: process.env.REDIS_URL });
+const sub = pub.duplicate();
+
+await Promise.all([pub.connect(), sub.connect()]);
+
+const adapter = new RedisAdapter({
+  pubClient: pub,
+  subClient: sub,
+});
+
+server.setAdapter(adapter);
 
 await server.listen(3000);
 ```

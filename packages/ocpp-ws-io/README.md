@@ -11,8 +11,10 @@ Built with TypeScript from the ground up — supports OCPP 1.6, 2.0.1, and 2.1 w
 - 📐 **Strict Mode** — Optional schema validation using built-in OCPP JSON schemas
 - 🔁 **Auto-Reconnect** — Exponential backoff with configurable limits
 - 🧩 **Framework Agnostic** — Use standalone, or attach to Express, Fastify, NestJS, etc.
-- 📡 **Clustering** — Optional Redis adapter for multi-instance deployments
+- 🧩 **Framework Agnostic** — Use standalone, or attach to Express, Fastify, NestJS, etc.
+- 📡 **Clustering** — Optional Redis adapter (supports `ioredis` & `node-redis`)
 - 🎯 **Type-Safe** — Auto-generated types for all OCPP 1.6, 2.0.1 & 2.1 methods with full request/response inference
+- 🛠️ **Schema-to-TS** — Built-in script to re-generate types from official JSON schemas
 - 🔀 **Version-Aware Handlers** — Register handlers per OCPP version with typed params, or use generic handlers with protocol context
 
 ## Installation
@@ -398,10 +400,11 @@ client.removeAllHandlers();
 ```typescript
 import type {
   OCPPProtocol, // "ocpp1.6" | "ocpp2.0.1" | "ocpp2.1"
+  OCPPProtocolKey, // keyof OCPPMethodMap — extensible via module augmentation
+  OCPPMethodMap, // Full method map interface
   AllMethodNames, // All method names for a given protocol
   OCPPRequestType, // Request type for a method, e.g. OCPPRequestType<"ocpp1.6", "Reset">
   OCPPResponseType, // Response type for a method
-  OCPPMethodMap, // Full method map for a protocol
 } from "ocpp-ws-io";
 
 // Example: Get all method names for OCPP 1.6
@@ -448,13 +451,80 @@ Custom validators:
 import { createValidator } from "ocpp-ws-io";
 import myCustomSchemas from "./my-schemas.json";
 
-const myValidator = createValidator("custom-protocol", myCustomSchemas);
+const myValidator = createValidator("vendor-proto", myCustomSchemas);
 
 const client = new OCPPClient({
-  protocols: ["custom-protocol"],
+  protocols: ["ocpp1.6", "vendor-proto"],
   strictMode: true,
-  strictModeValidators: [myValidator],
+  strictModeValidators: [myValidator], // adds to built-in validators
 });
+```
+
+> **Tip:** Combine custom validators with module augmentation to get both runtime validation **and** compile-time type safety. See [Extending with Custom Protocols](#extending-with-custom-protocols) below.
+
+---
+
+## Extending with Custom Protocols
+
+`OCPPMethodMap` is a TypeScript **interface**, so you can extend it with your own protocols using [module augmentation](https://www.typescriptlang.org/docs/handbook/declaration-merging.html#module-augmentation). This gives you full type safety for custom/vendor-specific protocols in `handle()`, `call()`, and `protocols`.
+
+### Step 1: Define Your Method Types
+
+```typescript
+// src/vendor-types.ts
+export interface MyVendorMethods {
+  VendorAction: {
+    request: { data: string; priority: number };
+    response: { status: "Accepted" | "Rejected" };
+  };
+  VendorQuery: {
+    request: { query: string };
+    response: { results: string[] };
+  };
+}
+```
+
+### Step 2: Augment OCPPMethodMap
+
+```typescript
+// src/ocpp-extensions.d.ts
+import type { MyVendorMethods } from "./vendor-types";
+
+declare module "ocpp-ws-io" {
+  interface OCPPMethodMap {
+    "vendor-proto": MyVendorMethods;
+  }
+}
+```
+
+### Step 3: Use Everywhere — Fully Typed
+
+```typescript
+import { OCPPClient, createValidator } from "ocpp-ws-io";
+import vendorSchemas from "./vendor-schemas.json";
+
+const vendorValidator = createValidator("vendor-proto", vendorSchemas);
+
+const client = new OCPPClient({
+  endpoint: "ws://localhost:3000",
+  identity: "CP001",
+  protocols: ["ocpp1.6", "vendor-proto"], // ✅ autocompletes
+  strictMode: true,
+  strictModeValidators: [vendorValidator],
+});
+
+// ✅ Fully typed handle
+client.handle("vendor-proto", "VendorAction", ({ params }) => {
+  console.log(params.data); // string
+  console.log(params.priority); // number
+  return { status: "Accepted" }; // typed response
+});
+
+// ✅ Fully typed call
+const res = await client.call("vendor-proto", "VendorQuery", {
+  query: "status",
+});
+console.log(res.results); // string[]
 ```
 
 ---
@@ -472,9 +542,9 @@ const server = new OCPPServer({ protocols: ["ocpp2.0.1"] });
 
 server.setAdapter(
   new RedisAdapter({
-    pubClient: new Redis(),
-    subClient: new Redis(),
-    prefix: "ocpp:", // optional, default: 'ocpp-ws-io:'
+    pubClient: new Redis(process.env.REDIS_URL),
+    subClient: new Redis(process.env.REDIS_URL),
+    prefix: "ocpp-cluster:", // optional
   }),
 );
 
@@ -485,18 +555,25 @@ server.on("client", (client) => {
 await server.listen(3000);
 ```
 
-The adapter is generic — it works with `ioredis`, `redis` (node-redis), or any client implementing the `RedisLikeClient` interface.
+The adapter automatically detects and works with both `ioredis` and `node-redis` (v4+).
 
 ```typescript
 // With node-redis
 import { createClient } from "redis";
 
-const pub = createClient();
+const pub = createClient({ url: process.env.REDIS_URL });
 const sub = pub.duplicate();
-await pub.connect();
-await sub.connect();
+await Promise.all([pub.connect(), sub.connect()]);
 
 server.setAdapter(new RedisAdapter({ pubClient: pub, subClient: sub }));
+```
+
+## Type Generation
+
+Re-generate TypeScript definitions from the latest OCPP JSON schemas:
+
+```bash
+npm run generate
 ```
 
 ---
@@ -521,7 +598,7 @@ const client = new OCPPClient(options: ClientOptions);
 | --------------------------- | ------------------------ | ---------- | -------------------------------------------- |
 | `identity`                  | `string`                 | _required_ | Charging station ID                          |
 | `endpoint`                  | `string`                 | _required_ | WebSocket URL (`ws://` or `wss://`)          |
-| `protocols`                 | `string[]`               | `[]`       | OCPP subprotocols to negotiate               |
+| `protocols`                 | `OCPPProtocol[]`         | `[]`       | OCPP subprotocols to negotiate               |
 | `securityProfile`           | `SecurityProfile`        | `NONE`     | Security profile (0–3)                       |
 | `password`                  | `string \| Buffer`       | —          | Password for Basic Auth (Profile 1 & 2)      |
 | `tls`                       | `TLSOptions`             | —          | TLS/SSL options (Profile 2 & 3)              |
@@ -683,7 +760,7 @@ const server = new OCPPServer(options?: ServerOptions);
 
 | Option                      | Type                  | Default    | Description                               |
 | --------------------------- | --------------------- | ---------- | ----------------------------------------- |
-| `protocols`                 | `string[]`            | `[]`       | Accepted OCPP subprotocols                |
+| `protocols`                 | `OCPPProtocol[]`      | `[]`       | Accepted OCPP subprotocols                |
 | `securityProfile`           | `SecurityProfile`     | `NONE`     | Security profile for auto-created servers |
 | `tls`                       | `TLSOptions`          | —          | TLS options (Profile 2 & 3)               |
 | `callTimeoutMs`             | `number`              | `30000`    | Inherited by server clients               |
@@ -886,10 +963,11 @@ All types are exported for use in your application:
 import type {
   // OCPP protocol types (auto-generated)
   OCPPProtocol, // "ocpp1.6" | "ocpp2.0.1" | "ocpp2.1"
+  OCPPProtocolKey, // keyof OCPPMethodMap — extensible via module augmentation
   AllMethodNames, // Union of method names for a protocol
   OCPPRequestType, // Request type for a method + protocol
   OCPPResponseType, // Response type for a method + protocol
-  OCPPMethodMap, // Full method map for a protocol
+  OCPPMethodMap, // Full method map interface
 
   // OCPP message types
   OCPPCall,

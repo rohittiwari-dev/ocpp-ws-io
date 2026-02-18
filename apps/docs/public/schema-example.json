@@ -1,0 +1,26 @@
+[
+  {
+    "$id": "urn:CustomMethod.req",
+    "type": "object",
+    "properties": {
+      "customField": {
+        "type": "string",
+        "enum": ["Value1", "Value2"]
+      }
+    },
+    "required": ["customField"],
+    "additionalProperties": false
+  },
+  {
+    "$id": "urn:CustomMethod.conf",
+    "type": "object",
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": ["Accepted", "Rejected"]
+      }
+    },
+    "required": ["status"],
+    "additionalProperties": false
+  }
+]

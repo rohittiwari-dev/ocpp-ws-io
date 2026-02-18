@@ -7,6 +7,31 @@ description: Using strict mode validation and generated TypeScript types.
 
 `ocpp-ws-io` includes auto-generated TypeScript types for **all** OCPP methods across 1.6, 2.0.1, and 2.1.
 
+### Typed Protocols
+
+The `protocols` field accepts only valid OCPP protocol strings, giving you autocomplete and compile-time safety:
+
+```typescript
+const client = new OCPPClient({
+  endpoint: "ws://localhost:3000",
+  identity: "CP001",
+  protocols: ["ocpp1.6", "ocpp2.0.1"], // ✅ Autocomplete: "ocpp1.6" | "ocpp2.0.1" | "ocpp2.1"
+});
+
+// ❌ TypeScript error — "invalid" is not a valid protocol
+const bad = new OCPPClient({
+  protocols: ["invalid"],
+});
+```
+
+Same for the server:
+
+```typescript
+const server = new OCPPServer({
+  protocols: ["ocpp1.6", "ocpp2.0.1"], // ✅ Typed
+});
+```
+
 ### Version-Aware `handle()` and `call()`
 
 When you call `handle()` or `call()` with a known method name, both request params and response types are inferred automatically.
@@ -38,6 +63,8 @@ You can import generated types directly for use in your application:
 ```typescript
 import type {
   OCPPProtocol, // "ocpp1.6" | "ocpp2.0.1" | "ocpp2.1"
+  OCPPProtocolKey, // keyof OCPPMethodMap — extensible
+  OCPPMethodMap, // Full method map interface
   AllMethodNames, // All method names for a given protocol
   OCPPRequestType, // Request type for a method
   OCPPResponseType, // Response type for a method
@@ -47,6 +74,40 @@ import type {
 type BootReq = OCPPRequestType<"ocpp1.6", "BootNotification">;
 // Result: { chargePointVendor: string; chargePointModel: string; ... }
 ```
+
+### Extending with Custom Protocols
+
+`OCPPMethodMap` is a TypeScript **interface**, which means you can extend it via [module augmentation](https://www.typescriptlang.org/docs/handbook/declaration-merging.html#module-augmentation) to add typed support for custom/vendor-specific protocols:
+
+```typescript
+// 1. Define your method types
+interface MyVendorMethods {
+  VendorAction: {
+    request: { data: string };
+    response: { status: "Accepted" | "Rejected" };
+  };
+}
+
+// 2. Augment the module
+declare module "ocpp-ws-io" {
+  interface OCPPMethodMap {
+    "vendor-proto": MyVendorMethods;
+  }
+}
+
+// 3. Now everything is typed:
+client.handle("vendor-proto", "VendorAction", ({ params }) => {
+  params.data; // ✅ string
+  return { status: "Accepted" }; // ✅ typed
+});
+
+const res = await client.call("vendor-proto", "VendorAction", {
+  data: "hello",
+});
+res.status; // ✅ "Accepted" | "Rejected"
+```
+
+See the [Type Generation](/docs/type-generation) page for a full step-by-step guide.
 
 ## Strict Mode (Schema Validation)
 
@@ -80,17 +141,19 @@ const client = new OCPPClient({
 
 ### Custom Validators
 
-You can supply your own validators if you are using custom protocols or modified schemas:
+You can supply your own validators for custom protocols or modified schemas. These are **add-ons** to the built-in validators — they don't replace them:
 
 ```typescript
 import { createValidator } from "ocpp-ws-io";
 import myCustomSchemas from "./my-schemas.json";
 
-const myValidator = createValidator("custom-protocol", myCustomSchemas);
+const myValidator = createValidator("vendor-proto", myCustomSchemas);
 
 const client = new OCPPClient({
-  protocols: ["custom-protocol"],
+  protocols: ["ocpp1.6", "vendor-proto"],
   strictMode: true,
-  strictModeValidators: [myValidator],
+  strictModeValidators: [myValidator], // adds to built-in validators
 });
 ```
+
+> **Tip:** Combine custom validators with [module augmentation](#extending-with-custom-protocols) to get both runtime validation **and** compile-time type safety for your custom protocols.
