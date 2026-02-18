@@ -272,8 +272,19 @@ export interface LoggerLike {
 export interface LoggingConfig {
   /** Enable/disable logging (default: true) */
   enabled?: boolean;
-  /** Enable OCPP exchange log prettification (default: false) */
+  /**
+   * Enable OCPP exchange logging (default: false).
+   * Adds `direction: 'IN' | 'OUT'` to OCPP message logs.
+   * When combined with `prettify`, renders styled exchange lines:
+   * `⚡ CP-101  →  BootNotification  [IN]`
+   */
   exchangeLog?: boolean;
+  /**
+   * Enable pretty-printed colored output (default: false).
+   * Uses voltlog's prettyTransport with icons, colors, and timestamps.
+   * Without this, logs are structured JSON.
+   */
+  prettify?: boolean;
   /** Log level for the default voltlog logger (default: 'INFO') */
   level?: string;
   /** Custom logger — replaces the default voltlog entirely */

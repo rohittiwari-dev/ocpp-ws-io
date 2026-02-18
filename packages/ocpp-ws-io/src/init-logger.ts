@@ -36,9 +36,9 @@ export function initLogger(
     | "WARN"
     | "ERROR"
     | "FATAL";
-  const useExchangeLog = config?.exchangeLog ?? false;
+  const usePrettify = config?.prettify ?? false;
 
-  const transports = useExchangeLog
+  const transports = usePrettify
     ? [prettyTransport({ level })]
     : [consoleTransport({ level })];
 
