@@ -1,16 +1,34 @@
-import { createId } from "@paralleldrive/cuid2";
-import { EventEmitter } from "node:events";
-import { setTimeout as setTimeoutCb } from "node:timers";
-import WebSocket from "ws";
+/// <reference lib="dom" />
 
+/**
+ * BrowserOCPPClient — A full-featured browser WebSocket RPC client for OCPP.
+ *
+ * Feature-complete port of OCPPClient for browser environments:
+ * - Typed event emitter (no Node.js EventEmitter dependency)
+ * - Auto-reconnection with exponential backoff + jitter
+ * - Concurrency-limited call queue
+ * - Version-specific & wildcard handlers
+ * - Abort signal support
+ * - Bad message handling
+ * - NOREPLY support
+ */
+import { createId } from "@paralleldrive/cuid2";
+import { EventEmitter } from "./emitter.js";
+import { Queue } from "./queue.js";
+import {
+  TimeoutError,
+  RPCGenericError,
+  RPCMessageTypeNotSupportedError,
+  type RPCError,
+} from "./errors.js";
+import { createRPCError, getErrorPlainObject } from "./util.js";
 import {
   ConnectionState,
-  SecurityProfile,
   MessageType,
   NOREPLY,
-  type ClientOptions,
-  type CloseOptions,
+  type OCPPProtocol,
   type CallOptions,
+  type CloseOptions,
   type CallHandler,
   type WildcardHandler,
   type HandlerContext,
@@ -18,65 +36,56 @@ import {
   type OCPPCallResult,
   type OCPPCallError,
   type OCPPMessage,
-  type ClientEvents,
-  type TypedEventEmitter,
-  type OCPPProtocol,
+  type AllMethodNames,
+  type OCPPRequestType,
+  type OCPPResponseType,
+  type BrowserClientOptions,
 } from "./types.js";
-import type {
-  AllMethodNames,
-  OCPPRequestType,
-  OCPPResponseType,
-} from "./generated/index.js";
-import {
-  TimeoutError,
-  UnexpectedHttpResponse,
-  RPCGenericError,
-  RPCMessageTypeNotSupportedError,
-  type RPCError,
-} from "./errors.js";
-import {
-  createRPCError,
-  getErrorPlainObject,
-  getPackageIdent,
-} from "./util.js";
-import { Queue } from "./queue.js";
-import type { Validator } from "./validator.js";
-import { standardValidators } from "./standard-validators.js";
 
 const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
 
 interface PendingCall {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
-  timeoutHandle: ReturnType<typeof setTimeoutCb>;
+  timeoutHandle: ReturnType<typeof setTimeout>;
   abortHandler?: () => void;
 }
 
 /**
- * OCPPClient — A typed WebSocket RPC client for OCPP communication.
+ * BrowserOCPPClient — A typed WebSocket RPC client for OCPP in browser environments.
  *
- * Supports all 3 OCPP Security Profiles:
- * - Profile 1: Basic Auth over unsecured WS
- * - Profile 2: TLS + Basic Auth
- * - Profile 3: Mutual TLS (client certificates)
+ * API-compatible with `OCPPClient` from `ocpp-ws-io`, adapted for the browser
+ * WebSocket API (no Node.js dependencies).
+ *
+ * @example
+ * ```ts
+ * import { BrowserOCPPClient } from "ocpp-ws-io/browser";
+ *
+ * const client = new BrowserOCPPClient({
+ *   identity: "CP001",
+ *   endpoint: "wss://central.example.com/ocpp",
+ *   protocols: ["ocpp1.6"],
+ * });
+ *
+ * client.on("open", () => console.log("Connected!"));
+ * await client.connect();
+ * ```
  */
-export class OCPPClient<
+export class BrowserOCPPClient<
   P extends OCPPProtocol = OCPPProtocol,
-> extends (EventEmitter as new () => TypedEventEmitter<ClientEvents>) {
+> extends EventEmitter {
   // Static connection states
   static readonly CONNECTING = CONNECTING;
   static readonly OPEN = OPEN;
   static readonly CLOSING = CLOSING;
   static readonly CLOSED = CLOSED;
 
-  protected _options: Required<
+  private _options: Required<
     Pick<
-      ClientOptions,
+      BrowserClientOptions,
       | "identity"
       | "endpoint"
       | "callTimeoutMs"
-      | "pingIntervalMs"
-      | "deferPingsOnActivity"
       | "callConcurrency"
       | "maxBadMessages"
       | "respondWithDetailedErrors"
@@ -86,30 +95,26 @@ export class OCPPClient<
       | "backoffMax"
     >
   > &
-    ClientOptions;
+    BrowserClientOptions;
 
-  protected _state: ConnectionState = CLOSED;
-  protected _ws: WebSocket | null = null;
-  protected _protocol: string | undefined;
-  protected _identity: string;
+  private _state: (typeof ConnectionState)[keyof typeof ConnectionState] =
+    CLOSED;
+  private _ws: WebSocket | null = null;
+  private _protocol: string | undefined;
+  private _identity: string;
 
   private _handlers = new Map<string, CallHandler>();
   private _wildcardHandler: WildcardHandler | null = null;
   private _pendingCalls = new Map<string, PendingCall>();
   private _pendingResponses = new Set<string>();
   private _callQueue: Queue;
-  private _pingTimer: ReturnType<typeof setTimeoutCb> | null = null;
   private _closePromise: Promise<{ code: number; reason: string }> | null =
     null;
   private _reconnectAttempt = 0;
-  private _reconnectTimer: ReturnType<typeof setTimeoutCb> | null = null;
+  private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _badMessageCount = 0;
-  private _lastActivity = 0;
-  private _validators: Validator[] = [];
-  private _strictProtocols: string[] | null = null;
-  protected _handshake: unknown = null;
 
-  constructor(options: ClientOptions) {
+  constructor(options: BrowserClientOptions) {
     super();
 
     if (!options.identity) {
@@ -124,21 +129,13 @@ export class OCPPClient<
       backoffMin: 1000,
       backoffMax: 30000,
       callTimeoutMs: 30000,
-      pingIntervalMs: 30000,
-      deferPingsOnActivity: false,
       callConcurrency: 1,
       maxBadMessages: Infinity,
       respondWithDetailedErrors: false,
-      securityProfile: SecurityProfile.NONE,
       ...options,
     };
 
     this._callQueue = new Queue(this._options.callConcurrency);
-
-    // Set up strict mode validators
-    if (this._options.strictMode) {
-      this._setupValidators();
-    }
   }
 
   // ─── Getters ─────────────────────────────────────────────────
@@ -149,16 +146,13 @@ export class OCPPClient<
   get protocol(): string | undefined {
     return this._protocol;
   }
-  get state(): ConnectionState {
+  get state(): (typeof ConnectionState)[keyof typeof ConnectionState] {
     return this._state;
-  }
-  get securityProfile(): SecurityProfile {
-    return this._options.securityProfile ?? SecurityProfile.NONE;
   }
 
   // ─── Connect ─────────────────────────────────────────────────
 
-  async connect(): Promise<{ response: import("node:http").IncomingMessage }> {
+  async connect(): Promise<void> {
     if (this._state !== CLOSED) {
       throw new Error(`Cannot connect: client is in state ${this._state}`);
     }
@@ -169,74 +163,58 @@ export class OCPPClient<
     return this._connectInternal();
   }
 
-  private async _connectInternal(): Promise<{
-    response: import("node:http").IncomingMessage;
-  }> {
-    return new Promise((resolve, reject) => {
+  private async _connectInternal(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
       const endpoint = this._buildEndpoint();
-      const wsOptions = this._buildWsOptions();
 
       this.emit("connecting", { url: endpoint });
 
-      const ws = new WebSocket(
-        endpoint,
-        this._options.protocols ?? [],
-        wsOptions,
-      );
+      let ws: WebSocket;
+      try {
+        ws = this._options.protocols?.length
+          ? new WebSocket(endpoint, this._options.protocols)
+          : new WebSocket(endpoint);
+      } catch (err) {
+        this._state = CLOSED;
+        reject(err);
+        return;
+      }
       this._ws = ws;
 
-      const onOpen = () => {
+      const onOpen = (event: Event) => {
         cleanup();
         this._state = OPEN;
-        this._protocol = ws.protocol;
+        this._protocol = ws.protocol || undefined;
         this._badMessageCount = 0;
         this._attachWebsocket(ws);
-        this._startPing();
-
-        // Create a minimal response object
-        const response = (
-          ws as unknown as {
-            _req?: { res?: import("node:http").IncomingMessage };
-          }
-        )._req?.res;
-        const result = {
-          response: response as import("node:http").IncomingMessage,
-        };
-        this.emit("open", result);
-        resolve(result);
+        this.emit("open", event);
+        resolve();
       };
 
-      const onError = (err: Error) => {
+      const onError = (event: Event) => {
         cleanup();
         this._state = CLOSED;
-        this.emit("error", err);
-        reject(err);
+        this.emit("error", event);
+        reject(event);
       };
 
-      const onUnexpectedResponse = (
-        _req: import("node:http").ClientRequest,
-        res: import("node:http").IncomingMessage,
-      ) => {
+      const onClose = () => {
         cleanup();
-        this._state = CLOSED;
-        const err = new UnexpectedHttpResponse(
-          `Unexpected HTTP response: ${res.statusCode}`,
-          res.statusCode ?? 0,
-          res.headers as Record<string, string>,
-        );
-        this.emit("error", err);
-        reject(err);
+        if (this._state === CONNECTING) {
+          this._state = CLOSED;
+          reject(new Error("WebSocket closed during connection"));
+        }
       };
 
       const cleanup = () => {
-        ws.removeListener("open", onOpen);
-        ws.removeListener("error", onError);
-        ws.removeListener("unexpected-response", onUnexpectedResponse);
+        ws.removeEventListener("open", onOpen);
+        ws.removeEventListener("error", onError);
+        ws.removeEventListener("close", onClose);
       };
 
-      ws.on("open", onOpen);
-      ws.on("error", onError);
-      ws.on("unexpected-response", onUnexpectedResponse);
+      ws.addEventListener("open", onOpen);
+      ws.addEventListener("error", onError);
+      ws.addEventListener("close", onClose);
     });
   }
 
@@ -275,10 +253,8 @@ export class OCPPClient<
     force: boolean,
   ): Promise<{ code: number; reason: string }> {
     this._state = CLOSING;
-    this._stopPing();
 
     if (!force && awaitPending) {
-      // Wait for pending calls to resolve
       const pendingPromises = Array.from(this._pendingCalls.values()).map(
         (p) =>
           new Promise<void>((resolve) => {
@@ -309,24 +285,27 @@ export class OCPPClient<
         return;
       }
 
-      const onClose = (closeCode: number, closeReason: Buffer) => {
-        this._ws?.removeListener("close", onClose);
+      const onClose = (event: CloseEvent) => {
+        this._ws?.removeEventListener("close", onClose);
         this._state = CLOSED;
         this._cleanup();
-        const result = { code: closeCode, reason: closeReason.toString() };
+        const result = { code: event.code, reason: event.reason };
         this.emit("close", result);
         resolve(result);
       };
 
-      this._ws.on("close", onClose);
+      this._ws.addEventListener("close", onClose);
 
       if (force) {
-        this._ws.terminate();
+        // Browser WebSocket has no terminate(), close immediately
+        this._ws.close();
       } else {
         this._ws.close(code, reason);
       }
     });
   }
+
+  // ─── Handlers ────────────────────────────────────────────────
 
   /**
    * Register a version-specific handler — `handle("ocpp1.6", "BootNotification", handler)`.
@@ -364,14 +343,12 @@ export class OCPPClient<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handle(...args: any[]): void {
     if (args.length === 1 && typeof args[0] === "function") {
-      // Wildcard handler
       this._wildcardHandler = args[0] as WildcardHandler;
     } else if (
       args.length === 2 &&
       typeof args[0] === "string" &&
       typeof args[1] === "function"
     ) {
-      // handle(method, handler) — default protocol
       this._handlers.set(args[0], args[1] as CallHandler);
     } else if (
       args.length === 3 &&
@@ -379,7 +356,6 @@ export class OCPPClient<
       typeof args[1] === "string" &&
       typeof args[2] === "function"
     ) {
-      // handle(version, method, handler) — version-specific
       this._handlers.set(`${args[0]}:${args[1]}`, args[2] as CallHandler);
     } else {
       throw new Error(
@@ -392,13 +368,10 @@ export class OCPPClient<
   removeHandler(version: OCPPProtocol, method: string): void;
   removeHandler(versionOrMethod?: string, method?: string): void {
     if (versionOrMethod && method) {
-      // removeHandler(version, method) — version-specific
       this._handlers.delete(`${versionOrMethod}:${method}`);
     } else if (versionOrMethod) {
-      // removeHandler(method)
       this._handlers.delete(versionOrMethod);
     } else {
-      // removeHandler() — remove wildcard
       this._wildcardHandler = null;
     }
   }
@@ -445,8 +418,7 @@ export class OCPPClient<
       typeof args[0] === "string" &&
       typeof args[1] === "string"
     ) {
-      // call(version, method, params, options?) — version-specific
-      // version is type-level only, not sent on the wire
+      // call(version, method, params, options?)
       method = args[1] as string;
       params = args[2] ?? {};
       options = (args[3] as CallOptions) ?? {};
@@ -472,16 +444,11 @@ export class OCPPClient<
     const msgId = createId();
     const timeoutMs = options.timeoutMs ?? this._options.callTimeoutMs;
 
-    // Strict mode: validate outbound call
-    if (this._options.strictMode && this._protocol) {
-      this._validateOutbound(method, params, "req");
-    }
-
     const message: OCPPCall = [MessageType.CALL, msgId, method, params];
     const messageStr = JSON.stringify(message);
 
     return new Promise<unknown>((resolve, reject) => {
-      const timeoutHandle = setTimeoutCb(() => {
+      const timeoutHandle = setTimeout(() => {
         this._pendingCalls.delete(msgId);
         reject(
           new TimeoutError(
@@ -530,58 +497,37 @@ export class OCPPClient<
 
   // ─── Reconfigure ─────────────────────────────────────────────
 
-  reconfigure(options: Partial<ClientOptions>): void {
+  reconfigure(options: Partial<BrowserClientOptions>): void {
     Object.assign(this._options, options);
 
     if (options.callConcurrency !== undefined) {
       this._callQueue.setConcurrency(options.callConcurrency);
     }
-
-    if (
-      options.strictMode !== undefined ||
-      options.strictModeValidators !== undefined
-    ) {
-      this._setupValidators();
-    }
-
-    if (options.pingIntervalMs !== undefined) {
-      this._stopPing();
-      if (this._state === OPEN) {
-        this._startPing();
-      }
-    }
   }
 
   // ─── Internal: WebSocket attachment ──────────────────────────
 
-  protected _attachWebsocket(ws: WebSocket): void {
-    ws.on("message", (data: WebSocket.RawData) => this._onMessage(data));
-    ws.on("close", (code: number, reason: Buffer) =>
-      this._onClose(code, reason),
+  private _attachWebsocket(ws: WebSocket): void {
+    ws.addEventListener("message", (event: MessageEvent) =>
+      this._onMessage(event.data),
     );
-    ws.on("error", (err: Error) => this.emit("error", err));
-    ws.on("ping", () => {
-      this._recordActivity();
-      this.emit("ping");
-    });
-    ws.on("pong", () => {
-      this._recordActivity();
-      this.emit("pong");
-    });
+    ws.addEventListener("close", (event: CloseEvent) =>
+      this._onClose(event.code, event.reason),
+    );
+    ws.addEventListener("error", (event: Event) => this.emit("error", event));
   }
 
   // ─── Internal: Message handling ──────────────────────────────
 
-  private _onMessage(rawData: WebSocket.RawData): void {
-    this._recordActivity();
+  private _onMessage(data: unknown): void {
+    const raw = typeof data === "string" ? data : String(data);
 
     let message: OCPPMessage;
     try {
-      const str = rawData.toString();
-      message = JSON.parse(str) as OCPPMessage;
+      message = JSON.parse(raw) as OCPPMessage;
       if (!Array.isArray(message)) throw new Error("Message is not an array");
     } catch (err) {
-      this._onBadMessage(rawData.toString(), err as Error);
+      this._onBadMessage(raw, err as Error);
       return;
     }
 
@@ -625,7 +571,7 @@ export class OCPPClient<
       }
 
       // Try version-specific handler first, then fall back to generic
-      let handler = this._protocol
+      const handler = this._protocol
         ? (this._handlers.get(`${this._protocol}:${method}`) ??
           this._handlers.get(method))
         : this._handlers.get(method);
@@ -639,11 +585,6 @@ export class OCPPClient<
             `No handler for method: ${method}`,
           );
         }
-      }
-
-      // Strict mode: validate inbound call params
-      if (this._options.strictMode && this._protocol) {
-        this._validateInbound(method, params, "req");
       }
 
       this._pendingResponses.add(msgId);
@@ -667,11 +608,6 @@ export class OCPPClient<
       this._pendingResponses.delete(msgId);
 
       if (result === NOREPLY) return;
-
-      // Strict mode: validate outbound response
-      if (this._options.strictMode && this._protocol) {
-        this._validateOutbound(method, result, "conf");
-      }
 
       const response: OCPPCallResult = [MessageType.CALLRESULT, msgId, result];
       this._ws?.send(JSON.stringify(response));
@@ -709,9 +645,6 @@ export class OCPPClient<
     if (!pending) return;
 
     clearTimeout(pending.timeoutHandle);
-    if (pending.abortHandler) {
-      // Remove abort listener
-    }
     this._pendingCalls.delete(msgId);
     pending.resolve(result);
   }
@@ -737,9 +670,7 @@ export class OCPPClient<
     this._badMessageCount++;
     this.emit("badMessage", { message: rawMessage, error });
 
-    // Best-effort: try to extract messageId from the raw string and respond
-    // with a proper CALLERROR so the sender isn't left waiting.
-    // Pattern matches OCPP-J CALL format: [2, "messageId", ...]
+    // Best-effort: try to extract messageId and respond with CALLERROR
     const match = rawMessage.match(/^\s*\[\s*2\s*,\s*"([^"]+)"/);
     if (match?.[1] && this._ws) {
       const errorResponse: OCPPCallError = [
@@ -762,14 +693,11 @@ export class OCPPClient<
 
   // ─── Internal: Close handling ────────────────────────────────
 
-  private _onClose(code: number, reason: Buffer): void {
-    this._stopPing();
-    const reasonStr = reason.toString();
-
+  private _onClose(code: number, reason: string): void {
     // Reject all pending calls
     for (const [, pending] of this._pendingCalls) {
       clearTimeout(pending.timeoutHandle);
-      pending.reject(new Error(`Connection closed (${code}: ${reasonStr})`));
+      pending.reject(new Error(`Connection closed (${code}: ${reason})`));
     }
     this._pendingCalls.clear();
     this._pendingResponses.clear();
@@ -777,7 +705,7 @@ export class OCPPClient<
     if (this._state !== CLOSING) {
       // Unexpected close — attempt reconnect
       this._state = CLOSED;
-      this.emit("close", { code, reason: reasonStr });
+      this.emit("close", { code, reason });
 
       if (
         this._options.reconnect &&
@@ -808,7 +736,7 @@ export class OCPPClient<
 
     this.emit("reconnect", { attempt: this._reconnectAttempt, delay: delayMs });
 
-    this._reconnectTimer = setTimeoutCb(async () => {
+    this._reconnectTimer = setTimeout(async () => {
       this._reconnectTimer = null;
       try {
         this._state = CLOSED; // Reset for connect
@@ -824,124 +752,14 @@ export class OCPPClient<
     }, delayMs);
   }
 
-  // ─── Internal: Ping/Pong ─────────────────────────────────────
-
-  private _startPing(): void {
-    if (this._options.pingIntervalMs <= 0) return;
-
-    const doPing = () => {
-      if (this._state !== OPEN || !this._ws) return;
-
-      if (this._options.deferPingsOnActivity) {
-        const elapsed = Date.now() - this._lastActivity;
-        if (elapsed < this._options.pingIntervalMs) {
-          this._pingTimer = setTimeoutCb(
-            doPing,
-            this._options.pingIntervalMs - elapsed,
-          );
-          return;
-        }
-      }
-
-      this._ws.ping();
-      this._pingTimer = setTimeoutCb(doPing, this._options.pingIntervalMs);
-    };
-
-    this._pingTimer = setTimeoutCb(doPing, this._options.pingIntervalMs);
-  }
-
-  private _stopPing(): void {
-    if (this._pingTimer) {
-      clearTimeout(this._pingTimer);
-      this._pingTimer = null;
-    }
-  }
-
-  private _recordActivity(): void {
-    this._lastActivity = Date.now();
-  }
-
-  // ─── Internal: Validation ────────────────────────────────────
-
-  private _setupValidators(): void {
-    if (this._options.strictModeValidators) {
-      this._validators = this._options.strictModeValidators;
-    } else {
-      this._validators = standardValidators;
-    }
-
-    if (Array.isArray(this._options.strictMode)) {
-      this._strictProtocols = this._options.strictMode;
-    } else {
-      this._strictProtocols = null;
-    }
-  }
-
-  private _validateOutbound(
-    method: string,
-    params: unknown,
-    suffix: "req" | "conf",
-  ): void {
-    const validator = this._findValidator();
-    if (!validator) return;
-
-    const schemaId = `urn:${method}.${suffix}`;
-    try {
-      validator.validate(schemaId, params);
-    } catch (err) {
-      this.emit("strictValidationFailure", {
-        message: params,
-        error: err as Error,
-      });
-      throw err;
-    }
-  }
-
-  private _validateInbound(
-    method: string,
-    params: unknown,
-    suffix: "req" | "conf",
-  ): void {
-    const validator = this._findValidator();
-    if (!validator) return;
-
-    const schemaId = `urn:${method}.${suffix}`;
-    try {
-      validator.validate(schemaId, params);
-    } catch (err) {
-      this.emit("strictValidationFailure", {
-        message: params,
-        error: err as Error,
-      });
-      throw err;
-    }
-  }
-
-  private _findValidator(): Validator | null {
-    if (!this._protocol) return null;
-
-    if (
-      this._strictProtocols &&
-      !this._strictProtocols.includes(this._protocol)
-    ) {
-      return null;
-    }
-
-    return (
-      this._validators.find((v) => v.subprotocol === this._protocol) ?? null
-    );
-  }
-
   // ─── Internal: Endpoint building ─────────────────────────────
 
   private _buildEndpoint(): string {
     let url = this._options.endpoint;
 
-    // Append identity to URL path
     if (!url.endsWith("/")) url += "/";
     url += encodeURIComponent(this._identity);
 
-    // Append query parameters
     if (this._options.query) {
       const params = new URLSearchParams(this._options.query);
       url += (url.includes("?") ? "&" : "?") + params.toString();
@@ -950,53 +768,9 @@ export class OCPPClient<
     return url;
   }
 
-  private _buildWsOptions(): WebSocket.ClientOptions {
-    const opts: WebSocket.ClientOptions = {
-      headers: {
-        ...this._options.headers,
-        "User-Agent": getPackageIdent(),
-      },
-    };
-
-    const profile = this._options.securityProfile ?? SecurityProfile.NONE;
-
-    // Profile 1 & 2: Basic Auth header
-    if (
-      (profile === SecurityProfile.BASIC_AUTH ||
-        profile === SecurityProfile.TLS_BASIC_AUTH) &&
-      this._options.password
-    ) {
-      const credentials = Buffer.from(
-        `${this._identity}:${this._options.password.toString()}`,
-      ).toString("base64");
-      opts.headers!["Authorization"] = `Basic ${credentials}`;
-    }
-
-    // Profile 2 & 3: TLS options
-    if (
-      profile === SecurityProfile.TLS_BASIC_AUTH ||
-      profile === SecurityProfile.TLS_CLIENT_CERT
-    ) {
-      const tls = this._options.tls ?? {};
-      if (tls.ca) opts.ca = tls.ca;
-      if (tls.rejectUnauthorized !== undefined)
-        opts.rejectUnauthorized = tls.rejectUnauthorized;
-
-      // Profile 3: Client certificates for mTLS
-      if (profile === SecurityProfile.TLS_CLIENT_CERT) {
-        if (tls.cert) opts.cert = tls.cert;
-        if (tls.key) opts.key = tls.key;
-        if (tls.passphrase) opts.passphrase = tls.passphrase;
-      }
-    }
-
-    return opts;
-  }
-
   // ─── Internal: Cleanup ───────────────────────────────────────
 
   private _cleanup(): void {
-    this._stopPing();
     this._closePromise = null;
     this._ws = null;
   }

@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { randomUUID } from "node:crypto";
+import { createId } from "@paralleldrive/cuid2";
 import {
   createServer as createHttpServer,
   type IncomingMessage,
@@ -47,7 +47,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _httpServerAbortControllers = new Set<AbortController>();
 
   // Robustness & Clustering
-  private readonly _nodeId = randomUUID();
+  private readonly _nodeId = createId();
   private _sessions = new Map<
     string,
     { data: Record<string, unknown>; lastActive: number }

@@ -19,6 +19,11 @@
       "types": "./dist/adapters/redis.d.ts",
       "import": "./dist/adapters/redis.mjs",
       "require": "./dist/adapters/redis.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.mjs",
+      "require": "./dist/browser.js"
     }
   },
   "scripts": {
@@ -47,6 +52,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@paralleldrive/cuid2": "^3.3.0",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "ws": "^8.19.0"
