@@ -1,0 +1,183 @@
+---
+title: The Developer's Deep Dive into OCPP
+description: Go beyond the basics. Understand the message framing, state machines, and security architecture of the Open Charge Point Protocol.
+date: 2024-05-28
+author:
+  name: Rohit Tiwari
+  avatar: https://avatars.githubusercontent.com/u/1234567?v=4
+  twitter: https://twitter.com/rohittiwari
+image: https://images.unsplash.com/photo-1617788138017-80ad40651399?auto=format&fit=crop&q=80&w=1000
+tags: [ocpp, protocol, guide, deep-dive]
+---
+
+Many developers treat OCPP (Open Charge Point Protocol) as a black box. You send a JSON object, magic happens, and a car charges. But to build resilient systems, you need to understand what's happening under the hood.
+
+This guide peels back the layers of abstraction to show you the raw protocol.
+
+## 1. The Transport Layer: WebSockets & Subprotocols
+
+OCPP runs over WebSockets (WSS). The handshake is critical. When a charger connects to your server, it **MUST** include the `Sec-WebSocket-Protocol` header to negotiate the version.
+
+- `ocpp1.6` -> For OCPP 1.6J
+- `ocpp2.0.1` -> For OCPP 2.0.1
+
+If your server doesn't return this header in the upgrade response, the charger will immediately disconnect.
+
+**Example Request Headers:**
+
+```http
+GET /webServices/ocpp/CP001 HTTP/1.1
+Host: csms.example.com
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+Sec-WebSocket-Protocol: ocpp1.6, ocpp1.5
+Authorization: Basic dGVzdDp0ZXN0
+```
+
+**Example Response:**
+
+```http
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Protocol: ocpp1.6
+```
+
+## 2. Message Framing (RPC)
+
+OCPP-J isn't just "sending JSON". It follows a strict array-based RPC format. Every message is a JSON Array containing 3 or 4 elements.
+
+### The Message Type ID
+
+The first element is always an integer ID defining the message type:
+
+- `2`: **CALL** (Request)
+- `3`: **CALLRESULT** (Response)
+- `4`: **CALLERROR** (Error)
+
+### TYPE 2: CALL (Request)
+
+Format: `[2, "MessageId", "Action", { payload }]`
+
+- **MessageId**: Unique string (UUID) to correlate the response.
+- **Action**: The name of the operation (e.g., `BootNotification`).
+- **Payload**: The data object.
+
+```json
+[
+  2,
+  "19223201",
+  "BootNotification",
+  {
+    "chargePointVendor": "VendorX",
+    "chargePointModel": "ModelY"
+  }
+]
+```
+
+### TYPE 3: CALLRESULT (Response)
+
+Format: `[3, "MessageId", { payload }]`
+
+- **MessageId**: Must match the ID from the CALL.
+
+```json
+[
+  3,
+  "19223201",
+  {
+    "status": "Accepted",
+    "interval": 300,
+    "currentTime": "2024-05-28T10:00:00Z"
+  }
+]
+```
+
+### TYPE 4: CALLERROR (Error)
+
+Format: `[4, "MessageId", "ErrorCode", "Description", { details }]`
+
+Used when the request cannot be processed (e.g., validation failed, internal error).
+
+```json
+[4, "19223201", "NotSupported", "Action not found", {}]
+```
+
+## 3. Important State Machines
+
+OCPP is stateful. You cannot just send any command at any time.
+
+### The Connector Status
+
+Each connector on a charger has a status.
+
+- **Available**: Ready to use.
+- **Preparing**: EV plugged in, but not authorized yet.
+- **Charging**: Contactors closed, energy flowing.
+- **SuspendedEV / SuspendedEVSE**: Paused (by car or by charger).
+- **Finishing**: Session ended, unplugging...
+- **Faulted**: Something went wrong.
+
+Transitioning from `Available` -> `Charging` usually requires the `StartTransaction` flow. If a charger sends `StartTransaction` while it's already `Charging`, you have a "ghost session" or a state desync.
+
+## 4. Security Profiles Explained
+
+Security is a major focus in modern OCPP.
+
+### Profile 1: Basic Auth + No Encryption
+
+- **URL**: `ws://csms.com/ocpp/CP001`
+- **Auth**: HTTP Basic (`Authorization` header).
+- **Risk**: Passwords sent in cleartext. **Do not use in production.**
+
+### Profile 2: Basic Auth + TLS
+
+- **URL**: `wss://csms.com/ocpp/CP001`
+- **Auth**: HTTP Basic.
+- **Encryption**: TLS 1.2 or 1.3.
+- **Trust**: The Charger validates the Server's certificate.
+- **Use Case**: Standard for most public chargers today.
+
+### Profile 3: Mutual TLS (mTLS)
+
+- **URL**: `wss://csms.com/ocpp/CP001`
+- **Auth**: Client Certificate.
+- **Mechanism**: The server validates the **Charger's** certificate. No passwords are used.
+- **Complexity**: High. You need a PKI (Public Key Infrastructure) to issue and rotate certificates for every charger.
+
+## 5. Smart Charging (The Complex Part)
+
+OCPP allows you to control the charging power dynamically. This is done via **Charging Profiles**.
+
+A profile consists of a **ChargingSchedule** with **ChargingSchedulePeriods**.
+
+```json
+{
+  "connectorId": 1,
+  "csChargingProfiles": {
+    "chargingProfileId": 1,
+    "stackLevel": 1,
+    "chargingProfilePurpose": "TxProfile",
+    "chargingProfileKind": "Absolute",
+    "chargingSchedule": {
+      "chargingRateUnit": "A",
+      "chargingSchedulePeriod": [
+        { "startPeriod": 0, "limit": 32.0 }, // Start at 32A
+        { "startPeriod": 1800, "limit": 16.0 }, // Drop to 16A after 30 mins
+        { "startPeriod": 3600, "limit": 0.0 } // Stop after 1 hour
+      ]
+    }
+  }
+}
+```
+
+**Stack Level**: Profiles have priority. A profile with Stack Level 2 overrides Level 1. This lets you layer logic:
+
+- Level 0: Hardware Limit (never exceed 32A).
+- Level 1: Site Limit (don't blow the building fuse).
+- Level 2: User Limit (user successfully requested eco-mode).
+
+## Conclusion
+
+OCPP is more than just API calls; it's a protocol designed for physical hardware safety and reliability. By understanding the framing, state machines, and security profiles, you can build systems that aren't just "compliant", but robust enough for the real world.

@@ -1,0 +1,121 @@
+---
+title: OCPP Message Flows
+description: Detailed sequence diagrams and explanations of common OCPP operations.
+---
+
+import { Mermaid } from "@/components/mermaid";
+
+Understanding the sequence of messages in OCPP is key to debugging and implementing correct logic. Here are the most common flows visualized.
+
+## 1. Boot Sequence
+
+Every time a charging station powers up or reconnects, it must identify itself.
+
+<Mermaid chart={`
+sequenceDiagram
+    participant CP as Charge Point
+    participant CS as Central System
+
+    Note over CP: Power Up
+    CP->>CS: BootNotification Request
+    Note right of CP: { chargePointVendor: "VendorX", ... }
+
+    CS-->>CP: BootNotification Response
+    Note left of CS: { status: "Accepted", interval: 300 }
+
+    loop Every 300s
+        CP->>CS: Heartbeat Request
+        CS-->>CP: Heartbeat Response
+    end
+
+`} />
+
+- **BootNotification**: The station sends its model and vendor. The server accepts it and sets the `heartbeatInterval`.
+- **Heartbeat**: The station pings the server periodically to show it's online.
+
+## 2. Standard Charging Session (RFID)
+
+The "Happy Path" for a driver swiping a card.
+
+<Mermaid chart={`
+sequenceDiagram
+    participant Driver
+    participant CP as Charge Point
+    participant CS as Central System
+
+    Driver->>CP: Swipes RFID Card
+    CP->>CS: Authorize Request (idTag)
+    CS-->>CP: Authorize Response (Accepted)
+
+    Driver->>CP: Plugs in Cable
+    CP->>CS: StatusNotification (Occupied)
+    CS-->>CP: StatusNotification Response
+
+    CP->>CS: StartTransaction Request
+    CS-->>CP: StartTransaction Response (transactionId: 101)
+
+    Note over CP,CS: Charging...
+
+    Driver->>CP: Swipes Card to Stop
+    CP->>CS: StopTransaction Request (transactionId: 101)
+    CS-->>CP: StopTransaction Response
+
+    CP->>CS: StatusNotification (Available)
+    CS-->>CP: StatusNotification Response
+
+`} />
+
+- **Authorize**: Checks if the tag is valid.
+- **StartTransaction**: Marks the beginning of energy flow. The server **MUST** return a `transactionId`.
+- **StopTransaction**: Ends the session. Contains the final meter value and timestamp.
+
+## 3. Remote Start (Mobile App)
+
+When a driver starts charging via an app, the flow is reversed (Server initiates).
+
+<Mermaid chart={`
+sequenceDiagram
+    participant App
+    participant CS as Central System
+    participant CP as Charge Point
+
+    App->>CS: "Start Charging at CP-001"
+    CS->>CP: RemoteStartTransaction (idTag)
+    CP-->>CS: RemoteStartTransaction Response (Accepted)
+
+    Note over CP: Station locks connector
+    CP->>CS: StartTransaction Request
+    CS-->>CP: StartTransaction Response
+
+`} />
+
+## 4. Smart Charging (Load Balancing)
+
+The server limits the power due to grid constraints.
+
+<Mermaid chart={`
+sequenceDiagram
+    participant CS as Central System
+    participant CP as Charge Point
+
+    Note over CP: Charging at 11kW (16A)
+
+    CS->>CP: SetChargingProfile Request
+    Note right of CS: Limit to 6kW (9A)
+
+    CP-->>CS: SetChargingProfile Response (Accepted)
+
+    Note over CP: Ramps down to 6kW
+
+`} />
+
+- **SetChargingProfile**: Sends a schedule or limit to the station.
+- **ClearChargingProfile**: Removes limits.
+
+## Error Handling
+
+What happens if the network goes down?
+
+1.  **Offline**: The station stores messages in its internal memory.
+2.  **Reconnect**: When the connection is restored, the station sends all queued messages.
+3.  **Order**: Messages might arrive in a batch. Your server must handle `StartTransaction` messages that happened hours ago.
