@@ -11,11 +11,11 @@ Built with TypeScript from the ground up — supports OCPP 1.6, 2.0.1, and 2.1 w
 - 📐 **Strict Mode** — Optional schema validation using built-in OCPP JSON schemas
 - 🔁 **Auto-Reconnect** — Exponential backoff with configurable limits
 - 🧩 **Framework Agnostic** — Use standalone, or attach to Express, Fastify, NestJS, etc.
-- 🧩 **Framework Agnostic** — Use standalone, or attach to Express, Fastify, NestJS, etc.
 - 📡 **Clustering** — Optional Redis adapter (supports `ioredis` & `node-redis`)
 - 🎯 **Type-Safe** — Auto-generated types for all OCPP 1.6, 2.0.1 & 2.1 methods with full request/response inference
 - 🛠️ **Schema-to-TS** — Built-in script to re-generate types from official JSON schemas
 - 🔀 **Version-Aware Handlers** — Register handlers per OCPP version with typed params, or use generic handlers with protocol context
+- 🌐 **Browser Client** — Zero-dependency browser WebSocket client via `ocpp-ws-io/browser`
 
 ## Installation
 
@@ -113,6 +113,39 @@ server.on("client", (client) => {
 await server.listen(3000);
 console.log("OCPP Server listening on port 3000");
 ```
+
+### Browser Client
+
+For browser environments (React, Vue, Next.js client components, etc.), use `BrowserOCPPClient` from the `ocpp-ws-io/browser` subpath. Designed for **building charge point simulators, testing dashboards, and debugging tools** directly in the browser — zero Node.js dependencies.
+
+> **Note:** The browser client does not support all OCPP features (no Security Profiles, Strict Mode, TLS, Ping/Pong, or custom headers). For production use, use `OCPPClient` in Node.js.
+
+```typescript
+import { BrowserOCPPClient } from "ocpp-ws-io/browser";
+
+const client = new BrowserOCPPClient({
+  endpoint: "wss://csms.example.com/ocpp",
+  identity: "CP001",
+  protocols: ["ocpp1.6"],
+});
+
+// Same typed API as OCPPClient
+client.handle("Reset", ({ params }) => {
+  console.log("Reset type:", params.type);
+  return { status: "Accepted" };
+});
+
+await client.connect();
+
+const response = await client.call("ocpp1.6", "BootNotification", {
+  chargePointVendor: "VendorX",
+  chargePointModel: "ModelY",
+});
+
+console.log("Status:", response.status); // typed: "Accepted" | "Pending" | "Rejected"
+```
+
+> See [Browser Client](#browser-client-1) below for the full API reference, configuration options, and framework integration examples.
 
 ---
 
@@ -1009,9 +1042,246 @@ import type {
 
 ---
 
+## Browser Client
+
+`BrowserOCPPClient` is a lightweight OCPP WebSocket RPC client designed for **building charge point simulators, testing dashboards, and debugging tools** in the browser. It provides the same typed API as `OCPPClient` — without any Node.js dependencies.
+
+> **Note:** The browser client is designed for testing and simulating charge points — it does not support all OCPP features. Missing: Security Profiles (0–3), Strict Mode (schema validation), TLS/mTLS configuration, WebSocket Ping/Pong, and custom HTTP headers. For production charge point communication, use `OCPPClient` in a Node.js environment.
+
+```typescript
+import { BrowserOCPPClient } from "ocpp-ws-io/browser";
+```
+
+### Why a Separate Browser Client?
+
+`OCPPClient` depends on Node.js modules (`ws`, `node:crypto`, `node:events`, `node:net`). `BrowserOCPPClient` replaces all of these with browser-native APIs:
+
+| Feature           | `OCPPClient`           | `BrowserOCPPClient`        |
+| ----------------- | ---------------------- | -------------------------- |
+| WebSocket         | `ws` (Node.js)         | Native browser `WebSocket` |
+| Events            | `node:events`          | Custom `EventEmitter`      |
+| ID Generation     | `@paralleldrive/cuid2` | `@paralleldrive/cuid2`     |
+| Security Profiles | 0–3 (TLS, mTLS, certs) | N/A (handled by browser)   |
+| Custom Headers    | ✅ via `ws`            | ❌ browser limitation      |
+| Ping/Pong         | ✅                     | ❌ browser limitation      |
+| Type Safety       | ✅ Full                | ✅ Full (same types)       |
+| Reconnection      | ✅                     | ✅                         |
+| Strict Mode       | ✅                     | ❌                         |
+
+### Constructor
+
+```typescript
+const client = new BrowserOCPPClient(options: BrowserClientOptions);
+```
+
+**`BrowserClientOptions`**:
+
+| Option                      | Type                     | Default    | Description                            |
+| --------------------------- | ------------------------ | ---------- | -------------------------------------- |
+| `identity`                  | `string`                 | _required_ | Charging station ID                    |
+| `endpoint`                  | `string`                 | _required_ | WebSocket URL (`ws://` or `wss://`)    |
+| `protocols`                 | `string[]`               | `[]`       | OCPP subprotocols to negotiate         |
+| `query`                     | `Record<string, string>` | —          | Additional URL query parameters        |
+| `reconnect`                 | `boolean`                | `true`     | Auto-reconnect on disconnect           |
+| `maxReconnects`             | `number`                 | `Infinity` | Max reconnection attempts              |
+| `backoffMin`                | `number`                 | `1000`     | Initial reconnect delay (ms)           |
+| `backoffMax`                | `number`                 | `30000`    | Maximum reconnect delay (ms)           |
+| `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)          |
+| `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls          |
+| `maxBadMessages`            | `number`                 | `Infinity` | Close after N consecutive bad messages |
+| `respondWithDetailedErrors` | `boolean`                | `false`    | Include error details in responses     |
+
+### Properties
+
+| Property          | Type                  | Description               |
+| ----------------- | --------------------- | ------------------------- |
+| `client.identity` | `string`              | Charging station identity |
+| `client.protocol` | `string \| undefined` | Negotiated subprotocol    |
+| `client.state`    | `ConnectionState`     | Current connection state  |
+
+### Static Constants
+
+```typescript
+BrowserOCPPClient.CONNECTING; // 0
+BrowserOCPPClient.OPEN; // 1
+BrowserOCPPClient.CLOSING; // 2
+BrowserOCPPClient.CLOSED; // 3
+```
+
+### Methods
+
+The API is identical to `OCPPClient` — all `call()`, `handle()`, `close()`, `sendRaw()`, `reconfigure()`, `removeHandler()`, and `removeAllHandlers()` methods work the same way with the same type signatures.
+
+```typescript
+// Connect
+await client.connect();
+
+// Version-aware typed call
+const result = await client.call("ocpp1.6", "BootNotification", {
+  chargePointVendor: "VendorX",
+  chargePointModel: "ModelY",
+});
+
+// Call with timeout and AbortSignal
+const controller = new AbortController();
+const res = await client.call(
+  "Heartbeat",
+  {},
+  {
+    timeoutMs: 5000,
+    signal: controller.signal,
+  },
+);
+
+// Register handlers (version-specific, generic, wildcard)
+client.handle("ocpp1.6", "Reset", ({ params }) => {
+  return { status: "Accepted" };
+});
+
+client.handle("StatusNotification", ({ params }) => {
+  return {};
+});
+
+client.handle((method, { params }) => {
+  console.log(`Unhandled: ${method}`);
+  return {};
+});
+
+// Close the connection
+await client.close();
+await client.close({ code: 1000, reason: "Normal" });
+await client.close({ awaitPending: true });
+await client.close({ force: true });
+
+// Reconfigure at runtime
+client.reconfigure({ callTimeoutMs: 10000, reconnect: false });
+```
+
+### Events
+
+```typescript
+client.on("open", (event) => {
+  /* connected */
+});
+client.on("close", ({ code, reason }) => {
+  /* disconnected */
+});
+client.on("error", (error) => {
+  /* error occurred */
+});
+client.on("connecting", ({ url }) => {
+  /* attempting connection */
+});
+client.on("reconnect", ({ attempt, delay }) => {
+  /* reconnecting */
+});
+client.on("message", (message) => {
+  /* any OCPP message */
+});
+client.on("call", (call) => {
+  /* incoming call */
+});
+client.on("callResult", (result) => {
+  /* call result received */
+});
+client.on("callError", (error) => {
+  /* call error received */
+});
+client.on("badMessage", ({ message, error }) => {
+  /* malformed message */
+});
+```
+
+### Framework Integration
+
+#### React
+
+```typescript
+import { useEffect, useRef, useState } from "react";
+import { BrowserOCPPClient } from "ocpp-ws-io/browser";
+
+function useOCPP(identity: string, endpoint: string) {
+  const clientRef = useRef<BrowserOCPPClient | null>(null);
+  const [connected, setConnected] = useState(false);
+
+  useEffect(() => {
+    const client = new BrowserOCPPClient({
+      identity,
+      endpoint,
+      protocols: ["ocpp1.6"],
+    });
+
+    client.on("open", () => setConnected(true));
+    client.on("close", () => setConnected(false));
+
+    client.connect();
+    clientRef.current = client;
+
+    return () => {
+      client.close();
+    };
+  }, [identity, endpoint]);
+
+  return { client: clientRef.current, connected };
+}
+```
+
+#### Next.js (Client Component)
+
+```typescript
+"use client";
+import { BrowserOCPPClient } from "ocpp-ws-io/browser";
+
+// ✅ Works in client components — no Node.js dependencies
+const client = new BrowserOCPPClient({
+  identity: "CP001",
+  endpoint: "wss://csms.example.com/ocpp",
+  protocols: ["ocpp1.6"],
+});
+```
+
+### Browser Exports
+
+All exports from `ocpp-ws-io/browser`:
+
+```typescript
+import {
+  // Client
+  BrowserOCPPClient,
+
+  // Error classes
+  RPCGenericError,
+  RPCNotImplementedError,
+  RPCNotSupportedError,
+  RPCInternalError,
+  RPCProtocolError,
+  RPCSecurityError,
+  RPCFormatViolationError,
+  RPCFormationViolationError,
+  RPCPropertyConstraintViolationError,
+  RPCOccurrenceConstraintViolationError,
+  RPCTypeConstraintViolationError,
+  RPCMessageTypeNotSupportedError,
+  RPCFrameworkError,
+  TimeoutError,
+
+  // Utilities
+  createRPCError,
+  getErrorPlainObject,
+
+  // Constants
+  ConnectionState,
+  MessageType,
+  NOREPLY,
+} from "ocpp-ws-io/browser";
+```
+
+---
+
 ## Requirements
 
-- **Node.js** ≥ 18.0.0
+- **Node.js** ≥ 18.0.0 (for `OCPPClient` and `OCPPServer`)
+- **Browser**: Any modern browser with `WebSocket` support (for `BrowserOCPPClient`)
 - **TypeScript** ≥ 5.0 (optional, but recommended)
 
 ## Inspired By

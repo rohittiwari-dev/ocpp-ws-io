@@ -132,6 +132,108 @@ client.handle("StatusNotification", ({ params }) => {
 });
 ```
 
+---
+
+## BrowserOCPPClient
+
+```typescript
+import { BrowserOCPPClient } from "ocpp-ws-io/browser";
+```
+
+A browser-compatible OCPP client with the same typed API as `OCPPClient`. Uses the native browser `WebSocket` API — no Node.js dependencies.
+
+> See [Browser Client](/docs/browser-client) for the full guide with examples.
+
+### Constructor
+
+```typescript
+const client = new BrowserOCPPClient(options: BrowserClientOptions);
+```
+
+#### BrowserClientOptions
+
+| Option                      | Type                     | Default    | Description                         |
+| :-------------------------- | :----------------------- | :--------- | :---------------------------------- |
+| `identity`                  | `string`                 | _required_ | Charging station ID                 |
+| `endpoint`                  | `string`                 | _required_ | WebSocket URL (`ws://` or `wss://`) |
+| `protocols`                 | `string[]`               | `[]`       | OCPP subprotocols to negotiate      |
+| `query`                     | `Record<string, string>` | —          | Additional URL query parameters     |
+| `reconnect`                 | `boolean`                | `true`     | Auto-reconnect on disconnect        |
+| `maxReconnects`             | `number`                 | `Infinity` | Max reconnection attempts           |
+| `backoffMin`                | `number`                 | `1000`     | Initial reconnect delay (ms)        |
+| `backoffMax`                | `number`                 | `30000`    | Maximum reconnect delay (ms)        |
+| `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)       |
+| `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls       |
+| `maxBadMessages`            | `number`                 | `Infinity` | Close after N bad messages          |
+| `respondWithDetailedErrors` | `boolean`                | `false`    | Include error details in responses  |
+
+### Methods
+
+All methods match `OCPPClient`:
+
+```typescript
+await client.connect();
+
+// Version-aware typed call
+const result = await client.call("ocpp1.6", "BootNotification", { ... });
+
+// Register handlers (version-specific, generic, wildcard)
+client.handle("ocpp1.6", "Reset", ({ params }) => { ... });
+client.handle("Reset", ({ params }) => { ... });
+client.handle((method, { params }) => { ... });
+
+// Close
+await client.close();
+await client.close({ force: true });
+await client.close({ awaitPending: true });
+
+// Runtime reconfiguration
+client.reconfigure({ callTimeoutMs: 10000 });
+
+// Handler removal
+client.removeHandler("Reset");
+client.removeHandler("ocpp1.6", "Reset");
+client.removeAllHandlers();
+
+// Raw message
+client.sendRaw(JSON.stringify([2, "uuid", "Heartbeat", {}]));
+```
+
+### Events
+
+```typescript
+client.on("open", (event) => {
+  /* connected */
+});
+client.on("close", ({ code, reason }) => {
+  /* disconnected */
+});
+client.on("error", (error) => {
+  /* error */
+});
+client.on("connecting", ({ url }) => {
+  /* attempting */
+});
+client.on("reconnect", ({ attempt, delay }) => {
+  /* reconnecting */
+});
+client.on("message", (message) => {
+  /* OCPP message */
+});
+client.on("call", (call) => {
+  /* incoming call */
+});
+client.on("callResult", (result) => {
+  /* result received */
+});
+client.on("callError", (error) => {
+  /* error received */
+});
+client.on("badMessage", ({ message, error }) => {
+  /* malformed */
+});
+```
+
 ## Error Classes
 
 All error classes are exported for `instanceof` checks:

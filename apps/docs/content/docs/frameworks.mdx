@@ -300,19 +300,28 @@ export async function POST() {
 }
 ```
 
-### ❌ Not Supported: Client Components (Browser)
+### ✅ Supported: Client Components (Browser)
 
-You **CANNOT** import `OCPPClient` or `OCPPServer` directly in React Client Components (`"use client"`) or standard browser scripts.
+You **CAN** use `BrowserOCPPClient` from `ocpp-ws-io/browser` in React Client Components and browser scripts. It uses the native browser `WebSocket` API with zero Node.js dependencies.
 
-This library depends on Node.js-only modules:
+```typescript
+"use client";
+import { BrowserOCPPClient } from "ocpp-ws-io/browser";
 
-- `ws` (Node.js WebSocket implementation)
-- `node:crypto`
-- `node:events`
-- `node:net`
+const client = new BrowserOCPPClient({
+  identity: "CP001",
+  endpoint: "wss://csms.example.com/ocpp",
+  protocols: ["ocpp1.6"],
+});
 
-To build a frontend UI (React, Vue, etc.), use the **API Route pattern** above:
+await client.connect();
 
-1. Frontend calls Next.js API Route (via `fetch`).
-2. API Route uses `OCPPClient` to talk to the CSMS.
-3. API Route returns the result to Frontend.
+const res = await client.call("ocpp1.6", "BootNotification", {
+  chargePointVendor: "NextJS",
+  chargePointModel: "frontend",
+});
+```
+
+> **Note:** The Node.js `OCPPClient` from `"ocpp-ws-io"` still cannot be imported in client components — it depends on `ws`, `node:crypto`, and `node:events`. Use `BrowserOCPPClient` from `"ocpp-ws-io/browser"` for browser environments.
+
+See [Browser Client](/docs/browser-client) for the full API reference and framework integration examples.
