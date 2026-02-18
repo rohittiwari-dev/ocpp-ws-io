@@ -1,28 +1,235 @@
 ---
 title: Introduction
-description: Type-safe OCPP WebSocket RPC client & server for Node.js.
+description: Type-safe OCPP WebSocket RPC client & server for Node.js — with browser support.
 ---
+
+import { Cards, Card } from "fumadocs-ui/components/card";
+import { Tab, Tabs } from "fumadocs-ui/components/tabs";
+import { Step, Steps } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
 
 # ocpp-ws-io
 
-**OCPP-WS-IO** is a Type-safe OCPP WebSocket RPC client & server for Node.js.
+**Type-safe OCPP WebSocket RPC client & server for Node.js.**
 
-Built with TypeScript from the ground up — supports **OCPP 1.6**, **2.0.1**, and **2.1** with full JSON schema validation, all three security profiles, and optional Redis-based clustering.
+Built with TypeScript from the ground up — supports **OCPP 1.6**, **2.0.1**, and **2.1** with full JSON schema validation, all three OCPP security profiles, optional Redis-based clustering, and a zero-dependency browser client for testing.
 
-## Features
+<Callout type="info">
+  Looking for **browser usage**? Check out the [Browser
+  Client](/docs/browser-client) — a lightweight charge point simulator client
+  that runs directly in the browser.
+</Callout>
 
-- ⚡ **Full OCPP-J RPC** — Call, CallResult, CallError message framing per OCPP-J spec
-- 🔒 **Security Profiles 0–3** — Plain WS, Basic Auth, TLS + Basic Auth, Mutual TLS
-- 📐 **Strict Mode** — Optional schema validation using built-in OCPP JSON schemas
-- 🔁 **Auto-Reconnect** — Exponential backoff with configurable limits
-- 🧩 **Framework Agnostic** — Use standalone, or attach to Express, Fastify, NestJS, etc.
-- 📡 **Clustering** — Optional Redis adapter for multi-instance deployments
-- 🎯 **Type-Safe** — Auto-generated types for all OCPP 1.6, 2.0.1 & 2.1 methods with full request/response inference
-- 🔀 **Version-Aware Handlers** — Register handlers per OCPP version with typed params, or use generic handlers with protocol context
-- 🌐 **Browser Client** — Zero-dependency browser WebSocket client via `ocpp-ws-io/browser`
+---
 
-## Installation
+## Key Features
 
-```bash
-npm install ocpp-ws-io
+<Cards>
+  <Card
+    title="⚡ Full OCPP-J RPC"
+    description="Call, CallResult, CallError message framing per OCPP-J specification. Handles all RPC lifecycle management automatically."
+  />
+  <Card
+    title="🎯 Type-Safe"
+    description="Auto-generated TypeScript types for every OCPP 1.6, 2.0.1, and 2.1 method. Full request/response inference — catch errors at compile time."
+  />
+  <Card
+    title="🔒 Security Profiles 0–3"
+    description="Plain WS, Basic Auth, TLS + Basic Auth, and Mutual TLS. All OCPP security profiles supported out of the box."
+  />
+  <Card
+    title="📐 Strict Mode"
+    description="Optional JSON schema validation for all inbound and outbound messages. Catch malformed payloads before they cause issues."
+  />
+  <Card
+    title="🔁 Auto-Reconnect"
+    description="Exponential backoff with configurable min/max delays, max retries, and runtime reconfiguration."
+  />
+  <Card
+    title="🧩 Framework Agnostic"
+    description="Use standalone, or attach to Express, Fastify, NestJS, or any Node.js HTTP server."
+  />
+  <Card
+    title="📡 Redis Clustering"
+    description="Optional Redis adapter for multi-instance deployments. Supports both ioredis and node-redis."
+  />
+  <Card
+    title="🔀 Version-Aware Handlers"
+    description="Register handlers per OCPP version with typed params, or use generic handlers with protocol context."
+  />
+  <Card
+    title="🌐 Browser Client"
+    description="Zero-dependency browser WebSocket client for building charge point simulators and testing dashboards."
+  />
+</Cards>
+
+---
+
+## Quick Start
+
+<Steps>
+
+<Step>
+
+### Install
+
+<Tabs items={["npm", "pnpm", "yarn", "bun"]}>
+  <Tab value="npm">```bash npm install ocpp-ws-io ```</Tab>
+  <Tab value="pnpm">```bash pnpm add ocpp-ws-io ```</Tab>
+  <Tab value="yarn">```bash yarn add ocpp-ws-io ```</Tab>
+  <Tab value="bun">```bash bun add ocpp-ws-io ```</Tab>
+</Tabs>
+
+</Step>
+
+<Step>
+
+### Create a Client (Charging Station)
+
+```typescript title="client.ts"
+import { OCPPClient, SecurityProfile } from "ocpp-ws-io";
+
+const client = new OCPPClient({
+  endpoint: "ws://localhost:3000",
+  identity: "CP001",
+  protocols: ["ocpp1.6"],
+  securityProfile: SecurityProfile.NONE,
+});
+
+// Register a typed handler
+client.handle("Reset", ({ params }) => {
+  console.log("Reset type:", params.type); // typed: "Hard" | "Soft"
+  return { status: "Accepted" };
+});
+
+await client.connect();
+
+// Version-aware call — fully typed
+const response = await client.call("ocpp1.6", "BootNotification", {
+  chargePointVendor: "VendorX",
+  chargePointModel: "ModelY",
+});
+
+console.log("Status:", response.status); // "Accepted" | "Pending" | "Rejected"
 ```
+
+</Step>
+
+<Step>
+
+### Create a Server (Central System)
+
+```typescript title="server.ts"
+import { OCPPServer } from "ocpp-ws-io";
+
+const server = new OCPPServer({
+  protocols: ["ocpp1.6", "ocpp2.0.1"],
+});
+
+server.auth((accept, reject, handshake) => {
+  console.log(`Connection from ${handshake.identity}`);
+  accept({ session: { authorized: true } });
+});
+
+server.on("client", (client) => {
+  console.log(`${client.identity} connected (${client.protocol})`);
+
+  client.handle("ocpp1.6", "BootNotification", ({ params }) => {
+    return {
+      status: "Accepted",
+      currentTime: new Date().toISOString(),
+      interval: 300,
+    };
+  });
+});
+
+await server.listen(3000);
+```
+
+</Step>
+
+</Steps>
+
+---
+
+## Architecture Overview
+
+```mermaid
+graph TB
+    subgraph Browser["Browser Environment"]
+        BC[BrowserOCPPClient]
+    end
+
+    subgraph NodeClient["Node.js Client"]
+        NC[OCPPClient]
+    end
+
+    subgraph NodeServer["Node.js Server"]
+        NS[OCPPServer]
+        SC[OCPPServerClient]
+        NS --> SC
+    end
+
+    subgraph Adapters["Clustering"]
+        RA[RedisAdapter]
+    end
+
+    BC -->|WebSocket| NS
+    NC -->|WebSocket + TLS| NS
+    NS --> RA
+```
+
+| Component           | Import                      | Description                                           |
+| :------------------ | :-------------------------- | :---------------------------------------------------- |
+| `OCPPClient`        | `ocpp-ws-io`                | Node.js client with TLS, security profiles, ping/pong |
+| `OCPPServer`        | `ocpp-ws-io`                | WebSocket server with auth, clustering, strict mode   |
+| `BrowserOCPPClient` | `ocpp-ws-io/browser`        | Lightweight browser client for testing & simulation   |
+| `RedisAdapter`      | `ocpp-ws-io/adapters/redis` | Multi-instance clustering via Redis pub/sub           |
+
+---
+
+## OCPP Version Support
+
+| Feature                | OCPP 1.6 | OCPP 2.0.1 | OCPP 2.1 |
+| :--------------------- | :------: | :--------: | :------: |
+| Type-safe `call()`     |    ✅    |     ✅     |    ✅    |
+| Type-safe `handle()`   |    ✅    |     ✅     |    ✅    |
+| JSON Schema Validation |    ✅    |     ✅     |    ✅    |
+| Auto-generated Types   |    ✅    |     ✅     |    ✅    |
+
+---
+
+## What's Next?
+
+<Cards>
+  <Card
+    title="Quick Start Guide"
+    href="/docs/quick-start"
+    description="Set up your first OCPP client and server in under 5 minutes."
+  />
+  <Card
+    title="Browser Client"
+    href="/docs/browser-client"
+    description="Build charge point simulators that run directly in the browser."
+  />
+  <Card
+    title="Framework Integration"
+    href="/docs/frameworks"
+    description="Use with Express, Fastify, NestJS, Next.js, and more."
+  />
+  <Card
+    title="Security Profiles"
+    href="/docs/security"
+    description="Configure TLS, Basic Auth, and Mutual TLS for production."
+  />
+  <Card
+    title="Type Safety"
+    href="/docs/type-safety"
+    description="Leverage auto-generated types for compile-time safety."
+  />
+  <Card
+    title="API Reference"
+    href="/docs/api-reference"
+    description="Complete API documentation for all classes and methods."
+  />
+</Cards>

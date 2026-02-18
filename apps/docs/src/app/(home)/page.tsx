@@ -3,6 +3,7 @@ import { blogSource } from "@/lib/blog";
 import { Hero } from "@/components/landing/hero";
 import { Features } from "@/components/landing/features";
 import { VideoDemo } from "@/components/landing/video-demo";
+import { CodeShowcase } from "@/components/landing/code-showcase";
 import { Footer } from "@/components/landing/footer";
 
 export default function HomePage() {
@@ -14,6 +15,7 @@ export default function HomePage() {
     <div className="flex flex-col min-h-screen max-w-7xl mx-auto">
       <Hero />
       <VideoDemo />
+      <CodeShowcase />
       <Features />
 
       {/* Blog Section */}
