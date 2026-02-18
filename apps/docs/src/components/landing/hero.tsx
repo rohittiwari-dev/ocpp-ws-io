@@ -26,7 +26,7 @@ export function Hero() {
         >
           <div className="inline-flex w-fit items-center gap-2 rounded-md border border-fd-primary/20 bg-fd-primary/10 px-3 py-1 text-xs font-mono text-fd-primary mb-8">
             <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
-            v1.0 — OCPP 1.6 · 2.0.1 · 2.1
+            v1.0.2 — OCPP 1.6 · 2.0.1 · 2.1
           </div>
 
           <h1 className="text-5xl font-bold tracking-tight text-fd-foreground sm:text-7xl mb-6">
