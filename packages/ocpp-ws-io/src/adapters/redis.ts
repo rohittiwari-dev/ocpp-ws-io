@@ -6,15 +6,15 @@ import type { EventAdapterInterface } from "../types.js";
  * or any other client that implements these methods.
  */
 export interface RedisLikeClient {
-  publish(channel: string, message: string): Promise<number | unknown>;
-  subscribe(channel: string, ...args: unknown[]): Promise<unknown>;
-  unsubscribe(channel: string, ...args: unknown[]): Promise<unknown>;
+  publish(channel: string, message: string): Promise<number | unknown | void>;
+  subscribe(channel: string, ...args: unknown[]): Promise<unknown | void>;
+  unsubscribe(channel: string, ...args: unknown[]): Promise<unknown | void>;
   on(
     event: "message",
     callback: (channel: string, message: string) => void,
   ): unknown;
-  disconnect?(): Promise<void>;
-  quit?(): Promise<unknown>;
+  disconnect?(): Promise<void> | void;
+  quit?(): Promise<unknown> | void;
 }
 
 export interface RedisAdapterOptions {

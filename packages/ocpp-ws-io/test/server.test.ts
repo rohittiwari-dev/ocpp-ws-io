@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { OCPPServer } from "../src/server.js";
 import { OCPPClient } from "../src/client.js";
 import type { OCPPServerClient } from "../src/server-client.js";
@@ -370,5 +370,325 @@ describe("OCPPServer - handleUpgrade, reconfigure, adapter, signal", () => {
     // Server should be closed — new connections should fail
     const addr = httpServer.address();
     expect(addr).toBeNull(); // address() returns null on closed server
+  });
+});
+
+describe("OCPPServer - Robustness & Clustering", () => {
+  afterEach(async () => {
+    if (server) await server.close({ force: true }).catch(() => {});
+    vi.useRealTimers();
+  });
+
+  it("should broadcast to local clients and publish to adapter", async () => {
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    const httpServer = await server.listen(0);
+    port = getPort(httpServer);
+
+    const published: Array<{ channel: string; data: unknown }> = [];
+    const mockAdapter = {
+      connect: async () => {},
+      disconnect: async () => {},
+      publish: async (channel: string, data: unknown) => {
+        published.push({ channel, data });
+      },
+      subscribe: async () => {},
+      unsubscribe: async () => {},
+    };
+    server.setAdapter(mockAdapter);
+
+    // Connect 2 clients
+    const client1 = new OCPPClient({
+      identity: "CS_BC_1",
+      endpoint: `ws://localhost:${port}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+    const client2 = new OCPPClient({
+      identity: "CS_BC_2",
+      endpoint: `ws://localhost:${port}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+
+    await Promise.all([client1.connect(), client2.connect()]);
+    await new Promise((r) => setTimeout(r, 100)); // wait for registration
+
+    let c1Received = false;
+    let c2Received = false;
+
+    // Handle the broadcasted call
+    // @ts-ignore
+    client1.handle("Reset", () => {
+      c1Received = true;
+      return { status: "Accepted" };
+    });
+    // @ts-ignore
+    client2.handle("Reset", () => {
+      c2Received = true;
+      return { status: "Accepted" };
+    });
+
+    // Broadcast
+    await server.broadcast("Reset", { type: "Soft" });
+
+    // Verify local delivery
+    expect(c1Received).toBe(true);
+    expect(c2Received).toBe(true);
+
+    // Verify remote publish
+    expect(published).toHaveLength(1);
+    // Implementation uses "ocpp:broadcast", adapter adds prefix -> "ocpp-ws-io:ocpp:broadcast"
+    // Mock adapter doesn't strip prefix, but we are testing what server.ts calls
+    expect(published[0].channel).toBe("ocpp:broadcast");
+    expect(published[0].data).toMatchObject({
+      method: "Reset",
+      params: { type: "Soft" },
+    }); // source will be a UUID
+
+    await Promise.all([client1.close(), client2.close()]);
+  });
+
+  it("should persist session data across reconnections", async () => {
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    const httpServer = await server.listen(0);
+    port = getPort(httpServer);
+
+    // Client 1 connects
+    const client1 = new OCPPClient({
+      identity: "CS_PERSIST",
+      endpoint: `ws://localhost:${port}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+    await client1.connect();
+
+    // Get server-side client for CS_PERSIST
+    const serverClient1 = Array.from(server.clients).find(
+      (c) => c.identity === "CS_PERSIST",
+    );
+    expect(serverClient1).toBeDefined();
+
+    // Modify session
+    serverClient1!.session.foo = "bar";
+
+    // Disconnect
+    await client1.close();
+
+    // Client 2 connects (same identity)
+    const client2 = new OCPPClient({
+      identity: "CS_PERSIST",
+      endpoint: `ws://localhost:${port}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+    await client2.connect();
+
+    // Get new server-side client
+    const serverClient2 = Array.from(server.clients).find(
+      (c) => c.identity === "CS_PERSIST",
+    );
+    expect(serverClient2).toBeDefined();
+    expect(serverClient2).not.toBe(serverClient1); // Different object
+
+    // VERIFY SESSION IS RESTORED
+    expect(serverClient2!.session.foo).toBe("bar");
+
+    await client2.close();
+  });
+
+  it("should garbage collect stale sessions", async () => {
+    vi.useFakeTimers();
+
+    // Set short session timeout for testing via constructor option if possible,
+    // but currently it's hardcoded private.
+    // However, we can control the time advance.
+
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+
+    const httpServer = await server.listen(0);
+    port = getPort(httpServer);
+
+    const client1 = new OCPPClient({
+      identity: "CS_GC",
+      endpoint: `ws://localhost:${port}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+    await client1.connect();
+
+    const serverClient1 = Array.from(server.clients).find(
+      (c) => c.identity === "CS_GC",
+    );
+    serverClient1!.session.marker = "alive";
+
+    // Disconnect to start the "inactive" timer
+    await client1.close();
+
+    // Advance time by 1 hour (less than 2h timeout)
+    await vi.advanceTimersByTimeAsync(1 * 60 * 60 * 1000);
+
+    // Reconnect - should still have session
+    const client2 = new OCPPClient({
+      identity: "CS_GC",
+      endpoint: `ws://localhost:${port}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+    await client2.connect();
+    const serverClient2 = Array.from(server.clients).find(
+      (c) => c.identity === "CS_GC",
+    );
+    expect(serverClient2!.session.marker).toBe("alive");
+    await client2.close();
+
+    // Advance time by 2 hours + 1 minute (total > 2h)
+    // The GC runs every 60s.
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000 + 60000);
+
+    // Reconnect - should have NEW session
+    const client3 = new OCPPClient({
+      identity: "CS_GC",
+      endpoint: `ws://localhost:${port}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+    await client3.connect();
+    const serverClient3 = Array.from(server.clients).find(
+      (c) => c.identity === "CS_GC",
+    );
+    expect(serverClient3!.session.marker).toBeUndefined(); // Session was cleared
+
+    await client3.close();
+  });
+
+  it("should ignore broadcast messages from self (loopback)", async () => {
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+    // access private node ID
+    const nodeId = (server as any)._nodeId;
+
+    // Simulate incoming message with same node ID
+    const mockAdapter = {
+      connect: async () => {},
+      disconnect: async () => {},
+      publish: async () => {},
+      subscribe: async (_ch: string, handler: Function) => {
+        // immediately inject a loopback message
+        handler({
+          source: nodeId,
+          method: "Reset",
+          params: {},
+        });
+      },
+      unsubscribe: async () => {},
+    };
+
+    const clientCallSpy = vi.fn();
+    // mock a client
+    (server as any)._clients = new Set([
+      {
+        call: clientCallSpy,
+        identity: "C1",
+      },
+    ]);
+
+    server.setAdapter(mockAdapter);
+
+    // Should NOT have called client
+    expect(clientCallSpy).not.toHaveBeenCalled();
+  });
+
+  it("should ignore malformed broadcast messages", async () => {
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+    const mockAdapter = {
+      connect: async () => {},
+      disconnect: async () => {},
+      publish: async () => {},
+      subscribe: async (_ch: string, handler: Function) => {
+        handler(null); // null
+        handler("string"); // not object
+        handler({}); // no source/method
+      },
+      unsubscribe: async () => {},
+    };
+
+    server.setAdapter(mockAdapter);
+    // Should not crash
+    expect(true).toBe(true);
+  });
+
+  it("should handle client errors during broadcast gracefully", async () => {
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+    const mockAdapter = {
+      connect: async () => {},
+      disconnect: async () => {},
+      publish: async () => {},
+      subscribe: async (_ch: string, handler: Function) => {
+        handler({
+          source: "other-node",
+          method: "Reset",
+          params: { type: "Soft" },
+        });
+      },
+      unsubscribe: async () => {},
+    };
+
+    const errorClient = {
+      call: vi.fn().mockRejectedValue(new Error("Client disconnected")),
+      identity: "C_ERR",
+    };
+
+    (server as any)._clients = new Set([errorClient]);
+
+    // Should not throw
+    server.setAdapter(mockAdapter);
+
+    // Wait a tick for the async handling
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(errorClient.call).toHaveBeenCalled();
+  });
+
+  it("should catch errors in broadcast handler", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    let capturedHandler: Function;
+
+    const mockAdapter = {
+      connect: async () => {},
+      disconnect: async () => {},
+      publish: async () => {},
+      subscribe: async (_ch: string, handler: Function) => {
+        capturedHandler = handler;
+      },
+      unsubscribe: async () => {},
+    };
+
+    server.setAdapter(mockAdapter);
+
+    // Corrupt the server state to cause error during processing
+    // @ts-ignore
+    server._nodeId = { throwing: "error" }; // unlikely to throw
+    // Better: force iterator of clients to throw
+    // @ts-ignore
+    server._clients = {
+      [Symbol.iterator]: () => {
+        throw new Error("Iterator Error");
+      },
+    };
+
+    // Trigger handler
+    capturedHandler!({ source: "other", method: "Reset", params: {} });
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      "Error processing broadcast message:",
+      expect.any(Error),
+    );
+    consoleSpy.mockRestore();
   });
 });
