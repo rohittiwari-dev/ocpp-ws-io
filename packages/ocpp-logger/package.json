@@ -1,0 +1,59 @@
+{
+  "name": "voltlog",
+  "version": "1.0.0",
+  "description": "Structured logger for real-time infrastructure — lightweight, type-safe, OCPP-aware. Works standalone or with ocpp-ws-io.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rohittiwari-dev/ocpp-ws-io",
+    "directory": "packages/ocpp-logger"
+  },
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "logger",
+    "ocpp",
+    "structured-logging",
+    "iot",
+    "ev-charging",
+    "websocket",
+    "type-safe",
+    "middleware",
+    "transformer",
+    "alerting",
+    "redaction",
+    "csms",
+    "charging-station"
+  ],
+  "author": "Rohit Tiwari <rohit@rohittiwari.me>",
+  "homepage": "https://ocpp-ws-io.rohittiwari.me",
+  "bugs": {
+    "url": "https://github.com/rohittiwari-dev/ocpp-ws-io/issues"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@paralleldrive/cuid2": "^3.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "tsup": "^8.3.6",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
