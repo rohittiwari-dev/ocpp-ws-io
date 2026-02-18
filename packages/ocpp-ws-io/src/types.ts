@@ -234,6 +234,52 @@ export interface HandshakeInfo {
 
 export type SessionData<T = Record<string, unknown>> = T;
 
+// ─── Logger Interface ────────────────────────────────────────────
+
+/**
+ * Minimal logger contract — compatible with `console`, `pino`, `voltlog`,
+ * or any custom object with these methods.
+ *
+ * All methods are optional so `console` works as-is.
+ */
+export interface LoggerLike {
+  debug?(message: string, meta?: Record<string, unknown>): void;
+  info?(message: string, meta?: Record<string, unknown>): void;
+  warn?(message: string, meta?: Record<string, unknown>): void;
+  error?(message: string, meta?: Record<string, unknown>): void;
+  child?(context: Record<string, unknown>): LoggerLike;
+}
+
+/**
+ * Logging configuration for OCPPClient and OCPPServer.
+ *
+ * @example Default (auto console logging)
+ * ```ts
+ * const client = new OCPPClient({ identity: 'CP-101', endpoint: '...' });
+ * // → Logs to console via voltlog by default
+ * ```
+ *
+ * @example Disable logging
+ * ```ts
+ * new OCPPClient({ identity: 'CP-101', endpoint: '...', logging: false });
+ * ```
+ *
+ * @example Custom logger
+ * ```ts
+ * new OCPPClient({ identity: 'CP-101', endpoint: '...', logging: { handler: pino() } });
+ * ```
+ */
+export interface LoggingConfig {
+  /** Enable/disable logging (default: true) */
+  enabled?: boolean;
+  /** Enable OCPP exchange log prettification (default: false) */
+  exchangeLog?: boolean;
+  /** Log level for the default voltlog logger (default: 'INFO') */
+  level?: string;
+  /** Custom logger — replaces the default voltlog entirely */
+  handler?: LoggerLike;
+}
+
 // ─── Client Options ──────────────────────────────────────────────
 
 export interface ClientOptions {
@@ -277,6 +323,13 @@ export interface ClientOptions {
   maxBadMessages?: number;
   /** Include error details in responses (default: false) */
   respondWithDetailedErrors?: boolean;
+  /**
+   * Logging configuration.
+   * - `undefined` / not set → default voltlog with console (logging enabled)
+   * - `false` → logging disabled entirely
+   * - `LoggingConfig` → custom configuration
+   */
+  logging?: LoggingConfig | false;
 }
 
 // ─── Server Options ──────────────────────────────────────────────
@@ -304,6 +357,13 @@ export interface ServerOptions {
   maxBadMessages?: number;
   /** Include error details in responses — inherited (default: false) */
   respondWithDetailedErrors?: boolean;
+  /**
+   * Logging configuration — inherited by server clients.
+   * - `undefined` / not set → default voltlog with console
+   * - `false` → logging disabled
+   * - `LoggingConfig` → custom configuration
+   */
+  logging?: LoggingConfig | false;
 }
 
 // ─── Listen Options ──────────────────────────────────────────────

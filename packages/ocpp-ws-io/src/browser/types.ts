@@ -18,6 +18,8 @@ import type {
   WildcardHandler as _WildcardHandler,
   CallOptions as _CallOptions,
   CloseOptions as _CloseOptions,
+  LoggerLike as _LoggerLike,
+  LoggingConfig as _LoggingConfig,
 } from "../types.js";
 
 import type {
@@ -41,6 +43,8 @@ export type CallHandler<TParams = unknown, TResult = unknown> = _CallHandler<
 export type WildcardHandler = _WildcardHandler;
 export type CallOptions = _CallOptions;
 export type CloseOptions = _CloseOptions;
+export type LoggerLike = _LoggerLike;
+export type LoggingConfig = _LoggingConfig;
 export type AllMethodNames<V extends OCPPProtocol> = _AllMethodNames<V>;
 export type OCPPRequestType<
   V extends OCPPProtocol,
@@ -81,6 +85,13 @@ export interface BrowserClientOptions {
   maxBadMessages?: number;
   /** Include error details in responses (default: false) */
   respondWithDetailedErrors?: boolean;
+  /**
+   * Logging configuration.
+   * - `undefined` / not set → uses `console` as default logger
+   * - `false` → logging disabled entirely
+   * - `LoggingConfig` → custom configuration (use `handler` for custom logger)
+   */
+  logging?: LoggingConfig | false;
 }
 
 // ─── Browser Client Events ──────────────────────────────────────
