@@ -46,13 +46,13 @@ describe("Logger Integration - Client", () => {
     if (server) await server.close({ force: true });
   });
 
-  it("should use default voltlog logger when no logging config is set", async () => {
+  it("should use default voltlog-io logger when no logging config is set", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"], logging: false });
     server.auth((accept) => accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
-    // No logging config — should use default (voltlog with console)
+    // No logging config — should use default (voltlog-io with console)
     // Just verify it doesn't crash
     client = new OCPPClient({
       identity: "CS_LOG_DEFAULT",

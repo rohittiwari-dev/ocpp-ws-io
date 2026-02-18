@@ -237,7 +237,7 @@ export type SessionData<T = Record<string, unknown>> = T;
 // ─── Logger Interface ────────────────────────────────────────────
 
 /**
- * Minimal logger contract — compatible with `console`, `pino`, `voltlog`,
+ * Minimal logger contract — compatible with `console`, `pino`, `voltlog-io`,
  * or any custom object with these methods.
  *
  * All methods are optional so `console` works as-is.
@@ -256,7 +256,7 @@ export interface LoggerLike {
  * @example Default (auto console logging)
  * ```ts
  * const client = new OCPPClient({ identity: 'CP-101', endpoint: '...' });
- * // → Logs to console via voltlog by default
+ * // → Logs to console via voltlog-io by default
  * ```
  *
  * @example Disable logging
@@ -281,13 +281,13 @@ export interface LoggingConfig {
   exchangeLog?: boolean;
   /**
    * Enable pretty-printed colored output (default: false).
-   * Uses voltlog's prettyTransport with icons, colors, and timestamps.
+   * Uses voltlog-io's prettyTransport with icons, colors, and timestamps.
    * Without this, logs are structured JSON.
    */
   prettify?: boolean;
-  /** Log level for the default voltlog logger (default: 'INFO') */
+  /** Log level for the default voltlog-io logger (default: 'INFO') */
   level?: string;
-  /** Custom logger — replaces the default voltlog entirely */
+  /** Custom logger — replaces the default voltlog-io entirely */
   handler?: LoggerLike;
 }
 
@@ -336,7 +336,7 @@ export interface ClientOptions {
   respondWithDetailedErrors?: boolean;
   /**
    * Logging configuration.
-   * - `undefined` / not set → default voltlog with console (logging enabled)
+   * - `undefined` / not set → default voltlog-io with console (logging enabled)
    * - `false` → logging disabled entirely
    * - `LoggingConfig` → custom configuration
    */
@@ -370,7 +370,7 @@ export interface ServerOptions {
   respondWithDetailedErrors?: boolean;
   /**
    * Logging configuration — inherited by server clients.
-   * - `undefined` / not set → default voltlog with console
+   * - `undefined` / not set → default voltlog-io with console
    * - `false` → logging disabled
    * - `LoggingConfig` → custom configuration
    */

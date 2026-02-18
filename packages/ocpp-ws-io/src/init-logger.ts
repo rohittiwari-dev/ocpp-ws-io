@@ -1,12 +1,12 @@
 /**
  * Internal utility to initialize a logger from LoggingConfig.
  *
- * - `undefined` → default voltlog with console transport
+ * - `undefined` → default voltlog-io with console transport
  * - `false` → null (logging disabled)
- * - `LoggingConfig` → custom handler or configured voltlog
+ * - `LoggingConfig` → custom handler or configured voltlog-io
  */
 
-import { createLogger, consoleTransport, prettyTransport } from "voltlog";
+import { createLogger, consoleTransport, prettyTransport } from "voltlog-io";
 import type { LoggerLike, LoggingConfig } from "./types.js";
 
 /**
@@ -28,7 +28,7 @@ export function initLogger(
     return config.handler;
   }
 
-  // Build default voltlog
+  // Build default voltlog-io
   const level = (config?.level ?? "INFO") as
     | "TRACE"
     | "DEBUG"
