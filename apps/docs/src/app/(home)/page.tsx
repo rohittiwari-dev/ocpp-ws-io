@@ -6,6 +6,17 @@ import { VideoDemo } from "@/components/landing/video-demo";
 import { CodeShowcase } from "@/components/landing/code-showcase";
 import { Footer } from "@/components/landing/footer";
 
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "The Type-Safe OCPP WebSocket Library for Node.js",
+  description:
+    "Build scalable CSMS and Charging Stations with ocpp-ws-io. Supports OCPP 1.6, 2.0.1, 2.1, strict validation, and clustering.",
+  alternates: {
+    canonical: "./",
+  },
+};
+
 export default function HomePage() {
   const posts = [...blogSource.getPages()]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())

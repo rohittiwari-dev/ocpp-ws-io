@@ -108,7 +108,7 @@ export function getErrorPlainObject(err: Error): Record<string, unknown> {
 // ─── Package Identity ───────────────────────────────────────────
 
 const PKG_NAME = "ocpp-ws-io";
-const PKG_VERSION = "1.0.0";
+const PKG_VERSION = "1.0.1";
 
 /**
  * Get the package identifier string used in HTTP headers and logging.

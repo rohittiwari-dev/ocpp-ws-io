@@ -1,5 +1,6 @@
 {
   "name": "ocpp-ws-io-monorepo",
+  "version": "1.0.1",
   "private": true,
   "scripts": {
     "build": "turbo run build",
@@ -7,6 +8,21 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint"
   },
+  "author": "Rohit Tiwari <rohit@rohittiwari.me>",
+  "homepage": "https://ocpp-ws-io.rohittiwari.me",
+  "bugs": {
+    "url": "https://github.com/rohittiwari-dev/ocpp-ws-io/issues"
+  },
+  "keywords": [
+    "ocpp",
+    "websocket",
+    "rpc",
+    "ev-charging",
+    "csms",
+    "ocpp1.6",
+    "ocpp2.0.1",
+    "type-safe"
+  ],
   "devDependencies": {
     "turbo": "^2.4.2"
   },
