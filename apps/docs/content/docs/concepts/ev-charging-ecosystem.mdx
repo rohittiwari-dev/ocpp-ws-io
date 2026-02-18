@@ -1,0 +1,82 @@
+---
+title: The EV Charging Ecosystem
+description: Understanding the players, protocols, and standards in the EV charging world.
+---
+
+import { Mermaid } from "@/components/mermaid";
+
+The Electric Vehicle (EV) charging ecosystem is a complex network of hardware, software, and stakeholders. As a developer, understanding these relationships is crucial for building effective solutions.
+
+## Key Players
+
+### 1. EV Driver
+
+The end-user who wants to charge their vehicle. They interact with the charging station physically and often use a mobile app to find stations and pay.
+
+### 2. CPO (Charge Point Operator)
+
+The company that operates and maintains the physical charging infrastructure. They are responsible for ensuring the chargers are online and functioning.
+
+- **Examples**: EVgo, Electrify America, Ionity.
+
+### 3. eMSP (e-Mobility Service Provider)
+
+The company that has the relationship with the driver. They provide the mobile app, RFID card, and billing services.
+
+- **Examples**: ChargePoint (App), PlugSurfing, Shell Recharge.
+
+> **Note**: A company can be both a CPO and an eMSP.
+
+### 4. CSMS (Charging Station Management System)
+
+The software backend used by the CPO to manage their chargers. This is where **OCPP** lives.
+
+- **Role**: Connects to chargers, monitors status, handles firmware updates, and manages transactions.
+
+### 5. DSO (Distribution System Operator)
+
+The utility company that manages the power grid. They need to know how much load the chargers are pulling to prevent grid failure.
+
+## The Protocol Alphabet Soup
+
+<Mermaid
+  chart={`
+flowchart LR
+    EV[Electric Vehicle] <-->|ISO 15118 / PWM| EVSE[Charging Station]
+    EVSE <-->|OCPP| CSMS[Central System]
+    CSMS <-->|OCPI / OICP| MSP[eMSP Backend]
+    MSP <-->|HTTP| App[Driver App]
+`}
+/>
+
+### OCPP (Open Charge Point Protocol)
+
+- **Link**: Charging Station ↔ CSMS
+- **Purpose**: Device management and transaction handling.
+- **Analogy**: The "USB driver" for the charging station.
+
+### OCPI (Open Charge Point Interface)
+
+- **Link**: CPO (CSMS) ↔ eMSP
+- **Purpose**: Roaming. Allows a driver from one network (e.g., Shell) to charge at another network's station (e.g., Ionity).
+- **Key Features**: Syncing station location data (CDR), sharing tariff information, and handling cross-network payment sessions.
+
+### ISO 15118 (Plug & Charge)
+
+- **Link**: EV ↔ Charging Station
+- **Purpose**: Advanced communication between the car and the charger.
+- **Key Feature**: **Plug & Charge**. The car identifies itself securely via certificates, eliminating the need for an RFID card or app.
+
+### OSCP (Open Smart Charging Protocol)
+
+- **Link**: CSMS ↔ DSO
+- **Purpose**: Grid management. The DSO tells the CSMS how much power is available in a specific area (capacity forecast).
+
+## Where `ocpp-ws-io` Fits
+
+`ocpp-ws-io` is a library specifically for building the **OCPP** link.
+
+- If you are building a **CSMS**, you use `OCPPServer` to accept connections from stations.
+- If you are building a **Charging Station firmware** or **Simulator**, you use `OCPPClient` to connect to a CSMS.
+
+It handles the low-level WebSocket framing, JSON serialization, and message validation so you can focus on the business logic of managing sessions and chargers.

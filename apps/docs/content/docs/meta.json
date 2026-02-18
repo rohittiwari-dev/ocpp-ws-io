@@ -2,13 +2,18 @@
   "pages": [
     "index",
     "quick-start",
-    "browser-client",
-    "frameworks",
-    "security",
-    "type-safety",
-    "clustering",
     "system-design",
-    "api-reference",
-    "type-generation"
-  ]
+    "---Integrations---",
+    "frameworks",
+    "browser-client",
+    "---Implementations---",
+    "security",
+    "clustering",
+    "type-safety",
+    "---System---",
+    "type-generation",
+    "api-reference"
+  ],
+  "title": "Documentation",
+  "icon": "Pin"
 }
