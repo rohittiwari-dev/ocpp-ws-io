@@ -2,6 +2,7 @@
   "pages": [
     "index",
     "quick-start",
+    "browser-client",
     "frameworks",
     "security",
     "type-safety",
