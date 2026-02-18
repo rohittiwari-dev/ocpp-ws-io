@@ -9,6 +9,8 @@ import type {
   OCPPResponseType,
 } from "./generated/index.js";
 
+export type { AllMethodNames, OCPPRequestType, OCPPResponseType };
+
 // ─── Typed EventEmitter ──────────────────────────────────────────
 
 /**

@@ -42,6 +42,7 @@ await server.listen(3000);
 When you use the `RedisAdapter`, the following happens:
 
 1.  **Broadcasts**: If you call `server.broadcast()`, the message is published to Redis and sent by _all_ server instances to their connected clients.
-2.  **State Sync**: (If implemented features require it) Shared state usage leverages Redis.
+2.  **Loop Prevention**: The sender node's ID is attached to the message, ensuring it doesn't re-broadcast to itself.
+3.  **State Sync**: (If implemented features require it) Shared state usage leverages Redis.
 
 _Note: Pure point-to-point calls (`client.call`) still route directly to the connected socket. The clusters are primarily for broadcast and discovery scenarios._

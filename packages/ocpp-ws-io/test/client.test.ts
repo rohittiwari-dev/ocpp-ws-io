@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { OCPPServer } from "../src/server.js";
 import { OCPPClient } from "../src/client.js";
 import { SecurityProfile } from "../src/types.js";
@@ -952,5 +952,85 @@ describe("OCPPClient - Version-Aware Call", () => {
     expect(result).toHaveProperty("configurationKey");
     await cl.close({ force: true }).catch(() => {});
     await srv.close({ force: true });
+  });
+
+  it("should build endpoint correctly with query params", () => {
+    const clientWithQuery = new OCPPClient({
+      identity: "CS_QUERY",
+      endpoint: "ws://localhost:9999/foo",
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+      query: { a: "1", b: "2" },
+    });
+    const url = (clientWithQuery as any)._buildEndpoint();
+    expect(url).toBe("ws://localhost:9999/foo/CS_QUERY?a=1&b=2");
+
+    const clientWithExistingQuery = new OCPPClient({
+      identity: "CS_Q2",
+      endpoint: "ws://localhost:9999?foo=bar",
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+      query: { baz: "qux" },
+    });
+    const url2 = (clientWithExistingQuery as any)._buildEndpoint();
+    expect(url2).toBe("ws://localhost:9999?foo=bar/CS_Q2&baz=qux");
+  });
+
+  it("should build TLS options correctly", () => {
+    const client = new OCPPClient({
+      identity: "CS_TLS",
+      endpoint: "wss://localhost:9999",
+      protocols: ["ocpp1.6"],
+      // @ts-ignore
+      securityProfile: 3, // TLS_CLIENT_CERT
+      tls: {
+        ca: "rootca",
+        cert: "clientcert",
+        key: "clientkey",
+        passphrase: "pass",
+        rejectUnauthorized: false,
+      },
+    });
+
+    const opts = (client as any)._buildWsOptions();
+    expect(opts.ca).toBe("rootca");
+    expect(opts.cert).toBe("clientcert");
+    expect(opts.key).toBe("clientkey");
+    expect(opts.passphrase).toBe("pass");
+    expect(opts.rejectUnauthorized).toBe(false);
+  });
+
+  it("should emit strictValidationFailure on inbound validation error", () => {
+    const client = new OCPPClient({
+      identity: "CS_VAL_ERR",
+      endpoint: "ws://localhost:9999",
+      protocols: ["ocpp1.6"],
+      strictMode: true,
+      reconnect: false,
+    });
+
+    // Inject a mock validator that throws
+    const mockValidator = {
+      subprotocol: "ocpp1.6",
+      validate: vi.fn().mockImplementation(() => {
+        throw new Error("Validation failed");
+      }),
+    };
+    (client as any)._validators = [mockValidator];
+    (client as any)._protocol = "ocpp1.6";
+
+    const emitSpy = vi.spyOn(client, "emit");
+
+    // Trigger validation logic via private method
+    expect(() => {
+      (client as any)._validateInbound("Heartbeat", {}, "req");
+    }).toThrow("Validation failed");
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      "strictValidationFailure",
+      expect.objectContaining({
+        error: expect.any(Error),
+      }),
+    );
   });
 });

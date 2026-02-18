@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
 import {
   createServer as createHttpServer,
   type IncomingMessage,
@@ -24,6 +25,8 @@ import {
   type ClientOptions,
   type ServerEvents,
   type TypedEventEmitter,
+  type AllMethodNames,
+  type OCPPRequestType,
 } from "./types.js";
 
 /**
@@ -42,6 +45,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _wss: WebSocketServer | null = null;
   private _adapter: EventAdapterInterface | null = null;
   private _httpServerAbortControllers = new Set<AbortController>();
+
+  // Robustness & Clustering
+  private readonly _nodeId = randomUUID();
+  private _sessions = new Map<
+    string,
+    { data: Record<string, unknown>; lastActive: number }
+  >();
+  private _gcInterval: NodeJS.Timeout | null = null;
+  // Default session timeout: 2 hours
+  private readonly _sessionTimeoutMs = 2 * 60 * 60 * 1000;
 
   constructor(options: ServerOptions = {}) {
     super();
@@ -64,6 +77,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       respondWithDetailedErrors: false,
       ...options,
     };
+
+    // Start Session Garbage Collector
+    this._gcInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [identity, session] of this._sessions.entries()) {
+        if (now - session.lastActive > this._sessionTimeoutMs) {
+          this._sessions.delete(identity);
+        }
+      }
+    }, 60 * 1000).unref(); // Run every minute, don't block exit
   }
 
   // ─── Getters ─────────────────────────────────────────────────
@@ -130,6 +153,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       head: Buffer,
     ) => {
       this._handleUpgrade(req, socket, head).catch((err) => {
+        // Ensure socket is destroyed on error to prevent leaks
+        if (!socket.destroyed) {
+          socket.destroy();
+        }
         this.emit("upgradeError", { error: err, socket });
       });
     };
@@ -192,6 +219,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     if (!identity) {
       abortHandshake(socket, 400, "Missing identity in URL path");
       return;
+    }
+
+    // TCP Keep-Alive to prevent load balancer timeouts
+    if ("setKeepAlive" in socket) {
+      (socket as import("node:net").Socket).setKeepAlive(true);
     }
 
     // Parse subprotocols
@@ -310,9 +342,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       const client = new OCPPServerClient(clientOptions, {
         ws,
         handshake,
-        session: {},
+        // Session Persistence: Restore or Create
+        session: this._sessions.get(identity)?.data ?? {},
         protocol: selectedProtocol,
       });
+
+      // Update session activity on connection
+      this._updateSessionActivity(identity, client.session);
 
       this._clients.add(client);
 
@@ -321,12 +357,32 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       });
 
       this.emit("client", client);
+
+      // Update session activity on every message
+      client.on("message", () => {
+        this._updateSessionActivity(identity, client.session);
+      });
+    });
+  }
+
+  private _updateSessionActivity(
+    identity: string,
+    data: Record<string, unknown>,
+  ) {
+    this._sessions.set(identity, {
+      data,
+      lastActive: Date.now(),
     });
   }
 
   // ─── Close ───────────────────────────────────────────────────
 
   async close(options: CloseOptions = {}): Promise<void> {
+    if (this._gcInterval) {
+      clearInterval(this._gcInterval);
+      this._gcInterval = null;
+    }
+
     // Close all clients
     const closePromises = Array.from(this._clients).map((client) =>
       client.close(options).catch(() => {}),
@@ -371,11 +427,64 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   setAdapter(adapter: EventAdapterInterface): void {
     this._adapter = adapter;
+
+    // Subscribe to global broadcast channel
+    this._adapter.subscribe("ocpp:broadcast", (msg: unknown) => {
+      try {
+        if (!msg || typeof msg !== "object") return;
+        const payload = msg as {
+          source: string;
+          method: string;
+          params: unknown;
+        };
+
+        // Loopback protection: Ignore own messages
+        if (payload.source === this._nodeId) return;
+
+        // Forward to local clients
+        // We iterate and fire-and-forget to not block the event loop
+        for (const client of this._clients) {
+          client.call(payload.method, payload.params as any).catch(() => {
+            // Ignore errors from individual clients during broadcast
+          });
+        }
+      } catch (err) {
+        console.error("Error processing broadcast message:", err);
+      }
+    });
   }
 
   async publish(channel: string, data: unknown): Promise<void> {
     if (this._adapter) {
       await this._adapter.publish(channel, data);
     }
+  }
+
+  /**
+   * Broadcasts a request to all connected clients (local and remote).
+   *
+   * 1. Iterates over all local clients and sends the request.
+   * 2. Publishes the request to Redis so other nodes can do the same.
+   */
+  async broadcast<V extends AllMethodNames<any>>(
+    method: V,
+    params: OCPPRequestType<any, V>,
+  ): Promise<void> {
+    // 1. Send to local clients
+    const localPromises = Array.from(this._clients).map((client) =>
+      // Cast to any to bypass strict protocol checks during broadcast
+      client.call(method as any, params as any).catch(() => {}),
+    );
+
+    // 2. Publish to Redis (if adapter exists)
+    const remotePromise = this._adapter
+      ? this._adapter.publish("ocpp:broadcast", {
+          source: this._nodeId,
+          method,
+          params,
+        })
+      : Promise.resolve();
+
+    await Promise.all([Promise.all(localPromises), remotePromise]);
   }
 }

@@ -1,0 +1,140 @@
+---
+title: System Design
+description: Architecture, data flow, and clustering strategy.
+---
+
+import { Mermaid } from "@/components/mermaid";
+
+This document details the system design of `ocpp-ws-io`, focusing on how it handles data flow, clustering, and validation.
+
+## 1. Architecture Overview
+
+`ocpp-ws-io` is designed to be **transport-agnostic** but primarily used with WebSockets. It acts as a high-performance RPC framework for OCPP.
+
+### Key Architectural Decisions
+
+- **Stateless Core**: The core library itself does not enforce any specific database or caching layer.
+- **Adapter Pattern**: Clustering and event distribution are handled via an `EventAdapterInterface`. We provide a `RedisAdapter`, but you can implement others (e.g., Kafka, NATS).
+- **Manual Clustering**: The library **does not** automatically shard state across nodes, but it handles global broadcasting via Redis automatically.
+- **Robust Client Management**: Sessions are persistent in-memory across reconnections (sticky sessions), and TCP Keep-Alives are enabled to prevent load balancer timeouts.
+
+---
+
+## 2. Redis Data Flow (Clustering)
+
+When using `RedisAdapter`, the system does **not** become a "shared state" cluster automatically. Instead, it allows instances to communicate.
+
+### Data Flow Diagram
+
+<Mermaid chart={`
+sequenceDiagram
+    participant CS as Charging Station
+    participant NodeA as Server Node A
+    participant Redis
+    participant NodeB as Server Node B
+
+    CS->>NodeA: Connect (WebSocket)
+    NodeA->>NodeA: Store Connection in Memory (Map)
+
+    note right of NodeA: Node A owns this connection.
+
+    NodeB->>Redis: Publish "Broadcast" (e.g. Firmware Update)
+    Redis->>NodeA: Receive Message
+    NodeA->>CS: Forward Message to Station
+
+`} />
+
+### Automatic Broadcast
+
+When you call `server.broadcast({...})`:
+
+1.  **Local Send**: The server iterates over all connected local clients and sends the call.
+2.  **Remote Publish**: If an adapter is configured, it publishes to the `ocpp:broadcast` channel (prefixed, e.g., `ocpp-ws-io:ocpp:broadcast`).
+3.  **Remote Receive**: Other nodes receive the message, check the source ID (to avoid loops), and send it to their own local clients.
+
+### Example: Using Broadcast
+
+```typescript
+// On Node A and Node B
+const adapter = new RedisAdapter({ pubClient: pub, subClient: sub });
+server.setAdapter(adapter);
+
+// This call reaches ALL chargers on ALL nodes
+server.broadcast("Reset", { type: "Soft" });
+```
+
+### Session Persistence & Robustness
+
+To handle unstable networks (4G/LTE), the server keeps session data in memory even after a disconnect.
+
+1.  **Sticky Sessions**: If a client reconnects with the same `identity`, their `session` object is restored.
+2.  **Garbage Collection**: A background job removes sessions that have been inactive for > 2 hours (configurable).
+3.  **TCP Keep-Alive**: Enabled by default to keep connections alive through load balancers.
+
+---
+
+## 3. System Design Without Redis (Single Node)
+
+For smaller deployments or development, you can run a single instance without any adapter.
+
+### Data Flow Diagram
+
+<Mermaid chart={`
+sequenceDiagram
+    participant CS as Charging Station
+    participant Server as Single Node Server
+    participant DB as Database
+
+    CS->>Server: BootNotification
+    Server->>DB: Validate Station ID
+    DB-->>Server: Station Valid
+    Server-->>CS: Accepted
+
+`} />
+
+### Trade-offs
+
+- **Simplicity**: No external infrastructure dependencies.
+- **Limitation**: You cannot scale horizontally. If you add a second server, they won't know about each other's clients.
+
+---
+
+## 4. Data Validation Flow
+
+Validation happens at multiple layers to ensure OCPP compliance and system integrity.
+
+### Validation Pipeline
+
+<Mermaid
+  chart={`
+flowchart TD
+    A["Incoming WebSocket Message"] --> B{"Valid JSON?"}
+    B -- No --> C[Error: ProtocolViolation]
+    B -- Yes --> D{"Check Message Type"}
+    
+    D -->|CALL| E["Schema Validation (Zod)"]
+    D -->|CALLRESULT| F[Correlation Check]
+    
+    E -- Invalid --> G[Error: FormatViolation]
+    E -- Valid --> H[Business Logic / Handler]
+    
+    H --> I[Database / Controller]
+    I --> J[Response]
+`}
+/>
+
+### Layers of Validation
+
+1.  **Protocol Layer**: Checks if the message is a valid OCPP array `[MessageType, MessageId, ...]`.
+2.  **Schema Layer**:
+    - If `strictMode: true` is enabled, the library validates the payload against the official OCPP JSON schemas (using `ajv` or similar validators provided in `standardValidators`).
+    - Invalid payloads are rejected immediately with a `FormatViolation` or `PropertyConstraintViolation`.
+3.  **App Layer**: Your code checks business rules (e.g., "Is this station authorized?").
+
+```typescript
+// Enabling Strict Schema Validation
+const server = new OCPPServer({
+  strictMode: true, // Enforces OCPP schema compliance
+  strictModeValidators: standardValidators, // Built-in validators
+});
+```
