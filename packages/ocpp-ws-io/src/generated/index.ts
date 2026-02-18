@@ -17,8 +17,8 @@ export interface OCPPMethodMap {
 }
 
 /** All valid method names for a given protocol. */
-export type OCPPMethodNames<P extends keyof OCPPMethodMap> = string &
-  keyof OCPPMethodMap[P];
+export type OCPPMethodNames<P extends keyof OCPPMethodMap> =
+  string & keyof OCPPMethodMap[P];
 
 /** Distributes over union protocols to get all method names. */
 export type AllMethodNames<P extends keyof OCPPMethodMap> =
@@ -29,11 +29,7 @@ export type OCPPRequestType<
   P extends keyof OCPPMethodMap,
   M extends string,
 > = P extends keyof OCPPMethodMap
-  ? M extends keyof OCPPMethodMap[P]
-    ? OCPPMethodMap[P][M] extends { request: infer R }
-      ? R
-      : never
-    : never
+  ? M extends keyof OCPPMethodMap[P] ? OCPPMethodMap[P][M] extends { request: infer R } ? R : never : never
   : never;
 
 /** Response type for a given protocol + method. */
@@ -41,9 +37,5 @@ export type OCPPResponseType<
   P extends keyof OCPPMethodMap,
   M extends string,
 > = P extends keyof OCPPMethodMap
-  ? M extends keyof OCPPMethodMap[P]
-    ? OCPPMethodMap[P][M] extends { response: infer R }
-      ? R
-      : never
-    : never
+  ? M extends keyof OCPPMethodMap[P] ? OCPPMethodMap[P][M] extends { response: infer R } ? R : never : never
   : never;

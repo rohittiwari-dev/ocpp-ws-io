@@ -23,6 +23,7 @@
   },
   "scripts": {
     "build": "tsup",
+    "generate": "node scripts/generate-types.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
