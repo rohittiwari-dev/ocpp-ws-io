@@ -21,7 +21,9 @@ import {
   type ClientEvents,
   type TypedEventEmitter,
   type OCPPProtocol,
+  type LoggerLike,
 } from "./types.js";
+import { initLogger } from "./init-logger.js";
 import type {
   AllMethodNames,
   OCPPRequestType,
@@ -108,6 +110,7 @@ export class OCPPClient<
   private _validators: Validator[] = [];
   private _strictProtocols: string[] | null = null;
   protected _handshake: unknown = null;
+  protected _logger: LoggerLike | null = null;
 
   constructor(options: ClientOptions) {
     super();
@@ -134,6 +137,12 @@ export class OCPPClient<
     };
 
     this._callQueue = new Queue(this._options.callConcurrency);
+
+    // Initialize logger
+    this._logger = initLogger(this._options.logging, {
+      component: "OCPPClient",
+      identity: this._identity,
+    });
 
     // Set up strict mode validators
     if (this._options.strictMode) {
@@ -176,6 +185,7 @@ export class OCPPClient<
       const endpoint = this._buildEndpoint();
       const wsOptions = this._buildWsOptions();
 
+      this._logger?.debug?.("Connecting", { url: endpoint });
       this.emit("connecting", { url: endpoint });
 
       const ws = new WebSocket(
@@ -192,6 +202,7 @@ export class OCPPClient<
         this._badMessageCount = 0;
         this._attachWebsocket(ws);
         this._startPing();
+        this._logger?.info?.("Connected", { protocol: ws.protocol });
 
         // Create a minimal response object
         const response = (
@@ -209,6 +220,7 @@ export class OCPPClient<
       const onError = (err: Error) => {
         cleanup();
         this._state = CLOSED;
+        this._logger?.error?.("Connection error", { error: err.message });
         this.emit("error", err);
         reject(err);
       };
@@ -224,6 +236,9 @@ export class OCPPClient<
           res.statusCode ?? 0,
           res.headers as Record<string, string>,
         );
+        this._logger?.error?.("Unexpected HTTP response", {
+          statusCode: res.statusCode,
+        });
         this.emit("error", err);
         reject(err);
       };
@@ -483,6 +498,11 @@ export class OCPPClient<
     return new Promise<unknown>((resolve, reject) => {
       const timeoutHandle = setTimeoutCb(() => {
         this._pendingCalls.delete(msgId);
+        this._logger?.warn?.("Call timed out", {
+          messageId: msgId,
+          method,
+          timeoutMs,
+        });
         reject(
           new TimeoutError(
             `Call to "${method}" timed out after ${timeoutMs}ms`,
@@ -514,6 +534,7 @@ export class OCPPClient<
 
       this._pendingCalls.set(msgId, pending);
       this._ws!.send(messageStr);
+      this._logger?.debug?.("CALL →", { messageId: msgId, method });
       this.emit("message", message);
     });
   }
@@ -610,6 +631,7 @@ export class OCPPClient<
   private async _handleIncomingCall(message: OCPPCall): Promise<void> {
     const [, msgId, method, params] = message;
 
+    this._logger?.debug?.("CALL ←", { messageId: msgId, method });
     this.emit("call", message);
 
     if (this._state !== OPEN) {
@@ -677,6 +699,11 @@ export class OCPPClient<
       this._ws?.send(JSON.stringify(response));
       this.emit("callResult", response);
     } catch (err) {
+      this._logger?.error?.("Handler error", {
+        messageId: msgId,
+        method,
+        error: (err as Error).message,
+      });
       this._pendingResponses.delete(msgId);
 
       const rpcErr =
@@ -703,6 +730,7 @@ export class OCPPClient<
   private _handleCallResult(message: OCPPCallResult): void {
     const [, msgId, result] = message;
 
+    this._logger?.debug?.("CALLRESULT ←", { messageId: msgId });
     this.emit("callResult", message);
 
     const pending = this._pendingCalls.get(msgId);
@@ -719,6 +747,11 @@ export class OCPPClient<
   private _handleCallError(message: OCPPCallError): void {
     const [, msgId, errorCode, errorMessage, errorDetails] = message;
 
+    this._logger?.warn?.("CALLERROR ←", {
+      messageId: msgId,
+      errorCode,
+      errorMessage,
+    });
     this.emit("callError", message);
 
     const pending = this._pendingCalls.get(msgId);
@@ -735,6 +768,10 @@ export class OCPPClient<
 
   private _onBadMessage(rawMessage: string, error: Error): void {
     this._badMessageCount++;
+    this._logger?.warn?.("Bad message", {
+      error: error.message,
+      count: this._badMessageCount,
+    });
     this.emit("badMessage", { message: rawMessage, error });
 
     // Best-effort: try to extract messageId from the raw string and respond
@@ -777,6 +814,7 @@ export class OCPPClient<
     if (this._state !== CLOSING) {
       // Unexpected close — attempt reconnect
       this._state = CLOSED;
+      this._logger?.info?.("Disconnected", { code, reason: reasonStr });
       this.emit("close", { code, reason: reasonStr });
 
       if (
@@ -806,6 +844,10 @@ export class OCPPClient<
         (0.5 + Math.random() * 0.5),
     );
 
+    this._logger?.warn?.("Reconnecting", {
+      attempt: this._reconnectAttempt,
+      delayMs: Math.round(delayMs),
+    });
     this.emit("reconnect", { attempt: this._reconnectAttempt, delay: delayMs });
 
     this._reconnectTimer = setTimeoutCb(async () => {

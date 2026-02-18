@@ -44,4 +44,6 @@ export {
   type AllMethodNames,
   type OCPPRequestType,
   type OCPPResponseType,
+  type LoggerLike,
+  type LoggingConfig,
 } from "./types.js";
