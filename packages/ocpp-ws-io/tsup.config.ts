@@ -1,16 +1,33 @@
 import { defineConfig } from "tsup";
 
-export default defineConfig({
-  entry: {
-    index: "src/index.ts",
-    "adapters/redis": "src/adapters/redis.ts",
+export default defineConfig([
+  // Node.js entries (server, client, adapters)
+  {
+    entry: {
+      index: "src/index.ts",
+      "adapters/redis": "src/adapters/redis.ts",
+    },
+    format: ["cjs", "esm"],
+    dts: true,
+    splitting: false,
+    sourcemap: true,
+    clean: true,
+    outDir: "dist",
+    target: "node18",
+    shims: true,
   },
-  format: ["cjs", "esm"],
-  dts: true,
-  splitting: false,
-  sourcemap: true,
-  clean: true,
-  outDir: "dist",
-  target: "node18",
-  shims: true,
-});
+  // Browser entry (no Node.js dependencies)
+  {
+    entry: {
+      browser: "src/browser/index.ts",
+    },
+    format: ["cjs", "esm"],
+    dts: true,
+    splitting: false,
+    sourcemap: true,
+    clean: false,
+    outDir: "dist",
+    target: "esnext",
+    platform: "browser",
+  },
+]);
