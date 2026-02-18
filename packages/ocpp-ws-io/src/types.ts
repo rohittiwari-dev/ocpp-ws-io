@@ -5,11 +5,19 @@ import type { EventEmitter } from "node:events";
 import type { Validator } from "./validator.js";
 import type {
   AllMethodNames,
+  OCPPMethodMap,
+  OCPPProtocolKey,
   OCPPRequestType,
   OCPPResponseType,
 } from "./generated/index.js";
 
-export type { AllMethodNames, OCPPRequestType, OCPPResponseType };
+export type {
+  AllMethodNames,
+  OCPPMethodMap,
+  OCPPProtocolKey,
+  OCPPRequestType,
+  OCPPResponseType,
+};
 
 // ─── Typed EventEmitter ──────────────────────────────────────────
 
@@ -80,7 +88,8 @@ export type TypedEventEmitter<TEvents extends Record<string, unknown[]>> = Omit<
 
 // ─── OCPP Protocol ───────────────────────────────────────────────
 
-export type OCPPProtocol = "ocpp1.6" | "ocpp2.0.1" | "ocpp2.1";
+export type OCPPProtocol = OCPPProtocolKey;
+export type AnyOCPPProtocol = OCPPProtocol | (string & {});
 
 // ─── Connection State ────────────────────────────────────────────
 
@@ -239,7 +248,7 @@ export interface ClientOptions {
   /** TLS options (Profile 2 & 3) */
   tls?: TLSOptions;
   /** OCPP subprotocols to negotiate */
-  protocols?: string[];
+  protocols?: AnyOCPPProtocol[];
   /** Additional WebSocket headers */
   headers?: Record<string, string>;
   /** Additional query parameters */
@@ -278,7 +287,7 @@ export interface ServerOptions {
   /** TLS options for HTTPS server (Profile 2 & 3) */
   tls?: TLSOptions;
   /** Accepted OCPP subprotocols */
-  protocols?: string[];
+  protocols?: AnyOCPPProtocol[];
   /** Call timeout in ms — inherited by server clients (default: 30000) */
   callTimeoutMs?: number;
   /** Ping interval in ms — inherited by server clients (default: 30000) */

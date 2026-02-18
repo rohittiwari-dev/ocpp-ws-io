@@ -7,6 +7,7 @@
     "type-safety",
     "clustering",
     "system-design",
-    "api-reference"
+    "api-reference",
+    "type-generation"
   ]
 }

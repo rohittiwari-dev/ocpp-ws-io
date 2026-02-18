@@ -16,6 +16,9 @@ export interface OCPPMethodMap {
   "ocpp2.1": OCPP21Methods;
 }
 
+/** All valid OCPP protocol strings (auto-generated, extensible via module augmentation). */
+export type OCPPProtocolKey = keyof OCPPMethodMap;
+
 /** All valid method names for a given protocol. */
 export type OCPPMethodNames<P extends keyof OCPPMethodMap> =
   string & keyof OCPPMethodMap[P];
