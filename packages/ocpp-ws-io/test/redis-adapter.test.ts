@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { RedisAdapter } from "../src/adapters/redis.js";
+import { RedisAdapter } from "../src/adapters/redis/index.js";
 
 // Mock Redis client
 const createMockRedis = () => ({
@@ -169,5 +169,58 @@ describe("RedisAdapter", () => {
     expect(() => {
       messageHandler!("test:thrower", "{}");
     }).not.toThrow();
+  });
+});
+
+describe("RedisAdapter (Node Redis v4)", () => {
+  const createNodeRedisMock = () => ({
+    isOpen: true,
+    connect: vi.fn(),
+    publish: vi.fn().mockResolvedValue(1),
+    subscribe: vi.fn().mockResolvedValue(undefined),
+    unsubscribe: vi.fn().mockResolvedValue(undefined),
+    disconnect: vi.fn().mockResolvedValue(undefined),
+    // Node Redis doesn't use 'on' for messages
+  });
+
+  it("should use NodeRedisDriver and subscribe with handler", async () => {
+    const pub = createNodeRedisMock();
+    const sub = createNodeRedisMock();
+    const adapter = new RedisAdapter({
+      pubClient: pub,
+      subClient: sub,
+      prefix: "nr:",
+    });
+
+    let capturedHandler: ((msg: string) => void) | undefined;
+
+    // Node Redis v4 subscribe takes handler as second arg
+    sub.subscribe.mockImplementation((_chan: string, handler: any) => {
+      capturedHandler = handler;
+      return Promise.resolve();
+    });
+
+    let received: any;
+    await adapter.subscribe("foo", (data) => {
+      received = data;
+    });
+
+    expect(sub.subscribe).toHaveBeenCalledWith("nr:foo", expect.any(Function));
+
+    // Simulate message
+    capturedHandler!(JSON.stringify({ a: 1 }));
+    expect(received).toEqual({ a: 1 });
+  });
+
+  it("should disconnect using disconnect()", async () => {
+    const pub = createNodeRedisMock();
+    const sub = createNodeRedisMock();
+    // @ts-ignore
+    const adapter = new RedisAdapter({ pubClient: pub, subClient: sub });
+
+    await adapter.disconnect();
+
+    expect(pub.disconnect).toHaveBeenCalled();
+    expect(sub.disconnect).toHaveBeenCalled();
   });
 });

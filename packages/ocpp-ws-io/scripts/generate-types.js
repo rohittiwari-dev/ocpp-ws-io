@@ -35,25 +35,30 @@ const VERSIONS = [
   },
 ];
 
-const SCHEMA_DIR = path.join(__dirname, "..", "src", "schemas");
-const OUT_DIR = path.join(__dirname, "..", "src", "generated");
+// Allow overriding base dir for testing
+function main(baseDir = __dirname) {
+  const SCHEMA_DIR = path.join(baseDir, "..", "src", "schemas");
+  const OUT_DIR = path.join(baseDir, "..", "src", "generated");
 
-// ── Main ─────────────────────────────────────────────────────────
+  if (!fs.existsSync(SCHEMA_DIR)) {
+    throw new Error(`Schema directory not found: ${SCHEMA_DIR}`);
+  }
 
-fs.mkdirSync(OUT_DIR, { recursive: true });
+  fs.mkdirSync(OUT_DIR, { recursive: true });
 
-for (const version of VERSIONS) {
-  const schemaPath = path.join(SCHEMA_DIR, version.file);
-  const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
-  const methods = extractMethods(schema);
-  const code = generateVersionFile(version, methods);
-  fs.writeFileSync(path.join(OUT_DIR, `${version.key}.ts`), code);
-  console.log(`✓ ${version.key}.ts  (${methods.size} methods)`);
+  for (const version of VERSIONS) {
+    const schemaPath = path.join(SCHEMA_DIR, version.file);
+    const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
+    const methods = extractMethods(schema);
+    const code = generateVersionFile(version, methods);
+    fs.writeFileSync(path.join(OUT_DIR, `${version.key}.ts`), code);
+    console.log(`✓ ${version.key}.ts  (${methods.size} methods)`);
+  }
+
+  generateIndex(OUT_DIR);
+  console.log("✓ index.ts");
+  console.log("\nDone.");
 }
-
-generateIndex();
-console.log("✓ index.ts");
-console.log("\nDone.");
 
 // ── Extract Methods ──────────────────────────────────────────────
 
@@ -275,7 +280,7 @@ function jsonSchemaToTS(schema, definitions) {
 
 // ── Generate Index ───────────────────────────────────────────────
 
-function generateIndex() {
+function generateIndex(outDir) {
   const lines = [
     "// Auto-generated index — DO NOT EDIT",
     "/* eslint-disable */",
@@ -321,5 +326,12 @@ function generateIndex() {
     "",
   ];
 
-  fs.writeFileSync(path.join(OUT_DIR, "index.ts"), lines.join("\n"));
+  fs.writeFileSync(path.join(outDir, "index.ts"), lines.join("\n"));
 }
+
+// Execute if run directly
+if (require.main === module) {
+  main();
+}
+
+module.exports = { main, extractMethods, generateVersionFile, jsonSchemaToTS };
