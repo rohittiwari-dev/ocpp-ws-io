@@ -28,6 +28,7 @@ Building an OCPP-compliant charging station management system (CSMS) or charge p
 - 🔁 **Auto-Reconnect** — Exponential backoff with configurable limits
 - 🧩 **Framework Agnostic** — Standalone, Express, Fastify, NestJS, or custom `handleUpgrade`
 - 📡 **Clustering** — Redis adapter for multi-instance deployments (`ioredis` & `node-redis`)
+- 🪵 **Logging** — Built-in structured logging via [voltlog-io](https://www.npmjs.com/package/voltlog-io)
 - 🌐 **Browser Client** — Zero-dependency browser WebSocket client via `ocpp-ws-io/browser`
 - 🔀 **Version-Aware Handlers** — Register handlers per OCPP version with typed params
 
@@ -49,6 +50,7 @@ const client = new OCPPClient({
   identity: "CP001",
   protocols: ["ocpp1.6"],
   securityProfile: SecurityProfile.NONE,
+  logging: { prettify: true, exchangeLog: true }, // ⚡ See the traffic!
 });
 
 client.handle("Reset", ({ params }) => {
@@ -95,18 +97,17 @@ await server.listen(3000);
 ```
 ocpp-ws-io/
 ├── packages/
-│   ├── ocpp-ws-io/          # Core OCPP WebSocket library (npm: ocpp-ws-io)
-│   └── ocpp-logger/         # OCPP-aware structured logger (coming soon)
+│   └── ocpp-ws-io/          # Core OCPP WebSocket library (npm: ocpp-ws-io)
 ├── apps/
-│   └── docs/                # Documentation site (ocpp-ws-io.dev)
+│   └── docs/                # Documentation site (ocpp-ws-io.rohittiwari.me)
 └── .github/
     └── workflows/           # CI/CD pipelines
 ```
 
-| Package                               | Description                             | Status         |
-| ------------------------------------- | --------------------------------------- | -------------- |
-| [`ocpp-ws-io`](packages/ocpp-ws-io)   | Core OCPP WebSocket RPC client & server | ✅ Published   |
-| [`ocpp-logger`](packages/ocpp-logger) | OCPP-aware structured logger            | 🚧 Coming Soon |
+| Package                                      | Description                               | Status       |
+| -------------------------------------------- | ----------------------------------------- | ------------ |
+| [`ocpp-ws-io`](packages/ocpp-ws-io)          | Core OCPP WebSocket RPC client & server   | ✅ Published |
+| [`voltlog-io`](https://npmjs.com/voltlog-io) | Structured Logger (Maintained Separately) | ✅ Published |
 
 ## Requirements
 

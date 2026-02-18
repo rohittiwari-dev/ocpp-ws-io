@@ -1,0 +1,53 @@
+
+> docs@1.0.0 build
+> next build
+
+[MDX] generated files in 129.23120000000017ms
+▲ Next.js 16.1.6 (Turbopack)
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 27.3s
+  Running TypeScript ...
+  Collecting page data using 7 workers ...
+  Generating static pages using 7 workers (0/94) ...
+  Generating static pages using 7 workers (23/94) 
+  Generating static pages using 7 workers (46/94) 
+  Generating static pages using 7 workers (70/94) 
+✓ Generating static pages using 7 workers (94/94) in 3.3s
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/search
+├ ○ /blog
+├ ● /blog/[slug]
+│ ├ /blog/building-csms-with-ocpp-ws-io
+│ ├ /blog/introducing-ocpp-ws-io
+│ ├ /blog/introducing-voltlog-io
+│ └ [+4 more paths]
+├ ● /docs/[[...slug]]
+│ ├ /docs/api-reference
+│ ├ /docs/browser-client
+│ ├ /docs/clustering
+│ └ [+23 more paths]
+├ ƒ /llms-full.txt
+├ ● /llms.mdx/docs/[[...slug]]
+│ ├ /llms.mdx/docs/api-reference
+│ ├ /llms.mdx/docs/browser-client
+│ ├ /llms.mdx/docs/clustering
+│ └ [+23 more paths]
+├ ƒ /llms.txt
+├ ● /og/docs/[...slug]
+│ ├ /og/docs/api-reference/image.png
+│ ├ /og/docs/browser-client/image.png
+│ ├ /og/docs/clustering/image.png
+│ └ [+23 more paths]
+├ ○ /robots.txt
+└ ○ /sitemap.xml
+
+
+○  (Static)   prerendered as static content
+●  (SSG)      prerendered as static HTML (uses generateStaticParams)
+ƒ  (Dynamic)  server-rendered on demand
+
