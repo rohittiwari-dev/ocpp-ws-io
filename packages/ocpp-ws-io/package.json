@@ -1,6 +1,6 @@
 {
   "name": "ocpp-ws-io",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Type-safe OCPP WebSocket RPC client & server with pub/sub, session management, and clustering support",
   "repository": {
     "type": "git",
@@ -48,8 +48,17 @@
     "iot",
     "pubsub",
     "clustering",
-    "type-safe"
+    "type-safe",
+    "csms",
+    "evse",
+    "smart-charging",
+    "iso15118"
   ],
+  "author": "Rohit Tiwari <rohit@rohittiwari.me>",
+  "homepage": "https://ocpp-ws-io.rohittiwari.me",
+  "bugs": {
+    "url": "https://github.com/rohittiwari-dev/ocpp-ws-io/issues"
+  },
   "license": "MIT",
   "dependencies": {
     "@paralleldrive/cuid2": "^3.3.0",
