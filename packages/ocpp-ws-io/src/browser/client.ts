@@ -50,6 +50,8 @@ interface PendingCall {
   reject: (reason: unknown) => void;
   timeoutHandle: ReturnType<typeof setTimeout>;
   abortHandler?: () => void;
+  method: string;
+  sentAt: number;
 }
 
 /**
@@ -115,6 +117,8 @@ export class BrowserOCPPClient<
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _badMessageCount = 0;
   private _logger: LoggerLike | null = null;
+  private _exchangeLog = false;
+  private _prettify = false;
 
   constructor(options: BrowserClientOptions) {
     super();
@@ -149,6 +153,36 @@ export class BrowserOCPPClient<
           identity: this._identity,
         });
       }
+      if (logging && typeof logging === "object") {
+        this._exchangeLog = logging.exchangeLog ?? false;
+        this._prettify = logging.prettify ?? false;
+      }
+    }
+  }
+
+  // ─── Exchange Log Helper ──────────────────────────────────────
+
+  private _logExchange(
+    direction: "IN" | "OUT",
+    type: "CALL" | "CALLRESULT" | "CALLERROR",
+    method: string | undefined,
+    meta: Record<string, unknown>,
+  ): void {
+    if (!this._logger) return;
+
+    const arrow = direction === "OUT" ? "→" : "←";
+    const level = type === "CALLERROR" ? "warn" : this._exchangeLog ? "info" : "debug";
+
+    if (this._exchangeLog && this._prettify) {
+      const icon =
+        type === "CALLERROR" ? "🚨" : type === "CALLRESULT" ? "✅" : "⚡";
+      const label = method ?? type;
+      const msg = `${icon} ${this._identity}  ${arrow}  ${label}  [${direction}]`;
+      this._logger?.[level]?.(msg, { ...meta, direction });
+    } else if (this._exchangeLog) {
+      this._logger?.[level]?.(`${type} ${arrow}`, { ...meta, direction });
+    } else {
+      this._logger?.[level]?.(`${type} ${arrow}`, meta);
     }
   }
 
@@ -485,6 +519,8 @@ export class BrowserOCPPClient<
         resolve: resolve as (v: unknown) => void,
         reject,
         timeoutHandle,
+        method,
+        sentAt: Date.now(),
       };
 
       // Abort signal support
@@ -505,7 +541,12 @@ export class BrowserOCPPClient<
 
       this._pendingCalls.set(msgId, pending);
       this._ws!.send(messageStr);
-      this._logger?.debug?.("CALL →", { messageId: msgId, method });
+      this._logExchange("OUT", "CALL", method, {
+        messageId: msgId,
+        method,
+        protocol: this._protocol,
+        payload: params,
+      });
       this.emit("message", message);
     });
   }
@@ -581,7 +622,12 @@ export class BrowserOCPPClient<
   private async _handleIncomingCall(message: OCPPCall): Promise<void> {
     const [, msgId, method, params] = message;
 
-    this._logger?.debug?.("CALL ←", { messageId: msgId, method });
+    this._logExchange("IN", "CALL", method, {
+      messageId: msgId,
+      method,
+      protocol: this._protocol,
+      payload: params,
+    });
     this.emit("call", message);
 
     if (this._state !== OPEN) {
@@ -670,10 +716,18 @@ export class BrowserOCPPClient<
   private _handleCallResult(message: OCPPCallResult): void {
     const [, msgId, result] = message;
 
-    this._logger?.debug?.("CALLRESULT ←", { messageId: msgId });
+    const pending = this._pendingCalls.get(msgId);
+    const latencyMs = pending ? Date.now() - pending.sentAt : undefined;
+
+    this._logExchange("IN", "CALLRESULT", pending?.method, {
+      messageId: msgId,
+      method: pending?.method,
+      protocol: this._protocol,
+      latencyMs,
+      payload: result,
+    });
     this.emit("callResult", message);
 
-    const pending = this._pendingCalls.get(msgId);
     if (!pending) return;
 
     clearTimeout(pending.timeoutHandle);
@@ -684,14 +738,20 @@ export class BrowserOCPPClient<
   private _handleCallError(message: OCPPCallError): void {
     const [, msgId, errorCode, errorMessage, errorDetails] = message;
 
-    this._logger?.warn?.("CALLERROR ←", {
+    const pending = this._pendingCalls.get(msgId);
+    const latencyMs = pending ? Date.now() - pending.sentAt : undefined;
+
+    this._logExchange("IN", "CALLERROR", errorCode, {
       messageId: msgId,
+      method: pending?.method,
       errorCode,
       errorMessage,
+      protocol: this._protocol,
+      latencyMs,
+      errorDetails,
     });
     this.emit("callError", message);
 
-    const pending = this._pendingCalls.get(msgId);
     if (!pending) return;
 
     clearTimeout(pending.timeoutHandle);

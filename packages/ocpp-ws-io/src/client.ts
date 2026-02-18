@@ -52,6 +52,8 @@ interface PendingCall {
   reject: (reason: unknown) => void;
   timeoutHandle: ReturnType<typeof setTimeoutCb>;
   abortHandler?: () => void;
+  method: string;
+  sentAt: number;
 }
 
 /**
@@ -111,6 +113,8 @@ export class OCPPClient<
   private _strictProtocols: string[] | null = null;
   protected _handshake: unknown = null;
   protected _logger: LoggerLike | null = null;
+  protected _exchangeLog = false;
+  protected _prettify = false;
 
   constructor(options: ClientOptions) {
     super();
@@ -139,14 +143,55 @@ export class OCPPClient<
     this._callQueue = new Queue(this._options.callConcurrency);
 
     // Initialize logger
-    this._logger = initLogger(this._options.logging, {
+    const loggingCfg = this._options.logging;
+    this._logger = initLogger(loggingCfg, {
       component: "OCPPClient",
       identity: this._identity,
     });
+    if (loggingCfg && typeof loggingCfg === "object") {
+      this._exchangeLog = loggingCfg.exchangeLog ?? false;
+      this._prettify = loggingCfg.prettify ?? false;
+    }
 
     // Set up strict mode validators
     if (this._options.strictMode) {
       this._setupValidators();
+    }
+  }
+
+  // ─── Exchange Log Helper ──────────────────────────────────────
+
+  /**
+   * Log an OCPP message exchange.
+   * - Default: "CALL → { method }" at debug level
+   * - exchangeLog: adds `direction` to meta
+   * - prettify + exchangeLog: renders styled line like "⚡ CP-101  →  BootNotification  [OUT]"
+   */
+  protected _logExchange(
+    direction: "IN" | "OUT",
+    type: "CALL" | "CALLRESULT" | "CALLERROR",
+    method: string | undefined,
+    meta: Record<string, unknown>,
+  ): void {
+    if (!this._logger) return;
+
+    const arrow = direction === "OUT" ? "→" : "←";
+    const level =
+      type === "CALLERROR" ? "warn" : this._exchangeLog ? "info" : "debug";
+
+    if (this._exchangeLog && this._prettify) {
+      // Styled exchange line
+      const icon =
+        type === "CALLERROR" ? "🚨" : type === "CALLRESULT" ? "✅" : "⚡";
+      const label = method ?? type;
+      const msg = `${icon} ${this._identity}  ${arrow}  ${label}  [${direction}]`;
+      this._logger?.[level]?.(msg, { ...meta, direction });
+    } else if (this._exchangeLog) {
+      // JSON with direction meta
+      this._logger?.[level]?.(`${type} ${arrow}`, { ...meta, direction });
+    } else {
+      // Default plain
+      this._logger?.[level]?.(`${type} ${arrow}`, meta);
     }
   }
 
@@ -514,6 +559,8 @@ export class OCPPClient<
         resolve: resolve as (v: unknown) => void,
         reject,
         timeoutHandle,
+        method,
+        sentAt: Date.now(),
       };
 
       // Abort signal support
@@ -534,7 +581,12 @@ export class OCPPClient<
 
       this._pendingCalls.set(msgId, pending);
       this._ws!.send(messageStr);
-      this._logger?.debug?.("CALL →", { messageId: msgId, method });
+      this._logExchange("OUT", "CALL", method, {
+        messageId: msgId,
+        method,
+        protocol: this._protocol,
+        payload: params,
+      });
       this.emit("message", message);
     });
   }
@@ -631,7 +683,12 @@ export class OCPPClient<
   private async _handleIncomingCall(message: OCPPCall): Promise<void> {
     const [, msgId, method, params] = message;
 
-    this._logger?.debug?.("CALL ←", { messageId: msgId, method });
+    this._logExchange("IN", "CALL", method, {
+      messageId: msgId,
+      method,
+      protocol: this._protocol,
+      payload: params,
+    });
     this.emit("call", message);
 
     if (this._state !== OPEN) {
@@ -730,10 +787,18 @@ export class OCPPClient<
   private _handleCallResult(message: OCPPCallResult): void {
     const [, msgId, result] = message;
 
-    this._logger?.debug?.("CALLRESULT ←", { messageId: msgId });
+    const pending = this._pendingCalls.get(msgId);
+    const latencyMs = pending ? Date.now() - pending.sentAt : undefined;
+
+    this._logExchange("IN", "CALLRESULT", pending?.method, {
+      messageId: msgId,
+      method: pending?.method,
+      protocol: this._protocol,
+      latencyMs,
+      payload: result,
+    });
     this.emit("callResult", message);
 
-    const pending = this._pendingCalls.get(msgId);
     if (!pending) return;
 
     clearTimeout(pending.timeoutHandle);
@@ -747,21 +812,28 @@ export class OCPPClient<
   private _handleCallError(message: OCPPCallError): void {
     const [, msgId, errorCode, errorMessage, errorDetails] = message;
 
-    this._logger?.warn?.("CALLERROR ←", {
+    const pending = this._pendingCalls.get(msgId);
+    const latencyMs = pending ? Date.now() - pending.sentAt : undefined;
+
+    this._logExchange("IN", "CALLERROR", errorCode, {
       messageId: msgId,
+      method: pending?.method,
       errorCode,
       errorMessage,
+      protocol: this._protocol,
+      latencyMs,
+      errorDetails,
     });
     this.emit("callError", message);
 
-    const pending = this._pendingCalls.get(msgId);
-    if (!pending) return;
+    const pending2 = this._pendingCalls.get(msgId);
+    if (!pending2) return;
 
-    clearTimeout(pending.timeoutHandle);
+    clearTimeout(pending2.timeoutHandle);
     this._pendingCalls.delete(msgId);
 
     const err = createRPCError(errorCode, errorMessage, errorDetails);
-    pending.reject(err);
+    pending2.reject(err);
   }
 
   // ─── Internal: Bad message handling ──────────────────────────
