@@ -289,6 +289,31 @@ export interface LoggingConfig {
   level?: string;
   /** Custom logger — replaces the default voltlog-io entirely */
   handler?: LoggerLike;
+
+  // ─── Display Options (only apply to default voltlog-io logger) ──
+
+  /**
+   * Show trailing metadata object in log output (default: true).
+   * `INFO Server listening {"port":5000,"host":"0.0.0.0"}`
+   *                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ ← hidden when false
+   */
+  showMetadata?: boolean;
+  /**
+   * Show source context object in log output (default: true).
+   * `INFO Server listening {"component":"OCPPServer"} {"port":5000}`
+   *                         ^^^^^^^^^^^^^^^^^^^^^^^^ ← hidden when false
+   */
+  showSourceMeta?: boolean;
+  /**
+   * Prettify source context into a compact tag (default: false).
+   * `{"component":"OCPPServer","identity":"CP-1"}` → `[OCPPServer/CP-1]`
+   */
+  prettifySource?: boolean;
+  /**
+   * Prettify trailing metadata into readable key=value pairs (default: false).
+   * `{"port":5000,"host":"0.0.0.0"}` → `port=5000 host=0.0.0.0`
+   */
+  prettifyMetadata?: boolean;
 }
 
 // ─── Client Options ──────────────────────────────────────────────

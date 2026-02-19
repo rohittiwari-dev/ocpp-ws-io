@@ -6,8 +6,86 @@
  * - `LoggingConfig` → custom handler or configured voltlog-io
  */
 
-import { consoleTransport, createLogger, prettyTransport } from "voltlog-io";
+import {
+  consoleTransport,
+  createLogger,
+  type LogEntry,
+  type LogLevelName,
+  type LogMiddleware,
+  prettyTransport,
+} from "voltlog-io";
 import type { LoggerLike, LoggingConfig } from "./types.js";
+
+// ─── Display middleware ─────────────────────────────────────────
+
+/**
+ * Check if any display option differs from its default.
+ */
+function hasDisplayCustomization(config: LoggingConfig): boolean {
+  return (
+    config.showMetadata === false ||
+    config.showSourceMeta === false ||
+    config.prettifySource === true ||
+    config.prettifyMetadata === true
+  );
+}
+
+/**
+ * Build a voltlog-io LogMiddleware that transforms context/meta
+ * before the transport sees them, so prettyTransport's colors are preserved.
+ *
+ * Strategy:
+ *  - hide   → clear the field so prettyTransport skips it
+ *  - prettify → embed a readable string into `entry.message` and clear the raw field
+ */
+function buildDisplayMiddleware(config: LoggingConfig): LogMiddleware {
+  const showMeta = config.showMetadata ?? true;
+  const showSource = config.showSourceMeta ?? true;
+  const prettySrc = config.prettifySource ?? false;
+  const prettyMeta = config.prettifyMetadata ?? false;
+
+  return (entry: LogEntry, next: (e: LogEntry) => void) => {
+    // ── Source context ──
+    if (!showSource) {
+      // Hide entirely
+      entry.context = undefined;
+    } else if (prettySrc && entry.context) {
+      // Build compact tag like [OCPPServer/WT159]
+      const parts: string[] = [];
+      if (entry.context.component) parts.push(String(entry.context.component));
+      if (entry.context.identity) parts.push(String(entry.context.identity));
+      if (parts.length > 0) {
+        // Embed into message and clear context
+        entry.message = `[${parts.join("/")}] ${entry.message}`;
+        entry.context = undefined;
+      }
+    }
+
+    // ── Trailing metadata ──
+    const meta = entry.meta as Record<string, unknown> | undefined;
+    if (!showMeta) {
+      // Hide entirely
+      entry.meta = {} as typeof entry.meta;
+    } else if (prettyMeta && meta && Object.keys(meta).length > 0) {
+      // Build key=value pairs, embed into message, clear meta
+      const pairs = Object.entries(meta)
+        .filter(([, v]) => v !== undefined && v !== null)
+        .map(
+          ([k, v]) =>
+            `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`,
+        )
+        .join(" ");
+      if (pairs) {
+        entry.message = `${entry.message}  ${pairs}`;
+      }
+      entry.meta = {} as typeof entry.meta;
+    }
+
+    next(entry);
+  };
+}
+
+// ─── Public API ─────────────────────────────────────────────────
 
 /**
  * Resolve a LoggingConfig | false | undefined into a LoggerLike or null.
@@ -29,22 +107,23 @@ export function initLogger(
   }
 
   // Build default voltlog-io
-  const level = (config?.level ?? "INFO") as
-    | "TRACE"
-    | "DEBUG"
-    | "INFO"
-    | "WARN"
-    | "ERROR"
-    | "FATAL";
+  const level = (config?.level ?? "INFO") as LogLevelName;
   const usePrettify = config?.prettify ?? false;
 
   const transports = usePrettify
     ? [prettyTransport({ level })]
     : [consoleTransport({ level })];
 
+  // Build display middleware if any display options are set
+  const middleware: LogMiddleware[] = [];
+  if (config && hasDisplayCustomization(config)) {
+    middleware.push(buildDisplayMiddleware(config));
+  }
+
   const logger = createLogger({
     level,
     transports,
+    middleware: middleware.length > 0 ? middleware : undefined,
   });
 
   // Bind default context (e.g. identity)
