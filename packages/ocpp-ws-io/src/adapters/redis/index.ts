@@ -81,4 +81,25 @@ export class RedisAdapter implements EventAdapterInterface {
       }
     }
   }
+
+  // ─── Presence Registry ─────────────────────────────────────────────
+
+  async setPresence(
+    identity: string,
+    nodeId: string,
+    ttl: number,
+  ): Promise<void> {
+    const key = `${this._prefix}presence:${identity}`;
+    await this._driver.set(key, nodeId, ttl);
+  }
+
+  async getPresence(identity: string): Promise<string | null> {
+    const key = `${this._prefix}presence:${identity}`;
+    return await this._driver.get(key);
+  }
+
+  async removePresence(identity: string): Promise<void> {
+    const key = `${this._prefix}presence:${identity}`;
+    await this._driver.del(key);
+  }
 }

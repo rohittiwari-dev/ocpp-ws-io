@@ -1,5 +1,6 @@
 import type { RPCError } from "./errors.js";
 import * as errors from "./errors.js";
+import type { LoggerLikeNotOptional } from "./types.js";
 
 // ─── RPC Error Factory ──────────────────────────────────────────
 
@@ -9,10 +10,7 @@ import * as errors from "./errors.js";
  */
 const RPC_ERROR_REGISTRY = new Map<
   string,
-  new (
-    message?: string,
-    details?: Record<string, unknown>,
-  ) => RPCError
+  new (message?: string, details?: Record<string, unknown>) => RPCError
 >([
   // Generic / framework errors
   ["GenericError", errors.RPCGenericError],
@@ -120,3 +118,15 @@ const PKG_VERSION = "1.0.1";
 export function getPackageIdent(): string {
   return `${PKG_NAME}/${PKG_VERSION}`;
 }
+
+/* 
+  No-op logger for when logging is disabled.
+  
+*/
+export const NOOP_LOGGER: LoggerLikeNotOptional = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  child: () => NOOP_LOGGER,
+};
