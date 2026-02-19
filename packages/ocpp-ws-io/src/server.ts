@@ -28,7 +28,11 @@ import {
   type ServerOptions,
   type TypedEventEmitter,
 } from "./types.js";
-import { abortHandshake, parseSubprotocols } from "./ws-util.js";
+import {
+  abortHandshake,
+  parseBasicAuth,
+  parseSubprotocols,
+} from "./ws-util.js";
 
 /**
  * OCPPServer — A typed WebSocket RPC server for OCPP communication.
@@ -77,8 +81,12 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       callConcurrency: 1,
       maxBadMessages: Infinity,
       respondWithDetailedErrors: false,
+      handshakeTimeoutMs: 30000,
       ...options,
     };
+
+    // Initialize WebSocketServer immediately (ws best practice: noServer mode)
+    this._wss = new WebSocketServer({ noServer: true });
 
     // Start Session Garbage Collector
     this._gcInterval = setInterval(() => {
@@ -216,14 +224,53 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     socket: Duplex,
     head: Buffer,
   ) => Promise<void> {
-    return (req, socket, head) => this._handleUpgrade(req, socket, head);
+    return (req, socket, head) => {
+      return this._handleUpgrade(req, socket, head).catch((err) => {
+        if (!socket.destroyed) {
+          socket.destroy();
+        }
+        this._logger?.error?.("Upgrade error", {
+          error: (err as Error).message,
+        });
+        this.emit("upgradeError", { error: err, socket });
+      });
+    };
   }
 
+  // ─── Upgrade Pipeline ─────────────────────────────────────────
+
+  /**
+   * Core upgrade handler. Follows a strict pipeline:
+   *
+   * 1. Validate socket readyState & upgrade header
+   * 2. Parse URL → identity + endpoint
+   * 3. Enable TCP Keep-Alive
+   * 4. Parse & negotiate subprotocols
+   * 5. Parse Basic Auth (via modular parseBasicAuth)
+   * 6. Extract TLS client certificate (Profile 3)
+   * 7. Build HandshakeInfo
+   * 8. Run auth callback with AbortController + handshake timeout
+   * 9. Complete WebSocket upgrade
+   * 10. Create OCPPServerClient
+   */
   private async _handleUpgrade(
     req: IncomingMessage,
     socket: Duplex,
     head: Buffer,
   ): Promise<void> {
+    // ── Step 1: Socket readyState & upgrade header validation ──
+    if ((socket as import("node:net").Socket).readyState !== "open") {
+      this._logger?.debug?.("Socket not open at upgrade start");
+      if (!socket.destroyed) socket.destroy();
+      return;
+    }
+
+    if (req.headers.upgrade?.toLowerCase() !== "websocket") {
+      abortHandshake(socket, 400, "Invalid upgrade request");
+      return;
+    }
+
+    // ── Step 2: Parse URL → identity + endpoint ──
     const url = new URL(
       req.url ?? "/",
       `http://${req.headers.host ?? "localhost"}`,
@@ -236,12 +283,12 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return;
     }
 
-    // TCP Keep-Alive to prevent load balancer timeouts
+    // ── Step 3: TCP Keep-Alive ──
     if ("setKeepAlive" in socket) {
       (socket as import("node:net").Socket).setKeepAlive(true);
     }
 
-    // Parse subprotocols
+    // ── Step 4: Parse & negotiate subprotocols ──
     let protocols = new Set<string>();
     const protocolHeader = req.headers["sec-websocket-protocol"];
     if (protocolHeader) {
@@ -253,7 +300,6 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
     }
 
-    // Negotiate protocol
     const serverProtocols = this._options.protocols ?? [];
     let selectedProtocol: string | undefined;
 
@@ -269,18 +315,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
     }
 
-    // Parse Basic Auth
-    let password: Buffer | undefined;
-    const authHeader = req.headers.authorization;
-    if (authHeader?.startsWith("Basic ")) {
-      const decoded = Buffer.from(authHeader.slice(6), "base64").toString();
-      const colonIndex = decoded.indexOf(":");
-      if (colonIndex !== -1) {
-        password = Buffer.from(decoded.slice(colonIndex + 1));
-      }
-    }
+    // ── Step 5: Parse Basic Auth (modular) ──
+    const password = parseBasicAuth(req.headers.authorization ?? "", identity);
 
-    // Get client certificate (Profile 3)
+    // ── Step 6: Client certificate (Profile 3 — mTLS) ──
     let clientCertificate:
       | ReturnType<TLSSocket["getPeerCertificate"]>
       | undefined;
@@ -292,6 +330,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       clientCertificate = (socket as TLSSocket).getPeerCertificate();
     }
 
+    // ── Step 7: Build HandshakeInfo ──
     const handshake: HandshakeInfo = {
       identity,
       remoteAddress: req.socket.remoteAddress ?? "",
@@ -305,44 +344,106 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       securityProfile: profile,
     };
 
-    // Auth callback
+    // ── Step 8: Auth callback with AbortController + timeout ──
     if (this._authCallback) {
       const ac = new AbortController();
+
+      // Socket lifecycle → abort on premature close / error
+      const onSocketGone = () => {
+        ac.abort(new Error("Socket closed during handshake"));
+      };
+      socket.on("close", onSocketGone);
+      socket.on("error", onSocketGone);
+      socket.on("end", onSocketGone);
+
+      // Handshake timeout guard
+      const timeoutMs = this._options.handshakeTimeoutMs ?? 30_000;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      if (timeoutMs > 0) {
+        timer = setTimeout(() => {
+          ac.abort(new Error("Handshake timeout"));
+        }, timeoutMs);
+      }
 
       try {
         await new Promise<AuthAccept | undefined>((resolve, reject) => {
           let settled = false;
 
           const accept = (opts?: AuthAccept) => {
-            if (settled) throw new Error("Auth already settled");
+            if (settled) return;
             settled = true;
             if (opts?.protocol) selectedProtocol = opts.protocol;
             resolve(opts);
           };
 
           const rejectAuth = (code = 401, message = "Unauthorized") => {
-            if (settled) throw new Error("Auth already settled");
+            if (settled) return;
             settled = true;
             reject({ code, message });
           };
 
+          // Guard: already aborted before we even start
+          if (ac.signal.aborted) {
+            reject(ac.signal.reason);
+            return;
+          }
+
+          ac.signal.addEventListener(
+            "abort",
+            () => {
+              if (!settled) {
+                settled = true;
+                reject(ac.signal.reason);
+              }
+            },
+            { once: true },
+          );
+
           this._authCallback?.(accept, rejectAuth, handshake, ac.signal);
         });
       } catch (err) {
+        if (ac.signal.aborted) {
+          const reason = err instanceof Error ? err.message : "Unknown abort";
+          this._logger?.warn?.("Handshake aborted", { identity, reason });
+          this.emit("upgradeAborted", {
+            identity,
+            reason,
+            socket,
+            request: req,
+          });
+          if (!socket.destroyed) socket.destroy();
+          return;
+        }
+
+        // Auth explicitly rejected
         const { code, message } = err as { code: number; message: string };
         this._logger?.warn?.("Auth rejected", { identity, code });
         abortHandshake(socket, code ?? 401, message ?? "Unauthorized");
         return;
+      } finally {
+        if (timer) clearTimeout(timer);
+        socket.removeListener("close", onSocketGone);
+        socket.removeListener("error", onSocketGone);
+        socket.removeListener("end", onSocketGone);
       }
     }
 
-    // Complete WebSocket upgrade
+    // ── Step 9: Socket readyState check before upgrade ──
+    if ((socket as import("node:net").Socket).readyState !== "open") {
+      this._logger?.debug?.("Socket closed before upgrade completion", {
+        identity,
+      });
+      if (!socket.destroyed) socket.destroy();
+      return;
+    }
+
+    // Ensure _wss is available (should always be after constructor init)
     if (!this._wss) {
       this._wss = new WebSocketServer({ noServer: true });
     }
 
+    // ── Step 10: Complete WebSocket upgrade & create client ──
     this._wss.handleUpgrade(req, socket, head, (ws) => {
-      // Build options for the server-side client
       const clientOptions: ClientOptions = {
         identity,
         endpoint: "",
@@ -355,22 +456,17 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         strictMode: this._options.strictMode,
         strictModeValidators: this._options.strictModeValidators,
         reconnect: false,
-        // Pass logging config — the client will create its own logger
-        // with identity context via initLogger
         logging: this._options.logging,
       };
 
       const client = new OCPPServerClient(clientOptions, {
         ws,
         handshake,
-        // Session Persistence: Restore or Create
         session: this._sessions.get(identity)?.data ?? {},
         protocol: selectedProtocol,
       });
 
-      // Update session activity on connection
       this._updateSessionActivity(identity, client.session);
-
       this._clients.add(client);
 
       this._logger?.info?.("Client connected", {
@@ -386,7 +482,6 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
       this.emit("client", client);
 
-      // Update session activity on every message
       client.on("message", () => {
         this._updateSessionActivity(identity, client.session);
       });
