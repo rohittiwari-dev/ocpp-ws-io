@@ -64,6 +64,9 @@
   "bugs": {
     "url": "https://github.com/rohittiwari-dev/ocpp-ws-io/issues"
   },
+  "files": [
+    "dist"
+  ],
   "license": "MIT",
   "dependencies": {
     "@paralleldrive/cuid2": "^3.3.0",
