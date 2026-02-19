@@ -1,5 +1,8 @@
-import type { MiddlewareContext, MiddlewareFunction } from "../types.js";
-import type { LoggerLike } from "../types.js";
+import type {
+  LoggerLike,
+  MiddlewareContext,
+  MiddlewareFunction,
+} from "../types.js";
 
 /**
  * Creates a middleware that logs all RPC exchanges using the provided logger.
