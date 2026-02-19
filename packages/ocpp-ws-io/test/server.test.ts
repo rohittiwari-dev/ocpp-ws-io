@@ -655,7 +655,6 @@ describe("OCPPServer - Robustness & Clustering", () => {
   });
 
   it("should catch errors in broadcast handler", async () => {
-    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
     let capturedHandler: Function;
 
@@ -669,12 +668,13 @@ describe("OCPPServer - Robustness & Clustering", () => {
       unsubscribe: async () => {},
     };
 
+    // Inject a spy logger to verify error is logged
+    const loggerErrorSpy = vi.fn();
+    (server as any)._logger = { error: loggerErrorSpy };
+
     server.setAdapter(mockAdapter);
 
-    // Corrupt the server state to cause error during processing
-    // @ts-ignore
-    server._nodeId = { throwing: "error" }; // unlikely to throw
-    // Better: force iterator of clients to throw
+    // Force iterator of clients to throw
     // @ts-ignore
     server._clients = {
       [Symbol.iterator]: () => {
@@ -682,13 +682,12 @@ describe("OCPPServer - Robustness & Clustering", () => {
       },
     };
 
-    // Trigger handler
+    // Trigger handler — should not throw
     capturedHandler!({ source: "other", method: "Reset", params: {} });
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      "Error processing broadcast message:",
-      expect.any(Error),
+    expect(loggerErrorSpy).toHaveBeenCalledWith(
+      "Error processing broadcast message",
+      expect.objectContaining({ error: "Iterator Error" }),
     );
-    consoleSpy.mockRestore();
   });
 });

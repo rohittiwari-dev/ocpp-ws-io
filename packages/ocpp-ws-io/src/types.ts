@@ -324,6 +324,12 @@ export interface ClientOptions {
   pingIntervalMs?: number;
   /** Defer pings if activity detected (default: false) */
   deferPingsOnActivity?: boolean;
+  /**
+   * Pong response timeout in ms. If no pong is received within this
+   * window after a ping, the connection is considered dead and terminated.
+   * (default: pingIntervalMs + 5000, 0 to disable)
+   */
+  pongTimeoutMs?: number;
   /** Maximum concurrent outbound calls (default: 1) */
   callConcurrency?: number;
   /** Enable strict mode validation (default: false) */
@@ -444,6 +450,8 @@ export interface ServerEvents {
       request: IncomingMessage;
     },
   ];
+  closing: [];
+  close: [];
   [key: string]: unknown[];
 }
 

@@ -48,6 +48,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _clients = new Set<OCPPServerClient>();
   private _httpServers = new Set<Server>();
   private _wss: WebSocketServer | null = null;
+  private _state: "OPEN" | "CLOSING" | "CLOSED" = "OPEN";
   private _adapter: EventAdapterInterface | null = null;
   private _httpServerAbortControllers = new Set<AbortController>();
   private _logger: LoggerLike | null = null;
@@ -110,6 +111,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     return this._clients;
   }
 
+  get state(): "OPEN" | "CLOSING" | "CLOSED" {
+    return this._state;
+  }
+
   // ─── Auth ────────────────────────────────────────────────────
 
   auth(callback: AuthCallback): void {
@@ -156,9 +161,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
     }
 
-    // Create WebSocketServer attached to noServer mode
-    if (!this._wss) {
-      this._wss = new WebSocketServer({ noServer: true });
+    // Reset state if server was previously closed
+    if (this._state === "CLOSED") {
+      this._state = "OPEN";
     }
 
     // Handle upgrade requests
@@ -258,6 +263,12 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     socket: Duplex,
     head: Buffer,
   ): Promise<void> {
+    // ── Step 0: Server state guard ──
+    if (this._state !== "OPEN") {
+      abortHandshake(socket, 503, "Server is shutting down");
+      return;
+    }
+
     // ── Step 1: Socket readyState & upgrade header validation ──
     if ((socket as import("node:net").Socket).readyState !== "open") {
       this._logger?.debug?.("Socket not open at upgrade start");
@@ -501,6 +512,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   // ─── Close ───────────────────────────────────────────────────
 
   async close(options: CloseOptions = {}): Promise<void> {
+    if (this._state !== "OPEN") return;
+
+    this._state = "CLOSING";
+    this.emit("closing");
     this._logger?.info?.("Server closing", { clientCount: this._clients.size });
 
     if (this._gcInterval) {
@@ -508,7 +523,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       this._gcInterval = null;
     }
 
-    // Close all clients
+    // Close all clients gracefully
     const closePromises = Array.from(this._clients).map((client) =>
       client.close(options).catch(() => {}),
     );
@@ -520,10 +535,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
     this._httpServerAbortControllers.clear();
 
-    // Close WebSocket server
+    // Close WebSocket server and re-init for potential restart
     if (this._wss) {
       this._wss.close();
-      this._wss = null;
+      this._wss = new WebSocketServer({ noServer: true });
     }
 
     // Close all HTTP servers
@@ -540,6 +555,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     if (this._adapter) {
       await this._adapter.disconnect();
     }
+
+    this._state = "CLOSED";
+    this.emit("close");
   }
 
   // ─── Reconfigure ─────────────────────────────────────────────
@@ -574,7 +592,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           });
         }
       } catch (err) {
-        console.error("Error processing broadcast message:", err);
+        this._logger?.error?.("Error processing broadcast message", {
+          error: (err as Error).message,
+        });
       }
     });
   }

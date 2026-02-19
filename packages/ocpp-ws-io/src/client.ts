@@ -102,6 +102,7 @@ export class OCPPClient<
   private _pendingResponses = new Set<string>();
   private _callQueue: Queue;
   private _pingTimer: ReturnType<typeof setTimeoutCb> | null = null;
+  private _pongTimer: ReturnType<typeof setTimeoutCb> | null = null;
   private _closePromise: Promise<{ code: number; reason: string }> | null =
     null;
   private _reconnectAttempt = 0;
@@ -664,6 +665,11 @@ export class OCPPClient<
       this.emit("ping");
     });
     ws.on("pong", () => {
+      // Clear pong timeout — connection is alive
+      if (this._pongTimer) {
+        clearTimeout(this._pongTimer);
+        this._pongTimer = null;
+      }
       this._recordActivity();
       this.emit("pong");
     });
@@ -731,8 +737,8 @@ export class OCPPClient<
 
       // Try version-specific handler first, then fall back to generic
       const handler = this._protocol
-        ? (this._handlers.get(`${this._protocol}:${method}`) ??
-          this._handlers.get(method))
+        ? this._handlers.get(`${this._protocol}:${method}`) ??
+          this._handlers.get(method)
         : this._handlers.get(method);
       let isWildcard = false;
       if (!handler) {
@@ -967,6 +973,10 @@ export class OCPPClient<
   private _startPing(): void {
     if (this._options.pingIntervalMs <= 0) return;
 
+    const pongTimeoutMs =
+      (this._options as ClientOptions).pongTimeoutMs ??
+      this._options.pingIntervalMs + 5000;
+
     const doPing = () => {
       if (this._state !== OPEN || !this._ws) return;
 
@@ -982,6 +992,18 @@ export class OCPPClient<
       }
 
       this._ws.ping();
+
+      // Start pong timeout — if no pong received, connection is dead
+      if (pongTimeoutMs > 0) {
+        this._pongTimer = setTimeoutCb(() => {
+          this._logger?.warn?.("Pong timeout — terminating dead connection", {
+            identity: this._identity,
+            timeoutMs: pongTimeoutMs,
+          });
+          this._ws?.terminate();
+        }, pongTimeoutMs);
+      }
+
       this._pingTimer = setTimeoutCb(doPing, this._options.pingIntervalMs);
     };
 
@@ -1135,6 +1157,14 @@ export class OCPPClient<
 
   private _cleanup(): void {
     this._stopPing();
+    if (this._pongTimer) {
+      clearTimeout(this._pongTimer);
+      this._pongTimer = null;
+    }
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
     this._closePromise = null;
     this._ws = null;
   }
