@@ -98,6 +98,7 @@ export interface BrowserClientOptions {
 export interface BrowserClientEvents {
   open: [Event];
   close: [{ code: number; reason: string }];
+  disconnect: [{ code: number; reason: string }];
   error: [Event | Error];
   connecting: [{ url: string }];
   reconnect: [{ attempt: number; delay: number }];
