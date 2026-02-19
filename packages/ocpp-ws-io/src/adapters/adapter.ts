@@ -36,5 +36,27 @@ export class InMemoryAdapter implements EventAdapterInterface {
 
   async disconnect(): Promise<void> {
     this._channels.clear();
+    this._presence.clear();
+  }
+
+  // ─── Presence Registry (In-Memory) ─────────────────────────────────
+
+  private _presence = new Map<string, string>();
+
+  async setPresence(
+    identity: string,
+    nodeId: string,
+    // ttl is ignored in memory adapter
+    _ttl: number,
+  ): Promise<void> {
+    this._presence.set(identity, nodeId);
+  }
+
+  async getPresence(identity: string): Promise<string | null> {
+    return this._presence.get(identity) || null;
+  }
+
+  async removePresence(identity: string): Promise<void> {
+    this._presence.delete(identity);
   }
 }

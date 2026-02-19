@@ -22,12 +22,14 @@ import {
   type HandshakeInfo,
   type ListenOptions,
   type LoggerLike,
+  type LoggerLikeNotOptional,
   type OCPPRequestType,
   SecurityProfile,
   type ServerEvents,
   type ServerOptions,
   type TypedEventEmitter,
 } from "./types.js";
+import { NOOP_LOGGER } from "./util.js";
 import {
   abortHandshake,
   parseBasicAuth,
@@ -106,7 +108,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   }
 
   // ─── Getters ─────────────────────────────────────────────────
-
+  get log() {
+    return (this._logger || NOOP_LOGGER) as LoggerLikeNotOptional;
+  }
   get clients(): ReadonlySet<OCPPServerClient> {
     return this._clients;
   }
@@ -480,6 +484,21 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       this._updateSessionActivity(identity, client.session);
       this._clients.add(client);
 
+      // Register presence
+      if (this._adapter?.setPresence) {
+        // TTL: slightly longer than session timeout or heartbeat interval
+        // For now, use 60s as a default active TTL, refreshed on activity?
+        // Actually, we should set it with a reasonable TTL (e.g. 5 mins)
+        // and ideally refresh it. For Phase 1, we set it once.
+        // Let's use 5 minutes (300s).
+        this._adapter.setPresence(identity, this._nodeId, 300).catch((err) => {
+          this._logger?.error?.("Error setting presence", {
+            identity,
+            error: err,
+          });
+        });
+      }
+
       this._logger?.info?.("Client connected", {
         identity,
         remoteAddress: req.socket.remoteAddress,
@@ -488,6 +507,15 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
       client.on("close", () => {
         this._clients.delete(client);
+        // Remove presence
+        if (this?._adapter?.removePresence) {
+          this._adapter.removePresence(identity).catch((err) => {
+            this._logger?.error?.("Error removing presence", {
+              identity,
+              error: err,
+            });
+          });
+        }
         this._logger?.info?.("Client disconnected", { identity });
       });
 
@@ -568,35 +596,129 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   // ─── Pub/Sub Adapter ─────────────────────────────────────────
 
-  setAdapter(adapter: EventAdapterInterface): void {
+  /**
+   * Send a request to a specific client (local or remote).
+   *
+   * 1. Checks local clients.
+   * 2. Checks Presence Registry -> Unicast.
+   * 3. Fallback: Broadcast.
+   */
+  async sendToClient<V extends AllMethodNames<any>>(
+    identity: string,
+    method: V,
+    params: OCPPRequestType<any, V>,
+  ): Promise<void> {
+    // 1. Check local
+    for (const client of this._clients) {
+      if (client.identity === identity) {
+        // Found locally
+        await client.call(method as any, params as any);
+        return;
+      }
+    }
+
+    // 2. Check Registry & Unicast
+    if (this._adapter?.getPresence) {
+      const nodeId = await this._adapter.getPresence(identity);
+      if (nodeId) {
+        // Found remote node
+        await this._adapter.publish(`ocpp:node:${nodeId}`, {
+          source: this._nodeId,
+          target: identity,
+          method,
+          params,
+        });
+        return;
+      } else {
+        // Node not found in registry
+      }
+    }
+
+    // 3. Fallback to Broadcast (if configured/needed)
+    // For now, we only broadcast if explicitly called via .broadcast()
+    // But if we want comprehensive routing, we could broadcast here.
+    // Ideally, sendToClient implies targeted. If not found, we throw or return false.
+    throw new Error(`Client ${identity} not found`);
+  }
+
+  // ─── Pub/Sub Adapter ─────────────────────────────────────────
+
+  async setAdapter(adapter: EventAdapterInterface): Promise<void> {
     this._adapter = adapter;
 
-    // Subscribe to global broadcast channel
-    this._adapter.subscribe("ocpp:broadcast", (msg: unknown) => {
-      try {
-        if (!msg || typeof msg !== "object") return;
-        const payload = msg as {
-          source: string;
-          method: string;
-          params: unknown;
-        };
+    // 1. Subscribe to Broadcast
+    await this._adapter.subscribe("ocpp:broadcast", (msg: unknown) =>
+      this._onBroadcast(msg),
+    );
 
-        // Loopback protection: Ignore own messages
-        if (payload.source === this._nodeId) return;
+    // 2. Subscribe to Unicast (My Node)
+    await this._adapter.subscribe(
+      `ocpp:node:${this._nodeId}`,
+      (msg: unknown) => {
+        this._onUnicast(msg);
+      },
+    );
+  }
 
-        // Forward to local clients
-        // We iterate and fire-and-forget to not block the event loop
-        for (const client of this._clients) {
-          client.call(payload.method, payload.params as any).catch(() => {
-            // Ignore errors from individual clients during broadcast
-          });
-        }
-      } catch (err) {
-        this._logger?.error?.("Error processing broadcast message", {
-          error: (err as Error).message,
-        });
+  private _onBroadcast(msg: unknown) {
+    try {
+      if (!msg || typeof msg !== "object") return;
+      const payload = msg as {
+        source: string;
+        method: string;
+        params: unknown;
+      };
+
+      if (payload.source === this._nodeId) return;
+
+      for (const client of this._clients) {
+        client.call(payload.method, payload.params as any).catch(() => {});
       }
-    });
+    } catch (err) {
+      this._logger?.error?.("Error processing broadcast message", {
+        error: (err as Error).message,
+      });
+    }
+  }
+
+  private _onUnicast(msg: unknown) {
+    try {
+      if (!msg || typeof msg !== "object") return;
+      const payload = msg as {
+        source: string;
+        target: string;
+        method: string;
+        params: unknown;
+      };
+
+      // Unicast is meant for ME, but specifically for a TARGET client
+      // I should find that client and send.
+      // Unlike broadcast, I don't need to iterate all.
+      for (const client of this._clients) {
+        if (client.identity === payload.target) {
+          client.call(payload.method, payload.params as any).catch((err) =>
+            this._logger?.error?.("Error delivering unicast to client", {
+              identity: payload.target,
+              error: err,
+            }),
+          );
+          return;
+        }
+      }
+      // If we got here, we received a unicast for a client we don't have.
+      // This implies the Registry is stale.
+      this._logger?.warn?.("Received unicast for unknown client", {
+        target: payload.target,
+      });
+      // Corrective action: Clean up stale registry entry?
+      if (this._adapter?.removePresence) {
+        this._adapter.removePresence(payload.target).catch(() => {});
+      }
+    } catch (err) {
+      this._logger?.error?.("Error processing unicast", {
+        error: (err as Error).message,
+      });
+    }
   }
 
   async publish(channel: string, data: unknown): Promise<void> {
@@ -605,23 +727,14 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
   }
 
-  /**
-   * Broadcasts a request to all connected clients (local and remote).
-   *
-   * 1. Iterates over all local clients and sends the request.
-   * 2. Publishes the request to Redis so other nodes can do the same.
-   */
   async broadcast<V extends AllMethodNames<any>>(
     method: V,
     params: OCPPRequestType<any, V>,
   ): Promise<void> {
-    // 1. Send to local clients
     const localPromises = Array.from(this._clients).map((client) =>
-      // Cast to any to bypass strict protocol checks during broadcast
       client.call(method as any, params as any).catch(() => {}),
     );
 
-    // 2. Publish to Redis (if adapter exists)
     const remotePromise = this._adapter
       ? this._adapter.publish("ocpp:broadcast", {
           source: this._nodeId,

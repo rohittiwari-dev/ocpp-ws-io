@@ -2,6 +2,8 @@
 
 // ─── Adapters ────────────────────────────────────────────────────
 export { InMemoryAdapter } from "./adapters/adapter.js";
+export { RedisAdapter } from "./adapters/redis/index.js";
+
 export { OCPPClient } from "./client.js";
 // ─── Errors ──────────────────────────────────────────────────────
 export {

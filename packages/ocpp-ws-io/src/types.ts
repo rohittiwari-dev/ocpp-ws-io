@@ -251,6 +251,21 @@ export interface LoggerLike {
 }
 
 /**
+ * Minimal logger contract — compatible with `console`, `pino`, `voltlog-io`,
+ * or any custom object with these methods.
+ *
+ * All methods are optional so `console` works as-is.
+ * this is only not optional for the logger used by the library
+ */
+export interface LoggerLikeNotOptional {
+  debug(message: string, meta?: Record<string, unknown>): void;
+  info(message: string, meta?: Record<string, unknown>): void;
+  warn(message: string, meta?: Record<string, unknown>): void;
+  error(message: string, meta?: Record<string, unknown>): void;
+  child(context: Record<string, unknown>): LoggerLike;
+}
+
+/**
  * Logging configuration for OCPPClient and OCPPServer.
  *
  * @example Default (auto console logging)
@@ -488,6 +503,11 @@ export interface EventAdapterInterface {
   subscribe(channel: string, handler: (data: unknown) => void): Promise<void>;
   unsubscribe(channel: string): Promise<void>;
   disconnect(): Promise<void>;
+
+  // Presence Registry (Optional)
+  setPresence?(identity: string, nodeId: string, ttl: number): Promise<void>;
+  getPresence?(identity: string): Promise<string | null>;
+  removePresence?(identity: string): Promise<void>;
 }
 
 // ─── Symbols ─────────────────────────────────────────────────────

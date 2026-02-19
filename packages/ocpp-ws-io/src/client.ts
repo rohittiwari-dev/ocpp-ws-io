@@ -29,6 +29,7 @@ import {
   ConnectionState,
   type HandlerContext,
   type LoggerLike,
+  type LoggerLikeNotOptional,
   MessageType,
   type MiddlewareContext,
   NOREPLY,
@@ -45,6 +46,7 @@ import {
   createRPCError,
   getErrorPlainObject,
   getPackageIdent,
+  NOOP_LOGGER,
 } from "./util.js";
 import type { Validator } from "./validator.js";
 import { isValidStatusCode } from "./ws-util.js";
@@ -119,7 +121,7 @@ export class OCPPClient<
   private _validators: Validator[] = [];
   private _strictProtocols: string[] | null = null;
   protected _handshake: unknown = null;
-  protected _logger: LoggerLike | null = null;
+  protected _logger: LoggerLike = NOOP_LOGGER;
   protected _exchangeLog = false;
   protected _prettify = false;
 
@@ -152,10 +154,13 @@ export class OCPPClient<
 
     // Initialize logger
     const loggingCfg = this._options.logging;
-    this._logger = initLogger(loggingCfg, {
+    const loggerInstance = initLogger(loggingCfg, {
       component: "OCPPClient",
       identity: this._identity,
     });
+    // Ensure logger is always defined (use NOOP if disabled)
+    this._logger = loggerInstance || NOOP_LOGGER;
+
     if (loggingCfg && typeof loggingCfg === "object") {
       this._exchangeLog = loggingCfg.exchangeLog ?? false;
       this._prettify = loggingCfg.prettify ?? false;
@@ -163,9 +168,7 @@ export class OCPPClient<
 
     if (this._options.logging) {
       // Since logging is enabled, initLogger ensures _logger is set.
-      this.use(
-        createLoggingMiddleware(this._logger as LoggerLike, this._identity),
-      );
+      this.use(createLoggingMiddleware(this._logger, this._identity));
     }
 
     // Set up strict mode validators
@@ -211,7 +214,9 @@ export class OCPPClient<
   }
 
   // ─── Getters ─────────────────────────────────────────────────
-
+  get log() {
+    return (this._logger || NOOP_LOGGER) as LoggerLikeNotOptional;
+  }
   get identity(): string {
     return this._identity;
   }
