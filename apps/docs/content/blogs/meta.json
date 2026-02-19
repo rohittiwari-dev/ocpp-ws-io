@@ -1,6 +1,8 @@
 {
   "pages": [
     "index",
+    "introduction-to-ocpp-1-6j",
+    "introduction-to-ocpp-2-0-1",
     "ocpp-protocol-guide",
     "building-csms-with-ocpp-ws-io",
     "introducing-ocpp-ws-io",

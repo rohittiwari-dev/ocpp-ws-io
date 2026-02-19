@@ -12,6 +12,9 @@ const withMDX = createMDX({
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
+  images: {
+    unoptimized: true,
+  },
   async rewrites() {
     return [
       {
