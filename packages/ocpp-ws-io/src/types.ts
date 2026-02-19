@@ -422,6 +422,7 @@ export type AuthCallback<TSession = Record<string, unknown>> = (
 export interface ClientEvents {
   open: [{ response: IncomingMessage }];
   close: [{ code: number; reason: string }];
+  disconnect: [{ code: number; reason: string }];
   error: [Error];
   connecting: [{ url: string }];
   reconnect: [{ attempt: number; delay: number }];

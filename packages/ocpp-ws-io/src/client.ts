@@ -43,6 +43,7 @@ import {
   getPackageIdent,
 } from "./util.js";
 import type { Validator } from "./validator.js";
+import { isValidStatusCode } from "./ws-util.js";
 
 const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
 
@@ -109,6 +110,7 @@ export class OCPPClient<
   private _reconnectTimer: ReturnType<typeof setTimeoutCb> | null = null;
   private _badMessageCount = 0;
   private _lastActivity = 0;
+  private _outboundBuffer: string[] = [];
   private _validators: Validator[] = [];
   private _strictProtocols: string[] | null = null;
   protected _handshake: unknown = null;
@@ -245,8 +247,22 @@ export class OCPPClient<
         this._state = OPEN;
         this._protocol = ws.protocol;
         this._badMessageCount = 0;
+
+        // Narrow protocols to negotiated protocol for future reconnects (prevents flip-flopping)
+        if (ws.protocol && this._reconnectAttempt === 0) {
+          this._options.protocols = [ws.protocol];
+        }
+
         this._attachWebsocket(ws);
         this._startPing();
+
+        // Flush outbound buffer (messages queued during CONNECTING)
+        if (this._outboundBuffer.length > 0) {
+          const buffer = this._outboundBuffer;
+          this._outboundBuffer = [];
+          for (const msg of buffer) this._ws?.send(msg);
+        }
+
         this._logger?.info?.("Connected", { protocol: ws.protocol });
 
         // Create a minimal response object
@@ -383,7 +399,7 @@ export class OCPPClient<
       if (force) {
         this._ws.terminate();
       } else {
-        this._ws.close(code, reason);
+        this._ws.close(isValidStatusCode(code) ? code : 1000, reason);
       }
     });
   }
@@ -620,12 +636,16 @@ export class OCPPClient<
 
   /**
    * Send a raw string message over the WebSocket (use with caution).
+   * Messages sent while CONNECTING are buffered and flushed on open.
    */
   sendRaw(message: string): void {
-    if (this._state !== OPEN || !this._ws) {
+    if (this._state === OPEN && this._ws) {
+      this._ws.send(message);
+    } else if (this._state === CONNECTING) {
+      this._outboundBuffer.push(message);
+    } else {
       throw new Error("Cannot send: client is not connected");
     }
-    this._ws.send(message);
   }
 
   // ─── Reconfigure ─────────────────────────────────────────────
@@ -737,8 +757,8 @@ export class OCPPClient<
 
       // Try version-specific handler first, then fall back to generic
       const handler = this._protocol
-        ? (this._handlers.get(`${this._protocol}:${method}`) ??
-          this._handlers.get(method))
+        ? this._handlers.get(`${this._protocol}:${method}`) ??
+          this._handlers.get(method)
         : this._handlers.get(method);
       let isWildcard = false;
       if (!handler) {
@@ -903,29 +923,37 @@ export class OCPPClient<
 
   // ─── Internal: Close handling ────────────────────────────────
 
-  private _onClose(code: number, reason: Buffer): void {
-    this._stopPing();
-    const reasonStr = reason.toString();
-
-    // Reject all pending calls
+  /**
+   * Reject all in-flight calls and clear pending state.
+   */
+  private _rejectPendingCalls(reason: string): void {
     for (const [, pending] of this._pendingCalls) {
       clearTimeout(pending.timeoutHandle);
-      pending.reject(new Error(`Connection closed (${code}: ${reasonStr})`));
+      pending.reject(new Error(reason));
     }
     this._pendingCalls.clear();
     this._pendingResponses.clear();
+  }
+
+  private _onClose(code: number, reason: Buffer): void {
+    this._stopPing();
+    const reasonStr = reason.toString();
+    this._rejectPendingCalls(`Connection closed (${code}: ${reasonStr})`);
 
     if (this._state !== CLOSING) {
-      // Unexpected close — attempt reconnect
-      this._state = CLOSED;
+      // Unexpected close — emit disconnect (transient, reconnect may follow)
       this._logger?.info?.("Disconnected", { code, reason: reasonStr });
-      this.emit("close", { code, reason: reasonStr });
+      this.emit("disconnect", { code, reason: reasonStr });
 
       if (
         this._options.reconnect &&
         this._reconnectAttempt < this._options.maxReconnects
       ) {
         this._scheduleReconnect();
+      } else {
+        // No reconnect — this is a permanent close
+        this._state = CLOSED;
+        this.emit("close", { code, reason: reasonStr });
       }
     } else {
       this._state = CLOSED;
@@ -935,10 +963,20 @@ export class OCPPClient<
 
   // ─── Internal: Reconnection ──────────────────────────────────
 
+  /** Errors that should stop reconnection immediately */
+  private static readonly _INTOLERABLE_ERRORS = new Set([
+    "Maximum redirects exceeded",
+    "Server sent no subprotocol",
+    "Server sent an invalid subprotocol",
+    "Server sent a subprotocol but none was requested",
+    "Invalid Sec-WebSocket-Accept header",
+  ]);
+
   private _scheduleReconnect(): void {
     this._reconnectAttempt++;
+    this._state = CONNECTING;
 
-    // Exponential backoff with jitter
+    // Exponential backoff with jitter (OCPP 2.0.1 §J.1)
     const base = this._options.backoffMin;
     const max = this._options.backoffMax;
     const delayMs = Math.min(
@@ -955,14 +993,31 @@ export class OCPPClient<
     this._reconnectTimer = setTimeoutCb(async () => {
       this._reconnectTimer = null;
       try {
-        this._state = CLOSED; // Reset for connect
         await this._connectInternal();
-      } catch {
+      } catch (err) {
+        // Intolerable errors — do not retry
+        const msg = err instanceof Error ? err.message : "";
+        if (OCPPClient._INTOLERABLE_ERRORS.has(msg)) {
+          this._logger?.error?.("Intolerable error — stopping reconnection", {
+            error: msg,
+          });
+          this._state = CLOSED;
+          this.emit("close", { code: 1001, reason: msg });
+          return;
+        }
+
         if (
           this._reconnectAttempt < this._options.maxReconnects &&
           this._options.reconnect
         ) {
           this._scheduleReconnect();
+        } else {
+          // Max reconnects exhausted
+          this._state = CLOSED;
+          this.emit("close", {
+            code: 1001,
+            reason: "Max reconnection attempts exhausted",
+          });
         }
       }
     }, delayMs);
