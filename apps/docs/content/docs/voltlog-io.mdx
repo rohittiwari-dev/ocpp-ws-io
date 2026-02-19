@@ -1,0 +1,264 @@
+---
+title: Voltlog-io
+description: A modern, lightweight, and type-safe structured logger for real-time infrastructure.
+---
+
+**Voltlog-io** is the default logging engine for `ocpp-ws-io`, but it's also a powerful standalone logger designed for high-throughput systems like IoT platforms, WebSocket servers, and microservices.
+
+It’s built to solve the common pain points of generic loggers in event-driven architectures: context tracking, sensitive data redaction, high-volume sampling, and developer experience.
+
+## Features
+
+- 🚀 **Zero-Dependency Core**: Only uses `cuid2` for IDs — no massive dependency tree.
+- 🔒 **Secure by Design**: Built-in redaction middleware for passwords, tokens, and headers.
+- 📊 **High-Throughput Ready**: Intelligent sampling middleware to log 1% of debug logs while keeping 100% of errors.
+- ⚡ **Developer Experience**: Beautiful, icon-rich pretty printing for local development.
+- 🔌 **Framework Agnostic**: Works in Node.js, Bun, Deno, and Browsers.
+- 🧩 **Pluggable Architecture**: Middleware and Transformers let you build custom pipelines easily.
+
+## Installation
+
+```bash
+npm install voltlog-io
+# or
+bun add voltlog-io
+```
+
+## Quick Start
+
+### Basic Usage
+
+```ts
+import { createLogger, consoleTransport } from "voltlog-io";
+
+const logger = createLogger({
+  level: "INFO",
+  transports: [consoleTransport()],
+});
+
+logger.info("Server started", { port: 3000, env: "production" });
+// {"level":30,"message":"Server started","meta":{"port":3000,"env":"production"},"timestamp":1700000000000}
+```
+
+### Development Mode
+
+Use `prettyTransport` for readable, colorful logs:
+
+```ts
+import { createLogger, prettyTransport } from "voltlog-io";
+
+const logger = createLogger({
+  level: "DEBUG",
+  transports: [prettyTransport({ colorize: true })],
+});
+
+logger.info("Server listening", { port: 3000 });
+// ℹ 10:30:00.123  INFO   Server listening  {"port":3000}
+```
+
+## Core Concepts
+
+### 1. Context Binding (Child Loggers)
+
+Perfect for tracking requests, WebSocket connections, or charging sessions. Bind context once, and all subsequent logs inherit it.
+
+```ts
+// Global logger
+const logger = createLogger({
+  level: "INFO",
+  transports: [consoleTransport()],
+});
+
+// Create a child logger for a specific connection
+const connLogger = logger.child({
+  connectionId: "conn-123",
+  ip: "192.168.1.10",
+});
+
+connLogger.info("Connected");
+// Logs: message="Connected" + { connectionId: "...", ip: "..." }
+```
+
+### 2. Sensitive Data Redaction
+
+Automatically scrub sensitive fields before they hit your logs. Essential for GDPR/security compliance.
+
+```ts
+import {
+  createLogger,
+  consoleTransport,
+  redactionMiddleware,
+} from "voltlog-io";
+
+const logger = createLogger({
+  transports: [consoleTransport()],
+  middleware: [
+    redactionMiddleware({
+      paths: ["password", "token", "headers.authorization", "user.secrets"],
+    }),
+  ],
+});
+
+logger.info("User login", {
+  username: "alice",
+  password: "supersecretpassword",
+});
+// {"message":"User login","meta":{"username":"alice","password":"[REDACTED]"}}
+```
+
+### 3. Sampling (Cost Control)
+
+In high-throughput systems (like OCPP servers handling thousands of chargers), `DEBUG` logs can be overwhelming and expensive to store. Use sampling to log only a fraction of them.
+
+```ts
+import { createLogger, consoleTransport, samplingMiddleware } from "voltlog-io";
+
+const logger = createLogger({
+  level: "DEBUG",
+  transports: [consoleTransport()],
+  middleware: [
+    samplingMiddleware({
+      rate: 0.1, // Keep 10% of logs
+      level: "DEBUG", // Only sample DEBUG logs (keep 100% of INFO/WARN/ERROR)
+    }),
+  ],
+});
+```
+
+### 4. Custom Transports
+
+Send logs to files, databases, or external services like Datadog/CloudWatch.
+
+```ts
+const fileTransport = {
+  name: "file",
+  transform: (entry) => {
+    fs.appendFileSync("app.log", JSON.stringify(entry) + "\n");
+  },
+};
+
+const logger = createLogger({
+  transports: [consoleTransport(), fileTransport],
+});
+```
+
+## Transports
+
+Transports determine where your logs go. You can combine multiple transports.
+
+### `consoleTransport`
+
+Writes logs to `stdout` as single-line JSON. Best for production.
+
+```ts
+transports: [consoleTransport({ level: "INFO" })];
+```
+
+### `prettyTransport`
+
+Writes colorful, human-readable logs to `stdout`. Best for local dev.
+
+```ts
+transports: [prettyTransport({ colorize: true, level: "DEBUG" })];
+```
+
+### `batchTransport`
+
+Buffers logs and writes them in chunks. High performance for I/O bound transports.
+
+```ts
+transports: [
+  batchTransport({
+    batchSize: 100,
+    flushIntervalMs: 5000,
+    transport: webhookTransport({ url: "..." }),
+  }),
+];
+```
+
+### `jsonStreamTransport`
+
+Writes logs as newline-delimited JSON (NDJSON) to a writable stream (like a file).
+
+```ts
+import { createWriteStream } from "node:fs";
+const stream = createWriteStream("app.log");
+transports: [jsonStreamTransport({ stream })];
+```
+
+### `webhookTransport`
+
+Sends logs to an external HTTP endpoint (Slack, Discord, Logstash).
+
+```ts
+transports: [
+  webhookTransport({
+    url: "https://hooks.slack.com/services/...",
+    batchSize: 10, // Batches requests automatically
+  }),
+];
+```
+
+### `redisTransport`
+
+Publishes logs to a Redis channel or pushes to a list/stream.
+
+```ts
+import Redis from "ioredis";
+const redis = new Redis();
+transports: [
+  redisTransport({
+    client: redis,
+    channel: "app-logs",
+    mode: "pubsub", // or 'stream' / 'list'
+  }),
+];
+```
+
+## Middleware
+
+Middleware functions sit between the logger and transports, allowing you to transform, filter, or enrich logs.
+
+- **`redactionMiddleware`**: Removes sensitive fields using dot notation.
+- **`samplingMiddleware`**: Probabilistic logging based on rate and level.
+- **`alertMiddleware`**: Trigger callbacks on specific conditions (e.g. error spikes).
+- **`ocppMiddleware`**: specialized middleware for OCPP messages (adds direction/styling).
+
+### Custom Middleware
+
+You can easily write your own middleware. It's just a function that takes an `entry` and a `next` callback.
+
+```ts
+import { createMiddleware } from "voltlog-io";
+
+const machineInfoMiddleware = createMiddleware((entry, next) => {
+  // Add hostname to every log
+  entry.meta = {
+    ...entry.meta,
+    hostname: os.hostname(),
+    pid: process.pid,
+  };
+  next(entry);
+});
+```
+
+## API Reference
+
+### `createLogger(config)`
+
+| Config Option | Type            | Default  | Description                                                            |
+| ------------- | --------------- | -------- | ---------------------------------------------------------------------- |
+| `level`       | `LogLevelName`  | `"INFO"` | Minimum log level (`TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`) |
+| `transports`  | `Transformer[]` | `[]`     | Array of output transformers (console, pretty, file, etc.)             |
+| `middleware`  | `Middleware[]`  | `[]`     | Array of middleware functions (redaction, sampling, enrichment)        |
+
+### Log Levels
+
+| Level   | Value | Usage                                                             |
+| ------- | ----- | ----------------------------------------------------------------- |
+| `FATAL` | 60    | System is unusable, requires immediate attention.                 |
+| `ERROR` | 50    | Error conditions that affect operation but don't stop the system. |
+| `WARN`  | 40    | Runtime warnings (deprecated APIs, poor performance).             |
+| `INFO`  | 30    | Normal operational messages (startup, shutdown).                  |
+| `DEBUG` | 20    | Detailed info useful for debugging (state changes).               |
+| `TRACE` | 10    | Very detailed tracing (function entry/exit, full payloads).       |
