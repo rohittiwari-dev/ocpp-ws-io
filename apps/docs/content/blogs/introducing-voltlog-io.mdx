@@ -1,0 +1,134 @@
+---
+title: Introducing Voltlog-io
+description: A robust, type-safe structured logger designed for real-time infrastructure and the EV charging ecosystem.
+date: 2026-02-19
+author:
+  name: Rohit Tiwari
+  avatar: https://avatars.githubusercontent.com/u/12345678?v=4
+  twitter: https://x.com/rohittiwari
+tags: [logging, ocpp, typescript, nodejs, devops]
+image: https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&q=80&w=2600
+---
+
+We are excited to announce **[voltlog-io](https://www.npmjs.com/package/voltlog-io)**, a robust, type-safe structured logger designed for high-throughput systems, WebSocket servers, and specifically the EV charging ecosystem.
+
+What started as an internal module in `ocpp-ws-io` has grown into a powerful standalone package that solves the unique logging challenges of real-time infrastructure.
+
+## The Problem with Generic Loggers
+
+When building Charging Station Management Systems (CSMS) handling thousands of connected chargers, generic loggers (like Winston or Pino) often fall short in three key areas:
+
+1.  **Security Risks**: Accidentally logging `idTag`, `password`, or `authorizationKey` is a major security incident. Generic loggers need manual configuration for every sensitive field.
+2.  **Noise vs. Signal**: During a mass reconnection event (e.g., power outage recovery), thousands of `BootNotification` logs can flood your storage, costing thousands of dollars while hiding the one critical `Error` you need to see.
+3.  **Context Loss**: In an async WebSocket world, tracking a specific session or request across multiple microservices is painful without first-class context binding.
+
+## Enter Voltlog-io
+
+Voltlog is built to address these specific pain points with a pipeline architecture: **Logger → Middleware → Transports**.
+
+### 1. Security by Design (Redaction)
+
+Voltlog comes with built-in, deep-redaction middleware. It doesn't just check top-level keys; it traverses nested objects and arrays to scrub PII.
+
+```typescript
+import { createLogger, redactionMiddleware } from "voltlog-io";
+
+const logger = createLogger({
+  middleware: [
+    redactionMiddleware({
+      paths: ["password", "token", "headers.authorization", "user.secrets"],
+      censor: "[REDACTED]",
+    }),
+  ],
+});
+
+logger.info("User login", {
+  user: {
+    name: "Alice",
+    secrets: { token: "12345" }, // Scubbed automatically
+  },
+});
+```
+
+### 2. Intelligent Cost Control (Sampling)
+
+Instead of logging _everything_, Voltlog allows probabilistic sampling. You can choose to log only 1% of `DEBUG` messages (like heartbeats) while keeping 100% of `ERROR` and `WARN` logs.
+
+```typescript
+import { samplingMiddleware } from "voltlog-io";
+
+middleware: [
+  samplingMiddleware({
+    rate: 0.01, // Keep only 1% of logs...
+    level: "DEBUG", // ...but only if they are DEBUG level.
+  }),
+];
+```
+
+This simple change can reduce your log ingestion costs by 90% without losing visibility into critical failures.
+
+### 3. Real-Time Observability
+
+Voltlog isn't just about disk files. It includes a **Redis Transport** for pub/sub logging, allowing you to stream logs to a real-time dashboard or a separate monitoring service.
+
+```typescript
+import { redisTransport } from "voltlog-io";
+import Redis from "ioredis";
+
+const redis = new Redis();
+
+const logger = createLogger({
+  transports: [
+    redisTransport({
+      client: redis,
+      channel: "live-logs",
+    }),
+  ],
+});
+```
+
+## Developer Experience First
+
+We believe local development should be beautiful. That's why we included a zero-config `prettyTransport` that formats logs with icons, colors, and human-readable timestamps.
+
+```typescript
+// Local Dev
+const logger = createLogger({
+  transports: [prettyTransport({ colorize: true })], // 🌈 Beautiful output
+});
+
+// Production
+const logger = createLogger({
+  transports: [consoleTransport()], // 🚀 Fast, machine-readable JSON
+});
+```
+
+## Integration with ocpp-ws-io
+
+If you're using `ocpp-ws-io`, Voltlog is already powering your logs. You can enable the full experience with a simple config:
+
+```typescript
+const client = new OCPPClient({
+  identity: "CP-001",
+  endpoint: "wss://csms.io",
+  logging: {
+    enabled: true,
+    prettify: true, // Enable dev-friendly output
+    exchangeLog: true, // Log all OCPP protocol messages
+  },
+});
+```
+
+The `exchangeLog` feature uses Voltlog to capture every `CALL`, `CALLRESULT`, and `CALLERROR` with precise directionality (`IN` vs `OUT`) and latency tracking.
+
+## Getting Started
+
+Voltlog is open source and available on npm.
+
+```bash
+npm install voltlog-io
+```
+
+Check out the **[Documentation](/docs/voltlog-io)** for deep dives into batching, webhooks, and custom middleware.
+
+We can't wait to see what you build with it! 🚀
