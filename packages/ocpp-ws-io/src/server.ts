@@ -27,7 +27,9 @@ import {
   type TypedEventEmitter,
   type AllMethodNames,
   type OCPPRequestType,
+  type LoggerLike,
 } from "./types.js";
+import { initLogger } from "./init-logger.js";
 
 /**
  * OCPPServer — A typed WebSocket RPC server for OCPP communication.
@@ -45,6 +47,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _wss: WebSocketServer | null = null;
   private _adapter: EventAdapterInterface | null = null;
   private _httpServerAbortControllers = new Set<AbortController>();
+  private _logger: LoggerLike | null = null;
 
   // Robustness & Clustering
   private readonly _nodeId = createId();
@@ -87,6 +90,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         }
       }
     }, 60 * 1000).unref(); // Run every minute, don't block exit
+
+    // Initialize logger
+    this._logger = initLogger(this._options.logging, {
+      component: "OCPPServer",
+    });
   }
 
   // ─── Getters ─────────────────────────────────────────────────
@@ -157,6 +165,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         if (!socket.destroyed) {
           socket.destroy();
         }
+        this._logger?.error?.("Upgrade error", {
+          error: (err as Error).message,
+        });
         this.emit("upgradeError", { error: err, socket });
       });
     };
@@ -186,6 +197,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         httpServer.on("error", reject);
         httpServer.listen(port, host, () => {
           httpServer.removeListener("error", reject);
+          const addr = httpServer.address();
+          this._logger?.info?.("Server listening", {
+            port: typeof addr === "object" ? addr?.port : port,
+            host: host ?? "0.0.0.0",
+          });
           resolve();
         });
       });
@@ -315,6 +331,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         });
       } catch (err) {
         const { code, message } = err as { code: number; message: string };
+        this._logger?.warn?.("Auth rejected", { identity, code });
         abortHandshake(socket, code ?? 401, message ?? "Unauthorized");
         return;
       }
@@ -337,6 +354,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         strictMode: this._options.strictMode,
         strictModeValidators: this._options.strictModeValidators,
         reconnect: false,
+        // Pass logging config — the client will create its own logger
+        // with identity context via initLogger
+        logging: this._options.logging,
       };
 
       const client = new OCPPServerClient(clientOptions, {
@@ -352,8 +372,15 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
       this._clients.add(client);
 
+      this._logger?.info?.("Client connected", {
+        identity,
+        remoteAddress: req.socket.remoteAddress,
+        protocol: selectedProtocol,
+      });
+
       client.on("close", () => {
         this._clients.delete(client);
+        this._logger?.info?.("Client disconnected", { identity });
       });
 
       this.emit("client", client);
@@ -378,6 +405,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   // ─── Close ───────────────────────────────────────────────────
 
   async close(options: CloseOptions = {}): Promise<void> {
+    this._logger?.info?.("Server closing", { clientCount: this._clients.size });
+
     if (this._gcInterval) {
       clearInterval(this._gcInterval);
       this._gcInterval = null;

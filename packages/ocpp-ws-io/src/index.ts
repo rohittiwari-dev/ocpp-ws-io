@@ -67,6 +67,8 @@ export {
   type ServerEvents,
   type EventAdapterInterface,
   type TypedEventEmitter,
+  type LoggerLike,
+  type LoggingConfig,
 } from "./types.js";
 
 // ─── Generated OCPP Protocol Types ──────────────────────────────

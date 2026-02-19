@@ -40,6 +40,7 @@ import {
   type OCPPRequestType,
   type OCPPResponseType,
   type BrowserClientOptions,
+  type LoggerLike,
 } from "./types.js";
 
 const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
@@ -49,6 +50,8 @@ interface PendingCall {
   reject: (reason: unknown) => void;
   timeoutHandle: ReturnType<typeof setTimeout>;
   abortHandler?: () => void;
+  method: string;
+  sentAt: number;
 }
 
 /**
@@ -113,6 +116,9 @@ export class BrowserOCPPClient<
   private _reconnectAttempt = 0;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _badMessageCount = 0;
+  private _logger: LoggerLike | null = null;
+  private _exchangeLog = false;
+  private _prettify = false;
 
   constructor(options: BrowserClientOptions) {
     super();
@@ -136,6 +142,48 @@ export class BrowserOCPPClient<
     };
 
     this._callQueue = new Queue(this._options.callConcurrency);
+
+    // Initialize logger
+    const logging = this._options.logging;
+    if (logging !== false && logging?.enabled !== false) {
+      this._logger = logging?.handler ?? console;
+      if (this._logger?.child) {
+        this._logger = this._logger.child({
+          component: "BrowserOCPPClient",
+          identity: this._identity,
+        });
+      }
+      if (logging && typeof logging === "object") {
+        this._exchangeLog = logging.exchangeLog ?? false;
+        this._prettify = logging.prettify ?? false;
+      }
+    }
+  }
+
+  // ─── Exchange Log Helper ──────────────────────────────────────
+
+  private _logExchange(
+    direction: "IN" | "OUT",
+    type: "CALL" | "CALLRESULT" | "CALLERROR",
+    method: string | undefined,
+    meta: Record<string, unknown>,
+  ): void {
+    if (!this._logger) return;
+
+    const arrow = direction === "OUT" ? "→" : "←";
+    const level = type === "CALLERROR" ? "warn" : this._exchangeLog ? "info" : "debug";
+
+    if (this._exchangeLog && this._prettify) {
+      const icon =
+        type === "CALLERROR" ? "🚨" : type === "CALLRESULT" ? "✅" : "⚡";
+      const label = method ?? type;
+      const msg = `${icon} ${this._identity}  ${arrow}  ${label}  [${direction}]`;
+      this._logger?.[level]?.(msg, { ...meta, direction });
+    } else if (this._exchangeLog) {
+      this._logger?.[level]?.(`${type} ${arrow}`, { ...meta, direction });
+    } else {
+      this._logger?.[level]?.(`${type} ${arrow}`, meta);
+    }
   }
 
   // ─── Getters ─────────────────────────────────────────────────
@@ -167,6 +215,7 @@ export class BrowserOCPPClient<
     return new Promise<void>((resolve, reject) => {
       const endpoint = this._buildEndpoint();
 
+      this._logger?.debug?.("Connecting", { url: endpoint });
       this.emit("connecting", { url: endpoint });
 
       let ws: WebSocket;
@@ -187,6 +236,9 @@ export class BrowserOCPPClient<
         this._protocol = ws.protocol || undefined;
         this._badMessageCount = 0;
         this._attachWebsocket(ws);
+        this._logger?.info?.("Connected", {
+          protocol: ws.protocol || undefined,
+        });
         this.emit("open", event);
         resolve();
       };
@@ -194,6 +246,7 @@ export class BrowserOCPPClient<
       const onError = (event: Event) => {
         cleanup();
         this._state = CLOSED;
+        this._logger?.error?.("Connection error");
         this.emit("error", event);
         reject(event);
       };
@@ -450,6 +503,11 @@ export class BrowserOCPPClient<
     return new Promise<unknown>((resolve, reject) => {
       const timeoutHandle = setTimeout(() => {
         this._pendingCalls.delete(msgId);
+        this._logger?.warn?.("Call timed out", {
+          messageId: msgId,
+          method,
+          timeoutMs,
+        });
         reject(
           new TimeoutError(
             `Call to "${method}" timed out after ${timeoutMs}ms`,
@@ -461,6 +519,8 @@ export class BrowserOCPPClient<
         resolve: resolve as (v: unknown) => void,
         reject,
         timeoutHandle,
+        method,
+        sentAt: Date.now(),
       };
 
       // Abort signal support
@@ -481,6 +541,12 @@ export class BrowserOCPPClient<
 
       this._pendingCalls.set(msgId, pending);
       this._ws!.send(messageStr);
+      this._logExchange("OUT", "CALL", method, {
+        messageId: msgId,
+        method,
+        protocol: this._protocol,
+        payload: params,
+      });
       this.emit("message", message);
     });
   }
@@ -556,6 +622,12 @@ export class BrowserOCPPClient<
   private async _handleIncomingCall(message: OCPPCall): Promise<void> {
     const [, msgId, method, params] = message;
 
+    this._logExchange("IN", "CALL", method, {
+      messageId: msgId,
+      method,
+      protocol: this._protocol,
+      payload: params,
+    });
     this.emit("call", message);
 
     if (this._state !== OPEN) {
@@ -613,6 +685,11 @@ export class BrowserOCPPClient<
       this._ws?.send(JSON.stringify(response));
       this.emit("callResult", response);
     } catch (err) {
+      this._logger?.error?.("Handler error", {
+        messageId: msgId,
+        method,
+        error: (err as Error).message,
+      });
       this._pendingResponses.delete(msgId);
 
       const rpcErr =
@@ -639,9 +716,18 @@ export class BrowserOCPPClient<
   private _handleCallResult(message: OCPPCallResult): void {
     const [, msgId, result] = message;
 
+    const pending = this._pendingCalls.get(msgId);
+    const latencyMs = pending ? Date.now() - pending.sentAt : undefined;
+
+    this._logExchange("IN", "CALLRESULT", pending?.method, {
+      messageId: msgId,
+      method: pending?.method,
+      protocol: this._protocol,
+      latencyMs,
+      payload: result,
+    });
     this.emit("callResult", message);
 
-    const pending = this._pendingCalls.get(msgId);
     if (!pending) return;
 
     clearTimeout(pending.timeoutHandle);
@@ -652,9 +738,20 @@ export class BrowserOCPPClient<
   private _handleCallError(message: OCPPCallError): void {
     const [, msgId, errorCode, errorMessage, errorDetails] = message;
 
+    const pending = this._pendingCalls.get(msgId);
+    const latencyMs = pending ? Date.now() - pending.sentAt : undefined;
+
+    this._logExchange("IN", "CALLERROR", errorCode, {
+      messageId: msgId,
+      method: pending?.method,
+      errorCode,
+      errorMessage,
+      protocol: this._protocol,
+      latencyMs,
+      errorDetails,
+    });
     this.emit("callError", message);
 
-    const pending = this._pendingCalls.get(msgId);
     if (!pending) return;
 
     clearTimeout(pending.timeoutHandle);
@@ -668,6 +765,10 @@ export class BrowserOCPPClient<
 
   private _onBadMessage(rawMessage: string, error: Error): void {
     this._badMessageCount++;
+    this._logger?.warn?.("Bad message", {
+      error: error.message,
+      count: this._badMessageCount,
+    });
     this.emit("badMessage", { message: rawMessage, error });
 
     // Best-effort: try to extract messageId and respond with CALLERROR
@@ -705,6 +806,7 @@ export class BrowserOCPPClient<
     if (this._state !== CLOSING) {
       // Unexpected close — attempt reconnect
       this._state = CLOSED;
+      this._logger?.info?.("Disconnected", { code, reason });
       this.emit("close", { code, reason });
 
       if (
@@ -734,6 +836,10 @@ export class BrowserOCPPClient<
         (0.5 + Math.random() * 0.5),
     );
 
+    this._logger?.warn?.("Reconnecting", {
+      attempt: this._reconnectAttempt,
+      delayMs: Math.round(delayMs),
+    });
     this.emit("reconnect", { attempt: this._reconnectAttempt, delay: delayMs });
 
     this._reconnectTimer = setTimeout(async () => {

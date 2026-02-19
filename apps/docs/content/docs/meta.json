@@ -8,11 +8,14 @@
     "browser-client",
     "---Implementations---",
     "security",
+    "logging",
     "clustering",
     "type-safety",
     "---System---",
     "type-generation",
-    "api-reference"
+    "api-reference",
+    "---Ecosystem---",
+    "voltlog-io"
   ],
   "title": "Documentation",
   "icon": "Pin"

@@ -98,3 +98,60 @@ await server.listen(3000);
 | `protocols`       | `OCPPProtocol[]`  | `[]`    | Accepted OCPP subprotocols                |
 | `securityProfile` | `SecurityProfile` | `NONE`  | Security profile for auto-created servers |
 | `tls`             | `TLSOptions`      | —       | TLS options (Profile 2 & 3)               |
+| `logging`         | `LoggingConfig`   | `true`  | Configure built-in logging                |
+
+## 📝 Logging
+
+ocpp-ws-io comes with **built-in structured logging** via [voltlog-io](https://www.npmjs.com/package/voltlog-io).
+
+### Default Behavior
+
+By default (`logging: true`), logs are output as structured JSON to `stdout`.
+
+```json
+{
+  "level": 30,
+  "time": 1678900000000,
+  "msg": "Client connected",
+  "component": "OCPPServer",
+  "identity": "CP001"
+}
+```
+
+### Pretty Printing & Exchange Logs
+
+Enable `prettify` for development to see colored output with icons.  
+Enable `exchangeLog` to log all OCPP messages with direction (`IN`/`OUT`) and metadata.
+
+```typescript
+const client = new OCPPClient({
+  // ...
+  logging: {
+    enabled: true,
+    prettify: true, // 🌈 Colors & icons
+    exchangeLog: true, // ⚡ Log all OCPP messages
+    level: "debug", // Default: 'info'
+  },
+});
+```
+
+**Output:**
+
+```
+⚡ CP-101  →  BootNotification  [OUT]
+✅ CP-101  ←  BootNotification  [IN]   { latencyMs: 45 }
+```
+
+### Custom Logger
+
+You can bring your own logger (Pino, Winston, etc.) by implementing `LoggerLike`:
+
+```typescript
+import pino from "pino";
+
+const client = new OCPPClient({
+  logging: {
+    handler: pino(), // Use existing logger instance
+  },
+});
+```
