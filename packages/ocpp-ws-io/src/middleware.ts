@@ -50,11 +50,7 @@ export class MiddlewareStack<TContext> {
         return;
       }
 
-      try {
-        await fn(context, () => dispatch(i + 1));
-      } catch (err) {
-        throw err;
-      }
+      await fn(context, () => dispatch(i + 1));
     };
 
     return dispatch(0);

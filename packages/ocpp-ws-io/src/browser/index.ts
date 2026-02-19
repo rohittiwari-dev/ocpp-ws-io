@@ -1,6 +1,10 @@
 // ─── Core ────────────────────────────────────────────────────────
-export { BrowserOCPPClient } from "./client.js";
 
+export * from "../middleware/logging.js";
+export * from "../middleware.js";
+export { standardValidators } from "../standard-validators.js";
+export type { Validator, ValidatorSchema } from "../validator.js";
+export { BrowserOCPPClient } from "./client.js";
 // ─── Errors ──────────────────────────────────────────────────────
 export {
   type RPCError,
@@ -43,9 +47,5 @@ export {
   type OCPPResponseType,
   type WildcardHandler,
 } from "./types.js";
-export { standardValidators } from "../standard-validators.js";
-export { type Validator, type ValidatorSchema } from "../validator.js";
-export * from "../middleware.js";
-export * from "../middleware/logging.js";
 // ─── Utilities ───────────────────────────────────────────────────
 export { createRPCError, getErrorPlainObject } from "./util.js";
