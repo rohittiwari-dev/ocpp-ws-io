@@ -34,6 +34,8 @@ export type {
 export type { OCPP16Methods } from "./generated/ocpp16.js";
 export type { OCPP21Methods } from "./generated/ocpp21.js";
 export type { OCPP201Methods } from "./generated/ocpp201.js";
+export * from "./middleware.js";
+export * from "./middleware/logging.js";
 export { OCPPServer } from "./server.js";
 export { OCPPServerClient } from "./server-client.js";
 export { standardValidators } from "./standard-validators.js";
