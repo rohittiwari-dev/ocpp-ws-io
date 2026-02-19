@@ -337,7 +337,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
 
     // Complete WebSocket upgrade
-    if (!this._wss) return;
+    if (!this._wss) {
+      this._wss = new WebSocketServer({ noServer: true });
+    }
 
     this._wss.handleUpgrade(req, socket, head, (ws) => {
       // Build options for the server-side client
