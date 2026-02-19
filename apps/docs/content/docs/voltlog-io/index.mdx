@@ -1,0 +1,91 @@
+---
+title: Introduction
+description: A modern, lightweight, and type-safe structured logger for real-time infrastructure.
+---
+
+**Voltlog-io** is a powerful structured logger designed for high-throughput systems like IoT platforms, WebSocket servers, and microservices. It is the default logging engine for `ocpp-ws-io` but works perfectly as a standalone logger in any TypeScript/JavaScript project.
+
+If you are using `ocpp-ws-io`, you can import it directly from the package:
+
+```ts
+import { createLogger } from "ocpp-ws-io/logger";
+```
+
+No need to install `voltlog-io` separately.
+
+It resolves common pain points in event-driven architectures: context tracking, sensitive data redaction, high-volume sampling, and developer experience.
+
+## ✨ Key Features
+
+- **🚀 Zero-Dependency Core**: Lightweight and fast. Only uses `cuid2` for ID generation.
+- **🔒 Secure by Design**: Built-in redaction middleware for passwords, tokens, and headers.
+- **📊 High-Throughput Ready**: Intelligent sampling to log 1% of debug logs while keeping 100% of errors.
+- **⚡ Developer Experience**: Beautiful, icon-rich pretty printing for local development.
+- **🔌 Universal Compatibility**: Works in Node.js, Bun, Deno, and Browsers.
+- **🤖 AI Powered**: Built-in middleware to enrich error logs with AI analysis.
+- **🧩 Pluggable Architecture**: 10+ Middlewares and 12+ Transports included out of the box.
+
+## 📦 Architecture
+
+Voltlog uses a pipeline architecture:
+
+1.  **Logger**: The entry point (`logger.info(...)`). Generates the log entry.
+2.  **Context**: Attaches bound context (e.g., `sessionId`) and dynamic context (e.g., `performance.now()`).
+3.  **Middleware**: A chain of functions that process, filter, or enrich the log entry.
+4.  **Transports**: The final destinations (Console, File, Redis, Datadog...) where the log is sent.
+
+<Mermaid
+  chart={`
+graph LR
+    A[Logger Call] --> B[Context Binding]
+    B --> C{Middleware Pipeline}
+    C -->|Redaction| D[Transports]
+    C -->|Sampling| D
+    C -->|AI Enrichment| D
+    D --> E[Console]
+    D --> F[File]
+    D --> G[Redis/Datadog]
+`}
+/>
+
+## 🛠 Included Modules
+
+Voltlog comes strictly typed and batteries-included.
+
+### Transports (Destinations)
+
+| Transport          | Description                                      | Environment |
+| :----------------- | :----------------------------------------------- | :---------- |
+| **Console**        | Standard JSON output to stdout/stderr.           | Universal   |
+| **Pretty**         | Colorful, human-readable output for development. | Universal   |
+| **File**           | Writes logs to rotating files on disk.           | Server      |
+| **JSON Stream**    | Writes NDJSON to any WritableStream.             | Server      |
+| **Browser Stream** | Writes NDJSON to WHATWG Streams.                 | Browser     |
+| **Batch**          | Buffers logs for performance.                    | Universal   |
+| **Redis**          | Publishes logs to Redis Streams.                 | Server      |
+| **Datadog**        | Sends logs to Datadog Intake API.                | Universal   |
+| **Loki**           | Pushes logs to Grafana Loki.                     | Universal   |
+| **Slack**          | Sends notifications to Slack Webhooks.           | Universal   |
+| **Discord**        | Sends notifications to Discord Webhooks.         | Universal   |
+| **Sentry**         | Captures errors and breadcrumbs in Sentry.       | Universal   |
+| **Webhook**        | POSTs logs to any HTTP endpoint.                 | Universal   |
+
+### Middlewares (Processors)
+
+| Middleware         | Description                                    |
+| :----------------- | :--------------------------------------------- |
+| **Redaction**      | Masks sensitive fields (password, token).      |
+| **Sampling**       | Probabilistic logging to reduce volume.        |
+| **Alert**          | Triggers callbacks/alerts based on conditions. |
+| **AI Enrichment**  | Uses LLMs to explain errors in real-time.      |
+| **OCPP**           | Specialized formatting for OCPP messages.      |
+| **Correlation ID** | Tracks requests across services.               |
+| **Deduplication**  | Groups identical logs in a time window.        |
+| **Heap Usage**     | Adds memory stats (RSS/Heap) to logs.          |
+| **IP Extraction**  | Extracts client IP from headers.               |
+| **User Agent**     | Parses browser/OS info from UA string.         |
+| **Level Override** | Force log level dynamically via headers.       |
+
+## 🚀 Getting Started
+
+Ready to log? Check out the [Quick Start](/docs/voltlog-io/quick-start) guide.

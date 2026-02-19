@@ -1,8 +1,8 @@
 import type { EventAdapterInterface } from "../../types.js";
 import {
+  createDriver,
   type RedisLikeClient,
   type RedisPubSubDriver,
-  createDriver,
 } from "./helpers.js";
 
 export interface RedisAdapterOptions {
@@ -48,7 +48,7 @@ export class RedisAdapter implements EventAdapterInterface {
         this._handleMessage(channel, message);
       });
     }
-    this._handlers.get(channel)!.add(handler);
+    this._handlers.get(channel)?.add(handler);
   }
 
   async unsubscribe(channel: string): Promise<void> {

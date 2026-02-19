@@ -4,3 +4,6 @@ dist/
 .DS_Store
 coverage/
 uses.ts
+/.turbo/
+/packages/ocpp-ws-io/.turbo/
+/apps/docs/.turbo/

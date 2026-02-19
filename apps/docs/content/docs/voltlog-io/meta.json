@@ -1,0 +1,4 @@
+{
+  "title": "VoltLog IO",
+  "pages": ["index", "quick-start", "middlewares", "transports", "examples"]
+}

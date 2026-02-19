@@ -147,7 +147,7 @@ header {
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent !important;
+  @apply bg-transparent!;
 }
 
 ::-webkit-scrollbar-button {

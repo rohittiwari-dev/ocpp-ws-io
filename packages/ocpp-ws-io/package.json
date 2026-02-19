@@ -1,6 +1,6 @@
 {
   "name": "ocpp-ws-io",
-  "version": "1.0.3",
+  "version": "2.0.0",
   "description": "Type-safe OCPP WebSocket RPC client & server with pub/sub, session management, and clustering support",
   "repository": {
     "type": "git",
@@ -69,7 +69,7 @@
     "@paralleldrive/cuid2": "^3.3.0",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
-    "voltlog-io": "^1.0.0",
+    "voltlog-io": "^1.1.1",
     "ws": "^8.19.0"
   },
   "devDependencies": {

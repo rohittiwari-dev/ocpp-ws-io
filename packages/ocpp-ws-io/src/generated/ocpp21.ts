@@ -45,17 +45,57 @@ export interface OCSPRequestDataType {
   customData?: CustomDataType;
 }
 
-export type AuthorizationStatusEnumType = "Accepted" | "Blocked" | "ConcurrentTx" | "Expired" | "Invalid" | "NoCredit" | "NotAllowedTypeEVSE" | "NotAtThisLocation" | "NotAtThisTime" | "Unknown";
+export type AuthorizationStatusEnumType =
+  | "Accepted"
+  | "Blocked"
+  | "ConcurrentTx"
+  | "Expired"
+  | "Invalid"
+  | "NoCredit"
+  | "NotAllowedTypeEVSE"
+  | "NotAtThisLocation"
+  | "NotAtThisTime"
+  | "Unknown";
 
-export type AuthorizeCertificateStatusEnumType = "Accepted" | "SignatureError" | "CertificateExpired" | "CertificateRevoked" | "NoCertificateAvailable" | "CertChainError" | "ContractCancelled";
+export type AuthorizeCertificateStatusEnumType =
+  | "Accepted"
+  | "SignatureError"
+  | "CertificateExpired"
+  | "CertificateRevoked"
+  | "NoCertificateAvailable"
+  | "CertChainError"
+  | "ContractCancelled";
 
-export type DayOfWeekEnumType = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday" | "Sunday";
+export type DayOfWeekEnumType =
+  | "Monday"
+  | "Tuesday"
+  | "Wednesday"
+  | "Thursday"
+  | "Friday"
+  | "Saturday"
+  | "Sunday";
 
-export type EnergyTransferModeEnumType = "AC_single_phase" | "AC_two_phase" | "AC_three_phase" | "DC" | "AC_BPT" | "AC_BPT_DER" | "AC_DER" | "DC_BPT" | "DC_ACDP" | "DC_ACDP_BPT" | "WPT";
+export type EnergyTransferModeEnumType =
+  | "AC_single_phase"
+  | "AC_two_phase"
+  | "AC_three_phase"
+  | "DC"
+  | "AC_BPT"
+  | "AC_BPT_DER"
+  | "AC_DER"
+  | "DC_BPT"
+  | "DC_ACDP"
+  | "DC_ACDP_BPT"
+  | "WPT";
 
 export type EvseKindEnumType = "AC" | "DC";
 
-export type MessageFormatEnumType = "ASCII" | "HTML" | "URI" | "UTF8" | "QRCODE";
+export type MessageFormatEnumType =
+  | "ASCII"
+  | "HTML"
+  | "URI"
+  | "UTF8"
+  | "QRCODE";
 
 export interface IdTokenInfoType {
   status: AuthorizationStatusEnumType;
@@ -176,7 +216,10 @@ export interface TaxRateType {
   customData?: CustomDataType;
 }
 
-export type BatterySwapEventEnumType = "BatteryIn" | "BatteryOut" | "BatteryOutTimeout";
+export type BatterySwapEventEnumType =
+  | "BatteryIn"
+  | "BatteryOut"
+  | "BatteryOutTimeout";
 
 export interface BatteryDataType {
   evseId: number;
@@ -188,7 +231,16 @@ export interface BatteryDataType {
   customData?: CustomDataType;
 }
 
-export type BootReasonEnumType = "ApplicationReset" | "FirmwareUpdate" | "LocalReset" | "PowerUp" | "RemoteReset" | "ScheduledReset" | "Triggered" | "Unknown" | "Watchdog";
+export type BootReasonEnumType =
+  | "ApplicationReset"
+  | "FirmwareUpdate"
+  | "LocalReset"
+  | "PowerUp"
+  | "RemoteReset"
+  | "ScheduledReset"
+  | "Triggered"
+  | "Unknown"
+  | "Watchdog";
 
 export interface ChargingStationType {
   serialNumber?: string;
@@ -209,7 +261,10 @@ export type RegistrationStatusEnumType = "Accepted" | "Pending" | "Rejected";
 
 export type CancelReservationStatusEnumType = "Accepted" | "Rejected";
 
-export type CertificateSigningUseEnumType = "ChargingStationCertificate" | "V2GCertificate" | "V2G20Certificate";
+export type CertificateSigningUseEnumType =
+  | "ChargingStationCertificate"
+  | "V2GCertificate"
+  | "V2G20Certificate";
 
 export type CertificateSignedStatusEnumType = "Accepted" | "Rejected";
 
@@ -221,13 +276,28 @@ export interface EVSEType {
   customData?: CustomDataType;
 }
 
-export type ChangeAvailabilityStatusEnumType = "Accepted" | "Rejected" | "Scheduled";
+export type ChangeAvailabilityStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "Scheduled";
 
-export type TariffChangeStatusEnumType = "Accepted" | "Rejected" | "TooManyElements" | "ConditionNotSupported" | "TxNotFound" | "NoCurrencyChange";
+export type TariffChangeStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "TooManyElements"
+  | "ConditionNotSupported"
+  | "TxNotFound"
+  | "NoCurrencyChange";
 
 export type ClearCacheStatusEnumType = "Accepted" | "Rejected";
 
-export type ChargingProfilePurposeEnumType = "ChargingStationExternalConstraints" | "ChargingStationMaxProfile" | "TxDefaultProfile" | "TxProfile" | "PriorityCharging" | "LocalGeneration";
+export type ChargingProfilePurposeEnumType =
+  | "ChargingStationExternalConstraints"
+  | "ChargingStationMaxProfile"
+  | "TxDefaultProfile"
+  | "TxProfile"
+  | "PriorityCharging"
+  | "LocalGeneration";
 
 export interface ClearChargingProfileType {
   evseId?: number;
@@ -238,9 +308,35 @@ export interface ClearChargingProfileType {
 
 export type ClearChargingProfileStatusEnumType = "Accepted" | "Unknown";
 
-export type DERControlEnumType = "EnterService" | "FreqDroop" | "FreqWatt" | "FixedPFAbsorb" | "FixedPFInject" | "FixedVar" | "Gradients" | "HFMustTrip" | "HFMayTrip" | "HVMustTrip" | "HVMomCess" | "HVMayTrip" | "LimitMaxDischarge" | "LFMustTrip" | "LVMustTrip" | "LVMomCess" | "LVMayTrip" | "PowerMonitoringMustTrip" | "VoltVar" | "VoltWatt" | "WattPF" | "WattVar";
+export type DERControlEnumType =
+  | "EnterService"
+  | "FreqDroop"
+  | "FreqWatt"
+  | "FixedPFAbsorb"
+  | "FixedPFInject"
+  | "FixedVar"
+  | "Gradients"
+  | "HFMustTrip"
+  | "HFMayTrip"
+  | "HVMustTrip"
+  | "HVMomCess"
+  | "HVMayTrip"
+  | "LimitMaxDischarge"
+  | "LFMustTrip"
+  | "LVMustTrip"
+  | "LVMomCess"
+  | "LVMayTrip"
+  | "PowerMonitoringMustTrip"
+  | "VoltVar"
+  | "VoltWatt"
+  | "WattPF"
+  | "WattVar";
 
-export type DERControlStatusEnumType = "Accepted" | "Rejected" | "NotSupported" | "NotFound";
+export type DERControlStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "NotSupported"
+  | "NotFound";
 
 export type ClearMessageStatusEnumType = "Accepted" | "Unknown" | "Rejected";
 
@@ -253,7 +349,10 @@ export interface ClearTariffsResultType {
   customData?: CustomDataType;
 }
 
-export type ClearMonitoringStatusEnumType = "Accepted" | "Rejected" | "NotFound";
+export type ClearMonitoringStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "NotFound";
 
 export interface ClearMonitoringResultType {
   status: ClearMonitoringStatusEnumType;
@@ -270,21 +369,52 @@ export interface CertificateHashDataType {
   customData?: CustomDataType;
 }
 
-export type CustomerInformationStatusEnumType = "Accepted" | "Rejected" | "Invalid";
+export type CustomerInformationStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "Invalid";
 
-export type DataTransferStatusEnumType = "Accepted" | "Rejected" | "UnknownMessageId" | "UnknownVendorId";
+export type DataTransferStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "UnknownMessageId"
+  | "UnknownVendorId";
 
-export type DeleteCertificateStatusEnumType = "Accepted" | "Failed" | "NotFound";
+export type DeleteCertificateStatusEnumType =
+  | "Accepted"
+  | "Failed"
+  | "NotFound";
 
-export type FirmwareStatusEnumType = "Downloaded" | "DownloadFailed" | "Downloading" | "DownloadScheduled" | "DownloadPaused" | "Idle" | "InstallationFailed" | "Installing" | "Installed" | "InstallRebooting" | "InstallScheduled" | "InstallVerificationFailed" | "InvalidSignature" | "SignatureVerified";
+export type FirmwareStatusEnumType =
+  | "Downloaded"
+  | "DownloadFailed"
+  | "Downloading"
+  | "DownloadScheduled"
+  | "DownloadPaused"
+  | "Idle"
+  | "InstallationFailed"
+  | "Installing"
+  | "Installed"
+  | "InstallRebooting"
+  | "InstallScheduled"
+  | "InstallVerificationFailed"
+  | "InvalidSignature"
+  | "SignatureVerified";
 
 export type CertificateActionEnumType = "Install" | "Update";
 
 export type Iso15118EVCertificateStatusEnumType = "Accepted" | "Failed";
 
-export type ReportBaseEnumType = "ConfigurationInventory" | "FullInventory" | "SummaryInventory";
+export type ReportBaseEnumType =
+  | "ConfigurationInventory"
+  | "FullInventory"
+  | "SummaryInventory";
 
-export type GenericDeviceModelStatusEnumType = "Accepted" | "Rejected" | "NotSupported" | "EmptyResultSet";
+export type GenericDeviceModelStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "NotSupported"
+  | "EmptyResultSet";
 
 export type CertificateStatusSourceEnumType = "CRL" | "OCSP";
 
@@ -295,7 +425,11 @@ export interface CertificateStatusRequestInfoType {
   customData?: CustomDataType;
 }
 
-export type CertificateStatusEnumType = "Good" | "Revoked" | "Unknown" | "Failed";
+export type CertificateStatusEnumType =
+  | "Good"
+  | "Revoked"
+  | "Unknown"
+  | "Failed";
 
 export interface CertificateStatusType {
   certificateHashData: CertificateHashDataType;
@@ -319,7 +453,15 @@ export type GetChargingProfileStatusEnumType = "Accepted" | "NoProfiles";
 
 export type ChargingRateUnitEnumType = "W" | "A";
 
-export type OperationModeEnumType = "Idle" | "ChargingOnly" | "CentralSetpoint" | "ExternalSetpoint" | "ExternalLimits" | "CentralFrequency" | "LocalFrequency" | "LocalLoadBalancing";
+export type OperationModeEnumType =
+  | "Idle"
+  | "ChargingOnly"
+  | "CentralSetpoint"
+  | "ExternalSetpoint"
+  | "ExternalLimits"
+  | "CentralFrequency"
+  | "LocalFrequency"
+  | "LocalLoadBalancing";
 
 export interface ChargingSchedulePeriodType {
   startPeriod: number;
@@ -369,11 +511,23 @@ export interface V2XSignalWattPointType {
 
 export type MessagePriorityEnumType = "AlwaysFront" | "InFront" | "NormalCycle";
 
-export type MessageStateEnumType = "Charging" | "Faulted" | "Idle" | "Unavailable" | "Suspended" | "Discharging";
+export type MessageStateEnumType =
+  | "Charging"
+  | "Faulted"
+  | "Idle"
+  | "Unavailable"
+  | "Suspended"
+  | "Discharging";
 
 export type GetDisplayMessagesStatusEnumType = "Accepted" | "Unknown";
 
-export type GetCertificateIdUseEnumType = "V2GRootCertificate" | "MORootCertificate" | "CSMSRootCertificate" | "V2GCertificateChain" | "ManufacturerRootCertificate" | "OEMRootCertificate";
+export type GetCertificateIdUseEnumType =
+  | "V2GRootCertificate"
+  | "MORootCertificate"
+  | "CSMSRootCertificate"
+  | "V2GCertificateChain"
+  | "ManufacturerRootCertificate"
+  | "OEMRootCertificate";
 
 export type GetInstalledCertificateStatusEnumType = "Accepted" | "NotFound";
 
@@ -395,7 +549,10 @@ export interface LogParametersType {
 
 export type LogStatusEnumType = "Accepted" | "Rejected" | "AcceptedCanceled";
 
-export type MonitoringCriterionEnumType = "ThresholdMonitoring" | "DeltaMonitoring" | "PeriodicMonitoring";
+export type MonitoringCriterionEnumType =
+  | "ThresholdMonitoring"
+  | "DeltaMonitoring"
+  | "PeriodicMonitoring";
 
 export interface ComponentType {
   evse?: EVSEType;
@@ -423,7 +580,11 @@ export interface ConstantStreamDataType {
   customData?: CustomDataType;
 }
 
-export type ComponentCriterionEnumType = "Active" | "Available" | "Enabled" | "Problem";
+export type ComponentCriterionEnumType =
+  | "Active"
+  | "Available"
+  | "Enabled"
+  | "Problem";
 
 export type TariffGetStatusEnumType = "Accepted" | "Rejected" | "NoTariff";
 
@@ -447,7 +608,12 @@ export interface GetVariableDataType {
   customData?: CustomDataType;
 }
 
-export type GetVariableStatusEnumType = "Accepted" | "Rejected" | "UnknownComponent" | "UnknownVariable" | "NotSupportedAttributeType";
+export type GetVariableStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "UnknownComponent"
+  | "UnknownVariable"
+  | "NotSupportedAttributeType";
 
 export interface GetVariableResultType {
   attributeStatus: GetVariableStatusEnumType;
@@ -459,19 +625,115 @@ export interface GetVariableResultType {
   customData?: CustomDataType;
 }
 
-export type InstallCertificateUseEnumType = "V2GRootCertificate" | "MORootCertificate" | "ManufacturerRootCertificate" | "CSMSRootCertificate" | "OEMRootCertificate";
+export type InstallCertificateUseEnumType =
+  | "V2GRootCertificate"
+  | "MORootCertificate"
+  | "ManufacturerRootCertificate"
+  | "CSMSRootCertificate"
+  | "OEMRootCertificate";
 
-export type InstallCertificateStatusEnumType = "Accepted" | "Rejected" | "Failed";
+export type InstallCertificateStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "Failed";
 
-export type UploadLogStatusEnumType = "BadMessage" | "Idle" | "NotSupportedOperation" | "PermissionDenied" | "Uploaded" | "UploadFailure" | "Uploading" | "AcceptedCanceled";
+export type UploadLogStatusEnumType =
+  | "BadMessage"
+  | "Idle"
+  | "NotSupportedOperation"
+  | "PermissionDenied"
+  | "Uploaded"
+  | "UploadFailure"
+  | "Uploading"
+  | "AcceptedCanceled";
 
-export type LocationEnumType = "Body" | "Cable" | "EV" | "Inlet" | "Outlet" | "Upstream";
+export type LocationEnumType =
+  | "Body"
+  | "Cable"
+  | "EV"
+  | "Inlet"
+  | "Outlet"
+  | "Upstream";
 
-export type MeasurandEnumType = "Current.Export" | "Current.Export.Offered" | "Current.Export.Minimum" | "Current.Import" | "Current.Import.Offered" | "Current.Import.Minimum" | "Current.Offered" | "Display.PresentSOC" | "Display.MinimumSOC" | "Display.TargetSOC" | "Display.MaximumSOC" | "Display.RemainingTimeToMinimumSOC" | "Display.RemainingTimeToTargetSOC" | "Display.RemainingTimeToMaximumSOC" | "Display.ChargingComplete" | "Display.BatteryEnergyCapacity" | "Display.InletHot" | "Energy.Active.Export.Interval" | "Energy.Active.Export.Register" | "Energy.Active.Import.Interval" | "Energy.Active.Import.Register" | "Energy.Active.Import.CableLoss" | "Energy.Active.Import.LocalGeneration.Register" | "Energy.Active.Net" | "Energy.Active.Setpoint.Interval" | "Energy.Apparent.Export" | "Energy.Apparent.Import" | "Energy.Apparent.Net" | "Energy.Reactive.Export.Interval" | "Energy.Reactive.Export.Register" | "Energy.Reactive.Import.Interval" | "Energy.Reactive.Import.Register" | "Energy.Reactive.Net" | "EnergyRequest.Target" | "EnergyRequest.Minimum" | "EnergyRequest.Maximum" | "EnergyRequest.Minimum.V2X" | "EnergyRequest.Maximum.V2X" | "EnergyRequest.Bulk" | "Frequency" | "Power.Active.Export" | "Power.Active.Import" | "Power.Active.Setpoint" | "Power.Active.Residual" | "Power.Export.Minimum" | "Power.Export.Offered" | "Power.Factor" | "Power.Import.Offered" | "Power.Import.Minimum" | "Power.Offered" | "Power.Reactive.Export" | "Power.Reactive.Import" | "SoC" | "Voltage" | "Voltage.Minimum" | "Voltage.Maximum";
+export type MeasurandEnumType =
+  | "Current.Export"
+  | "Current.Export.Offered"
+  | "Current.Export.Minimum"
+  | "Current.Import"
+  | "Current.Import.Offered"
+  | "Current.Import.Minimum"
+  | "Current.Offered"
+  | "Display.PresentSOC"
+  | "Display.MinimumSOC"
+  | "Display.TargetSOC"
+  | "Display.MaximumSOC"
+  | "Display.RemainingTimeToMinimumSOC"
+  | "Display.RemainingTimeToTargetSOC"
+  | "Display.RemainingTimeToMaximumSOC"
+  | "Display.ChargingComplete"
+  | "Display.BatteryEnergyCapacity"
+  | "Display.InletHot"
+  | "Energy.Active.Export.Interval"
+  | "Energy.Active.Export.Register"
+  | "Energy.Active.Import.Interval"
+  | "Energy.Active.Import.Register"
+  | "Energy.Active.Import.CableLoss"
+  | "Energy.Active.Import.LocalGeneration.Register"
+  | "Energy.Active.Net"
+  | "Energy.Active.Setpoint.Interval"
+  | "Energy.Apparent.Export"
+  | "Energy.Apparent.Import"
+  | "Energy.Apparent.Net"
+  | "Energy.Reactive.Export.Interval"
+  | "Energy.Reactive.Export.Register"
+  | "Energy.Reactive.Import.Interval"
+  | "Energy.Reactive.Import.Register"
+  | "Energy.Reactive.Net"
+  | "EnergyRequest.Target"
+  | "EnergyRequest.Minimum"
+  | "EnergyRequest.Maximum"
+  | "EnergyRequest.Minimum.V2X"
+  | "EnergyRequest.Maximum.V2X"
+  | "EnergyRequest.Bulk"
+  | "Frequency"
+  | "Power.Active.Export"
+  | "Power.Active.Import"
+  | "Power.Active.Setpoint"
+  | "Power.Active.Residual"
+  | "Power.Export.Minimum"
+  | "Power.Export.Offered"
+  | "Power.Factor"
+  | "Power.Import.Offered"
+  | "Power.Import.Minimum"
+  | "Power.Offered"
+  | "Power.Reactive.Export"
+  | "Power.Reactive.Import"
+  | "SoC"
+  | "Voltage"
+  | "Voltage.Minimum"
+  | "Voltage.Maximum";
 
-export type PhaseEnumType = "L1" | "L2" | "L3" | "N" | "L1-N" | "L2-N" | "L3-N" | "L1-L2" | "L2-L3" | "L3-L1";
+export type PhaseEnumType =
+  | "L1"
+  | "L2"
+  | "L3"
+  | "N"
+  | "L1-N"
+  | "L2-N"
+  | "L3-N"
+  | "L1-L2"
+  | "L2-L3"
+  | "L3-L1";
 
-export type ReadingContextEnumType = "Interruption.Begin" | "Interruption.End" | "Other" | "Sample.Clock" | "Sample.Periodic" | "Transaction.Begin" | "Transaction.End" | "Trigger";
+export type ReadingContextEnumType =
+  | "Interruption.Begin"
+  | "Interruption.End"
+  | "Other"
+  | "Sample.Clock"
+  | "Sample.Periodic"
+  | "Transaction.Begin"
+  | "Transaction.End"
+  | "Trigger";
 
 export interface MeterValueType {
   sampledValue: SampledValueType[];
@@ -506,7 +768,10 @@ export interface UnitOfMeasureType {
 
 export type NotifyAllowedEnergyTransferStatusEnumType = "Accepted" | "Rejected";
 
-export type CostKindEnumType = "CarbonDioxideEmission" | "RelativePricePercentage" | "RenewableGenerationPercentage";
+export type CostKindEnumType =
+  | "CarbonDioxideEmission"
+  | "RelativePricePercentage"
+  | "RenewableGenerationPercentage";
 
 export interface AbsolutePriceScheduleType {
   timeAnchor: string;
@@ -660,7 +925,18 @@ export interface TaxRuleType {
   customData?: CustomDataType;
 }
 
-export type GridEventFaultEnumType = "CurrentImbalance" | "LocalEmergency" | "LowInputPower" | "OverCurrent" | "OverFrequency" | "OverVoltage" | "PhaseRotation" | "RemoteEmergency" | "UnderFrequency" | "UnderVoltage" | "VoltageImbalance";
+export type GridEventFaultEnumType =
+  | "CurrentImbalance"
+  | "LocalEmergency"
+  | "LowInputPower"
+  | "OverCurrent"
+  | "OverFrequency"
+  | "OverVoltage"
+  | "PhaseRotation"
+  | "RemoteEmergency"
+  | "UnderFrequency"
+  | "UnderVoltage"
+  | "VoltageImbalance";
 
 export interface MessageInfoType {
   display?: ComponentType;
@@ -677,7 +953,22 @@ export interface MessageInfoType {
 
 export type ControlModeEnumType = "ScheduledControl" | "DynamicControl";
 
-export type IslandingDetectionEnumType = "NoAntiIslandingSupport" | "RoCoF" | "UVP_OVP" | "UFP_OFP" | "VoltageVectorShift" | "ZeroCrossingDetection" | "OtherPassive" | "ImpedanceMeasurement" | "ImpedanceAtFrequency" | "SlipModeFrequencyShift" | "SandiaFrequencyShift" | "SandiaVoltageShift" | "FrequencyJump" | "RCLQFactor" | "OtherActive";
+export type IslandingDetectionEnumType =
+  | "NoAntiIslandingSupport"
+  | "RoCoF"
+  | "UVP_OVP"
+  | "UFP_OFP"
+  | "VoltageVectorShift"
+  | "ZeroCrossingDetection"
+  | "OtherPassive"
+  | "ImpedanceMeasurement"
+  | "ImpedanceAtFrequency"
+  | "SlipModeFrequencyShift"
+  | "SandiaFrequencyShift"
+  | "SandiaVoltageShift"
+  | "FrequencyJump"
+  | "RCLQFactor"
+  | "OtherActive";
 
 export type MobilityNeedsModeEnumType = "EVCC" | "EVCC_SECC";
 
@@ -826,9 +1117,17 @@ export interface V2XChargingParametersType {
   customData?: CustomDataType;
 }
 
-export type NotifyEVChargingNeedsStatusEnumType = "Accepted" | "Rejected" | "Processing" | "NoChargingProfile";
+export type NotifyEVChargingNeedsStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "Processing"
+  | "NoChargingProfile";
 
-export type EventNotificationEnumType = "HardWiredNotification" | "HardWiredMonitor" | "PreconfiguredMonitor" | "CustomMonitor";
+export type EventNotificationEnumType =
+  | "HardWiredNotification"
+  | "HardWiredMonitor"
+  | "PreconfiguredMonitor"
+  | "CustomMonitor";
 
 export type EventTriggerEnumType = "Alerting" | "Delta" | "Periodic";
 
@@ -850,7 +1149,14 @@ export interface EventDataType {
   customData?: CustomDataType;
 }
 
-export type MonitorEnumType = "UpperThreshold" | "LowerThreshold" | "Delta" | "Periodic" | "PeriodicClockAligned" | "TargetDelta" | "TargetDeltaRelative";
+export type MonitorEnumType =
+  | "UpperThreshold"
+  | "LowerThreshold"
+  | "Delta"
+  | "Periodic"
+  | "PeriodicClockAligned"
+  | "TargetDelta"
+  | "TargetDeltaRelative";
 
 export interface MonitoringDataType {
   component: ComponentType;
@@ -869,7 +1175,15 @@ export interface VariableMonitoringType {
   customData?: CustomDataType;
 }
 
-export type DataEnumType = "string" | "decimal" | "integer" | "dateTime" | "boolean" | "OptionList" | "SequenceList" | "MemberList";
+export type DataEnumType =
+  | "string"
+  | "decimal"
+  | "integer"
+  | "dateTime"
+  | "boolean"
+  | "OptionList"
+  | "SequenceList"
+  | "MemberList";
 
 export type MutabilityEnumType = "ReadOnly" | "WriteOnly" | "ReadWrite";
 
@@ -901,7 +1215,11 @@ export interface VariableCharacteristicsType {
   customData?: CustomDataType;
 }
 
-export type PaymentStatusEnumType = "Settled" | "Canceled" | "Rejected" | "Failed";
+export type PaymentStatusEnumType =
+  | "Settled"
+  | "Canceled"
+  | "Rejected"
+  | "Failed";
 
 export interface AddressType {
   name: string;
@@ -913,7 +1231,17 @@ export interface AddressType {
   customData?: CustomDataType;
 }
 
-export type PublishFirmwareStatusEnumType = "Idle" | "DownloadScheduled" | "Downloading" | "Downloaded" | "Published" | "DownloadFailed" | "DownloadPaused" | "InvalidChecksum" | "ChecksumVerified" | "PublishFailed";
+export type PublishFirmwareStatusEnumType =
+  | "Idle"
+  | "DownloadScheduled"
+  | "Downloading"
+  | "Downloaded"
+  | "Published"
+  | "DownloadFailed"
+  | "DownloadPaused"
+  | "InvalidChecksum"
+  | "ChecksumVerified"
+  | "PublishFailed";
 
 export type ChargingProfileStatusEnumType = "Accepted" | "Rejected";
 
@@ -933,7 +1261,11 @@ export interface ChargingScheduleUpdateType {
   customData?: CustomDataType;
 }
 
-export type ChargingProfileKindEnumType = "Absolute" | "Recurring" | "Relative" | "Dynamic";
+export type ChargingProfileKindEnumType =
+  | "Absolute"
+  | "Recurring"
+  | "Relative"
+  | "Dynamic";
 
 export type RecurrencyKindEnumType = "Daily" | "Weekly";
 
@@ -955,7 +1287,13 @@ export interface ChargingProfileType {
   customData?: CustomDataType;
 }
 
-export type DERUnitEnumType = "Not_Applicable" | "PctMaxW" | "PctMaxVar" | "PctWAvail" | "PctVarAvail" | "PctEffectiveV";
+export type DERUnitEnumType =
+  | "Not_Applicable"
+  | "PctMaxW"
+  | "PctMaxVar"
+  | "PctWAvail"
+  | "PctVarAvail"
+  | "PctEffectiveV";
 
 export type PowerDuringCessationEnumType = "Active" | "Reactive";
 
@@ -1113,9 +1451,17 @@ export interface VoltageParamsType {
 
 export type RequestStartStopStatusEnumType = "Accepted" | "Rejected";
 
-export type ReservationUpdateStatusEnumType = "Expired" | "Removed" | "NoTransaction";
+export type ReservationUpdateStatusEnumType =
+  | "Expired"
+  | "Removed"
+  | "NoTransaction";
 
-export type ReserveNowStatusEnumType = "Accepted" | "Faulted" | "Occupied" | "Rejected" | "Unavailable";
+export type ReserveNowStatusEnumType =
+  | "Accepted"
+  | "Faulted"
+  | "Occupied"
+  | "Rejected"
+  | "Unavailable";
 
 export type ResetEnumType = "Immediate" | "OnIdle" | "ImmediateAndResume";
 
@@ -1129,21 +1475,51 @@ export interface AuthorizationData {
   customData?: CustomDataType;
 }
 
-export type SendLocalListStatusEnumType = "Accepted" | "Failed" | "VersionMismatch";
+export type SendLocalListStatusEnumType =
+  | "Accepted"
+  | "Failed"
+  | "VersionMismatch";
 
-export type TariffSetStatusEnumType = "Accepted" | "Rejected" | "TooManyElements" | "ConditionNotSupported" | "DuplicateTariffId";
+export type TariffSetStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "TooManyElements"
+  | "ConditionNotSupported"
+  | "DuplicateTariffId";
 
-export type DisplayMessageStatusEnumType = "Accepted" | "NotSupportedMessageFormat" | "Rejected" | "NotSupportedPriority" | "NotSupportedState" | "UnknownTransaction" | "LanguageNotSupported";
+export type DisplayMessageStatusEnumType =
+  | "Accepted"
+  | "NotSupportedMessageFormat"
+  | "Rejected"
+  | "NotSupportedPriority"
+  | "NotSupportedState"
+  | "UnknownTransaction"
+  | "LanguageNotSupported";
 
 export type MonitoringBaseEnumType = "All" | "FactoryDefault" | "HardWiredOnly";
 
 export type APNAuthenticationEnumType = "PAP" | "CHAP" | "NONE" | "AUTO";
 
-export type OCPPInterfaceEnumType = "Wired0" | "Wired1" | "Wired2" | "Wired3" | "Wireless0" | "Wireless1" | "Wireless2" | "Wireless3" | "Any";
+export type OCPPInterfaceEnumType =
+  | "Wired0"
+  | "Wired1"
+  | "Wired2"
+  | "Wired3"
+  | "Wireless0"
+  | "Wireless1"
+  | "Wireless2"
+  | "Wireless3"
+  | "Any";
 
 export type OCPPTransportEnumType = "SOAP" | "JSON";
 
-export type OCPPVersionEnumType = "OCPP12" | "OCPP15" | "OCPP16" | "OCPP20" | "OCPP201" | "OCPP21";
+export type OCPPVersionEnumType =
+  | "OCPP12"
+  | "OCPP15"
+  | "OCPP16"
+  | "OCPP20"
+  | "OCPP201"
+  | "OCPP21";
 
 export type VPNEnumType = "IKEv2" | "IPSec" | "L2TP" | "PPTP";
 
@@ -1182,7 +1558,10 @@ export interface VPNType {
   customData?: CustomDataType;
 }
 
-export type SetNetworkProfileStatusEnumType = "Accepted" | "Rejected" | "Failed";
+export type SetNetworkProfileStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "Failed";
 
 export interface SetMonitoringDataType {
   id?: number;
@@ -1196,7 +1575,13 @@ export interface SetMonitoringDataType {
   customData?: CustomDataType;
 }
 
-export type SetMonitoringStatusEnumType = "Accepted" | "UnknownComponent" | "UnknownVariable" | "UnsupportedMonitorType" | "Rejected" | "Duplicate";
+export type SetMonitoringStatusEnumType =
+  | "Accepted"
+  | "UnknownComponent"
+  | "UnknownVariable"
+  | "UnsupportedMonitorType"
+  | "Rejected"
+  | "Duplicate";
 
 export interface SetMonitoringResultType {
   id?: number;
@@ -1217,7 +1602,13 @@ export interface SetVariableDataType {
   customData?: CustomDataType;
 }
 
-export type SetVariableStatusEnumType = "Accepted" | "Rejected" | "UnknownComponent" | "UnknownVariable" | "NotSupportedAttributeType" | "RebootRequired";
+export type SetVariableStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "UnknownComponent"
+  | "UnknownVariable"
+  | "NotSupportedAttributeType"
+  | "RebootRequired";
 
 export interface SetVariableResultType {
   attributeType?: AttributeEnumType;
@@ -1228,21 +1619,91 @@ export interface SetVariableResultType {
   customData?: CustomDataType;
 }
 
-export type ConnectorStatusEnumType = "Available" | "Occupied" | "Reserved" | "Unavailable" | "Faulted";
+export type ConnectorStatusEnumType =
+  | "Available"
+  | "Occupied"
+  | "Reserved"
+  | "Unavailable"
+  | "Faulted";
 
-export type ChargingStateEnumType = "EVConnected" | "Charging" | "SuspendedEV" | "SuspendedEVSE" | "Idle";
+export type ChargingStateEnumType =
+  | "EVConnected"
+  | "Charging"
+  | "SuspendedEV"
+  | "SuspendedEVSE"
+  | "Idle";
 
-export type CostDimensionEnumType = "Energy" | "MaxCurrent" | "MinCurrent" | "MaxPower" | "MinPower" | "IdleTIme" | "ChargingTime";
+export type CostDimensionEnumType =
+  | "Energy"
+  | "MaxCurrent"
+  | "MinCurrent"
+  | "MaxPower"
+  | "MinPower"
+  | "IdleTIme"
+  | "ChargingTime";
 
-export type PreconditioningStatusEnumType = "Unknown" | "Ready" | "NotReady" | "Preconditioning";
+export type PreconditioningStatusEnumType =
+  | "Unknown"
+  | "Ready"
+  | "NotReady"
+  | "Preconditioning";
 
-export type ReasonEnumType = "DeAuthorized" | "EmergencyStop" | "EnergyLimitReached" | "EVDisconnected" | "GroundFault" | "ImmediateReset" | "MasterPass" | "Local" | "LocalOutOfCredit" | "Other" | "OvercurrentFault" | "PowerLoss" | "PowerQuality" | "Reboot" | "Remote" | "SOCLimitReached" | "StoppedByEV" | "TimeLimitReached" | "Timeout" | "ReqEnergyTransferRejected";
+export type ReasonEnumType =
+  | "DeAuthorized"
+  | "EmergencyStop"
+  | "EnergyLimitReached"
+  | "EVDisconnected"
+  | "GroundFault"
+  | "ImmediateReset"
+  | "MasterPass"
+  | "Local"
+  | "LocalOutOfCredit"
+  | "Other"
+  | "OvercurrentFault"
+  | "PowerLoss"
+  | "PowerQuality"
+  | "Reboot"
+  | "Remote"
+  | "SOCLimitReached"
+  | "StoppedByEV"
+  | "TimeLimitReached"
+  | "Timeout"
+  | "ReqEnergyTransferRejected";
 
 export type TariffCostEnumType = "NormalCost" | "MinCost" | "MaxCost";
 
 export type TransactionEventEnumType = "Ended" | "Started" | "Updated";
 
-export type TriggerReasonEnumType = "AbnormalCondition" | "Authorized" | "CablePluggedIn" | "ChargingRateChanged" | "ChargingStateChanged" | "CostLimitReached" | "Deauthorized" | "EnergyLimitReached" | "EVCommunicationLost" | "EVConnectTimeout" | "EVDeparted" | "EVDetected" | "LimitSet" | "MeterValueClock" | "MeterValuePeriodic" | "OperationModeChanged" | "RemoteStart" | "RemoteStop" | "ResetCommand" | "RunningCost" | "SignedDataReceived" | "SoCLimitReached" | "StopAuthorized" | "TariffChanged" | "TariffNotAccepted" | "TimeLimitReached" | "Trigger" | "TxResumed" | "UnlockCommand";
+export type TriggerReasonEnumType =
+  | "AbnormalCondition"
+  | "Authorized"
+  | "CablePluggedIn"
+  | "ChargingRateChanged"
+  | "ChargingStateChanged"
+  | "CostLimitReached"
+  | "Deauthorized"
+  | "EnergyLimitReached"
+  | "EVCommunicationLost"
+  | "EVConnectTimeout"
+  | "EVDeparted"
+  | "EVDetected"
+  | "LimitSet"
+  | "MeterValueClock"
+  | "MeterValuePeriodic"
+  | "OperationModeChanged"
+  | "RemoteStart"
+  | "RemoteStop"
+  | "ResetCommand"
+  | "RunningCost"
+  | "SignedDataReceived"
+  | "SoCLimitReached"
+  | "StopAuthorized"
+  | "TariffChanged"
+  | "TariffNotAccepted"
+  | "TimeLimitReached"
+  | "Trigger"
+  | "TxResumed"
+  | "UnlockCommand";
 
 export interface ChargingPeriodType {
   dimensions?: CostDimensionType[];
@@ -1313,13 +1774,36 @@ export interface TransactionType {
   customData?: CustomDataType;
 }
 
-export type MessageTriggerEnumType = "BootNotification" | "LogStatusNotification" | "FirmwareStatusNotification" | "Heartbeat" | "MeterValues" | "SignChargingStationCertificate" | "SignV2GCertificate" | "SignV2G20Certificate" | "StatusNotification" | "TransactionEvent" | "SignCombinedCertificate" | "PublishFirmwareStatusNotification" | "CustomTrigger";
+export type MessageTriggerEnumType =
+  | "BootNotification"
+  | "LogStatusNotification"
+  | "FirmwareStatusNotification"
+  | "Heartbeat"
+  | "MeterValues"
+  | "SignChargingStationCertificate"
+  | "SignV2GCertificate"
+  | "SignV2G20Certificate"
+  | "StatusNotification"
+  | "TransactionEvent"
+  | "SignCombinedCertificate"
+  | "PublishFirmwareStatusNotification"
+  | "CustomTrigger";
 
-export type TriggerMessageStatusEnumType = "Accepted" | "Rejected" | "NotImplemented";
+export type TriggerMessageStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "NotImplemented";
 
-export type UnlockStatusEnumType = "Unlocked" | "UnlockFailed" | "OngoingAuthorizedTransaction" | "UnknownConnector";
+export type UnlockStatusEnumType =
+  | "Unlocked"
+  | "UnlockFailed"
+  | "OngoingAuthorizedTransaction"
+  | "UnknownConnector";
 
-export type UnpublishFirmwareStatusEnumType = "DownloadOngoing" | "NoFirmware" | "Unpublished";
+export type UnpublishFirmwareStatusEnumType =
+  | "DownloadOngoing"
+  | "NoFirmware"
+  | "Unpublished";
 
 export interface FirmwareType {
   location: string;
@@ -1330,9 +1814,17 @@ export interface FirmwareType {
   customData?: CustomDataType;
 }
 
-export type UpdateFirmwareStatusEnumType = "Accepted" | "Rejected" | "AcceptedCanceled" | "InvalidCertificate" | "RevokedCertificate";
+export type UpdateFirmwareStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "AcceptedCanceled"
+  | "InvalidCertificate"
+  | "RevokedCertificate";
 
-export type PriorityChargingStatusEnumType = "Accepted" | "Rejected" | "NoProfile";
+export type PriorityChargingStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "NoProfile";
 
 // ═══ Method Types ═══
 
@@ -2468,94 +2960,325 @@ export interface VatNumberValidationResponse {
 // ═══ Method Map ═══
 
 export interface OCPP21Methods {
-  AdjustPeriodicEventStream: { request: AdjustPeriodicEventStreamRequest; response: AdjustPeriodicEventStreamResponse };
+  AdjustPeriodicEventStream: {
+    request: AdjustPeriodicEventStreamRequest;
+    response: AdjustPeriodicEventStreamResponse;
+  };
   AFRRSignal: { request: AFRRSignalRequest; response: AFRRSignalResponse };
   Authorize: { request: AuthorizeRequest; response: AuthorizeResponse };
   BatterySwap: { request: BatterySwapRequest; response: BatterySwapResponse };
-  BootNotification: { request: BootNotificationRequest; response: BootNotificationResponse };
-  CancelReservation: { request: CancelReservationRequest; response: CancelReservationResponse };
-  CertificateSigned: { request: CertificateSignedRequest; response: CertificateSignedResponse };
-  ChangeAvailability: { request: ChangeAvailabilityRequest; response: ChangeAvailabilityResponse };
-  ChangeTransactionTariff: { request: ChangeTransactionTariffRequest; response: ChangeTransactionTariffResponse };
+  BootNotification: {
+    request: BootNotificationRequest;
+    response: BootNotificationResponse;
+  };
+  CancelReservation: {
+    request: CancelReservationRequest;
+    response: CancelReservationResponse;
+  };
+  CertificateSigned: {
+    request: CertificateSignedRequest;
+    response: CertificateSignedResponse;
+  };
+  ChangeAvailability: {
+    request: ChangeAvailabilityRequest;
+    response: ChangeAvailabilityResponse;
+  };
+  ChangeTransactionTariff: {
+    request: ChangeTransactionTariffRequest;
+    response: ChangeTransactionTariffResponse;
+  };
   ClearCache: { request: ClearCacheRequest; response: ClearCacheResponse };
-  ClearChargingProfile: { request: ClearChargingProfileRequest; response: ClearChargingProfileResponse };
-  ClearDERControl: { request: ClearDERControlRequest; response: ClearDERControlResponse };
-  ClearDisplayMessage: { request: ClearDisplayMessageRequest; response: ClearDisplayMessageResponse };
-  ClearedChargingLimit: { request: ClearedChargingLimitRequest; response: ClearedChargingLimitResponse };
-  ClearTariffs: { request: ClearTariffsRequest; response: ClearTariffsResponse };
-  ClearVariableMonitoring: { request: ClearVariableMonitoringRequest; response: ClearVariableMonitoringResponse };
-  ClosePeriodicEventStream: { request: ClosePeriodicEventStreamRequest; response: ClosePeriodicEventStreamResponse };
+  ClearChargingProfile: {
+    request: ClearChargingProfileRequest;
+    response: ClearChargingProfileResponse;
+  };
+  ClearDERControl: {
+    request: ClearDERControlRequest;
+    response: ClearDERControlResponse;
+  };
+  ClearDisplayMessage: {
+    request: ClearDisplayMessageRequest;
+    response: ClearDisplayMessageResponse;
+  };
+  ClearedChargingLimit: {
+    request: ClearedChargingLimitRequest;
+    response: ClearedChargingLimitResponse;
+  };
+  ClearTariffs: {
+    request: ClearTariffsRequest;
+    response: ClearTariffsResponse;
+  };
+  ClearVariableMonitoring: {
+    request: ClearVariableMonitoringRequest;
+    response: ClearVariableMonitoringResponse;
+  };
+  ClosePeriodicEventStream: {
+    request: ClosePeriodicEventStreamRequest;
+    response: ClosePeriodicEventStreamResponse;
+  };
   CostUpdated: { request: CostUpdatedRequest; response: CostUpdatedResponse };
-  CustomerInformation: { request: CustomerInformationRequest; response: CustomerInformationResponse };
-  DataTransfer: { request: DataTransferRequest; response: DataTransferResponse };
-  DeleteCertificate: { request: DeleteCertificateRequest; response: DeleteCertificateResponse };
-  FirmwareStatusNotification: { request: FirmwareStatusNotificationRequest; response: FirmwareStatusNotificationResponse };
-  Get15118EVCertificate: { request: Get15118EVCertificateRequest; response: Get15118EVCertificateResponse };
-  GetBaseReport: { request: GetBaseReportRequest; response: GetBaseReportResponse };
-  GetCertificateChainStatus: { request: GetCertificateChainStatusRequest; response: GetCertificateChainStatusResponse };
-  GetCertificateStatus: { request: GetCertificateStatusRequest; response: GetCertificateStatusResponse };
-  GetChargingProfiles: { request: GetChargingProfilesRequest; response: GetChargingProfilesResponse };
-  GetCompositeSchedule: { request: GetCompositeScheduleRequest; response: GetCompositeScheduleResponse };
-  GetDERControl: { request: GetDERControlRequest; response: GetDERControlResponse };
-  GetDisplayMessages: { request: GetDisplayMessagesRequest; response: GetDisplayMessagesResponse };
-  GetInstalledCertificateIds: { request: GetInstalledCertificateIdsRequest; response: GetInstalledCertificateIdsResponse };
-  GetLocalListVersion: { request: GetLocalListVersionRequest; response: GetLocalListVersionResponse };
+  CustomerInformation: {
+    request: CustomerInformationRequest;
+    response: CustomerInformationResponse;
+  };
+  DataTransfer: {
+    request: DataTransferRequest;
+    response: DataTransferResponse;
+  };
+  DeleteCertificate: {
+    request: DeleteCertificateRequest;
+    response: DeleteCertificateResponse;
+  };
+  FirmwareStatusNotification: {
+    request: FirmwareStatusNotificationRequest;
+    response: FirmwareStatusNotificationResponse;
+  };
+  Get15118EVCertificate: {
+    request: Get15118EVCertificateRequest;
+    response: Get15118EVCertificateResponse;
+  };
+  GetBaseReport: {
+    request: GetBaseReportRequest;
+    response: GetBaseReportResponse;
+  };
+  GetCertificateChainStatus: {
+    request: GetCertificateChainStatusRequest;
+    response: GetCertificateChainStatusResponse;
+  };
+  GetCertificateStatus: {
+    request: GetCertificateStatusRequest;
+    response: GetCertificateStatusResponse;
+  };
+  GetChargingProfiles: {
+    request: GetChargingProfilesRequest;
+    response: GetChargingProfilesResponse;
+  };
+  GetCompositeSchedule: {
+    request: GetCompositeScheduleRequest;
+    response: GetCompositeScheduleResponse;
+  };
+  GetDERControl: {
+    request: GetDERControlRequest;
+    response: GetDERControlResponse;
+  };
+  GetDisplayMessages: {
+    request: GetDisplayMessagesRequest;
+    response: GetDisplayMessagesResponse;
+  };
+  GetInstalledCertificateIds: {
+    request: GetInstalledCertificateIdsRequest;
+    response: GetInstalledCertificateIdsResponse;
+  };
+  GetLocalListVersion: {
+    request: GetLocalListVersionRequest;
+    response: GetLocalListVersionResponse;
+  };
   GetLog: { request: GetLogRequest; response: GetLogResponse };
-  GetMonitoringReport: { request: GetMonitoringReportRequest; response: GetMonitoringReportResponse };
-  GetPeriodicEventStream: { request: GetPeriodicEventStreamRequest; response: GetPeriodicEventStreamResponse };
+  GetMonitoringReport: {
+    request: GetMonitoringReportRequest;
+    response: GetMonitoringReportResponse;
+  };
+  GetPeriodicEventStream: {
+    request: GetPeriodicEventStreamRequest;
+    response: GetPeriodicEventStreamResponse;
+  };
   GetReport: { request: GetReportRequest; response: GetReportResponse };
   GetTariffs: { request: GetTariffsRequest; response: GetTariffsResponse };
-  GetTransactionStatus: { request: GetTransactionStatusRequest; response: GetTransactionStatusResponse };
-  GetVariables: { request: GetVariablesRequest; response: GetVariablesResponse };
+  GetTransactionStatus: {
+    request: GetTransactionStatusRequest;
+    response: GetTransactionStatusResponse;
+  };
+  GetVariables: {
+    request: GetVariablesRequest;
+    response: GetVariablesResponse;
+  };
   Heartbeat: { request: HeartbeatRequest; response: HeartbeatResponse };
-  InstallCertificate: { request: InstallCertificateRequest; response: InstallCertificateResponse };
-  LogStatusNotification: { request: LogStatusNotificationRequest; response: LogStatusNotificationResponse };
+  InstallCertificate: {
+    request: InstallCertificateRequest;
+    response: InstallCertificateResponse;
+  };
+  LogStatusNotification: {
+    request: LogStatusNotificationRequest;
+    response: LogStatusNotificationResponse;
+  };
   MeterValues: { request: MeterValuesRequest; response: MeterValuesResponse };
-  NotifyAllowedEnergyTransfer: { request: NotifyAllowedEnergyTransferRequest; response: NotifyAllowedEnergyTransferResponse };
-  NotifyChargingLimit: { request: NotifyChargingLimitRequest; response: NotifyChargingLimitResponse };
-  NotifyCustomerInformation: { request: NotifyCustomerInformationRequest; response: NotifyCustomerInformationResponse };
-  NotifyDERAlarm: { request: NotifyDERAlarmRequest; response: NotifyDERAlarmResponse };
-  NotifyDERStartStop: { request: NotifyDERStartStopRequest; response: NotifyDERStartStopResponse };
-  NotifyDisplayMessages: { request: NotifyDisplayMessagesRequest; response: NotifyDisplayMessagesResponse };
-  NotifyEVChargingNeeds: { request: NotifyEVChargingNeedsRequest; response: NotifyEVChargingNeedsResponse };
-  NotifyEVChargingSchedule: { request: NotifyEVChargingScheduleRequest; response: NotifyEVChargingScheduleResponse };
+  NotifyAllowedEnergyTransfer: {
+    request: NotifyAllowedEnergyTransferRequest;
+    response: NotifyAllowedEnergyTransferResponse;
+  };
+  NotifyChargingLimit: {
+    request: NotifyChargingLimitRequest;
+    response: NotifyChargingLimitResponse;
+  };
+  NotifyCustomerInformation: {
+    request: NotifyCustomerInformationRequest;
+    response: NotifyCustomerInformationResponse;
+  };
+  NotifyDERAlarm: {
+    request: NotifyDERAlarmRequest;
+    response: NotifyDERAlarmResponse;
+  };
+  NotifyDERStartStop: {
+    request: NotifyDERStartStopRequest;
+    response: NotifyDERStartStopResponse;
+  };
+  NotifyDisplayMessages: {
+    request: NotifyDisplayMessagesRequest;
+    response: NotifyDisplayMessagesResponse;
+  };
+  NotifyEVChargingNeeds: {
+    request: NotifyEVChargingNeedsRequest;
+    response: NotifyEVChargingNeedsResponse;
+  };
+  NotifyEVChargingSchedule: {
+    request: NotifyEVChargingScheduleRequest;
+    response: NotifyEVChargingScheduleResponse;
+  };
   NotifyEvent: { request: NotifyEventRequest; response: NotifyEventResponse };
-  NotifyMonitoringReport: { request: NotifyMonitoringReportRequest; response: NotifyMonitoringReportResponse };
-  NotifyPriorityCharging: { request: NotifyPriorityChargingRequest; response: NotifyPriorityChargingResponse };
-  NotifyReport: { request: NotifyReportRequest; response: NotifyReportResponse };
-  NotifySettlement: { request: NotifySettlementRequest; response: NotifySettlementResponse };
-  NotifyWebPaymentStarted: { request: NotifyWebPaymentStartedRequest; response: NotifyWebPaymentStartedResponse };
-  OpenPeriodicEventStream: { request: OpenPeriodicEventStreamRequest; response: OpenPeriodicEventStreamResponse };
-  PublishFirmware: { request: PublishFirmwareRequest; response: PublishFirmwareResponse };
-  PublishFirmwareStatusNotification: { request: PublishFirmwareStatusNotificationRequest; response: PublishFirmwareStatusNotificationResponse };
-  PullDynamicScheduleUpdate: { request: PullDynamicScheduleUpdateRequest; response: PullDynamicScheduleUpdateResponse };
-  ReportChargingProfiles: { request: ReportChargingProfilesRequest; response: ReportChargingProfilesResponse };
-  ReportDERControl: { request: ReportDERControlRequest; response: ReportDERControlResponse };
-  RequestBatterySwap: { request: RequestBatterySwapRequest; response: RequestBatterySwapResponse };
-  RequestStartTransaction: { request: RequestStartTransactionRequest; response: RequestStartTransactionResponse };
-  RequestStopTransaction: { request: RequestStopTransactionRequest; response: RequestStopTransactionResponse };
-  ReservationStatusUpdate: { request: ReservationStatusUpdateRequest; response: ReservationStatusUpdateResponse };
+  NotifyMonitoringReport: {
+    request: NotifyMonitoringReportRequest;
+    response: NotifyMonitoringReportResponse;
+  };
+  NotifyPriorityCharging: {
+    request: NotifyPriorityChargingRequest;
+    response: NotifyPriorityChargingResponse;
+  };
+  NotifyReport: {
+    request: NotifyReportRequest;
+    response: NotifyReportResponse;
+  };
+  NotifySettlement: {
+    request: NotifySettlementRequest;
+    response: NotifySettlementResponse;
+  };
+  NotifyWebPaymentStarted: {
+    request: NotifyWebPaymentStartedRequest;
+    response: NotifyWebPaymentStartedResponse;
+  };
+  OpenPeriodicEventStream: {
+    request: OpenPeriodicEventStreamRequest;
+    response: OpenPeriodicEventStreamResponse;
+  };
+  PublishFirmware: {
+    request: PublishFirmwareRequest;
+    response: PublishFirmwareResponse;
+  };
+  PublishFirmwareStatusNotification: {
+    request: PublishFirmwareStatusNotificationRequest;
+    response: PublishFirmwareStatusNotificationResponse;
+  };
+  PullDynamicScheduleUpdate: {
+    request: PullDynamicScheduleUpdateRequest;
+    response: PullDynamicScheduleUpdateResponse;
+  };
+  ReportChargingProfiles: {
+    request: ReportChargingProfilesRequest;
+    response: ReportChargingProfilesResponse;
+  };
+  ReportDERControl: {
+    request: ReportDERControlRequest;
+    response: ReportDERControlResponse;
+  };
+  RequestBatterySwap: {
+    request: RequestBatterySwapRequest;
+    response: RequestBatterySwapResponse;
+  };
+  RequestStartTransaction: {
+    request: RequestStartTransactionRequest;
+    response: RequestStartTransactionResponse;
+  };
+  RequestStopTransaction: {
+    request: RequestStopTransactionRequest;
+    response: RequestStopTransactionResponse;
+  };
+  ReservationStatusUpdate: {
+    request: ReservationStatusUpdateRequest;
+    response: ReservationStatusUpdateResponse;
+  };
   ReserveNow: { request: ReserveNowRequest; response: ReserveNowResponse };
   Reset: { request: ResetRequest; response: ResetResponse };
-  SecurityEventNotification: { request: SecurityEventNotificationRequest; response: SecurityEventNotificationResponse };
-  SendLocalList: { request: SendLocalListRequest; response: SendLocalListResponse };
-  SetChargingProfile: { request: SetChargingProfileRequest; response: SetChargingProfileResponse };
-  SetDefaultTariff: { request: SetDefaultTariffRequest; response: SetDefaultTariffResponse };
-  SetDERControl: { request: SetDERControlRequest; response: SetDERControlResponse };
-  SetDisplayMessage: { request: SetDisplayMessageRequest; response: SetDisplayMessageResponse };
-  SetMonitoringBase: { request: SetMonitoringBaseRequest; response: SetMonitoringBaseResponse };
-  SetMonitoringLevel: { request: SetMonitoringLevelRequest; response: SetMonitoringLevelResponse };
-  SetNetworkProfile: { request: SetNetworkProfileRequest; response: SetNetworkProfileResponse };
-  SetVariableMonitoring: { request: SetVariableMonitoringRequest; response: SetVariableMonitoringResponse };
-  SetVariables: { request: SetVariablesRequest; response: SetVariablesResponse };
-  SignCertificate: { request: SignCertificateRequest; response: SignCertificateResponse };
-  StatusNotification: { request: StatusNotificationRequest; response: StatusNotificationResponse };
-  TransactionEvent: { request: TransactionEventRequest; response: TransactionEventResponse };
-  TriggerMessage: { request: TriggerMessageRequest; response: TriggerMessageResponse };
-  UnlockConnector: { request: UnlockConnectorRequest; response: UnlockConnectorResponse };
-  UnpublishFirmware: { request: UnpublishFirmwareRequest; response: UnpublishFirmwareResponse };
-  UpdateDynamicSchedule: { request: UpdateDynamicScheduleRequest; response: UpdateDynamicScheduleResponse };
-  UpdateFirmware: { request: UpdateFirmwareRequest; response: UpdateFirmwareResponse };
-  UsePriorityCharging: { request: UsePriorityChargingRequest; response: UsePriorityChargingResponse };
-  VatNumberValidation: { request: VatNumberValidationRequest; response: VatNumberValidationResponse };
+  SecurityEventNotification: {
+    request: SecurityEventNotificationRequest;
+    response: SecurityEventNotificationResponse;
+  };
+  SendLocalList: {
+    request: SendLocalListRequest;
+    response: SendLocalListResponse;
+  };
+  SetChargingProfile: {
+    request: SetChargingProfileRequest;
+    response: SetChargingProfileResponse;
+  };
+  SetDefaultTariff: {
+    request: SetDefaultTariffRequest;
+    response: SetDefaultTariffResponse;
+  };
+  SetDERControl: {
+    request: SetDERControlRequest;
+    response: SetDERControlResponse;
+  };
+  SetDisplayMessage: {
+    request: SetDisplayMessageRequest;
+    response: SetDisplayMessageResponse;
+  };
+  SetMonitoringBase: {
+    request: SetMonitoringBaseRequest;
+    response: SetMonitoringBaseResponse;
+  };
+  SetMonitoringLevel: {
+    request: SetMonitoringLevelRequest;
+    response: SetMonitoringLevelResponse;
+  };
+  SetNetworkProfile: {
+    request: SetNetworkProfileRequest;
+    response: SetNetworkProfileResponse;
+  };
+  SetVariableMonitoring: {
+    request: SetVariableMonitoringRequest;
+    response: SetVariableMonitoringResponse;
+  };
+  SetVariables: {
+    request: SetVariablesRequest;
+    response: SetVariablesResponse;
+  };
+  SignCertificate: {
+    request: SignCertificateRequest;
+    response: SignCertificateResponse;
+  };
+  StatusNotification: {
+    request: StatusNotificationRequest;
+    response: StatusNotificationResponse;
+  };
+  TransactionEvent: {
+    request: TransactionEventRequest;
+    response: TransactionEventResponse;
+  };
+  TriggerMessage: {
+    request: TriggerMessageRequest;
+    response: TriggerMessageResponse;
+  };
+  UnlockConnector: {
+    request: UnlockConnectorRequest;
+    response: UnlockConnectorResponse;
+  };
+  UnpublishFirmware: {
+    request: UnpublishFirmwareRequest;
+    response: UnpublishFirmwareResponse;
+  };
+  UpdateDynamicSchedule: {
+    request: UpdateDynamicScheduleRequest;
+    response: UpdateDynamicScheduleResponse;
+  };
+  UpdateFirmware: {
+    request: UpdateFirmwareRequest;
+    response: UpdateFirmwareResponse;
+  };
+  UsePriorityCharging: {
+    request: UsePriorityChargingRequest;
+    response: UsePriorityChargingResponse;
+  };
+  VatNumberValidation: {
+    request: VatNumberValidationRequest;
+    response: VatNumberValidationResponse;
+  };
 }

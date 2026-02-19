@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ArrowRight, Github, Copy, Check, BookOpen } from "lucide-react";
+import { ArrowRight, BookOpen, Check, Copy, Github } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -71,6 +71,7 @@ export function Hero() {
             <span className="text-fd-muted-foreground select-none">$</span>
             <span>npm install ocpp-ws-io</span>
             <button
+              type="button"
               onClick={onCopy}
               className="ml-4 text-fd-muted-foreground hover:text-fd-foreground transition-colors"
               aria-label="Copy install command"
@@ -110,7 +111,7 @@ export function Hero() {
                 <span className="text-[#ff7b72]">import</span> {"{ "}
                 <span className="text-[#79c0ff]">OCPPServer</span>
                 {" }"} <span className="text-[#ff7b72]">from</span>{" "}
-                <span className="text-[#a5d6ff]">&apos;ocpp-ws-io&apos;</span>;
+                <span className="text-[#a5d6ff]">&apos;ocpp-ws-io&apos;</span>
               </div>
               <div className="h-4" />
               <div>

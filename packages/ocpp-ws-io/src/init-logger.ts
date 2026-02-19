@@ -6,7 +6,7 @@
  * - `LoggingConfig` → custom handler or configured voltlog-io
  */
 
-import { createLogger, consoleTransport, prettyTransport } from "voltlog-io";
+import { consoleTransport, createLogger, prettyTransport } from "voltlog-io";
 import type { LoggerLike, LoggingConfig } from "./types.js";
 
 /**

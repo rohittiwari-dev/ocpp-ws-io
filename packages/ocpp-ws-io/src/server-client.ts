@@ -1,8 +1,8 @@
-import { WebSocket } from "ws";
+import type { WebSocket } from "ws";
 import { OCPPClient } from "./client.js";
 import {
-  ConnectionState,
   type ClientOptions,
+  ConnectionState,
   type HandshakeInfo,
 } from "./types.js";
 

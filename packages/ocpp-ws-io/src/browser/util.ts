@@ -1,11 +1,14 @@
-import * as errors from "./errors.js";
 import type { RPCError } from "./errors.js";
+import * as errors from "./errors.js";
 
 // ─── RPC Error Factory ──────────────────────────────────────────
 
 const RPC_ERROR_REGISTRY = new Map<
   string,
-  new (message?: string, details?: Record<string, unknown>) => RPCError
+  new (
+    message?: string,
+    details?: Record<string, unknown>,
+  ) => RPCError
 >([
   ["GenericError", errors.RPCGenericError],
   ["RpcFrameworkError", errors.RPCFrameworkError],

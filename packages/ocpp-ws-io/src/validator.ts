@@ -89,7 +89,10 @@ export class Validator {
     // that fast-uri can't serialize. Normalize $id to simple path-based form.
     for (const schema of schemas) {
       const normalized = { ...schema };
-      if (normalized.$id && normalized.$id.startsWith("urn:")) {
+      if (
+        typeof normalized.$id === "string" &&
+        normalized.$id.startsWith("urn:")
+      ) {
         normalized.$id = normalized.$id.replace("urn:", "urn/");
       }
       this._ajv.addSchema(normalized);

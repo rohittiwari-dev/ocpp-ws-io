@@ -1,0 +1,254 @@
+---
+title: Transports
+description: Send your logs to files, databases, or external services.
+---
+
+**Transports** are the destination for your logs. You can use multiple transports simultaneously.
+
+## 📦 Core Transports
+
+### Console
+
+Writes logs to `stdout`/`stderr` as JSON.
+
+```ts
+import { createLogger, consoleTransport } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  transports: [
+    consoleTransport({
+      level: "INFO", // Independent level filter
+    }),
+  ],
+});
+```
+
+### File (Server-Only)
+
+Writes logs to rotating files on disk.
+
+```ts
+import { createLogger, fileTransport } from "ocpp-ws-io/logger";
+import { join } from "path";
+
+const logger = createLogger({
+  transports: [
+    fileTransport({
+      dir: join(process.cwd(), "logs"),
+      filename: "app-%DATE%.log", // Rotates daily
+    }),
+  ],
+});
+```
+
+### Pretty (Dev-Only)
+
+Formats logs for human readability.
+
+```ts
+import { createLogger, prettyTransport } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  transports: [
+    prettyTransport({
+      colors: true,
+      timestamps: true,
+    }),
+  ],
+});
+```
+
+## 🌐 Streaming
+
+### JSON Stream
+
+Writes NDJSON (Newline Delimited JSON) to any Node.js `WritableStream`.
+
+```ts
+import { createWriteStream } from "fs";
+import { createLogger, jsonStreamTransport } from "ocpp-ws-io/logger";
+
+const stream = createWriteStream("output.log");
+const logger = createLogger({
+  transports: [jsonStreamTransport({ stream })],
+});
+```
+
+### Browser JSON Stream
+
+Writes NDJSON to a WHATWG `WritableStream` (for Browsers/Edge).
+
+```ts
+import { createLogger, browserJsonStreamTransport } from "ocpp-ws-io/logger";
+
+// Example: Streaming to a Service Worker
+const stream = new WritableStream({ ... });
+const logger = createLogger({
+  transports: [
+    browserJsonStreamTransport({ stream }),
+  ],
+});
+```
+
+## 🔌 Integrations
+
+### Redis Streams
+
+Publishes logs to a Redis Stream using `ioredis`.
+
+```ts
+import Redis from "ioredis";
+import { createLogger, redisTransport } from "ocpp-ws-io/logger";
+
+const redis = new Redis();
+const logger = createLogger({
+  transports: [
+    redisTransport({
+      client: redis,
+      streamKey: "logs:app",
+      maxLen: 10000, // Capped stream size
+    }),
+  ],
+});
+```
+
+### Datadog
+
+Sends logs directly to Datadog via their HTTP Intake API.
+
+```ts
+import { createLogger, datadogTransport } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  transports: [
+    datadogTransport({
+      apiKey: process.env.DD_API_KEY!,
+      service: "my-app",
+      ddSource: "nodejs",
+      tags: "env:prod,region:us-east",
+    }),
+  ],
+});
+```
+
+### Loki (Grafana)
+
+Pushes logs to Grafana Loki.
+
+```ts
+import { createLogger, lokiTransport } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  transports: [
+    lokiTransport({
+      host: "http://loki:3100",
+      labels: { app: "backend" },
+      batchSize: 10,
+    }),
+  ],
+});
+```
+
+### Sentry
+
+Captures Errors as Exceptions and other logs as Breadcrumbs.
+
+```ts
+import * as Sentry from "@sentry/node";
+import { createLogger, sentryTransport } from "ocpp-ws-io/logger";
+
+// Initialize Sentry first
+Sentry.init({ dsn: "..." });
+
+const logger = createLogger({
+  transports: [
+    sentryTransport({
+      sentry: Sentry,
+      errorLevel: "ERROR", // Send ERRORs as captured exceptions
+      breadcrumbLevel: "INFO", // Send INFO+ as breadcrumbs
+    }),
+  ],
+});
+```
+
+### Slack / Discord
+
+Sends notifications to chat channels. Best used with a high-level filter (ERROR only).
+
+```ts
+import {
+  createLogger,
+  slackTransport,
+  discordTransport,
+} from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  transports: [
+    slackTransport({
+      webhookUrl: process.env.SLACK_WEBHOOK_URL!,
+      level: "FATAL", // Only wake me up for fatal errors
+    }),
+    discordTransport({
+      webhookUrl: process.env.DISCORD_WEBHOOK_URL!,
+      level: "ERROR",
+    }),
+  ],
+});
+```
+
+### Webhook (Generic)
+
+POSTs logs to any HTTP endpoint.
+
+```ts
+import { createLogger, webhookTransport } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  transports: [
+    webhookTransport({
+      url: "https://my-log-aggregator.com/ingest",
+      headers: { Authorization: "Bearer ..." },
+    }),
+  ],
+});
+```
+
+## ⚙️ Utilities
+
+### Batch Transport (Performance)
+
+Wraps any other transport to buffer logs and send them in chunks. Highly recommended for HTTP/Network transports.
+
+```ts
+import {
+  createLogger,
+  batchTransport,
+  webhookTransport,
+} from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  transports: [
+    batchTransport(webhookTransport({ url: "..." }), {
+      batchSize: 100, // Wait for 100 logs
+      flushIntervalMs: 2000, // Or 2 seconds
+    }),
+  ],
+});
+```
+
+### Custom Transport
+
+You can create a custom transport without implementing the full interface by using the `createTransport` helper.
+
+```ts
+import { createTransport } from "ocpp-ws-io/logger";
+
+const myTransport = createTransport("my-custom-transport", async (entry) => {
+  console.log("Custom log:", entry.message);
+  // Send entry to external service...
+});
+
+const logger = createLogger({
+  transports: [myTransport],
+});
+```

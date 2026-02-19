@@ -1,9 +1,10 @@
-import { blogSource, getRelatedDocs, getRelatedPosts } from "@/lib/blog";
-import { notFound } from "next/navigation";
-import { getMDXComponents } from "@/mdx-components";
 import { DocsBody } from "fumadocs-ui/layouts/docs/page";
+import Image from "next/image";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { Footer } from "@/components/landing/footer";
+import { blogSource, getRelatedDocs, getRelatedPosts } from "@/lib/blog";
+import { getMDXComponents } from "@/mdx-components";
 
 export function generateStaticParams() {
   return blogSource.generateParams();
@@ -52,10 +53,12 @@ export default async function BlogPostPage({
               </p>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <img
+                  <Image
                     src={page.author.avatar}
                     alt={page.author.name}
                     className="h-10 w-10 rounded-full object-cover"
+                    width={500}
+                    height={500}
                   />
                   <div>
                     <p className="text-sm font-medium text-fd-foreground">
@@ -88,10 +91,12 @@ export default async function BlogPostPage({
 
             {/* Hero Image */}
             {page.image && (
-              <img
+              <Image
                 src={page.image}
                 alt={page.title}
                 className="mb-12 w-full rounded-xl object-cover shadow-lg aspect-video"
+                width={500}
+                height={500}
               />
             )}
 
@@ -113,7 +118,7 @@ export default async function BlogPostPage({
                   <nav className="space-y-1">
                     {toc.map((item, i) => (
                       <a
-                        key={i}
+                        key={`${item.title}-${i}`}
                         href={item.url}
                         className="block text-sm text-fd-muted-foreground hover:text-fd-foreground transition-colors py-1"
                         style={{ paddingLeft: `${(item.depth - 2) * 12}px` }}

@@ -1,0 +1,150 @@
+---
+title: Examples
+description: Real-world patterns and advanced configurations.
+---
+
+## 🏭 Production Setup
+
+A robust production setup typically involves:
+
+1.  **Console Logging** for immediate observability (Kubernetes/Docker logs).
+2.  **File Logging** for persistent on-disk records (optional).
+3.  **Error Tracking** via Sentry.
+4.  **Security** via Redaction.
+
+```ts
+import {
+  createLogger,
+  consoleTransport,
+  fileTransport,
+  sentryTransport,
+  redactionMiddleware,
+  correlationIdMiddleware,
+} from "ocpp-ws-io/logger";
+import * as Sentry from "@sentry/node";
+import { join } from "path";
+
+// 1. Init Sentry
+Sentry.init({ dsn: process.env.SENTRY_DSN });
+
+// 2. Create Logger
+const logger = createLogger({
+  level: "INFO",
+
+  // Middlewares run first
+  middleware: [
+    correlationIdMiddleware(),
+    redactionMiddleware({
+      paths: ["password", "token", "user.ssn"],
+    }),
+  ],
+
+  // Transports receive processed logs
+  transports: [
+    // Standard stdout
+    consoleTransport(),
+
+    // Rotating file log
+    fileTransport({
+      dir: join(process.cwd(), "logs"),
+      filename: "app-%DATE%.log",
+    }),
+
+    // Error tracking
+    sentryTransport({
+      sentry: Sentry,
+      errorLevel: "ERROR",
+    }),
+  ],
+});
+```
+
+## 🧠 AI Error Analysis
+
+Use OpenAI to automatically analyze errors and add a "solution" field to your logs.
+
+```ts
+import {
+  createLogger,
+  aiEnrichmentMiddleware,
+  createOpenAiErrorAnalyzer,
+} from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  middleware: [
+    aiEnrichmentMiddleware({
+      level: "ERROR",
+      analyzer: createOpenAiErrorAnalyzer(process.env.OPENAI_API_KEY!),
+      targetField: "ai_analysis",
+    }),
+  ],
+});
+
+try {
+  // ... some risky code
+  throw new Error("Connection reset by peer");
+} catch (err) {
+  // The logger will asynchronously ask OpenAI what this means
+  logger.error("Request failed", err);
+}
+
+// Log output will eventually contain:
+// {
+//   "message": "Request failed",
+//   "error": { "message": "Connection reset by peer" },
+//   "meta": {
+//     "ai_analysis": "The remote server closed the connection unexpectedly. Check firewall rules..."
+//   }
+// }
+```
+
+## 🌊 Redis Streaming Pipeline
+
+High-scale architecture often uses Redis as a buffer before inserting logs into ElasticSearch or ClickHouse.
+
+```ts
+import Redis from "ioredis";
+import {
+  createLogger,
+  redisTransport,
+  batchTransport,
+} from "ocpp-ws-io/logger";
+
+const redis = new Redis();
+
+const logger = createLogger({
+  transports: [
+    // Batch logs to reduce Redis calls
+    batchTransport(
+      redisTransport({
+        client: redis,
+        streamKey: "logs:ingest",
+      }),
+      { batchSize: 50, flushIntervalMs: 1000 },
+    ),
+  ],
+});
+```
+
+## 🧩 Custom Middleware
+
+Create your own middleware to inject custom logic.
+
+```ts
+import { createMiddleware } from "ocpp-ws-io/logger";
+
+// Middleware to block logs from a specific IP
+const blockIpMiddleware = createMiddleware((entry, next) => {
+  if (entry.meta.ip === "192.168.1.50") {
+    // blocked! do not call next()
+    return;
+  }
+  next(entry);
+});
+
+// Middleware to add build version
+const versionMiddleware = createMiddleware((entry, next) => {
+  entry.meta.version = process.env.BUILD_VERSION || "1.0.0";
+  next(entry);
+});
+```

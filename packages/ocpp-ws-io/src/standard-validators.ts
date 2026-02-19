@@ -1,11 +1,11 @@
+import ocpp16 from "./schemas/ocpp1_6.json";
+import ocpp201 from "./schemas/ocpp2_0_1.json";
+import ocpp21 from "./schemas/ocpp2_1.json";
 import {
   createValidator,
   type Validator,
   type ValidatorSchema,
 } from "./validator.js";
-import ocpp16 from "./schemas/ocpp1_6.json";
-import ocpp201 from "./schemas/ocpp2_0_1.json";
-import ocpp21 from "./schemas/ocpp2_1.json";
 
 /**
  * Pre-built validators for all supported OCPP protocol versions.

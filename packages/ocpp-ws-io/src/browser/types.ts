@@ -1,5 +1,10 @@
 /// <reference lib="dom" />
 
+import type {
+  AllMethodNames as _AllMethodNames,
+  OCPPRequestType as _OCPPRequestType,
+  OCPPResponseType as _OCPPResponseType,
+} from "../generated/index.js";
 /**
  * Browser-compatible types for ocpp-ws-io/browser.
  *
@@ -7,26 +12,20 @@
  * browser-specific options and event types.
  */
 import type {
-  OCPPProtocol as _OCPPProtocol,
   AnyOCPPProtocol as _AnyOCPPProtocol,
-  OCPPCall as _OCPPCall,
-  OCPPCallResult as _OCPPCallResult,
-  OCPPCallError as _OCPPCallError,
-  OCPPMessage as _OCPPMessage,
-  HandlerContext as _HandlerContext,
   CallHandler as _CallHandler,
-  WildcardHandler as _WildcardHandler,
   CallOptions as _CallOptions,
   CloseOptions as _CloseOptions,
+  HandlerContext as _HandlerContext,
   LoggerLike as _LoggerLike,
   LoggingConfig as _LoggingConfig,
+  OCPPCall as _OCPPCall,
+  OCPPCallError as _OCPPCallError,
+  OCPPCallResult as _OCPPCallResult,
+  OCPPMessage as _OCPPMessage,
+  OCPPProtocol as _OCPPProtocol,
+  WildcardHandler as _WildcardHandler,
 } from "../types.js";
-
-import type {
-  AllMethodNames as _AllMethodNames,
-  OCPPRequestType as _OCPPRequestType,
-  OCPPResponseType as _OCPPResponseType,
-} from "../generated/index.js";
 
 // Re-export shared types
 export type OCPPProtocol = _OCPPProtocol;

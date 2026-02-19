@@ -220,7 +220,7 @@ function CodeLine({ tokens }: { tokens: LineToken[] }) {
       lineIndex++;
     } else {
       currentLine.push(
-        <span key={i} className={token.cls}>
+        <span key={`${i}-${token.text}`} className={token.cls}>
           {token.text}
         </span>,
       );
@@ -234,7 +234,7 @@ function CodeLine({ tokens }: { tokens: LineToken[] }) {
 
 export function CodeShowcase() {
   const [activeTab, setActiveTab] = useState("client");
-  const activeCode = tabs.find((t) => t.id === activeTab)!;
+  const activeCode = tabs.find((t) => t.id === activeTab);
 
   return (
     <section className="container mx-auto px-4 py-24 border-t border-fd-border/50">
@@ -258,6 +258,7 @@ export function CodeShowcase() {
           <div className="flex items-center border-b border-gray-800 bg-[#161b22]">
             {tabs.map((tab) => (
               <button
+                type="button"
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`relative px-5 py-3 text-xs font-mono transition-colors ${
@@ -278,7 +279,7 @@ export function CodeShowcase() {
             ))}
             <div className="flex-1" />
             <span className="text-xs font-mono text-gray-500 px-4">
-              {activeCode.filename}
+              {activeCode?.filename}
             </span>
           </div>
 
@@ -290,7 +291,7 @@ export function CodeShowcase() {
             transition={{ duration: 0.2 }}
             className="p-6 font-mono text-[13px] leading-relaxed text-blue-100/90"
           >
-            <CodeLine tokens={activeCode.lines as LineToken[]} />
+            <CodeLine tokens={activeCode?.lines as LineToken[]} />
           </motion.div>
         </motion.div>
       </div>

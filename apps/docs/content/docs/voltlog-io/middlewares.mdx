@@ -1,0 +1,230 @@
+---
+title: Middlewares
+description: Intercept, filter, and enrich logs with powerful middleware pipelines.
+---
+
+**Middlewares** are functions that run before your logs reach any transport. They can modify the log entry, drop it (filtering), or trigger side effects (alerts).
+
+## 🛡️ Core Middlewares
+
+### Redaction (Security)
+
+Automatically masks sensitive fields in your logs to prevent data leaks.
+
+```ts
+import { createLogger, redactionMiddleware } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  middleware: [
+    redactionMiddleware({
+      paths: ["password", "token", "user.creditCard", "headers.authorization"],
+      replacement: "[REDACTED]", // Optional (default)
+      deep: true, // Optional (default)
+    }),
+  ],
+});
+```
+
+### Sampling (Volume Control)
+
+Reduces log volume by only keeping a percentage of logs. Essential for high-throughput systems.
+
+```ts
+import { createLogger, samplingMiddleware } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  middleware: [
+    samplingMiddleware({
+      // Keep 10% of logs
+      sampleRate: 0.1,
+      // Always keep WARN/ERROR logs (ignore sampling)
+      priorityLevel: 40,
+      // Group sampling by this key (e.g. per-user or per-action)
+      keyFn: (entry) => entry.meta.action,
+    }),
+  ],
+});
+```
+
+### Deduplication (Noise Reduction)
+
+Groups identical logs that occur rapidly within a time window.
+
+```ts
+import { createLogger, deduplicationMiddleware } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  middleware: [
+    deduplicationMiddleware({
+      windowMs: 5000, // 5 seconds
+      // Deduplicate by message and level
+      keyFn: (entry) => `${entry.level}:${entry.message}`,
+    }),
+  ],
+});
+```
+
+## 🧠 Context & Enrichment
+
+### Correlation ID (Tracing)
+
+Ensures every log has a unique ID for tracing requests across microservices.
+
+```ts
+import { createLogger, correlationIdMiddleware } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  middleware: [
+    correlationIdMiddleware({
+      header: "x-request-id", // Check this header first
+    }),
+  ],
+});
+```
+
+### User Agent (Client Info)
+
+Parses `User-Agent` strings into structured browser/OS data.
+
+```ts
+import { createLogger, userAgentMiddleware } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  middleware: [
+    userAgentMiddleware({
+      sourceField: "headers.user-agent",
+      targetField: "client",
+    }),
+  ],
+});
+// result: meta.client = { browser: "Chrome", os: "Windows", ... }
+```
+
+### IP Extraction (Geo/Security)
+
+Extracts the client IP from common headers like `X-Forwarded-For`.
+
+```ts
+import { createLogger, ipMiddleware } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  middleware: [ipMiddleware({ fieldName: "ip" })],
+});
+```
+
+### Heap Usage (Performance)
+
+Adds Node.js memory usage stats (RSS, Heap Total/Used) to every log.
+
+```ts
+import { createLogger, heapUsageMiddleware } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  middleware: [heapUsageMiddleware({ fieldName: "memory" })],
+});
+```
+
+## 🚨 Alerting & Monitoring
+
+### Alert Middleware
+
+Triggers a callback when specific conditions are met.
+
+````ts
+import { createLogger, alertMiddleware } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  middleware: [
+    alertMiddleware([
+      {
+        name: "error-spike",
+        // Trigger if log level is ERROR (50)
+        when: (entry) => entry.level >= 50,
+        // Wait for 10 errors
+        threshold: 10,
+        // ... within 1 minute
+        windowMs: 60_000,
+        // Then fire this callback
+        onAlert: (entries) => sendSlackNotification(entries),
+      },
+      {
+        name: "critical-db-failure",
+        when: (entry) => entry.message.includes("Database connection lost"),
+        threshold: 1, // Immediate alert
+        onAlert: (entries) => pagerDuty.trigger(entries[0]),
+      },
+### Custom Middleware
+
+You can easily create type-safe middleware using the `createMiddleware` helper.
+
+```ts
+import { createMiddleware } from "ocpp-ws-io/logger";
+
+const myMiddleware = createMiddleware((entry, next) => {
+  // modify entry
+  entry.meta.customField = "value";
+
+  // call next to continue
+  next(entry);
+});
+````
+
+### AI Enrichment (Smart Logs)
+
+Uses an LLM to analyze errors and explain them in plain English.
+
+```ts
+import {
+  createLogger,
+  aiEnrichmentMiddleware,
+  createOpenAiErrorAnalyzer,
+} from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  middleware: [
+    aiEnrichmentMiddleware({
+      level: "ERROR",
+      analyzer: createOpenAiErrorAnalyzer(process.env.OPENAI_API_KEY!),
+    }),
+  ],
+});
+// Adds meta.ai_analysis: "This error was caused by a missing API key..."
+```
+
+## ⚡ OCPP Specific
+
+### OCPP Middleware
+
+Specialized middleware for OCPP (Open Charge Point Protocol) messages.
+
+```ts
+import { createLogger, ocppMiddleware } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  middleware: [
+    ocppMiddleware({
+      autoPayloadSize: true, // Calculates message size
+      propagateCorrelationId: true, // Syncs IDs
+    }),
+  ],
+});
+```
+
+## 🎛️ Utilities
+
+### Level Override
+
+Dynamically changes the log level for a specific request via headers. Great for debugging specific users in production.
+
+```ts
+import { createLogger, levelOverrideMiddleware } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  middleware: [
+    levelOverrideMiddleware({
+      key: "x-log-level", // If this header is present, use its value as level
+      cleanup: true, // Remove the header from metadata
+    }),
+  ],
+});
+```

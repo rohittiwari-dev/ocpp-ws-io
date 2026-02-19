@@ -1,12 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
-import { blogSource } from "@/lib/blog";
-import { Hero } from "@/components/landing/hero";
-import { Features } from "@/components/landing/features";
-import { VideoDemo } from "@/components/landing/video-demo";
 import { CodeShowcase } from "@/components/landing/code-showcase";
+import { Features } from "@/components/landing/features";
 import { Footer } from "@/components/landing/footer";
-
-import { Metadata } from "next";
+import { Hero } from "@/components/landing/hero";
+import { VideoDemo } from "@/components/landing/video-demo";
+import { blogSource } from "@/lib/blog";
 
 export const metadata: Metadata = {
   title: "The Type-Safe OCPP WebSocket Library for Node.js",
@@ -57,6 +56,7 @@ export default function HomePage() {
             >
               <div className="aspect-video w-full overflow-hidden bg-fd-muted">
                 {post.image ? (
+                  // biome-ignore lint/performance/noImgElement: support external images without next.config.js changes
                   <img
                     src={post.image}
                     alt={post.title}

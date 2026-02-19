@@ -1,5 +1,4 @@
 import { EventEmitter } from "node:events";
-import { createId } from "@paralleldrive/cuid2";
 import {
   createServer as createHttpServer,
   type IncomingMessage,
@@ -8,28 +7,28 @@ import {
 import { createServer as createHttpsServer } from "node:https";
 import type { Duplex } from "node:stream";
 import type { TLSSocket } from "node:tls";
+import { createId } from "@paralleldrive/cuid2";
 import { WebSocketServer } from "ws";
-
+import { initLogger } from "./init-logger.js";
 import { OCPPServerClient } from "./server-client.js";
-import { abortHandshake, parseSubprotocols } from "./ws-util.js";
 
 import {
-  SecurityProfile,
-  type ServerOptions,
-  type CloseOptions,
-  type ListenOptions,
-  type HandshakeInfo,
-  type AuthCallback,
-  type AuthAccept,
-  type EventAdapterInterface,
-  type ClientOptions,
-  type ServerEvents,
-  type TypedEventEmitter,
   type AllMethodNames,
-  type OCPPRequestType,
+  type AuthAccept,
+  type AuthCallback,
+  type ClientOptions,
+  type CloseOptions,
+  type EventAdapterInterface,
+  type HandshakeInfo,
+  type ListenOptions,
   type LoggerLike,
+  type OCPPRequestType,
+  SecurityProfile,
+  type ServerEvents,
+  type ServerOptions,
+  type TypedEventEmitter,
 } from "./types.js";
-import { initLogger } from "./init-logger.js";
+import { abortHandshake, parseSubprotocols } from "./ws-util.js";
 
 /**
  * OCPPServer — A typed WebSocket RPC server for OCPP communication.
@@ -272,8 +271,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
     // Parse Basic Auth
     let password: Buffer | undefined;
-    const authHeader = req.headers["authorization"];
-    if (authHeader && authHeader.startsWith("Basic ")) {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith("Basic ")) {
       const decoded = Buffer.from(authHeader.slice(6), "base64").toString();
       const colonIndex = decoded.indexOf(":");
       if (colonIndex !== -1) {
@@ -311,7 +310,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       const ac = new AbortController();
 
       try {
-        await new Promise<AuthAccept | void>((resolve, reject) => {
+        await new Promise<AuthAccept | undefined>((resolve, reject) => {
           let settled = false;
 
           const accept = (opts?: AuthAccept) => {
@@ -327,7 +326,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             reject({ code, message });
           };
 
-          this._authCallback!(accept, rejectAuth, handshake, ac.signal);
+          this._authCallback?.(accept, rejectAuth, handshake, ac.signal);
         });
       } catch (err) {
         const { code, message } = err as { code: number; message: string };

@@ -1,8 +1,8 @@
-import { blogSource } from "@/lib/blog";
+import { BookOpen, Code, Shield } from "lucide-react";
 import Link from "next/link";
-import { Footer } from "@/components/landing/footer";
 import { BlogPostsList } from "@/components/blog/blog-posts-list";
-import { BookOpen, Code, Home, Shield } from "lucide-react";
+import { Footer } from "@/components/landing/footer";
+import { blogSource } from "@/lib/blog";
 
 export default function BlogPage() {
   const posts = [...blogSource.getPages()]

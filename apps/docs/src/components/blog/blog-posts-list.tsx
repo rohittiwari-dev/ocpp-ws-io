@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import Link from "next/link";
 import { Search } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { useMemo, useState } from "react";
 
 interface BlogPost {
   url: string;
@@ -52,6 +53,7 @@ export function BlogPostsList({ posts }: { posts: BlogPost[] }) {
         {/* Tag Filters */}
         <div className="flex flex-wrap gap-2">
           <button
+            type="button"
             onClick={() => setActiveTag(null)}
             className={`rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
               activeTag === null
@@ -63,6 +65,7 @@ export function BlogPostsList({ posts }: { posts: BlogPost[] }) {
           </button>
           {allTags.map((tag) => (
             <button
+              type="button"
               key={tag}
               onClick={() => setActiveTag(activeTag === tag ? null : tag)}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
@@ -108,10 +111,12 @@ export function BlogPostsList({ posts }: { posts: BlogPost[] }) {
             className="flex flex-col overflow-hidden w-full rounded-lg border bg-fd-card text-fd-card-foreground shadow-sm transition-all hover:shadow-md"
           >
             {post.image && (
-              <img
+              <Image
                 src={post.image}
                 alt={post.title}
                 className="aspect-video w-full object-cover"
+                width={500}
+                height={500}
               />
             )}
             <div className="flex flex-1 flex-col p-6">
