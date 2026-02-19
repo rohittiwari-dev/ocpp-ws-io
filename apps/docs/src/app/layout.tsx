@@ -101,6 +101,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       <head>
         <script
           type="application/ld+json"
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: safe as we control the content
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>

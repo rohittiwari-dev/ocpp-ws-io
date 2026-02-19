@@ -49,11 +49,11 @@ export class Queue {
 
   private _drain(): void {
     while (this._running < this._concurrency && this._queue.length > 0) {
-      const item = this._queue.shift()!;
+      const item = this._queue.shift();
       this._running++;
 
       item
-        .fn()
+        ?.fn()
         .then(item.resolve)
         .catch(item.reject)
         .finally(() => {

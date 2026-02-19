@@ -14,34 +14,34 @@
  */
 import { createId } from "@paralleldrive/cuid2";
 import { EventEmitter } from "./emitter.js";
-import { Queue } from "./queue.js";
 import {
-  TimeoutError,
+  type RPCError,
   RPCGenericError,
   RPCMessageTypeNotSupportedError,
-  type RPCError,
+  TimeoutError,
 } from "./errors.js";
-import { createRPCError, getErrorPlainObject } from "./util.js";
+import { Queue } from "./queue.js";
 import {
-  ConnectionState,
-  MessageType,
-  NOREPLY,
-  type OCPPProtocol,
+  type AllMethodNames,
+  type BrowserClientOptions,
+  type CallHandler,
   type CallOptions,
   type CloseOptions,
-  type CallHandler,
-  type WildcardHandler,
+  ConnectionState,
   type HandlerContext,
+  type LoggerLike,
+  MessageType,
+  NOREPLY,
   type OCPPCall,
-  type OCPPCallResult,
   type OCPPCallError,
+  type OCPPCallResult,
   type OCPPMessage,
-  type AllMethodNames,
+  type OCPPProtocol,
   type OCPPRequestType,
   type OCPPResponseType,
-  type BrowserClientOptions,
-  type LoggerLike,
+  type WildcardHandler,
 } from "./types.js";
+import { createRPCError, getErrorPlainObject } from "./util.js";
 
 const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
 
@@ -171,7 +171,8 @@ export class BrowserOCPPClient<
     if (!this._logger) return;
 
     const arrow = direction === "OUT" ? "→" : "←";
-    const level = type === "CALLERROR" ? "warn" : this._exchangeLog ? "info" : "debug";
+    const level =
+      type === "CALLERROR" ? "warn" : this._exchangeLog ? "info" : "debug";
 
     if (this._exchangeLog && this._prettify) {
       const icon =
@@ -533,14 +534,14 @@ export class BrowserOCPPClient<
         const abortHandler = () => {
           clearTimeout(timeoutHandle);
           this._pendingCalls.delete(msgId);
-          reject(options.signal!.reason ?? new Error("Aborted"));
+          reject(options.signal?.reason ?? new Error("Aborted"));
         };
         options.signal.addEventListener("abort", abortHandler, { once: true });
         pending.abortHandler = abortHandler;
       }
 
       this._pendingCalls.set(msgId, pending);
-      this._ws!.send(messageStr);
+      this._ws?.send(messageStr);
       this._logExchange("OUT", "CALL", method, {
         messageId: msgId,
         method,
@@ -674,7 +675,7 @@ export class BrowserOCPPClient<
       if (isWildcard && this._wildcardHandler) {
         result = await this._wildcardHandler(method, context);
       } else {
-        result = await handler!(context);
+        result = await handler?.(context);
       }
 
       this._pendingResponses.delete(msgId);
@@ -831,9 +832,7 @@ export class BrowserOCPPClient<
     const max = this._options.backoffMax;
     const delayMs = Math.min(
       max,
-      base *
-        Math.pow(2, this._reconnectAttempt - 1) *
-        (0.5 + Math.random() * 0.5),
+      base * 2 ** (this._reconnectAttempt - 1) * (0.5 + Math.random() * 0.5),
     );
 
     this._logger?.warn?.("Reconnecting", {

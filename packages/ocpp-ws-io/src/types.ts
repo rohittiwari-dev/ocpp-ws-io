@@ -1,8 +1,7 @@
-import type { IncomingMessage } from "node:http";
-import type { TLSSocket } from "node:tls";
-import type { Duplex } from "node:stream";
 import type { EventEmitter } from "node:events";
-import type { Validator } from "./validator.js";
+import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
+import type { TLSSocket } from "node:tls";
 import type {
   AllMethodNames,
   OCPPMethodMap,
@@ -10,6 +9,7 @@ import type {
   OCPPRequestType,
   OCPPResponseType,
 } from "./generated/index.js";
+import type { Validator } from "./validator.js";
 
 export type {
   AllMethodNames,
@@ -455,10 +455,9 @@ export type ServerClientInstance<
     ) => OCPPResponseType<P, M> | Promise<OCPPResponseType<P, M>>,
   ): void;
   handle(handler: WildcardHandler): void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handle(
     method: string,
-    handler: (context: HandlerContext<Record<string, any>>) => any,
+    handler: (context: HandlerContext<Record<string, unknown>>) => unknown,
   ): void;
   call<V extends OCPPProtocol, M extends AllMethodNames<V>>(
     version: V,

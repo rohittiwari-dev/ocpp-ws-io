@@ -1,8 +1,8 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { Terminal, Wifi, Zap } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Check, Terminal, Wifi, Zap } from "lucide-react";
 
 const logs = [
   { time: "00:01", type: "info", msg: "OCPP Server started on port 9220" },
@@ -69,13 +69,19 @@ export function VideoDemo() {
           <div className="flex-1 overflow-hidden space-y-3">
             {logs.map((log, i) => (
               <motion.div
-                key={i}
+                key={`${i}-${log.time}-${log.type}-${log.msg}`}
                 initial={{ opacity: 0, x: -10 }}
                 animate={{
                   opacity: i <= activeLogIndex ? 1 : 0.1,
                   x: i <= activeLogIndex ? 0 : -5,
                 }}
-                className={`flex gap-3 ${log.type === "in" ? "text-blue-400" : log.type === "out" ? "text-green-400" : "text-gray-500"}`}
+                className={`flex gap-3 ${
+                  log.type === "in"
+                    ? "text-blue-400"
+                    : log.type === "out"
+                      ? "text-green-400"
+                      : "text-gray-500"
+                }`}
               >
                 <span className="opacity-50 select-none">[{log.time}]</span>
                 <span>{log.msg}</span>
@@ -101,13 +107,27 @@ export function VideoDemo() {
           <div className="flex justify-between w-full max-w-sm items-center z-10">
             {/* Charger Node */}
             <div
-              className={`flex flex-col items-center gap-4 transition-all duration-500 ${activeLogIndex >= 1 ? "opacity-100 scale-100" : "opacity-50 scale-95"}`}
+              className={`flex flex-col items-center gap-4 transition-all duration-500 ${
+                activeLogIndex >= 1
+                  ? "opacity-100 scale-100"
+                  : "opacity-50 scale-95"
+              }`}
             >
               <div
-                className={`h-24 w-16 rounded-lg border-2 flex items-center justify-center transition-colors duration-500 ${currentStatus === "Charging" ? "border-blue-500 bg-blue-500/10" : activeLogIndex >= 3 ? "border-green-500 bg-green-500/10" : "border-gray-500 bg-gray-500/10"}`}
+                className={`h-24 w-16 rounded-lg border-2 flex items-center justify-center transition-colors duration-500 ${
+                  currentStatus === "Charging"
+                    ? "border-blue-500 bg-blue-500/10"
+                    : activeLogIndex >= 3
+                      ? "border-green-500 bg-green-500/10"
+                      : "border-gray-500 bg-gray-500/10"
+                }`}
               >
                 <Zap
-                  className={`h-8 w-8 ${currentStatus === "Charging" ? "text-blue-500 fill-blue-500 animate-bounce" : "text-current"}`}
+                  className={`h-8 w-8 ${
+                    currentStatus === "Charging"
+                      ? "text-blue-500 fill-blue-500 animate-bounce"
+                      : "text-current"
+                  }`}
                 />
               </div>
               <div className="text-center">
@@ -152,7 +172,13 @@ export function VideoDemo() {
           {/* Status Badge */}
           <div className="absolute bottom-8 px-4 py-2 rounded-full bg-fd-secondary border border-fd-border flex items-center gap-2">
             <div
-              className={`h-2 w-2 rounded-full ${currentStatus === "Charging" ? "bg-blue-500" : currentStatus === "Available" ? "bg-green-500" : "bg-yellow-500"}`}
+              className={`h-2 w-2 rounded-full ${
+                currentStatus === "Charging"
+                  ? "bg-blue-500"
+                  : currentStatus === "Available"
+                    ? "bg-green-500"
+                    : "bg-yellow-500"
+              }`}
             ></div>
             <span className="text-sm font-medium">Status: {currentStatus}</span>
           </div>

@@ -1,49 +1,48 @@
-import { createId } from "@paralleldrive/cuid2";
 import { EventEmitter } from "node:events";
 import { setTimeout as setTimeoutCb } from "node:timers";
+import { createId } from "@paralleldrive/cuid2";
 import WebSocket from "ws";
-
 import {
-  ConnectionState,
-  SecurityProfile,
-  MessageType,
-  NOREPLY,
-  type ClientOptions,
-  type CloseOptions,
-  type CallOptions,
-  type CallHandler,
-  type WildcardHandler,
-  type HandlerContext,
-  type OCPPCall,
-  type OCPPCallResult,
-  type OCPPCallError,
-  type OCPPMessage,
-  type ClientEvents,
-  type TypedEventEmitter,
-  type OCPPProtocol,
-  type LoggerLike,
-} from "./types.js";
-import { initLogger } from "./init-logger.js";
+  type RPCError,
+  RPCGenericError,
+  RPCMessageTypeNotSupportedError,
+  TimeoutError,
+  UnexpectedHttpResponse,
+} from "./errors.js";
 import type {
   AllMethodNames,
   OCPPRequestType,
   OCPPResponseType,
 } from "./generated/index.js";
+import { initLogger } from "./init-logger.js";
+import { Queue } from "./queue.js";
+import { standardValidators } from "./standard-validators.js";
 import {
-  TimeoutError,
-  UnexpectedHttpResponse,
-  RPCGenericError,
-  RPCMessageTypeNotSupportedError,
-  type RPCError,
-} from "./errors.js";
+  type CallHandler,
+  type CallOptions,
+  type ClientEvents,
+  type ClientOptions,
+  type CloseOptions,
+  ConnectionState,
+  type HandlerContext,
+  type LoggerLike,
+  MessageType,
+  NOREPLY,
+  type OCPPCall,
+  type OCPPCallError,
+  type OCPPCallResult,
+  type OCPPMessage,
+  type OCPPProtocol,
+  SecurityProfile,
+  type TypedEventEmitter,
+  type WildcardHandler,
+} from "./types.js";
 import {
   createRPCError,
   getErrorPlainObject,
   getPackageIdent,
 } from "./util.js";
-import { Queue } from "./queue.js";
 import type { Validator } from "./validator.js";
-import { standardValidators } from "./standard-validators.js";
 
 const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
 
@@ -573,14 +572,14 @@ export class OCPPClient<
         const abortHandler = () => {
           clearTimeout(timeoutHandle);
           this._pendingCalls.delete(msgId);
-          reject(options.signal!.reason ?? new Error("Aborted"));
+          reject(options.signal?.reason ?? new Error("Aborted"));
         };
         options.signal.addEventListener("abort", abortHandler, { once: true });
         pending.abortHandler = abortHandler;
       }
 
       this._pendingCalls.set(msgId, pending);
-      this._ws!.send(messageStr);
+      this._ws?.send(messageStr);
       this._logExchange("OUT", "CALL", method, {
         messageId: msgId,
         method,
@@ -704,7 +703,7 @@ export class OCPPClient<
       }
 
       // Try version-specific handler first, then fall back to generic
-      let handler = this._protocol
+      const handler = this._protocol
         ? (this._handlers.get(`${this._protocol}:${method}`) ??
           this._handlers.get(method))
         : this._handlers.get(method);
@@ -740,7 +739,7 @@ export class OCPPClient<
       if (isWildcard && this._wildcardHandler) {
         result = await this._wildcardHandler(method, context);
       } else {
-        result = await handler!(context);
+        result = await handler?.(context);
       }
 
       this._pendingResponses.delete(msgId);
@@ -911,9 +910,7 @@ export class OCPPClient<
     const max = this._options.backoffMax;
     const delayMs = Math.min(
       max,
-      base *
-        Math.pow(2, this._reconnectAttempt - 1) *
-        (0.5 + Math.random() * 0.5),
+      base * 2 ** (this._reconnectAttempt - 1) * (0.5 + Math.random() * 0.5),
     );
 
     this._logger?.warn?.("Reconnecting", {
@@ -1083,7 +1080,7 @@ export class OCPPClient<
       const credentials = Buffer.from(
         `${this._identity}:${this._options.password.toString()}`,
       ).toString("base64");
-      opts.headers!["Authorization"] = `Basic ${credentials}`;
+      if (opts?.headers) opts.headers.Authorization = `Basic ${credentials}`;
     }
 
     // Profile 2 & 3: TLS options

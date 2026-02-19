@@ -1,13 +1,19 @@
 export interface RedisLikeClient {
-  publish(channel: string, message: string): Promise<number | unknown | void>;
-  subscribe(channel: string, ...args: unknown[]): Promise<unknown | void>;
-  unsubscribe(channel: string, ...args: unknown[]): Promise<unknown | void>;
+  publish(
+    channel: string,
+    message: string,
+  ): Promise<number | unknown | undefined>;
+  subscribe(channel: string, ...args: unknown[]): Promise<unknown | undefined>;
+  unsubscribe(
+    channel: string,
+    ...args: unknown[]
+  ): Promise<unknown | undefined>;
   on?(
     event: "message",
     callback: (channel: string, message: string) => void,
   ): unknown;
   disconnect?(): Promise<void> | void;
-  quit?(): Promise<unknown> | void;
+  quit?(): Promise<unknown> | undefined;
   // Node Redis v4 specific
   isOpen?: boolean;
 }

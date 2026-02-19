@@ -1,4 +1,4 @@
-import { EventEmitter } from "node:events";
+import type { EventEmitter } from "node:events";
 
 /**
  * An event buffer that captures events emitted during a critical transition period

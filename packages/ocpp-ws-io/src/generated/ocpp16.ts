@@ -14,13 +14,28 @@ export interface CertificateHashDataType {
   serialNumber: string;
 }
 
-export type DeleteCertificateStatusEnumType = "Accepted" | "Failed" | "NotFound";
+export type DeleteCertificateStatusEnumType =
+  | "Accepted"
+  | "Failed"
+  | "NotFound";
 
-export type MessageTriggerEnumType = "BootNotification" | "LogStatusNotification" | "FirmwareStatusNotification" | "Heartbeat" | "MeterValues" | "SignChargePointCertificate" | "StatusNotification";
+export type MessageTriggerEnumType =
+  | "BootNotification"
+  | "LogStatusNotification"
+  | "FirmwareStatusNotification"
+  | "Heartbeat"
+  | "MeterValues"
+  | "SignChargePointCertificate"
+  | "StatusNotification";
 
-export type TriggerMessageStatusEnumType = "Accepted" | "Rejected" | "NotImplemented";
+export type TriggerMessageStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "NotImplemented";
 
-export type CertificateUseEnumType = "CentralSystemRootCertificate" | "ManufacturerRootCertificate";
+export type CertificateUseEnumType =
+  | "CentralSystemRootCertificate"
+  | "ManufacturerRootCertificate";
 
 export type GetInstalledCertificateStatusEnumType = "Accepted" | "NotFound";
 
@@ -34,13 +49,37 @@ export interface LogParametersType {
 
 export type LogStatusEnumType = "Accepted" | "Rejected" | "AcceptedCanceled";
 
-export type InstallCertificateStatusEnumType = "Accepted" | "Failed" | "Rejected";
+export type InstallCertificateStatusEnumType =
+  | "Accepted"
+  | "Failed"
+  | "Rejected";
 
-export type UploadLogStatusEnumType = "BadMessage" | "Idle" | "NotSupportedOperation" | "PermissionDenied" | "Uploaded" | "UploadFailure" | "Uploading";
+export type UploadLogStatusEnumType =
+  | "BadMessage"
+  | "Idle"
+  | "NotSupportedOperation"
+  | "PermissionDenied"
+  | "Uploaded"
+  | "UploadFailure"
+  | "Uploading";
 
 export type GenericStatusEnumType = "Accepted" | "Rejected";
 
-export type FirmwareStatusEnumType = "Downloaded" | "DownloadFailed" | "Downloading" | "DownloadScheduled" | "DownloadPaused" | "Idle" | "InstallationFailed" | "Installing" | "Installed" | "InstallRebooting" | "InstallScheduled" | "InstallVerificationFailed" | "InvalidSignature" | "SignatureVerified";
+export type FirmwareStatusEnumType =
+  | "Downloaded"
+  | "DownloadFailed"
+  | "Downloading"
+  | "DownloadScheduled"
+  | "DownloadPaused"
+  | "Idle"
+  | "InstallationFailed"
+  | "Installing"
+  | "Installed"
+  | "InstallRebooting"
+  | "InstallScheduled"
+  | "InstallVerificationFailed"
+  | "InvalidSignature"
+  | "SignatureVerified";
 
 export interface FirmwareType {
   location: string;
@@ -50,7 +89,12 @@ export interface FirmwareType {
   signature: string;
 }
 
-export type UpdateFirmwareStatusEnumType = "Accepted" | "Rejected" | "AcceptedCanceled" | "InvalidCertificate" | "RevokedCertificate";
+export type UpdateFirmwareStatusEnumType =
+  | "Accepted"
+  | "Rejected"
+  | "AcceptedCanceled"
+  | "InvalidCertificate"
+  | "RevokedCertificate";
 
 // ═══ Method Types ═══
 
@@ -59,7 +103,11 @@ export interface AuthorizeRequest {
 }
 
 export interface AuthorizeResponse {
-  idTagInfo: { expiryDate?: string; parentIdTag?: string; status: "Accepted" | "Blocked" | "Expired" | "Invalid" | "ConcurrentTx" };
+  idTagInfo: {
+    expiryDate?: string;
+    parentIdTag?: string;
+    status: "Accepted" | "Blocked" | "Expired" | "Invalid" | "ConcurrentTx";
+  };
 }
 
 export interface BootNotificationRequest {
@@ -114,8 +162,7 @@ export interface ChangeConfigurationResponse {
   status: "Accepted" | "Rejected" | "RebootRequired" | "NotSupported";
 }
 
-export interface ClearCacheRequest {
-}
+export type ClearCacheRequest = {};
 
 export interface ClearCacheResponse {
   status: "Accepted" | "Rejected";
@@ -124,7 +171,10 @@ export interface ClearCacheResponse {
 export interface ClearChargingProfileRequest {
   id?: number;
   connectorId?: number;
-  chargingProfilePurpose?: "ChargePointMaxProfile" | "TxDefaultProfile" | "TxProfile";
+  chargingProfilePurpose?:
+    | "ChargePointMaxProfile"
+    | "TxDefaultProfile"
+    | "TxProfile";
   stackLevel?: number;
 }
 
@@ -155,8 +205,7 @@ export interface DiagnosticsStatusNotificationRequest {
   status: "Idle" | "Uploaded" | "UploadFailed" | "Uploading";
 }
 
-export interface DiagnosticsStatusNotificationResponse {
-}
+export type DiagnosticsStatusNotificationResponse = {};
 
 export interface ExtendedTriggerMessageRequest {
   requestedMessage: MessageTriggerEnumType;
@@ -168,11 +217,17 @@ export interface ExtendedTriggerMessageResponse {
 }
 
 export interface FirmwareStatusNotificationRequest {
-  status: "Downloaded" | "DownloadFailed" | "Downloading" | "Idle" | "InstallationFailed" | "Installing" | "Installed";
+  status:
+    | "Downloaded"
+    | "DownloadFailed"
+    | "Downloading"
+    | "Idle"
+    | "InstallationFailed"
+    | "Installing"
+    | "Installed";
 }
 
-export interface FirmwareStatusNotificationResponse {
-}
+export type FirmwareStatusNotificationResponse = {};
 
 export interface GetCompositeScheduleRequest {
   connectorId: number;
@@ -184,7 +239,17 @@ export interface GetCompositeScheduleResponse {
   status: "Accepted" | "Rejected";
   connectorId?: number;
   scheduleStart?: string;
-  chargingSchedule?: { duration?: number; startSchedule?: string; chargingRateUnit: "A" | "W"; chargingSchedulePeriod: ({ startPeriod: number; limit: number; numberPhases?: number })[]; minChargingRate?: number };
+  chargingSchedule?: {
+    duration?: number;
+    startSchedule?: string;
+    chargingRateUnit: "A" | "W";
+    chargingSchedulePeriod: {
+      startPeriod: number;
+      limit: number;
+      numberPhases?: number;
+    }[];
+    minChargingRate?: number;
+  };
 }
 
 export interface GetConfigurationRequest {
@@ -192,7 +257,7 @@ export interface GetConfigurationRequest {
 }
 
 export interface GetConfigurationResponse {
-  configurationKey?: ({ key: string; readonly: boolean; value?: string })[];
+  configurationKey?: { key: string; readonly: boolean; value?: string }[];
   unknownKey?: string[];
 }
 
@@ -217,8 +282,7 @@ export interface GetInstalledCertificateIdsResponse {
   status: GetInstalledCertificateStatusEnumType;
 }
 
-export interface GetLocalListVersionRequest {
-}
+export type GetLocalListVersionRequest = {};
 
 export interface GetLocalListVersionResponse {
   listVersion: number;
@@ -237,8 +301,7 @@ export interface GetLogResponse {
   filename?: string;
 }
 
-export interface HeartbeatRequest {
-}
+export type HeartbeatRequest = {};
 
 export interface HeartbeatResponse {
   currentTime: string;
@@ -258,22 +321,111 @@ export interface LogStatusNotificationRequest {
   requestId?: number;
 }
 
-export interface LogStatusNotificationResponse {
-}
+export type LogStatusNotificationResponse = {};
 
 export interface MeterValuesRequest {
   connectorId: number;
   transactionId?: number;
-  meterValue: ({ timestamp: string; sampledValue: ({ value: string; context?: "Interruption.Begin" | "Interruption.End" | "Sample.Clock" | "Sample.Periodic" | "Transaction.Begin" | "Transaction.End" | "Trigger" | "Other"; format?: "Raw" | "SignedData"; measurand?: "Energy.Active.Export.Register" | "Energy.Active.Import.Register" | "Energy.Reactive.Export.Register" | "Energy.Reactive.Import.Register" | "Energy.Active.Export.Interval" | "Energy.Active.Import.Interval" | "Energy.Reactive.Export.Interval" | "Energy.Reactive.Import.Interval" | "Power.Active.Export" | "Power.Active.Import" | "Power.Offered" | "Power.Reactive.Export" | "Power.Reactive.Import" | "Power.Factor" | "Current.Import" | "Current.Export" | "Current.Offered" | "Voltage" | "Frequency" | "Temperature" | "SoC" | "RPM"; phase?: "L1" | "L2" | "L3" | "N" | "L1-N" | "L2-N" | "L3-N" | "L1-L2" | "L2-L3" | "L3-L1"; location?: "Cable" | "EV" | "Inlet" | "Outlet" | "Body"; unit?: "Wh" | "kWh" | "varh" | "kvarh" | "W" | "kW" | "VA" | "kVA" | "var" | "kvar" | "A" | "V" | "K" | "Celcius" | "Celsius" | "Fahrenheit" | "Percent" })[] })[];
+  meterValue: {
+    timestamp: string;
+    sampledValue: {
+      value: string;
+      context?:
+        | "Interruption.Begin"
+        | "Interruption.End"
+        | "Sample.Clock"
+        | "Sample.Periodic"
+        | "Transaction.Begin"
+        | "Transaction.End"
+        | "Trigger"
+        | "Other";
+      format?: "Raw" | "SignedData";
+      measurand?:
+        | "Energy.Active.Export.Register"
+        | "Energy.Active.Import.Register"
+        | "Energy.Reactive.Export.Register"
+        | "Energy.Reactive.Import.Register"
+        | "Energy.Active.Export.Interval"
+        | "Energy.Active.Import.Interval"
+        | "Energy.Reactive.Export.Interval"
+        | "Energy.Reactive.Import.Interval"
+        | "Power.Active.Export"
+        | "Power.Active.Import"
+        | "Power.Offered"
+        | "Power.Reactive.Export"
+        | "Power.Reactive.Import"
+        | "Power.Factor"
+        | "Current.Import"
+        | "Current.Export"
+        | "Current.Offered"
+        | "Voltage"
+        | "Frequency"
+        | "Temperature"
+        | "SoC"
+        | "RPM";
+      phase?:
+        | "L1"
+        | "L2"
+        | "L3"
+        | "N"
+        | "L1-N"
+        | "L2-N"
+        | "L3-N"
+        | "L1-L2"
+        | "L2-L3"
+        | "L3-L1";
+      location?: "Cable" | "EV" | "Inlet" | "Outlet" | "Body";
+      unit?:
+        | "Wh"
+        | "kWh"
+        | "varh"
+        | "kvarh"
+        | "W"
+        | "kW"
+        | "VA"
+        | "kVA"
+        | "var"
+        | "kvar"
+        | "A"
+        | "V"
+        | "K"
+        | "Celcius"
+        | "Celsius"
+        | "Fahrenheit"
+        | "Percent";
+    }[];
+  }[];
 }
 
-export interface MeterValuesResponse {
-}
+export type MeterValuesResponse = {};
 
 export interface RemoteStartTransactionRequest {
   connectorId?: number;
   idTag: string;
-  chargingProfile?: { chargingProfileId: number; transactionId?: number; stackLevel: number; chargingProfilePurpose: "ChargePointMaxProfile" | "TxDefaultProfile" | "TxProfile"; chargingProfileKind: "Absolute" | "Recurring" | "Relative"; recurrencyKind?: "Daily" | "Weekly"; validFrom?: string; validTo?: string; chargingSchedule: { duration?: number; startSchedule?: string; chargingRateUnit: "A" | "W"; chargingSchedulePeriod: ({ startPeriod: number; limit: number; numberPhases?: number })[]; minChargingRate?: number } };
+  chargingProfile?: {
+    chargingProfileId: number;
+    transactionId?: number;
+    stackLevel: number;
+    chargingProfilePurpose:
+      | "ChargePointMaxProfile"
+      | "TxDefaultProfile"
+      | "TxProfile";
+    chargingProfileKind: "Absolute" | "Recurring" | "Relative";
+    recurrencyKind?: "Daily" | "Weekly";
+    validFrom?: string;
+    validTo?: string;
+    chargingSchedule: {
+      duration?: number;
+      startSchedule?: string;
+      chargingRateUnit: "A" | "W";
+      chargingSchedulePeriod: {
+        startPeriod: number;
+        limit: number;
+        numberPhases?: number;
+      }[];
+      minChargingRate?: number;
+    };
+  };
 }
 
 export interface RemoteStartTransactionResponse {
@@ -314,12 +466,18 @@ export interface SecurityEventNotificationRequest {
   techInfo?: string;
 }
 
-export interface SecurityEventNotificationResponse {
-}
+export type SecurityEventNotificationResponse = {};
 
 export interface SendLocalListRequest {
   listVersion: number;
-  localAuthorizationList?: ({ idTag: string; idTagInfo?: { expiryDate?: string; parentIdTag?: string; status: "Accepted" | "Blocked" | "Expired" | "Invalid" | "ConcurrentTx" } })[];
+  localAuthorizationList?: {
+    idTag: string;
+    idTagInfo?: {
+      expiryDate?: string;
+      parentIdTag?: string;
+      status: "Accepted" | "Blocked" | "Expired" | "Invalid" | "ConcurrentTx";
+    };
+  }[];
   updateType: "Differential" | "Full";
 }
 
@@ -329,7 +487,30 @@ export interface SendLocalListResponse {
 
 export interface SetChargingProfileRequest {
   connectorId: number;
-  csChargingProfiles: { chargingProfileId: number; transactionId?: number; stackLevel: number; chargingProfilePurpose: "ChargePointMaxProfile" | "TxDefaultProfile" | "TxProfile"; chargingProfileKind: "Absolute" | "Recurring" | "Relative"; recurrencyKind?: "Daily" | "Weekly"; validFrom?: string; validTo?: string; chargingSchedule: { duration?: number; startSchedule?: string; chargingRateUnit: "A" | "W"; chargingSchedulePeriod: ({ startPeriod: number; limit: number; numberPhases?: number })[]; minChargingRate?: number } };
+  csChargingProfiles: {
+    chargingProfileId: number;
+    transactionId?: number;
+    stackLevel: number;
+    chargingProfilePurpose:
+      | "ChargePointMaxProfile"
+      | "TxDefaultProfile"
+      | "TxProfile";
+    chargingProfileKind: "Absolute" | "Recurring" | "Relative";
+    recurrencyKind?: "Daily" | "Weekly";
+    validFrom?: string;
+    validTo?: string;
+    chargingSchedule: {
+      duration?: number;
+      startSchedule?: string;
+      chargingRateUnit: "A" | "W";
+      chargingSchedulePeriod: {
+        startPeriod: number;
+        limit: number;
+        numberPhases?: number;
+      }[];
+      minChargingRate?: number;
+    };
+  };
 }
 
 export interface SetChargingProfileResponse {
@@ -349,8 +530,7 @@ export interface SignedFirmwareStatusNotificationRequest {
   requestId?: number;
 }
 
-export interface SignedFirmwareStatusNotificationResponse {
-}
+export type SignedFirmwareStatusNotificationResponse = {};
 
 export interface SignedUpdateFirmwareRequest {
   retries?: number;
@@ -372,38 +552,155 @@ export interface StartTransactionRequest {
 }
 
 export interface StartTransactionResponse {
-  idTagInfo: { expiryDate?: string; parentIdTag?: string; status: "Accepted" | "Blocked" | "Expired" | "Invalid" | "ConcurrentTx" };
+  idTagInfo: {
+    expiryDate?: string;
+    parentIdTag?: string;
+    status: "Accepted" | "Blocked" | "Expired" | "Invalid" | "ConcurrentTx";
+  };
   transactionId: number;
 }
 
 export interface StatusNotificationRequest {
   connectorId: number;
-  errorCode: "ConnectorLockFailure" | "EVCommunicationError" | "GroundFailure" | "HighTemperature" | "InternalError" | "LocalListConflict" | "NoError" | "OtherError" | "OverCurrentFailure" | "PowerMeterFailure" | "PowerSwitchFailure" | "ReaderFailure" | "ResetFailure" | "UnderVoltage" | "OverVoltage" | "WeakSignal";
+  errorCode:
+    | "ConnectorLockFailure"
+    | "EVCommunicationError"
+    | "GroundFailure"
+    | "HighTemperature"
+    | "InternalError"
+    | "LocalListConflict"
+    | "NoError"
+    | "OtherError"
+    | "OverCurrentFailure"
+    | "PowerMeterFailure"
+    | "PowerSwitchFailure"
+    | "ReaderFailure"
+    | "ResetFailure"
+    | "UnderVoltage"
+    | "OverVoltage"
+    | "WeakSignal";
   info?: string;
-  status: "Available" | "Preparing" | "Charging" | "SuspendedEVSE" | "SuspendedEV" | "Finishing" | "Reserved" | "Unavailable" | "Faulted";
+  status:
+    | "Available"
+    | "Preparing"
+    | "Charging"
+    | "SuspendedEVSE"
+    | "SuspendedEV"
+    | "Finishing"
+    | "Reserved"
+    | "Unavailable"
+    | "Faulted";
   timestamp?: string;
   vendorId?: string;
   vendorErrorCode?: string;
 }
 
-export interface StatusNotificationResponse {
-}
+export type StatusNotificationResponse = {};
 
 export interface StopTransactionRequest {
   idTag?: string;
   meterStop: number;
   timestamp: string;
   transactionId: number;
-  reason?: "EmergencyStop" | "EVDisconnected" | "HardReset" | "Local" | "Other" | "PowerLoss" | "Reboot" | "Remote" | "SoftReset" | "UnlockCommand" | "DeAuthorized";
-  transactionData?: ({ timestamp: string; sampledValue: ({ value: string; context?: "Interruption.Begin" | "Interruption.End" | "Sample.Clock" | "Sample.Periodic" | "Transaction.Begin" | "Transaction.End" | "Trigger" | "Other"; format?: "Raw" | "SignedData"; measurand?: "Energy.Active.Export.Register" | "Energy.Active.Import.Register" | "Energy.Reactive.Export.Register" | "Energy.Reactive.Import.Register" | "Energy.Active.Export.Interval" | "Energy.Active.Import.Interval" | "Energy.Reactive.Export.Interval" | "Energy.Reactive.Import.Interval" | "Power.Active.Export" | "Power.Active.Import" | "Power.Offered" | "Power.Reactive.Export" | "Power.Reactive.Import" | "Power.Factor" | "Current.Import" | "Current.Export" | "Current.Offered" | "Voltage" | "Frequency" | "Temperature" | "SoC" | "RPM"; phase?: "L1" | "L2" | "L3" | "N" | "L1-N" | "L2-N" | "L3-N" | "L1-L2" | "L2-L3" | "L3-L1"; location?: "Cable" | "EV" | "Inlet" | "Outlet" | "Body"; unit?: "Wh" | "kWh" | "varh" | "kvarh" | "W" | "kW" | "VA" | "kVA" | "var" | "kvar" | "A" | "V" | "K" | "Celcius" | "Celsius" | "Fahrenheit" | "Percent" })[] })[];
+  reason?:
+    | "EmergencyStop"
+    | "EVDisconnected"
+    | "HardReset"
+    | "Local"
+    | "Other"
+    | "PowerLoss"
+    | "Reboot"
+    | "Remote"
+    | "SoftReset"
+    | "UnlockCommand"
+    | "DeAuthorized";
+  transactionData?: {
+    timestamp: string;
+    sampledValue: {
+      value: string;
+      context?:
+        | "Interruption.Begin"
+        | "Interruption.End"
+        | "Sample.Clock"
+        | "Sample.Periodic"
+        | "Transaction.Begin"
+        | "Transaction.End"
+        | "Trigger"
+        | "Other";
+      format?: "Raw" | "SignedData";
+      measurand?:
+        | "Energy.Active.Export.Register"
+        | "Energy.Active.Import.Register"
+        | "Energy.Reactive.Export.Register"
+        | "Energy.Reactive.Import.Register"
+        | "Energy.Active.Export.Interval"
+        | "Energy.Active.Import.Interval"
+        | "Energy.Reactive.Export.Interval"
+        | "Energy.Reactive.Import.Interval"
+        | "Power.Active.Export"
+        | "Power.Active.Import"
+        | "Power.Offered"
+        | "Power.Reactive.Export"
+        | "Power.Reactive.Import"
+        | "Power.Factor"
+        | "Current.Import"
+        | "Current.Export"
+        | "Current.Offered"
+        | "Voltage"
+        | "Frequency"
+        | "Temperature"
+        | "SoC"
+        | "RPM";
+      phase?:
+        | "L1"
+        | "L2"
+        | "L3"
+        | "N"
+        | "L1-N"
+        | "L2-N"
+        | "L3-N"
+        | "L1-L2"
+        | "L2-L3"
+        | "L3-L1";
+      location?: "Cable" | "EV" | "Inlet" | "Outlet" | "Body";
+      unit?:
+        | "Wh"
+        | "kWh"
+        | "varh"
+        | "kvarh"
+        | "W"
+        | "kW"
+        | "VA"
+        | "kVA"
+        | "var"
+        | "kvar"
+        | "A"
+        | "V"
+        | "K"
+        | "Celcius"
+        | "Celsius"
+        | "Fahrenheit"
+        | "Percent";
+    }[];
+  }[];
 }
 
 export interface StopTransactionResponse {
-  idTagInfo?: { expiryDate?: string; parentIdTag?: string; status: "Accepted" | "Blocked" | "Expired" | "Invalid" | "ConcurrentTx" };
+  idTagInfo?: {
+    expiryDate?: string;
+    parentIdTag?: string;
+    status: "Accepted" | "Blocked" | "Expired" | "Invalid" | "ConcurrentTx";
+  };
 }
 
 export interface TriggerMessageRequest {
-  requestedMessage: "BootNotification" | "DiagnosticsStatusNotification" | "FirmwareStatusNotification" | "Heartbeat" | "MeterValues" | "StatusNotification";
+  requestedMessage:
+    | "BootNotification"
+    | "DiagnosticsStatusNotification"
+    | "FirmwareStatusNotification"
+    | "Heartbeat"
+    | "MeterValues"
+    | "StatusNotification";
   connectorId?: number;
 }
 
@@ -426,49 +723,144 @@ export interface UpdateFirmwareRequest {
   retryInterval?: number;
 }
 
-export interface UpdateFirmwareResponse {
-}
+export type UpdateFirmwareResponse = {};
 
 // ═══ Method Map ═══
 
 export interface OCPP16Methods {
   Authorize: { request: AuthorizeRequest; response: AuthorizeResponse };
-  BootNotification: { request: BootNotificationRequest; response: BootNotificationResponse };
-  CancelReservation: { request: CancelReservationRequest; response: CancelReservationResponse };
-  CertificateSigned: { request: CertificateSignedRequest; response: CertificateSignedResponse };
-  ChangeAvailability: { request: ChangeAvailabilityRequest; response: ChangeAvailabilityResponse };
-  ChangeConfiguration: { request: ChangeConfigurationRequest; response: ChangeConfigurationResponse };
+  BootNotification: {
+    request: BootNotificationRequest;
+    response: BootNotificationResponse;
+  };
+  CancelReservation: {
+    request: CancelReservationRequest;
+    response: CancelReservationResponse;
+  };
+  CertificateSigned: {
+    request: CertificateSignedRequest;
+    response: CertificateSignedResponse;
+  };
+  ChangeAvailability: {
+    request: ChangeAvailabilityRequest;
+    response: ChangeAvailabilityResponse;
+  };
+  ChangeConfiguration: {
+    request: ChangeConfigurationRequest;
+    response: ChangeConfigurationResponse;
+  };
   ClearCache: { request: ClearCacheRequest; response: ClearCacheResponse };
-  ClearChargingProfile: { request: ClearChargingProfileRequest; response: ClearChargingProfileResponse };
-  DataTransfer: { request: DataTransferRequest; response: DataTransferResponse };
-  DeleteCertificate: { request: DeleteCertificateRequest; response: DeleteCertificateResponse };
-  DiagnosticsStatusNotification: { request: DiagnosticsStatusNotificationRequest; response: DiagnosticsStatusNotificationResponse };
-  ExtendedTriggerMessage: { request: ExtendedTriggerMessageRequest; response: ExtendedTriggerMessageResponse };
-  FirmwareStatusNotification: { request: FirmwareStatusNotificationRequest; response: FirmwareStatusNotificationResponse };
-  GetCompositeSchedule: { request: GetCompositeScheduleRequest; response: GetCompositeScheduleResponse };
-  GetConfiguration: { request: GetConfigurationRequest; response: GetConfigurationResponse };
-  GetDiagnostics: { request: GetDiagnosticsRequest; response: GetDiagnosticsResponse };
-  GetInstalledCertificateIds: { request: GetInstalledCertificateIdsRequest; response: GetInstalledCertificateIdsResponse };
-  GetLocalListVersion: { request: GetLocalListVersionRequest; response: GetLocalListVersionResponse };
+  ClearChargingProfile: {
+    request: ClearChargingProfileRequest;
+    response: ClearChargingProfileResponse;
+  };
+  DataTransfer: {
+    request: DataTransferRequest;
+    response: DataTransferResponse;
+  };
+  DeleteCertificate: {
+    request: DeleteCertificateRequest;
+    response: DeleteCertificateResponse;
+  };
+  DiagnosticsStatusNotification: {
+    request: DiagnosticsStatusNotificationRequest;
+    response: DiagnosticsStatusNotificationResponse;
+  };
+  ExtendedTriggerMessage: {
+    request: ExtendedTriggerMessageRequest;
+    response: ExtendedTriggerMessageResponse;
+  };
+  FirmwareStatusNotification: {
+    request: FirmwareStatusNotificationRequest;
+    response: FirmwareStatusNotificationResponse;
+  };
+  GetCompositeSchedule: {
+    request: GetCompositeScheduleRequest;
+    response: GetCompositeScheduleResponse;
+  };
+  GetConfiguration: {
+    request: GetConfigurationRequest;
+    response: GetConfigurationResponse;
+  };
+  GetDiagnostics: {
+    request: GetDiagnosticsRequest;
+    response: GetDiagnosticsResponse;
+  };
+  GetInstalledCertificateIds: {
+    request: GetInstalledCertificateIdsRequest;
+    response: GetInstalledCertificateIdsResponse;
+  };
+  GetLocalListVersion: {
+    request: GetLocalListVersionRequest;
+    response: GetLocalListVersionResponse;
+  };
   GetLog: { request: GetLogRequest; response: GetLogResponse };
   Heartbeat: { request: HeartbeatRequest; response: HeartbeatResponse };
-  InstallCertificate: { request: InstallCertificateRequest; response: InstallCertificateResponse };
-  LogStatusNotification: { request: LogStatusNotificationRequest; response: LogStatusNotificationResponse };
+  InstallCertificate: {
+    request: InstallCertificateRequest;
+    response: InstallCertificateResponse;
+  };
+  LogStatusNotification: {
+    request: LogStatusNotificationRequest;
+    response: LogStatusNotificationResponse;
+  };
   MeterValues: { request: MeterValuesRequest; response: MeterValuesResponse };
-  RemoteStartTransaction: { request: RemoteStartTransactionRequest; response: RemoteStartTransactionResponse };
-  RemoteStopTransaction: { request: RemoteStopTransactionRequest; response: RemoteStopTransactionResponse };
+  RemoteStartTransaction: {
+    request: RemoteStartTransactionRequest;
+    response: RemoteStartTransactionResponse;
+  };
+  RemoteStopTransaction: {
+    request: RemoteStopTransactionRequest;
+    response: RemoteStopTransactionResponse;
+  };
   ReserveNow: { request: ReserveNowRequest; response: ReserveNowResponse };
   Reset: { request: ResetRequest; response: ResetResponse };
-  SecurityEventNotification: { request: SecurityEventNotificationRequest; response: SecurityEventNotificationResponse };
-  SendLocalList: { request: SendLocalListRequest; response: SendLocalListResponse };
-  SetChargingProfile: { request: SetChargingProfileRequest; response: SetChargingProfileResponse };
-  SignCertificate: { request: SignCertificateRequest; response: SignCertificateResponse };
-  SignedFirmwareStatusNotification: { request: SignedFirmwareStatusNotificationRequest; response: SignedFirmwareStatusNotificationResponse };
-  SignedUpdateFirmware: { request: SignedUpdateFirmwareRequest; response: SignedUpdateFirmwareResponse };
-  StartTransaction: { request: StartTransactionRequest; response: StartTransactionResponse };
-  StatusNotification: { request: StatusNotificationRequest; response: StatusNotificationResponse };
-  StopTransaction: { request: StopTransactionRequest; response: StopTransactionResponse };
-  TriggerMessage: { request: TriggerMessageRequest; response: TriggerMessageResponse };
-  UnlockConnector: { request: UnlockConnectorRequest; response: UnlockConnectorResponse };
-  UpdateFirmware: { request: UpdateFirmwareRequest; response: UpdateFirmwareResponse };
+  SecurityEventNotification: {
+    request: SecurityEventNotificationRequest;
+    response: SecurityEventNotificationResponse;
+  };
+  SendLocalList: {
+    request: SendLocalListRequest;
+    response: SendLocalListResponse;
+  };
+  SetChargingProfile: {
+    request: SetChargingProfileRequest;
+    response: SetChargingProfileResponse;
+  };
+  SignCertificate: {
+    request: SignCertificateRequest;
+    response: SignCertificateResponse;
+  };
+  SignedFirmwareStatusNotification: {
+    request: SignedFirmwareStatusNotificationRequest;
+    response: SignedFirmwareStatusNotificationResponse;
+  };
+  SignedUpdateFirmware: {
+    request: SignedUpdateFirmwareRequest;
+    response: SignedUpdateFirmwareResponse;
+  };
+  StartTransaction: {
+    request: StartTransactionRequest;
+    response: StartTransactionResponse;
+  };
+  StatusNotification: {
+    request: StatusNotificationRequest;
+    response: StatusNotificationResponse;
+  };
+  StopTransaction: {
+    request: StopTransactionRequest;
+    response: StopTransactionResponse;
+  };
+  TriggerMessage: {
+    request: TriggerMessageRequest;
+    response: TriggerMessageResponse;
+  };
+  UnlockConnector: {
+    request: UnlockConnectorRequest;
+    response: UnlockConnectorResponse;
+  };
+  UpdateFirmware: {
+    request: UpdateFirmwareRequest;
+    response: UpdateFirmwareResponse;
+  };
 }

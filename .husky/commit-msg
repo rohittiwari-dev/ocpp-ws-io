@@ -1,0 +1,2 @@
+
+npm run commitlint --edit ${1}

@@ -2,18 +2,18 @@
 
 import { motion } from "framer-motion";
 import {
+  CheckCircle2,
+  Code2,
+  Cpu,
+  Globe,
+  Layers,
+  Lock,
+  MonitorSmartphone,
+  Server,
   Shield,
   Zap,
-  Code2,
-  Globe,
-  Cpu,
-  Lock,
-  CheckCircle2,
-  Server,
-  MonitorSmartphone,
-  Layers,
 } from "lucide-react";
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
 
 const features: {
   title: string;
@@ -51,8 +51,7 @@ const features: {
           <div>
             res.status{" "}
             <span className="text-gray-500">
-              // &quot;Accepted&quot; | &quot;Pending&quot; |
-              &quot;Rejected&quot;
+              {"// 'Accepted' | 'Pending' | 'Rejected'"}
             </span>
           </div>
         </div>
@@ -70,7 +69,11 @@ const features: {
         {["None", "Basic Auth", "TLS", "mTLS"].map((p, i) => (
           <span
             key={p}
-            className={`text-[10px] border px-2 py-0.5 rounded-full ${i === 3 ? "border-green-500/50 text-green-500 bg-green-500/5" : "border-fd-border text-fd-muted-foreground"}`}
+            className={`text-[10px] border px-2 py-0.5 rounded-full ${
+              i === 3
+                ? "border-green-500/50 text-green-500 bg-green-500/5"
+                : "border-fd-border text-fd-muted-foreground"
+            }`}
           >
             <Lock className="h-2.5 w-2.5 inline mr-1" />
             {p}
@@ -239,7 +242,9 @@ export function Features() {
             whileInView={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: index * 0.08 }}
             viewport={{ once: true }}
-            className={`group relative overflow-hidden rounded-xl border border-fd-border bg-fd-card p-6 transition-all hover:border-fd-primary/50 hover:shadow-lg hover:shadow-fd-primary/5 ${feature.className || "md:col-span-1"}`}
+            className={`group relative overflow-hidden rounded-xl border border-fd-border bg-fd-card p-6 transition-all hover:border-fd-primary/50 hover:shadow-lg hover:shadow-fd-primary/5 ${
+              feature.className || "md:col-span-1"
+            }`}
           >
             <div className="flex flex-col h-full justify-between">
               <div>

@@ -6,7 +6,20 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "dev": "turbo run dev",
-    "lint": "turbo run lint"
+    "lint": "turbo run lint",
+    "commit": "cz",
+    "changeset": "changeset",
+    "format": "biome format --write .",
+    "check": "biome check --write .",
+    "commitlint": "commitlint",
+    "prepare": "npm -e \"if (!process.env.CI) process.exit(1)\" || husky",
+    "version": "changeset version",
+    "release": "npm run build && changeset publish"
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
   },
   "author": "Rohit Tiwari <rohit@rohittiwari.me>",
   "homepage": "https://ocpp-ws-io.rohittiwari.me",
@@ -24,6 +37,12 @@
     "type-safe"
   ],
   "devDependencies": {
+    "@biomejs/biome": "^2.4.2",
+    "@changesets/cli": "^2.29.8",
+    "@commitlint/cli": "^20.4.2",
+    "@commitlint/config-conventional": "^20.4.2",
+    "commitizen": "^4.3.1",
+    "cz-conventional-changelog": "^3.3.0",
     "turbo": "^2.8.10"
   },
   "workspaces": [

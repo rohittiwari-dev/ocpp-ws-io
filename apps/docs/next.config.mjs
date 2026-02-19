@@ -1,6 +1,6 @@
 import { createMDX } from "fumadocs-mdx/next";
-import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import remarkMath from "remark-math";
 
 const withMDX = createMDX({
   mdxOptions: {

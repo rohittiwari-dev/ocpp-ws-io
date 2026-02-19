@@ -1,0 +1,101 @@
+---
+title: Quick Start
+description: Get up and running with Voltlog-io in minutes.
+---
+
+## Installation
+
+Install `voltlog-io` using your preferred package manager:
+
+```bash
+npm install voltlog-io
+# or
+pnpm add voltlog-io
+# or
+bun add voltlog-io
+```
+
+### Using with `ocpp-ws-io`
+
+If you are already using `ocpp-ws-io`, you **do not** need to install `voltlog-io` separately. It is re-exported for your convenience:
+
+```ts
+import { createLogger, consoleTransport } from "ocpp-ws-io/logger";
+
+const logger = createLogger({ ... });
+```
+
+## Basic Usage
+
+The simplest setup uses the **Console Transport** to output structured JSON logs. This is ideal for production environments where logs are ingested by tools like Datadog or CloudWatch.
+
+```ts
+import { createLogger, consoleTransport } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  level: "INFO",
+  transports: [consoleTransport()],
+});
+
+logger.info("Server started", { port: 3000, env: "production" });
+// Output: {"id":"...","level":30,"message":"Server started","meta":{"port":3000,"env":"production"},"timestamp":...}
+```
+
+## Logging to a File (Ecosystem Log)
+
+For local deployments or legacy systems, you might want to write logs directly to a folder. Voltlog includes a **File Transport** with built-in **Daily Rotation**.
+
+```ts
+import {
+  createLogger,
+  fileTransport,
+  consoleTransport,
+} from "ocpp-ws-io/logger";
+import { join } from "path";
+
+const logger = createLogger({
+  level: "INFO",
+  transports: [
+    // Print to console
+    consoleTransport(),
+    // AND write to files
+    fileTransport({
+      dir: join(process.cwd(), "logs"), // Target folder
+      filename: "app-%DATE%.log", // %DATE% is replaced by YYYY-MM-DD
+      level: "WARN", // Only write WARN/ERROR to file
+    }),
+  ],
+});
+
+logger.info("This goes to console only");
+logger.error("This goes to console AND file");
+```
+
+> [!TIP]
+> The `fileTransport` is **Server-Only**. It uses Node's `fs` module and won't work in browsers.
+
+## Pretty Logging (Development)
+
+Reading JSON logs in your terminal is hard. Use `prettyTransport` during development for readable, colorful output.
+
+```ts
+import { createLogger, prettyTransport } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  level: "DEBUG",
+  transports: [
+    prettyTransport({
+      colors: true,
+      timestamps: true,
+    }),
+  ],
+});
+
+logger.info("Database connected", { db: "main", latency: 5 });
+logger.error("Connection failed", new Error("Timeout"));
+```
+
+## Next Steps
+
+- Explore [Middlewares](/docs/voltlog-io/middlewares) to redact secrets or sample logs.
+- Check out [Transformers](/docs/voltlog-io/transformers) to send logs to Redis, Slack, or Sentry.

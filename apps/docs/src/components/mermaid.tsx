@@ -34,6 +34,7 @@ export function Mermaid({ chart }: { chart: string }) {
     <div
       ref={ref}
       className="flex justify-center p-4 my-4 bg-muted/50 rounded-lg overflow-x-auto"
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: safe as we control the content
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

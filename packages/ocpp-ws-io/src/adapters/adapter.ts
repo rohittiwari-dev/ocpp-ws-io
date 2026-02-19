@@ -27,7 +27,7 @@ export class InMemoryAdapter implements EventAdapterInterface {
     if (!this._channels.has(channel)) {
       this._channels.set(channel, new Set());
     }
-    this._channels.get(channel)!.add(handler);
+    this._channels.get(channel)?.add(handler);
   }
 
   async unsubscribe(channel: string): Promise<void> {
