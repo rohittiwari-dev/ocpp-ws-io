@@ -423,75 +423,14 @@ export interface ClientEvents {
   [key: string]: unknown[];
 }
 
-export interface ServerEvents<TSession = Record<string, unknown>> {
-  client: [ServerClientInstance<TSession>];
+import type { OCPPServerClient } from "./server-client.js";
+
+export interface ServerEvents {
+  client: [OCPPServerClient];
   error: [Error];
   upgradeError: [{ error: Error; socket: Duplex }];
   [key: string]: unknown[];
 }
-
-// Forward reference for ServerClient (resolved at runtime)
-export type ServerClientInstance<
-  TSession = Record<string, unknown>,
-  P extends OCPPProtocol = OCPPProtocol,
-> = {
-  readonly identity: string;
-  readonly protocol: string | undefined;
-  readonly session: TSession;
-  readonly handshake: HandshakeInfo;
-  readonly state: ConnectionState;
-  close(options?: CloseOptions): Promise<{ code: number; reason: string }>;
-  handle<V extends OCPPProtocol, M extends AllMethodNames<V>>(
-    version: V,
-    method: M,
-    handler: (
-      context: HandlerContext<OCPPRequestType<V, M>>,
-    ) => OCPPResponseType<V, M> | Promise<OCPPResponseType<V, M>>,
-  ): void;
-  handle<M extends AllMethodNames<P>>(
-    method: M,
-    handler: (
-      context: HandlerContext<OCPPRequestType<P, M>>,
-    ) => OCPPResponseType<P, M> | Promise<OCPPResponseType<P, M>>,
-  ): void;
-  handle(handler: WildcardHandler): void;
-  handle(
-    method: string,
-    handler: (context: HandlerContext<Record<string, unknown>>) => unknown,
-  ): void;
-  call<V extends OCPPProtocol, M extends AllMethodNames<V>>(
-    version: V,
-    method: M,
-    params: OCPPRequestType<V, M>,
-    options?: CallOptions,
-  ): Promise<OCPPResponseType<V, M>>;
-  call<M extends AllMethodNames<P>>(
-    method: M,
-    params: OCPPRequestType<P, M>,
-    options?: CallOptions,
-  ): Promise<OCPPResponseType<P, M>>;
-  call<TResult = unknown>(
-    method: string,
-    params?: Record<string, unknown>,
-    options?: CallOptions,
-  ): Promise<TResult>;
-  removeHandler(method?: string): void;
-  removeHandler(version: OCPPProtocol, method: string): void;
-  removeAllHandlers(): void;
-  reconfigure(options: Partial<ClientOptions>): void;
-  on<K extends keyof ClientEvents>(
-    event: K,
-    listener: (...args: ClientEvents[K]) => void,
-  ): void;
-  once<K extends keyof ClientEvents>(
-    event: K,
-    listener: (...args: ClientEvents[K]) => void,
-  ): void;
-  off<K extends keyof ClientEvents>(
-    event: K,
-    listener: (...args: ClientEvents[K]) => void,
-  ): void;
-};
 
 // ─── Event Adapter Interface ─────────────────────────────────────
 

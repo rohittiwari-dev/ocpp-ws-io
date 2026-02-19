@@ -1,5 +1,11 @@
 # docs
 
+## 2.0.1
+
+### Patch Changes
+
+- Type mismatch in OCPPServer client event
+
 ## 2.0.0
 
 ### Major Changes

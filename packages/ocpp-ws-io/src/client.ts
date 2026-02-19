@@ -400,6 +400,19 @@ export class OCPPClient<
   ): void;
 
   /**
+   * Register a handler for a custom/extension protocol/method not in the typed OCPP method maps.
+   * `handle("my-protocol", "my-method", handler)`
+   *
+   * Note: This overload matches only if the protocol is NOT a known strict protocol of standard OCPP versions.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handle<S extends string>(
+    version: S extends OCPPProtocol ? never : S,
+    method: string,
+    handler: (context: HandlerContext<Record<string, any>>) => any,
+  ): void;
+
+  /**
    * Register a handler for the client's default protocol — `handle("BootNotification", handler)`.
    * Uses the default protocol type parameter `P`.
    */
@@ -479,6 +492,20 @@ export class OCPPClient<
     params: OCPPRequestType<V, M>,
     options?: CallOptions,
   ): Promise<OCPPResponseType<V, M>>;
+
+  /**
+   * Call a custom/extension protocol/method not in the typed OCPP method maps.
+   * `call("my-protocol", "my-method", params)`
+   *
+   * Note: This overload matches only if the protocol is NOT a known strict protocol of standard OCPP versions.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  call<S extends string, TResult = any>(
+    version: S extends OCPPProtocol ? never : S,
+    method: string,
+    params: Record<string, any>,
+    options?: CallOptions,
+  ): Promise<TResult>;
 
   /** Call a known typed method using the client's default protocol. */
   async call<M extends AllMethodNames<P>>(
