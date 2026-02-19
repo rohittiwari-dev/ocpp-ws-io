@@ -369,6 +369,13 @@ export interface ServerOptions {
   /** Include error details in responses — inherited (default: false) */
   respondWithDetailedErrors?: boolean;
   /**
+   * Maximum time (ms) to wait for the auth callback to resolve during
+   * a WebSocket upgrade handshake. If the callback does not settle within
+   * this window, the socket is destroyed and an `upgradeAborted` event
+   * is emitted. Set to `0` to disable. (default: 30000)
+   */
+  handshakeTimeoutMs?: number;
+  /**
    * Logging configuration — inherited by server clients.
    * - `undefined` / not set → default voltlog-io with console
    * - `false` → logging disabled
@@ -429,6 +436,14 @@ export interface ServerEvents {
   client: [OCPPServerClient];
   error: [Error];
   upgradeError: [{ error: Error; socket: Duplex }];
+  upgradeAborted: [
+    {
+      identity: string;
+      reason: string;
+      socket: Duplex;
+      request: IncomingMessage;
+    },
+  ];
   [key: string]: unknown[];
 }
 

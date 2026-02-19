@@ -151,6 +151,65 @@ export function isValidStatusCode(code: number): boolean {
   return false;
 }
 
+// ─── Basic Auth Parsing ─────────────────────────────────────────
+
+/**
+ * Strict base64 pattern for the Authorization header value.
+ * Matches: `Basic <base64-encoded-credentials>`
+ * Case-insensitive match on "Basic" per RFC 7617.
+ */
+const BASIC_AUTH_RE = /^ *[Bb][Aa][Ss][Ii][Cc] +([A-Za-z0-9._~+/-]+=*) *$/;
+
+/**
+ * Parse a Basic Authorization header, extracting the password as a raw Buffer.
+ *
+ * This is a **non-standard** parser designed for OCPP:
+ * - Supports colons in the username (which RFC 7617 normally disallows).
+ *   OCPP guarantees the username equals the Charge Point identity, so we
+ *   use `identity` as a prefix to locate the `:` separator.
+ * - Returns the password as a `Buffer` to support binary keys, as
+ *   recommended by the OCPP security whitepaper.
+ *
+ * @param authHeader - The raw `Authorization` header value (e.g. `"Basic dXNlcjpwYXNz"`)
+ * @param identity   - The expected username (Charge Point identity from the URL path)
+ * @returns The password as a `Buffer`, or `undefined` if parsing fails or identity doesn't match
+ */
+export function parseBasicAuth(
+  authHeader: string,
+  identity: string,
+): Buffer | undefined {
+  if (!authHeader) return undefined;
+
+  const match = BASIC_AUTH_RE.exec(authHeader);
+  if (!match?.[1]) return undefined;
+
+  try {
+    const decoded = Buffer.from(match[1], "base64");
+    const prefix = Buffer.from(`${identity}:`);
+
+    // Identity-prefix matching: the decoded buffer must start with `identity:`
+    if (
+      decoded.length > prefix.length &&
+      decoded.subarray(0, prefix.length).equals(prefix)
+    ) {
+      return decoded.subarray(prefix.length);
+    }
+
+    // Fallback: standard first-colon split (for non-OCPP or mismatched identity)
+    const colonIdx = decoded.indexOf(0x3a); // ':'
+    if (colonIdx !== -1) {
+      const user = decoded.subarray(0, colonIdx).toString("utf8");
+      if (user === identity) {
+        return decoded.subarray(colonIdx + 1);
+      }
+    }
+  } catch {
+    // Malformed base64 — treat as no password
+  }
+
+  return undefined;
+}
+
 // ─── Handshake Abort ────────────────────────────────────────────
 
 /**
