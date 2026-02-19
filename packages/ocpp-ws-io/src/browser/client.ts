@@ -667,8 +667,8 @@ export class BrowserOCPPClient<
 
       // Try version-specific handler first, then fall back to generic
       const handler = this._protocol
-        ? this._handlers.get(`${this._protocol}:${method}`) ??
-          this._handlers.get(method)
+        ? (this._handlers.get(`${this._protocol}:${method}`) ??
+          this._handlers.get(method))
         : this._handlers.get(method);
       let isWildcard = false;
       if (!handler) {

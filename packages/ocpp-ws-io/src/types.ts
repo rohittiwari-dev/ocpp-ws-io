@@ -468,3 +468,34 @@ export interface EventAdapterInterface {
 // ─── Symbols ─────────────────────────────────────────────────────
 
 export const NOREPLY: unique symbol = Symbol("NOREPLY");
+// ─── Middleware ──────────────────────────────────────────────────
+
+export type MiddlewareContext =
+  | {
+      type: "incoming_call";
+      messageId: string;
+      method: string;
+      params: unknown;
+      protocol?: string;
+    }
+  | {
+      type: "outgoing_call";
+      messageId: string;
+      method: string;
+      params: unknown;
+      options: CallOptions;
+    }
+  | {
+      type: "incoming_result";
+      messageId: string;
+      payload: unknown;
+      method: string; // Correlated method name
+    }
+  | {
+      type: "incoming_error";
+      messageId: string;
+      error: OCPPCallError;
+      method: string; // Correlated method name
+    };
+
+export type { MiddlewareFunction, MiddlewareNext } from "./middleware.js";

@@ -151,15 +151,18 @@ describe("Logger Integration - Client", () => {
     await client.call("Heartbeat", {});
 
     // Should have logged outbound CALL
-    expect(mockLogger.debug).toHaveBeenCalledWith(
-      "CALL →",
-      expect.objectContaining({ method: "Heartbeat" }),
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      expect.stringContaining("⚡ CS_LOG_CALL  →  Heartbeat  [OUT]"),
+      expect.objectContaining({ method: "Heartbeat", direction: "OUT" }),
     );
 
     // Should have logged inbound CALLRESULT
-    expect(mockLogger.debug).toHaveBeenCalledWith(
-      "CALLRESULT ←",
-      expect.objectContaining({ messageId: expect.any(String) }),
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      expect.stringContaining("⚡ CS_LOG_CALL  ←  Heartbeat  [RES]"),
+      expect.objectContaining({
+        messageId: expect.any(String),
+        direction: "IN",
+      }),
     );
   });
 
@@ -198,9 +201,9 @@ describe("Logger Integration - Client", () => {
     await serverCallPromise;
 
     // Should have logged incoming CALL
-    expect(mockLogger.debug).toHaveBeenCalledWith(
-      "CALL ←",
-      expect.objectContaining({ method: "Buggy" }),
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      expect.stringContaining("⚡ CS_LOG_ERR  ←  Buggy  [IN]"),
+      expect.objectContaining({ method: "Buggy", direction: "IN" }),
     );
 
     // Should have logged handler error
@@ -239,9 +242,9 @@ describe("Logger Integration - Client", () => {
       // expected
     }
 
-    expect(mockLogger.warn).toHaveBeenCalledWith(
-      "CALLERROR ←",
-      expect.objectContaining({ errorCode: expect.any(String) }),
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      "Call error",
+      expect.objectContaining({ error: expect.any(String) }),
     );
   });
 
