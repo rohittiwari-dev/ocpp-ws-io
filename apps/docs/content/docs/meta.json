@@ -8,6 +8,7 @@
     "browser-client",
     "---Implementations---",
     "security",
+    "logging",
     "clustering",
     "type-safety",
     "---System---",

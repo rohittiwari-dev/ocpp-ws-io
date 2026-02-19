@@ -1,0 +1,140 @@
+---
+title: Logging
+description: Comprehensive guide to structured logging in ocpp-ws-io
+---
+
+**ocpp-ws-io** comes with a powerful, built-in structured logging system powered by **[voltlog-io](https://www.npmjs.com/package/voltlog-io)**. It provides real-time traffic inspection, performance monitoring, and seamless integration with external logging services.
+
+## Overview
+
+Logging in `ocpp-ws-io` is designed to be:
+
+- **Zero-Config**: Works out of the box with sensible defaults.
+- **Structured**: All logs are JSON-formatted for easy parsing and ingestion.
+- **OCPP-Aware**: Special handling for OCPP messages, including direction and metadata.
+- **Extensible**: Use built-in transports or bring your own logger (Pino, Winston, etc.).
+
+## Quick Start
+
+Enable logging when initializing your client or server:
+
+```typescript
+import { OCPPClient } from "ocpp-ws-io";
+
+const client = new OCPPClient({
+  identity: "CP-001",
+  endpoint: "ws://localhost:3000",
+  logging: {
+    enabled: true, // Default: true
+    prettify: true, // 🌈 Enable colors & icons for development
+    exchangeLog: true, // ⚡ Log every OCPP message (Call/Result/Error)
+  },
+});
+```
+
+## Configuration
+
+The `logging` option accepts a `LoggingConfig` object:
+
+| Option        | Type         | Default     | Description                                                             |
+| :------------ | :----------- | :---------- | :---------------------------------------------------------------------- |
+| `enabled`     | `boolean`    | `true`      | Enable or disable all logging.                                          |
+| `level`       | `string`     | `'info'`    | Minimum log level (`trace`, `debug`, `info`, `warn`, `error`, `fatal`). |
+| `prettify`    | `boolean`    | `false`     | Use `prettyTransport` for human-readable output (colors, icons).        |
+| `exchangeLog` | `boolean`    | `false`     | Log all OCPP messages with direction (`IN`/`OUT`) and metadata.         |
+| `handler`     | `LoggerLike` | `undefined` | Custom logger instance (e.g., Pino) to replace the default logger.      |
+
+### Levels
+
+| Level   | Value | Usage                                                         |
+| :------ | :---- | :------------------------------------------------------------ |
+| `fatal` | `60`  | System is unusable.                                           |
+| `error` | `50`  | Error conditions (connection failures, validation errors).    |
+| `warn`  | `40`  | Warning conditions (retries, unexpected messages).            |
+| `info`  | `30`  | Normal operational messages (connect/disconnect, startup).    |
+| `debug` | `20`  | Detailed internal state (protocol negotiation, raw payloads). |
+| `trace` | `10`  | Very detailed step-by-step tracing.                           |
+
+## Exchange Logging
+
+The `exchangeLog` feature is invaluable for debugging OCPP flows. It logs every WebSocket message sent or received.
+
+### Output Format
+
+When **`prettify: true`** is also enabled, you get styled output:
+
+```
+⚡ CP-101  →  BootNotification  [OUT]
+✅ CP-101  ←  BootNotification  [IN]   { latencyMs: 45 }
+```
+
+When **`prettify: false`** (production), logs are structured JSON:
+
+```json
+{
+  "level": 30,
+  "msg": "BootNotification",
+  "direction": "OUT",
+  "messageId": "12345",
+  "payload": { ... }
+}
+```
+
+## Voltlog Integration
+
+This library uses **voltlog-io** under the hood. You can import logging utilities directly from `ocpp-ws-io/logger`:
+
+```typescript
+import { createLogger, consoleTransport } from "ocpp-ws-io/logger";
+
+const logger = createLogger({
+  name: "MyCSMS",
+  transports: [consoleTransport()],
+});
+
+logger.info("System started");
+```
+
+### Using a Custom Logger
+
+If you already use Pino, Winston, or another logger, you can pass it to `ocpp-ws-io`. The logger must satisfy the `LoggerLike` interface (methods: `debug`, `info`, `warn`, `error`).
+
+**Example with Pino:**
+
+```typescript
+import pino from "pino";
+import { OCPPServer } from "ocpp-ws-io";
+
+const myLogger = pino();
+
+const server = new OCPPServer({
+  logging: {
+    handler: myLogger, // ocpp-ws-io will use this instance
+  },
+});
+```
+
+## Browser Client
+
+The `BrowserOCPPClient` also supports logging, configured the same way.
+
+```typescript
+import { BrowserOCPPClient } from "ocpp-ws-io/browser";
+
+const client = new BrowserOCPPClient({
+  endpoint: "wss://csms.example.com",
+  identity: "Simulator-1",
+  logging: {
+    level: "debug",
+    exchangeLog: true,
+  },
+});
+```
+
+> **Note:** In the browser, `prettify` uses browser console styling (CSS) instead of terminal colors.
+
+## Best Practices
+
+1.  **Development**: Use `level: 'debug'`, `prettify: true`, and `exchangeLog: true` to see everything clearly.
+2.  **Production**: Use `level: 'info'`, `prettify: false`, and `exchangeLog: false` (or `true` if you need audit trails).
+3.  **Redaction**: The built-in logger automatically redacts sensitive fields like `idTag`, `password`, and `authorizationKey`.
