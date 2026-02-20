@@ -232,7 +232,7 @@ export interface HandshakeInfo {
 
 // ─── Session Data ────────────────────────────────────────────────
 
-export type SessionData<T = Record<string, unknown>> = T;
+export type SessionData<T = Record<string, any>> = T;
 
 // ─── Logger Interface ────────────────────────────────────────────
 

@@ -161,6 +161,40 @@ export class OCPPGateway implements OnModuleInit, OnModuleDestroy {
 export class AppModule {}
 ```
 
+## Bun
+
+`ocpp-ws-io` relies on `ws` and Node.js built-ins (`http`, `events`), which are fully supported by Bun's Node.js compatibility layer.
+
+You **cannot** attach it directly to `Bun.serve()` (which uses native WebSockets), but you can run the standard `OCPPServer` in Bun:
+
+```typescript
+import { OCPPServer } from "ocpp-ws-io";
+
+const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+// Uses Bun's node:http compatibility
+await server.listen(3000);
+console.log("Bun Node-compat server listening on 3000");
+```
+
+Run with: `bun run server.ts`.
+
+## Deno
+
+Similarly, Deno supports `ocpp-ws-io` via `npm:` specifiers and Node compatibility.
+
+```typescript
+import { OCPPServer } from "npm:ocpp-ws-io";
+
+const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+// Uses Deno's node:http compatibility
+await server.listen(3000);
+console.log("Deno Node-compat server listening on 3000");
+```
+
+Run with: `deno run -A server.ts`.
+
 ## Standalone
 
 If you don't need a framework, `ocpp-ws-io` can create its own WebSocket server:

@@ -1,74 +1,86 @@
 ---
 title: Clustering (Redis)
-description: Scaling your OCPP server with Redis.
+description: Scale your OCPP server with Redis Streams and Pub/Sub.
 ---
 
-For multi-instance deployments (e.g., Kubernetes, load balancers), you need to synchronize state and events across server instances. `ocpp-ws-io` provides a `RedisAdapter` for this purpose.
+# Clustering
+
+`ocpp-ws-io` includes a powerful Redis adapter that allows you to scale your WebSocket server across multiple nodes (e.g., in Kubernetes or behind a load balancer).
+
+## Architecture
+
+The adapter uses a hybrid approach for maximum performance and reliability:
+
+1.  **Broadcast (Pub/Sub)**: For messages that must reach _all_ nodes (e.g., broad system events).
+2.  **Unicast (Streams)**: For point-to-point routing (e.g., sending a command to a specific Charge Point). This uses Redis Streams to ensure **zero message loss** if a node temporarily restarts.
+3.  **Presence**: Automatically tracks which node a Charge Point is connected to.
 
 ## Installation
 
-You need to allow `ocpp-ws-io` to access your Redis client. The adapter is compatible with `ioredis` and `node-redis`.
+```bash
+npm install ioredis
+```
 
-## Usage
+## Configuration
 
-### Usage with `ioredis` (Recommended)
+You should provide three Redis connections for optimal performance:
+
+1.  **Publisher**: Sends commands and events.
+2.  **Subscriber**: Listens for broadcasts.
+3.  **Blocking**: Dedicted connection for `XREAD` (blocking stream reads).
+
+### Usage with `ioredis`
 
 ```typescript
 import { OCPPServer } from "ocpp-ws-io";
 import { RedisAdapter } from "ocpp-ws-io/adapters/redis";
 import Redis from "ioredis";
 
-const server = new OCPPServer({ protocols: ["ocpp2.0.1"] });
+const server = new OCPPServer({ protocols: ["ocpp1.6", "ocpp2.0.1"] });
 
-// Create two clients: one for publishing, one for subscribing
+// Create isolated connections
 const pub = new Redis(process.env.REDIS_URL);
 const sub = new Redis(process.env.REDIS_URL);
+const blocking = new Redis(process.env.REDIS_URL);
 
 server.setAdapter(
   new RedisAdapter({
     pubClient: pub,
     subClient: sub,
-    prefix: "ocpp-cluster:", // Optional custom prefix
+    blockingClient: blocking, // Recommended for Streams
+    prefix: "ocpp-cluster:", // Optional
+    streamMaxLen: 1000, // Keep last 1000 messages per node
   }),
 );
 
-server.on("client", (client) => {
-  console.log(`${client.identity} connected`);
-});
-
 await server.listen(3000);
 ```
 
-### Usage with `node-redis`
+## Features
+
+### Unicast Routing (`safeSendToClient`)
+
+When you use `server.safeSendToClient()`, the adapter:
+
+1.  Checks the **Presence Registry** to find which node holds the connection.
+2.  Publishes the message to that specific node's **Redis Stream**.
+3.  The target node consumes the stream and sends the WebSocket message.
 
 ```typescript
-import { createClient } from "redis";
-import { OCPPServer } from "ocpp-ws-io";
-import { RedisAdapter } from "ocpp-ws-io/adapters/redis";
-
-const server = new OCPPServer({ protocols: ["ocpp2.0.1"] });
-
-const pub = createClient({ url: process.env.REDIS_URL });
-const sub = pub.duplicate();
-
-await Promise.all([pub.connect(), sub.connect()]);
-
-const adapter = new RedisAdapter({
-  pubClient: pub,
-  subClient: sub,
-});
-
-server.setAdapter(adapter);
-
-await server.listen(3000);
+// Works from ANY node in the cluster
+await server.safeSendToClient("CP001", "ocpp1.6", "Reset", { type: "Hard" });
 ```
 
-## How it works
+### Reliability
 
-When you use the `RedisAdapter`, the following happens:
+Unlike standard Pub/Sub, **Redis Streams persist messages**. If a node crashes and restarts with the same ID, it will resume processing its stream, ensuring no pending commands are lost.
 
-1.  **Broadcasts**: If you call `server.broadcast()`, the message is published to Redis and sent by _all_ server instances to their connected clients.
-2.  **Loop Prevention**: The sender node's ID is attached to the message, ensuring it doesn't re-broadcast to itself.
-3.  **State Sync**: (If implemented features require it) Shared state usage leverages Redis.
+### Configuration Options
 
-_Note: Pure point-to-point calls (`client.call`) still route directly to the connected socket. The clusters are primarily for broadcast and discovery scenarios._
+| Option           | Type     | Description                           |
+| :--------------- | :------- | :------------------------------------ |
+| `pubClient`      | `Redis`  | Used for publishing and setting keys. |
+| `subClient`      | `Redis`  | Used for Pub/Sub subscriptions.       |
+| `blockingClient` | `Redis`  | (Optional) Dedicated for `XREAD`.     |
+| `prefix`         | `string` | Key prefix (default: `ocpp-ws-io:`).  |
+| `streamMaxLen`   | `number` | Max stream length (default: `1000`).  |

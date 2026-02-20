@@ -3,6 +3,8 @@ title: Logging
 description: Comprehensive guide to structured logging in ocpp-ws-io
 ---
 
+# Logging
+
 **ocpp-ws-io** comes with a powerful, built-in structured logging system powered by **[voltlog-io](https://www.npmjs.com/package/voltlog-io)**. It provides real-time traffic inspection, performance monitoring, and seamless integration with external logging services.
 
 ## Overview
@@ -36,13 +38,17 @@ const client = new OCPPClient({
 
 The `logging` option accepts a `LoggingConfig` object:
 
-| Option        | Type         | Default     | Description                                                             |
-| :------------ | :----------- | :---------- | :---------------------------------------------------------------------- |
-| `enabled`     | `boolean`    | `true`      | Enable or disable all logging.                                          |
-| `level`       | `string`     | `'info'`    | Minimum log level (`trace`, `debug`, `info`, `warn`, `error`, `fatal`). |
-| `prettify`    | `boolean`    | `false`     | Use `prettyTransport` for human-readable output (colors, icons).        |
-| `exchangeLog` | `boolean`    | `false`     | Log all OCPP messages with direction (`IN`/`OUT`) and metadata.         |
-| `handler`     | `LoggerLike` | `undefined` | Custom logger instance (e.g., Pino) to replace the default logger.      |
+| Option             | Type         | Default     | Description                                                             |
+| :----------------- | :----------- | :---------- | :---------------------------------------------------------------------- |
+| `enabled`          | `boolean`    | `true`      | Enable or disable all logging.                                          |
+| `level`            | `string`     | `'info'`    | Minimum log level (`trace`, `debug`, `info`, `warn`, `error`, `fatal`). |
+| `prettify`         | `boolean`    | `false`     | Use `prettyTransport` for human-readable output (colors, icons).        |
+| `exchangeLog`      | `boolean`    | `false`     | Log all OCPP messages with direction (`IN`/`OUT`) and metadata.         |
+| `handler`          | `LoggerLike` | `undefined` | Custom logger instance (e.g., Pino) to replace the default logger.      |
+| `showMetadata`     | `boolean`    | `true`      | Show trailing metadata object in logs.                                  |
+| `showSourceMeta`   | `boolean`    | `true`      | Show source context (component, identity).                              |
+| `prettifySource`   | `boolean`    | `false`     | Compact source tag `[OCPPServer/CP-1]`.                                 |
+| `prettifyMetadata` | `boolean`    | `false`     | Format metadata as key=value pairs.                                     |
 
 ### Levels
 
@@ -55,9 +61,9 @@ The `logging` option accepts a `LoggingConfig` object:
 | `debug` | `20`  | Detailed internal state (protocol negotiation, raw payloads). |
 | `trace` | `10`  | Very detailed step-by-step tracing.                           |
 
-## Exchange Logging
+## Exchange Logging (Middleware)
 
-The `exchangeLog` feature is invaluable for debugging OCPP flows. It logs every WebSocket message sent or received.
+The `exchangeLog` feature is now powered by the internal **Logging Middleware**. It logs every WebSocket message sent or received.
 
 ### Output Format
 
@@ -97,7 +103,7 @@ logger.info("System started");
 
 ### Using a Custom Logger
 
-If you already use Pino, Winston, or another logger, you can pass it to `ocpp-ws-io`. The logger must satisfy the `LoggerLike` interface (methods: `debug`, `info`, `warn`, `error`).
+If you already use Pino, Winston, or another logger, you can pass it to `ocpp-ws-io`. The logger must satisfy the `LoggerLike` interface (methods: `debug`, `info`, `warn`, `error`, `child`).
 
 **Example with Pino:**
 
@@ -132,9 +138,3 @@ const client = new BrowserOCPPClient({
 ```
 
 > **Note:** In the browser, `prettify` uses browser console styling (CSS) instead of terminal colors.
-
-## Best Practices
-
-1.  **Development**: Use `level: 'debug'`, `prettify: true`, and `exchangeLog: true` to see everything clearly.
-2.  **Production**: Use `level: 'info'`, `prettify: false`, and `exchangeLog: false` (or `true` if you need audit trails).
-3.  **Redaction**: The built-in logger automatically redacts sensitive fields like `idTag`, `password`, and `authorizationKey`.

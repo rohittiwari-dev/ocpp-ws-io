@@ -23,6 +23,7 @@ import {
   type ListenOptions,
   type LoggerLike,
   type LoggerLikeNotOptional,
+  type OCPPProtocol,
   type OCPPRequestType,
   SecurityProfile,
   type ServerEvents,
@@ -59,7 +60,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private readonly _nodeId = createId();
   private _sessions = new Map<
     string,
-    { data: Record<string, unknown>; lastActive: number }
+    { data: Record<string, any>; lastActive: number }
   >();
   private _gcInterval: NodeJS.Timeout | null = null;
   // Default session timeout: 2 hours
@@ -603,11 +604,60 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * 2. Checks Presence Registry -> Unicast.
    * 3. Fallback: Broadcast.
    */
-  async sendToClient<V extends AllMethodNames<any>>(
+  /**
+   * Send a request to a specific client (local or remote).
+   *
+   * 1. Checks local clients.
+   * 2. Checks Presence Registry -> Unicast.
+   * 3. Fallback: Error (Client not found).
+   */
+  // 1. Protocol-specific overload
+  async sendToClient<V extends OCPPProtocol, M extends AllMethodNames<V>>(
     identity: string,
-    method: V,
-    params: OCPPRequestType<any, V>,
-  ): Promise<void> {
+    version: V,
+    method: M,
+    params: OCPPRequestType<V, M>,
+  ): Promise<void>;
+
+  // 2. Global overload (infers method from any protocol)
+  async sendToClient<M extends AllMethodNames<any>>(
+    identity: string,
+    method: M,
+    params: OCPPRequestType<any, M>,
+  ): Promise<void>;
+
+  // 3. Custom/Loose overload
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async sendToClient<_T = any>(
+    identity: string,
+    method: string,
+    params: Record<string, any>,
+  ): Promise<void>;
+
+  async sendToClient(...args: any[]): Promise<void> {
+    let identity: string;
+    let method: string;
+    let params: any;
+
+    // Parse overloads
+    if (
+      args.length === 4 &&
+      typeof args[0] === "string" &&
+      typeof args[1] === "string" &&
+      typeof args[2] === "string"
+    ) {
+      // (identity, version, method, params)
+      identity = args[0];
+      // version = args[1]; // Not used for routing yet, but could be validation
+      method = args[2];
+      params = args[3];
+    } else {
+      // (identity, method, params)
+      identity = args[0];
+      method = args[1];
+      params = args[2];
+    }
+
     // 1. Check local
     for (const client of this._clients) {
       if (client.identity === identity) {
@@ -639,6 +689,53 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     // But if we want comprehensive routing, we could broadcast here.
     // Ideally, sendToClient implies targeted. If not found, we throw or return false.
     throw new Error(`Client ${identity} not found`);
+  }
+
+  // ─── Safe SendToClient (Best Effort) ──────────────────────────
+
+  // 1. Protocol-specific overload
+  async safeSendToClient<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+    identity: string,
+    version: V,
+    method: M,
+    params: OCPPRequestType<V, M>,
+  ): Promise<boolean>;
+
+  // 2. Global overload
+  async safeSendToClient<M extends AllMethodNames<any>>(
+    identity: string,
+    method: M,
+    params: OCPPRequestType<any, M>,
+  ): Promise<boolean>;
+
+  // 3. Custom/Loose overload
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async safeSendToClient<_T = any>(
+    identity: string,
+    method: string,
+    params: Record<string, any>,
+  ): Promise<boolean>;
+
+  async safeSendToClient(...args: any[]): Promise<boolean> {
+    try {
+      // @ts-expect-error
+      await this.sendToClient(...args);
+      return true;
+    } catch (error) {
+      if (this._logger && typeof this._logger.warn === "function") {
+        this._logger.warn("SafeSendToClient failed", {
+          identity: args[0],
+          method:
+            args.length === 4
+              ? args[2] // versioned: id, ver, method, params
+              : args.length === 3
+                ? args[1] // global: id, method, params
+                : "unknown",
+          error,
+        });
+      }
+      return false;
+    }
   }
 
   // ─── Pub/Sub Adapter ─────────────────────────────────────────
