@@ -172,8 +172,31 @@ describe("OCPPServer - Express-like Routing", () => {
       ws.on("open", () => resolve(new Error("Should not have opened")));
     });
 
-    // Node WS client usually gives "Unexpected server response: 400"
     expect(err.message).toMatch(/400/);
     expect(authSpy).not.toHaveBeenCalled();
+  });
+
+  it("should match Express-style wildcard routes securely", async () => {
+    server = new OCPPServer();
+    const authSpy = vi.fn((accept, reject, handshake) => accept());
+
+    // Matches /api/v1.0 (with literal dot) and anything following
+    server.route("/api/v1.0/*").auth(authSpy);
+    httpServer = await server.listen(0);
+
+    const ws = new WebSocket(
+      `ws://localhost:${getPort()}/api/v1.0/any-unknown-tenant/CP-123`,
+    );
+
+    await new Promise<void>((resolve) => {
+      ws.on("open", () => {
+        ws.close();
+        resolve();
+      });
+    });
+
+    expect(authSpy).toHaveBeenCalledTimes(1);
+    const handshake = authSpy.mock.calls[0][2] as unknown as HandshakeInfo;
+    expect(handshake.pathname).toBe("/api/v1.0/any-unknown-tenant/CP-123");
   });
 });

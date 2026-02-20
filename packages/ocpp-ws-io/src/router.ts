@@ -66,10 +66,19 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
     for (const p of patterns) {
       if (typeof p === "string") {
         const paramNames: string[] = [];
-        const regexStr = p.replace(/:([a-zA-Z0-9_]+)/g, (_, key) => {
+
+        // 1. Escape regex control characters (except colons and asterisks)
+        let regexStr = p.replace(/[-[\]{}()+?.,\\^$|#\s]/g, "\\$&");
+
+        // 2. Translate Express-style wildcards
+        regexStr = regexStr.replace(/\*/g, ".*");
+
+        // 3. Extract named parameters
+        regexStr = regexStr.replace(/:([a-zA-Z0-9_]+)/g, (_, key) => {
           paramNames.push(key);
           return "([^/]+)";
         });
+
         this.compiledPatterns.push({
           regex: new RegExp(`^${regexStr}$`),
           paramNames,

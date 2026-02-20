@@ -14,9 +14,9 @@ import type {
   OCPPRequestType,
   OCPPResponseType,
 } from "./generated/index.js";
+import { createLoggingMiddleware } from "./helpers/index.js";
 import { initLogger } from "./init-logger.js";
 import { type MiddlewareFunction, MiddlewareStack } from "./middleware";
-import { createLoggingMiddleware } from "./middleware/logging";
 import { Queue } from "./queue.js";
 import { standardValidators } from "./standard-validators.js";
 import {

@@ -8,7 +8,7 @@ const server = new OCPPServer({
 });
 
 server.route("*").on("client", (client) => {
-  client.log.info("Client connected", { path: client.handshake.pathname });
+  client.log.info("Client connected", { path: client.handshake.params });
 });
 
 server.listen(8080);
