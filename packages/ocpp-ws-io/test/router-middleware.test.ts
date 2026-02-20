@@ -35,12 +35,12 @@ describe("OCPPRouter - Middleware & Multiplexing", () => {
       await next();
     };
 
-    const adminRoute = server.route(
-      "/admin/:tenant/:identity",
-      /^\/api\/v2\/(?<tenant>[^/]+)\/(?<identity>[^/]+)$/,
-      mw1,
-      mw2,
-    );
+    const adminRoute = server
+      .route(
+        "/admin/:tenant/:identity",
+        /^\/api\/v2\/(?<tenant>[^/]+)\/(?<identity>[^/]+)$/,
+      )
+      .use(mw1, mw2);
 
     const onClientSpy = vi.fn();
     adminRoute.on("client", (c) => onClientSpy(c.handshake.pathname));
@@ -76,7 +76,7 @@ describe("OCPPRouter - Middleware & Multiplexing", () => {
       throw err;
     };
 
-    server.route("/secure/:id/:identity", blockingMw);
+    server.route("/secure/:id/:identity").use(blockingMw);
 
     client1 = new OCPPClient({
       identity: "CP-1",
@@ -85,5 +85,35 @@ describe("OCPPRouter - Middleware & Multiplexing", () => {
 
     client1.on("error", () => {});
     await expect(client1.connect()).rejects.toThrow("403");
+  });
+
+  it("should support a global catch-all router via server.use()", async () => {
+    server = new OCPPServer({ logging: { level: "debug" } });
+    httpServer = await server.listen(0);
+    const port = (httpServer.address() as any).port;
+
+    let useCalled = false;
+    server
+      .use(async (ctx, next) => {
+        useCalled = true;
+        await next();
+      })
+      .on("client", (client) => {
+        client.handle("BootNotification", async ({ params }) => {
+          return {
+            currentTime: new Date().toISOString(),
+            interval: 60,
+            status: "Accepted",
+          };
+        });
+      });
+
+    client1 = new OCPPClient({
+      identity: "CP-1",
+      endpoint: `ws://localhost:${port}/any/random/path`,
+    });
+
+    await client1.connect();
+    expect(useCalled).toBe(true);
   });
 });

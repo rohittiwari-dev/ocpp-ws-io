@@ -31,22 +31,62 @@ export async function executeMiddlewareChain(
   await dispatch(0);
 }
 
+interface CompiledPattern {
+  regex: RegExp;
+  paramNames: string[];
+}
+
 /**
  * OCPPRouter — An Express-like Connection dispatcher.
  * Isolated handler for a specific set of matching URL route patterns.
  */
 export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<ServerEvents>) {
-  public readonly patterns: Array<string | RegExp>;
-  public readonly middlewares: ConnectionMiddleware[];
+  public patterns: Array<string | RegExp>;
+  public compiledPatterns: CompiledPattern[] = [];
+  public middlewares: ConnectionMiddleware[];
   public authCallback: AuthCallback<unknown> | null = null;
 
   constructor(
-    patterns: Array<string | RegExp>,
-    middlewares: ConnectionMiddleware[],
+    patterns?: Array<string | RegExp>,
+    middlewares?: ConnectionMiddleware[],
   ) {
     super();
-    this.patterns = patterns;
-    this.middlewares = middlewares;
+    this.patterns = [];
+    this.middlewares = middlewares ?? [];
+    if (patterns?.length) {
+      this.route(...patterns);
+    }
+  }
+
+  /**
+   * Appends URL paths or regular expressions to this router's match condition.
+   */
+  route(...patterns: Array<string | RegExp>): this {
+    this.patterns.push(...patterns);
+    for (const p of patterns) {
+      if (typeof p === "string") {
+        const paramNames: string[] = [];
+        const regexStr = p.replace(/:([a-zA-Z0-9_]+)/g, (_, key) => {
+          paramNames.push(key);
+          return "([^/]+)";
+        });
+        this.compiledPatterns.push({
+          regex: new RegExp(`^${regexStr}$`),
+          paramNames,
+        });
+      } else {
+        this.compiledPatterns.push({ regex: p, paramNames: [] });
+      }
+    }
+    return this;
+  }
+
+  /**
+   * Appends connection middlewares to this router's execution chain.
+   */
+  use(...middlewares: ConnectionMiddleware[]): this {
+    this.middlewares.push(...middlewares);
+    return this;
   }
 
   /**

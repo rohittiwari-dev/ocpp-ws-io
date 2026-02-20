@@ -51,7 +51,7 @@ describe("OCPPServer - Express-like Routing", () => {
     server = new OCPPServer();
     const authSpy = vi.fn((accept, reject, handshake) => accept());
 
-    server.auth("/api/v1/:tenant/:identity", authSpy);
+    server.route("/api/v1/:tenant/:identity").auth(authSpy);
     httpServer = await server.listen(0);
 
     const ws = new WebSocket(
@@ -80,7 +80,9 @@ describe("OCPPServer - Express-like Routing", () => {
     const authSpy = vi.fn((accept, reject, handshake) => accept());
 
     // RegExp with named capture groups
-    server.auth(/^\/regexp\/(?<version>[^/]+)\/(?<identity>[^/]+)$/, authSpy);
+    server
+      .route(/^\/regexp\/(?<version>[^/]+)\/(?<identity>[^/]+)$/)
+      .auth(authSpy);
     httpServer = await server.listen(0);
 
     const ws = new WebSocket(
@@ -109,7 +111,7 @@ describe("OCPPServer - Express-like Routing", () => {
     const authSpy = vi.fn((accept, reject, handshake) => accept());
 
     // ONLY listen on this specific route
-    server.auth("/strict/:identity", authSpy);
+    server.route("/strict/:identity").auth(authSpy);
     httpServer = await server.listen(0);
 
     const ws = new WebSocket(`ws://localhost:${getPort()}/wrongpath/CP-REJECT`);
@@ -130,8 +132,8 @@ describe("OCPPServer - Express-like Routing", () => {
     const spy1 = vi.fn((accept, reject, handshake) => accept());
     const spy2 = vi.fn((accept, reject, handshake) => accept());
 
-    server.auth("/api/:tenant/:identity", spy1);
-    server.auth("/api/fallback/:identity", spy2); // This one is more specific but registered second
+    server.route("/api/:tenant/:identity").auth(spy1);
+    server.route("/api/fallback/:identity").auth(spy2); // This one is more specific but registered second
 
     httpServer = await server.listen(0);
 
@@ -160,7 +162,7 @@ describe("OCPPServer - Express-like Routing", () => {
     const authSpy = vi.fn((accept, reject, handshake) => accept());
 
     // ONLY listen on this specific route
-    server.auth("/strict/:identity", authSpy);
+    server.route("/strict/:identity").auth(authSpy);
     httpServer = await server.listen(0);
 
     const ws = new WebSocket(`ws://localhost:${getPort()}/wrongpath/CP-REJECT`);

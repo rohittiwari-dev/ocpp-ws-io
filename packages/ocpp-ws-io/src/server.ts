@@ -17,7 +17,6 @@ import {
   type AllMethodNames,
   type AuthAccept,
   type AuthCallback,
-  type AuthRoute,
   type ClientOptions,
   type CloseOptions,
   type ConnectionContext,
@@ -51,7 +50,6 @@ import {
  */
 export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<ServerEvents>) {
   private _options: ServerOptions;
-  private _routes: AuthRoute[] = [];
   private _routers: OCPPRouter[] = [];
   private _clients = new Set<OCPPServerClient>();
   private _httpServers = new Set<Server>();
@@ -127,38 +125,38 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   // ─── Auth ────────────────────────────────────────────────────
 
-  auth(callback: AuthCallback): void;
-  auth(route: string | RegExp, callback: AuthCallback): void;
-  auth(
-    routeOrCallback: string | RegExp | AuthCallback,
-    callback?: AuthCallback,
-  ): void {
-    if (typeof routeOrCallback === "function") {
-      this._routes.push({ pattern: null, handler: routeOrCallback });
-    } else if (callback) {
-      this._routes.push({ pattern: routeOrCallback, handler: callback });
-    }
-  }
-
   // ─── Routing & Middleware ────────────────────────────────────
 
   /**
-   * Registers a new Express-like router for multiplexing connections.
-   * `server.route("/api/:tenant", middlewareA).auth(cb).on("client", ...)`
+   * Registers a new routing dispatcher for multiplexing connections.
+   * `server.route("/api/:tenant").use(middleware).auth(cb).on("client", ...)`
    */
-  route(...args: Array<string | RegExp | ConnectionMiddleware>): OCPPRouter {
-    const patterns: Array<string | RegExp> = [];
-    const middlewares: ConnectionMiddleware[] = [];
+  route(...patterns: Array<string | RegExp>): OCPPRouter {
+    const router = new OCPPRouter();
+    router.route(...patterns);
+    this._routers.push(router);
+    return router;
+  }
 
-    for (const arg of args) {
-      if (typeof arg === "string" || arg instanceof RegExp) {
-        patterns.push(arg);
-      } else if (typeof arg === "function") {
-        middlewares.push(arg as ConnectionMiddleware);
-      }
-    }
+  /**
+   * Registers a new middleware chain, acting as a wildcard/catch-all router if no patterns are added.
+   * `server.use(middleware).route("/api").on("client", ...)`
+   */
+  use(...middlewares: ConnectionMiddleware[]): OCPPRouter {
+    const router = new OCPPRouter();
+    router.use(...middlewares);
+    this._routers.push(router);
+    return router;
+  }
 
-    const router = new OCPPRouter(patterns, middlewares);
+  /**
+   * Registers a top-level auth handler, returning a router to attach `.on()` or `.use()`.
+   */
+  auth<TSession = Record<string, unknown>>(
+    callback: AuthCallback<TSession>,
+  ): OCPPRouter {
+    const router = new OCPPRouter();
+    router.auth(callback);
     this._routers.push(router);
     return router;
   }
@@ -337,26 +335,18 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     // 1. First, try to match against chainable modern Routers
     for (const router of this._routers) {
       let matched = false;
-      for (const pattern of router.patterns) {
-        if (typeof pattern === "string") {
-          const paramNames: string[] = [];
-          const regexStr = pattern.replace(/:([a-zA-Z0-9_]+)/g, (_, key) => {
-            paramNames.push(key);
-            return "([^/]+)";
-          });
-          const match = new RegExp(`^${regexStr}$`).exec(pathname);
+      if (router.compiledPatterns.length === 0) {
+        matched = true;
+      } else {
+        for (const compiled of router.compiledPatterns) {
+          const match = compiled.regex.exec(pathname);
           if (match) {
             matched = true;
-            paramNames.forEach((name, i) => {
-              params[name] = decodeURIComponent(match[i + 1] ?? "");
-            });
-            break;
-          }
-        } else if (pattern instanceof RegExp) {
-          const match = pattern.exec(pathname);
-          if (match) {
-            matched = true;
-            if (match.groups) {
+            if (compiled.paramNames.length > 0) {
+              compiled.paramNames.forEach((name, i) => {
+                params[name] = decodeURIComponent(match[i + 1] ?? "");
+              });
+            } else if (match.groups) {
               for (const [key, val] of Object.entries(match.groups)) {
                 params[key] = decodeURIComponent(val ?? "");
               }
@@ -370,46 +360,6 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         matchedHandler =
           (router.authCallback as AuthCallback | undefined) ?? undefined;
         break;
-      }
-    }
-
-    // 2. Fallback to legacy routes if no router matched
-    if (!matchedRouter) {
-      for (const route of this._routes) {
-        if (route.pattern === null) {
-          matchedHandler = route.handler;
-          break;
-        }
-
-        if (typeof route.pattern === "string") {
-          const paramNames: string[] = [];
-          const regexStr = route.pattern.replace(
-            /:([a-zA-Z0-9_]+)/g,
-            (_, key) => {
-              paramNames.push(key);
-              return "([^/]+)";
-            },
-          );
-          const match = new RegExp(`^${regexStr}$`).exec(pathname);
-          if (match) {
-            matchedHandler = route.handler;
-            paramNames.forEach((name, i) => {
-              params[name] = decodeURIComponent(match[i + 1] ?? "");
-            });
-            break;
-          }
-        } else if (route.pattern instanceof RegExp) {
-          const match = route.pattern.exec(pathname);
-          if (match) {
-            matchedHandler = route.handler;
-            if (match.groups) {
-              for (const [key, val] of Object.entries(match.groups)) {
-                params[key] = decodeURIComponent(val ?? "");
-              }
-            }
-            break;
-          }
-        }
       }
     }
 
@@ -480,7 +430,6 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       remoteAddress: req.socket.remoteAddress ?? "",
       headers: req.headers as Record<string, string | string[] | undefined>,
       protocols,
-      endpoint: url.pathname,
       pathname,
       params,
       query: url.searchParams,
@@ -596,9 +545,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         socket.removeListener("error", onSocketGone);
         socket.removeListener("end", onSocketGone);
       }
-    } else if (this._routes.length > 0 || this._routers.length > 0) {
-      // If routes are defined but nothing matched, we must reject the connection.
-      // E.g., user defined `server.auth("/api/:id", cb)` but client connected to `/wrong/path`
+    } else if (this._routers.length > 0) {
+      // If routers are defined but nothing matched, we must reject the connection.
+      // E.g., user defined `server.route("/api/:id").auth(cb)` but client connected to `/wrong/path`
       this._logger?.warn?.("Connection rejected: No matching route found", {
         pathname,
       });

@@ -207,8 +207,6 @@ export interface HandshakeInfo {
   headers: Record<string, string | string[] | undefined>;
   /** Negotiated subprotocols */
   protocols: Set<string>;
-  /** Request endpoint URL path */
-  endpoint: string;
   /** Full URL pathname including params */
   pathname: string;
   /** Extracted dynamic route parameters */
