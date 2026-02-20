@@ -16,6 +16,7 @@ import {
   type AllMethodNames,
   type AuthAccept,
   type AuthCallback,
+  type AuthRoute,
   type ClientOptions,
   type CloseOptions,
   type EventAdapterInterface,
@@ -47,7 +48,7 @@ import {
  */
 export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<ServerEvents>) {
   private _options: ServerOptions;
-  private _authCallback: AuthCallback | null = null;
+  private _routes: AuthRoute[] = [];
   private _clients = new Set<OCPPServerClient>();
   private _httpServers = new Set<Server>();
   private _wss: WebSocketServer | null = null;
@@ -122,8 +123,17 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   // ─── Auth ────────────────────────────────────────────────────
 
-  auth(callback: AuthCallback): void {
-    this._authCallback = callback;
+  auth(callback: AuthCallback): void;
+  auth(route: string | RegExp, callback: AuthCallback): void;
+  auth(
+    routeOrCallback: string | RegExp | AuthCallback,
+    callback?: AuthCallback,
+  ): void {
+    if (typeof routeOrCallback === "function") {
+      this._routes.push({ pattern: null, handler: routeOrCallback });
+    } else if (callback) {
+      this._routes.push({ pattern: routeOrCallback, handler: callback });
+    }
   }
 
   // ─── Listen ──────────────────────────────────────────────────
@@ -286,13 +296,66 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return;
     }
 
-    // ── Step 2: Parse URL → identity + endpoint ──
+    // ── Step 2: Parse URL & Execute Router ──
     const url = new URL(
       req.url ?? "/",
       `http://${req.headers.host ?? "localhost"}`,
     );
-    const pathParts = url.pathname.split("/").filter(Boolean);
-    const identity = decodeURIComponent(pathParts[pathParts.length - 1] ?? "");
+
+    let matchedHandler: AuthCallback | undefined;
+    const params: Record<string, string> = {};
+    const pathname = url.pathname;
+
+    for (const route of this._routes) {
+      // Fallback route (the original behavior)
+      if (route.pattern === null) {
+        matchedHandler = route.handler;
+        break;
+      }
+
+      if (typeof route.pattern === "string") {
+        // Simple string router (e.g. "/ocpp/:version/:identity")
+        // Convert Express-like path string into simple regex
+        const paramNames: string[] = [];
+        let regexStr = route.pattern.replace(/:([a-zA-Z0-9_]+)/g, (_, key) => {
+          paramNames.push(key);
+          return "([^/]+)";
+        });
+
+        // Exact match regex
+        regexStr = `^${regexStr}$`;
+        const match = new RegExp(regexStr).exec(pathname);
+
+        if (match) {
+          matchedHandler = route.handler;
+          paramNames.forEach((name, i) => {
+            params[name] = decodeURIComponent(match[i + 1] ?? "");
+          });
+          break;
+        }
+      } else if (route.pattern instanceof RegExp) {
+        // RegExp matching
+        const match = route.pattern.exec(pathname);
+        if (match) {
+          matchedHandler = route.handler;
+          if (match.groups) {
+            for (const [key, val] of Object.entries(match.groups)) {
+              params[key] = decodeURIComponent(val ?? "");
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    // Determine the identity:
+    // 1. If it was successfully matched as a param, use it.
+    // 2. Otherwise extract it from the end of the pathname (legacy behavior).
+    let identity = params.identity;
+    if (!identity) {
+      const pathParts = pathname.split("/").filter(Boolean);
+      identity = decodeURIComponent(pathParts[pathParts.length - 1] ?? "");
+    }
 
     if (!identity) {
       abortHandshake(socket, 400, "Missing identity in URL path");
@@ -353,6 +416,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       headers: req.headers as Record<string, string | string[] | undefined>,
       protocols,
       endpoint: url.pathname,
+      pathname,
+      params,
       query: url.searchParams,
       request: req,
       password,
@@ -361,7 +426,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     };
 
     // ── Step 8: Auth callback with AbortController + timeout ──
-    if (this._authCallback) {
+    if (matchedHandler) {
       const ac = new AbortController();
 
       // Socket lifecycle → abort on premature close / error
@@ -415,7 +480,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             { once: true },
           );
 
-          this._authCallback?.(accept, rejectAuth, handshake, ac.signal);
+          this._logger?.debug?.("Executing route handler", {
+            identity,
+            pathname,
+          });
+          matchedHandler(accept, rejectAuth, handshake, ac.signal);
         });
       } catch (err) {
         if (ac.signal.aborted) {
@@ -442,6 +511,14 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         socket.removeListener("error", onSocketGone);
         socket.removeListener("end", onSocketGone);
       }
+    } else if (this._routes.length > 0) {
+      // If routes are defined but nothing matched, we must reject the connection.
+      // E.g., user defined `server.auth("/api/:id", cb)` but client connected to `/wrong/path`
+      this._logger?.warn?.("Connection rejected: No matching route found", {
+        pathname,
+      });
+      abortHandshake(socket, 400, "Unexpected server response: 400");
+      return;
     }
 
     // ── Step 9: Socket readyState check before upgrade ──
@@ -729,8 +806,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             args.length === 4
               ? args[2] // versioned: id, ver, method, params
               : args.length === 3
-                ? args[1] // global: id, method, params
-                : "unknown",
+              ? args[1] // global: id, method, params
+              : "unknown",
           error,
         });
       }

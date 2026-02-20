@@ -218,6 +218,10 @@ export interface HandshakeInfo {
   protocols: Set<string>;
   /** Request endpoint URL path */
   endpoint: string;
+  /** Full URL pathname including params */
+  pathname: string;
+  /** Extracted dynamic route parameters */
+  params: Record<string, string>;
   /** URL query parameters */
   query: URLSearchParams;
   /** Original HTTP request */
@@ -456,6 +460,13 @@ export type AuthCallback<TSession = Record<string, unknown>> = (
   handshake: HandshakeInfo,
   signal: AbortSignal,
 ) => void | Promise<void>;
+
+export type RoutePattern = string | RegExp;
+
+export interface AuthRoute {
+  pattern: RoutePattern | null; // null represents the default fallback route
+  handler: AuthCallback<any>;
+}
 
 // ─── Event Types ─────────────────────────────────────────────────
 
