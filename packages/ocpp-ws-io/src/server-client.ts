@@ -13,7 +13,7 @@ import {
  * Extends OCPPClient but is pre-connected (cannot call connect()).
  */
 export class OCPPServerClient extends OCPPClient {
-  private _serverSession: Record<string, unknown>;
+  private _serverSession: Record<string, any>;
   private _serverHandshake: HandshakeInfo;
 
   constructor(
@@ -21,7 +21,7 @@ export class OCPPServerClient extends OCPPClient {
     context: {
       ws: WebSocket;
       handshake: HandshakeInfo;
-      session: Record<string, unknown>;
+      session: Record<string, any>;
       protocol?: string;
     },
   ) {
@@ -43,7 +43,7 @@ export class OCPPServerClient extends OCPPClient {
   /**
    * Session data associated with this client connection.
    */
-  get session(): Record<string, unknown> {
+  get session(): Record<string, any> {
     return this._serverSession;
   }
 

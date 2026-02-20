@@ -1,0 +1,71 @@
+---
+title: Middleware
+description: Intercept and modify OCPP messages.
+---
+
+# Middleware
+
+The middleware system allows you to intercept, inspect, and modify OCPP messages (calls and results) as they flow through the client and server. It follows an onion-like execution model similar to Koa or Axios interceptors.
+
+## Basic Usage
+
+You can add middleware to both `OCPPServer` and `OCPPClient`.
+
+```typescript
+client.use(async (ctx, next) => {
+  console.log(`Processing ${ctx.method} (${ctx.direction})`);
+
+  // Modify context or just observe
+  ctx.params.timestamp = new Date().toISOString();
+
+  // Proceed to next middleware/handler
+  await next();
+
+  // Code here runs after the handler returns (on the way out)
+  console.log(`Finished ${ctx.method}`);
+});
+```
+
+## Built-in Middleware
+
+### Logging
+
+The logging middleware is enabled by default but can be customized. It logs all incoming and outgoing messages.
+
+```typescript
+import { createLoggingMiddleware } from "ocpp-ws-io/middleware";
+
+// Manually adding (if you disabled default logging)
+client.use(createLoggingMiddleware(logger, "Point1"));
+```
+
+## Creating Custom Middleware
+
+Middleware functions receive a `context` and a `next` function.
+
+### Context Object
+
+| Property    | Type                               | Description                           |
+| :---------- | :--------------------------------- | :------------------------------------ |
+| `type`      | `incoming_call` \| `outgoing_call` | Direction and type of message         |
+| `method`    | `string`                           | OCPP Action (e.g. `BootNotification`) |
+| `params`    | `any`                              | Payload of the message                |
+| `messageId` | `string`                           | Unique ID of the message              |
+| `protocol`  | `OCPPProtocol`                     | negotiated protocol version           |
+
+### Example: Validation Middleware
+
+```typescript
+client.use(async (ctx, next) => {
+  if (ctx.type === "outgoing_call" && !ctx.params) {
+    throw new Error("Payload cannot be empty");
+  }
+  await next();
+});
+```
+
+## Execution Flow
+
+1. **Request Phase**: Middleware runs from first to last.
+2. **Handler**: The core logic (your `handle` function) executes.
+3. **Response Phase**: Middleware runs from last to first (after `await next()`).

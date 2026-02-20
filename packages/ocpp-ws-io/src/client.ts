@@ -1,5 +1,4 @@
 import { EventEmitter } from "node:events";
-import { setTimeout as setTimeoutCb } from "node:timers";
 import { createId } from "@paralleldrive/cuid2";
 import WebSocket from "ws";
 import {
@@ -56,7 +55,7 @@ const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
 interface PendingCall {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
-  timeoutHandle: ReturnType<typeof setTimeoutCb>;
+  timeoutHandle: ReturnType<typeof setTimeout>;
   abortHandler?: () => void;
   method: string;
   sentAt: number;
@@ -108,12 +107,12 @@ export class OCPPClient<
   private _pendingCalls = new Map<string, PendingCall>();
   private _pendingResponses = new Set<string>();
   private _callQueue: Queue;
-  private _pingTimer: ReturnType<typeof setTimeoutCb> | null = null;
-  private _pongTimer: ReturnType<typeof setTimeoutCb> | null = null;
+  private _pingTimer: ReturnType<typeof setTimeout> | null = null;
+  private _pongTimer: ReturnType<typeof setTimeout> | null = null;
   private _closePromise: Promise<{ code: number; reason: string }> | null =
     null;
   private _reconnectAttempt = 0;
-  private _reconnectTimer: ReturnType<typeof setTimeoutCb> | null = null;
+  private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _badMessageCount = 0;
   private _lastActivity = 0;
   private _outboundBuffer: string[] = [];
@@ -595,6 +594,59 @@ export class OCPPClient<
     return this._callQueue.push(() => this._sendCall(method, params, options));
   }
 
+  // ─── Safe Call (Best Effort) ─────────────────────────────────
+
+  /**
+   * Version-specific safe call. Returns `null` on error instead of throwing.
+   */
+  async safeCall<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+    version: V,
+    method: M,
+    params: OCPPRequestType<V, M>,
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<V, M> | null>;
+
+  /**
+   * Custom/Extension safe call.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async safeCall<S extends string, TResult = any>(
+    version: S extends OCPPProtocol ? never : S,
+    method: string,
+    params: Record<string, any>,
+    options?: CallOptions,
+  ): Promise<TResult | null>;
+
+  /** Default protocol safe call. */
+  async safeCall<M extends AllMethodNames<P>>(
+    method: M,
+    params: OCPPRequestType<P, M>,
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<P, M> | null>;
+
+  /** Explicit result safe call. */
+  async safeCall<TResult = unknown>(
+    method: string,
+    params?: Record<string, unknown>,
+    options?: CallOptions,
+  ): Promise<TResult | null>;
+
+  async safeCall(...args: any[]): Promise<any> {
+    try {
+      // @ts-expect-error - Spread arguments to the matching call overload
+      return await this.call(...args);
+    } catch (error) {
+      const log = this?._logger?.warn ?? console.warn;
+      log("SafeCall failed", {
+        method: args.find(
+          (a) => typeof a === "string" && !a.startsWith("ocpp"),
+        ), // heuristic
+        error,
+      });
+      return null;
+    }
+  }
+
   private async _sendCall(
     method: string,
     params: unknown,
@@ -636,7 +688,7 @@ export class OCPPClient<
       const messageStr = JSON.stringify(message);
 
       callResult = await new Promise<unknown>((resolve, reject) => {
-        const timeoutHandle = setTimeoutCb(() => {
+        const timeoutHandle = setTimeout(() => {
           this._pendingCalls.delete(msgId);
           this._logger?.warn?.("Call timed out", {
             messageId: msgId,
@@ -1118,7 +1170,7 @@ export class OCPPClient<
     });
     this.emit("reconnect", { attempt: this._reconnectAttempt, delay: delayMs });
 
-    this._reconnectTimer = setTimeoutCb(async () => {
+    this._reconnectTimer = setTimeout(async () => {
       this._reconnectTimer = null;
       try {
         await this._connectInternal();
@@ -1154,6 +1206,7 @@ export class OCPPClient<
   // ─── Internal: Ping/Pong ─────────────────────────────────────
 
   private _startPing(): void {
+    console.log("_startPing called", this._options.pingIntervalMs);
     if (this._options.pingIntervalMs <= 0) return;
 
     const pongTimeoutMs =
@@ -1161,12 +1214,20 @@ export class OCPPClient<
       this._options.pingIntervalMs + 5000;
 
     const doPing = () => {
+      console.log("doPing executed");
+      // console.log("doPing called", this._state, !!this._ws, "interval", this._options.pingIntervalMs);
       if (this._state !== OPEN || !this._ws) return;
 
       if (this._options.deferPingsOnActivity) {
         const elapsed = Date.now() - this._lastActivity;
+        console.log(
+          "elapsed",
+          elapsed,
+          "deferring?",
+          elapsed < this._options.pingIntervalMs,
+        );
         if (elapsed < this._options.pingIntervalMs) {
-          this._pingTimer = setTimeoutCb(
+          this._pingTimer = setTimeout(
             doPing,
             this._options.pingIntervalMs - elapsed,
           );
@@ -1178,7 +1239,7 @@ export class OCPPClient<
 
       // Start pong timeout — if no pong received, connection is dead
       if (pongTimeoutMs > 0) {
-        this._pongTimer = setTimeoutCb(() => {
+        this._pongTimer = setTimeout(() => {
           this._logger?.warn?.("Pong timeout — terminating dead connection", {
             identity: this._identity,
             timeoutMs: pongTimeoutMs,
@@ -1187,10 +1248,10 @@ export class OCPPClient<
         }, pongTimeoutMs);
       }
 
-      this._pingTimer = setTimeoutCb(doPing, this._options.pingIntervalMs);
+      this._pingTimer = setTimeout(doPing, this._options.pingIntervalMs);
     };
 
-    this._pingTimer = setTimeoutCb(doPing, this._options.pingIntervalMs);
+    this._pingTimer = setTimeout(doPing, this._options.pingIntervalMs);
   }
 
   private _stopPing(): void {

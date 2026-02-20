@@ -1,0 +1,80 @@
+---
+title: Connection Upgrades
+description: Understanding the robust WebSocket upgrade pipeline.
+---
+
+# Connection Upgrades
+
+The critical moment in any OCPP connection is the **WebSocket Upgrade**. This is where authentication, protocol negotiation, and session initialization happen.
+
+`ocpp-ws-io` provides a robust, customizable upgrade pipeline designed to prevent common issues like "hanging" connections or silent failures.
+
+## The Pipeline
+
+When a Charging Station connects:
+
+1.  **Validation**: We check the URL format and extracted Identity.
+2.  **Keep-Alive**: TCP Keep-Alive is enabled immediately to prevent load balancer timeouts.
+3.  **Protocol Negotiation**: We match the station's requested protocols against your supported list.
+4.  **Authentication**: Your `auth` callback is triggered.
+5.  **Timeout Guard**: If your auth callback takes too long, the handshake is aborted.
+
+## Configuration
+
+You can control the safety mechanisms via `OCPPServer` options.
+
+### Handshake Timeout
+
+Use `handshakeTimeoutMs` to limit how long a pending connection can wait for authentication. This prevents resource exhaustion from "zombie" handshakes.
+
+```typescript
+const server = new OCPPServer({
+  // Abort if auth takes > 5 seconds
+  handshakeTimeoutMs: 5000,
+});
+```
+
+## Events
+
+Monitoring upgrade failures is crucial for debugging connectivity issues.
+
+### `upgradeAborted`
+
+Fired when a handshake is rejected or times out. This gives you visibility into _why_ a station couldn't connect.
+
+```typescript
+server.on("upgradeAborted", ({ identity, reason, request }) => {
+  console.warn(`Connection rejected for ${identity}: ${reason}`);
+  console.warn(`IP: ${request.socket.remoteAddress}`);
+});
+```
+
+### `upgradeError`
+
+Fired when a low-level socket error occurs during the upgrade (e.g., socket hang up).
+
+```typescript
+server.on("upgradeError", ({ error, socket }) => {
+  console.error("Socket error during upgrade:", error.message);
+});
+```
+
+## Example: Custom Auth with Timeout
+
+```typescript
+// Define server with 2s timeout
+const server = new OCPPServer({ handshakeTimeoutMs: 2000 });
+
+server.auth(async (accept, reject, handshake) => {
+  // Simulate slow DB lookup
+  const station = await db.findStation(handshake.identity);
+
+  if (!station) {
+    reject(404, "Station not found");
+  } else if (station.password !== handshake.password) {
+    reject(401, "Invalid password");
+  } else {
+    accept({ session: { tenantId: station.tenantId } });
+  }
+});
+```

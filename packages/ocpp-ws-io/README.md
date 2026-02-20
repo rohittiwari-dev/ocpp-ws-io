@@ -93,12 +93,34 @@ await server.listen(3000);
 
 ### `OCPPServer` Options
 
-| Option            | Type              | Default | Description                               |
-| ----------------- | ----------------- | ------- | ----------------------------------------- |
-| `protocols`       | `OCPPProtocol[]`  | `[]`    | Accepted OCPP subprotocols                |
-| `securityProfile` | `SecurityProfile` | `NONE`  | Security profile for auto-created servers |
-| `tls`             | `TLSOptions`      | —       | TLS options (Profile 2 & 3)               |
-| `logging`         | `LoggingConfig`   | `true`  | Configure built-in logging                |
+| Option               | Type              | Default | Description                               |
+| -------------------- | ----------------- | ------- | ----------------------------------------- |
+| `protocols`          | `OCPPProtocol[]`  | `[]`    | Accepted OCPP subprotocols                |
+| `securityProfile`    | `SecurityProfile` | `NONE`  | Security profile for auto-created servers |
+| `handshakeTimeoutMs` | `number`          | `30000` | Timeout for WebSocket handshake (ms)      |
+| `tls`                | `TLSOptions`      | —       | TLS options (Profile 2 & 3)               |
+| `logging`            | `LoggingConfig`   | `true`  | Configure built-in logging                |
+
+## 🛠️ Advanced Server Configuration
+
+### Handshake & Upgrades
+
+You can fine-tune how the server handles the WebSocket upgrade process, including timeouts for custom auth logic.
+
+```typescript
+const server = new OCPPServer({
+  // ...
+  handshakeTimeoutMs: 5000, // Timeout if auth callback takes too long (default 30s)
+});
+
+server.on("upgradeAborted", ({ identity, reason, socket }) => {
+  console.warn(`Handshake aborted for ${identity}: ${reason}`);
+});
+
+server.on("upgradeError", ({ error, socket }) => {
+  console.error("Upgrade failed:", error);
+});
+```
 
 ## 📝 Logging
 
@@ -146,6 +168,7 @@ const client = new OCPPClient({
 
 You can bring your own logger (Pino, Winston, etc.) by implementing `LoggerLike`:
 
+````typescript
 ```typescript
 import pino from "pino";
 
@@ -154,4 +177,69 @@ const client = new OCPPClient({
     handler: pino(), // Use existing logger instance
   },
 });
+````
+
+## 🛡️ Safety & Reliability
+
+### Safe Calls (`safeCall`)
+
+Perform RPC calls without `try/catch` blocks. Returns `null` on failure and logs the error automatically.
+
+```typescript
+const result = await client.safeCall("ocpp1.6", "Heartbeat", {});
+if (result) {
+  console.log("Heartbeat accepted:", result.currentTime);
+}
 ```
+
+### Unicast Routing (`safeSendToClient`) [Server]
+
+Send a message to a specific client ID, even if they are connected to a different node in the cluster.
+
+```typescript
+// Best-effort routing (Cluster-aware)
+await server.safeSendToClient("CP001", "ocpp1.6", "GetConfiguration", {
+  key: ["ClockAlignedDataInterval"],
+});
+```
+
+## 🧩 Middleware
+
+Intercept and modify OCPP messages using the middleware stack.
+
+```typescript
+// Add logging middleware (enabled by default)
+client.use(async (ctx, next) => {
+  console.log(`Processing ${ctx.method}`);
+  await next();
+});
+```
+
+## 📡 Clustering (Redis)
+
+Scale your OCPP server across multiple nodes using Redis.
+
+1. **Install Adapter**:
+
+   ```bash
+   npm install ioredis
+   ```
+
+2. **Configure Server**:
+
+   ```typescript
+   import { OCPPServer } from "ocpp-ws-io";
+   import { RedisAdapter } from "ocpp-ws-io/adapters/redis";
+   import Redis from "ioredis";
+
+   const redis = new Redis(process.env.REDIS_URL);
+   const server = new OCPPServer({
+     adapter: new RedisAdapter(redis), // Uses Redis Streams for reliability
+   });
+   ```
+
+**Features:**
+
+- **Unicast Routing**: Send messages to any client on any node.
+- **Presence**: Track connected clients across the cluster.
+- **Reliability**: Zero message loss during node restarts (via Redis Streams).

@@ -20,7 +20,30 @@ This document details the system design of `ocpp-ws-io`, focusing on how it hand
 
 ---
 
-## 2. Redis Data Flow (Clustering)
+## 2. Connection Reliability & Life-cycle
+
+We prioritize a stable connection even in flaky network conditions (e.g., cellular data).
+
+### Upgrade Pipeline
+
+The WebSocket upgrade process is strictly controlled to prevent "hanging" or invalid connections:
+
+1.  **Validation**: URL, identity, and `Sec-WebSocket-Protocol` are checked.
+2.  **Authentication**: Sync/Async Basic Auth or Client Certificate (mTLS) check.
+3.  **Handshake Timeout**: A configurable timer (default 30s) ensures auth logic doesn't block indefinitely.
+4.  **Session Restoration**: If a client reconnects, their previous session state is restored.
+
+### Events
+
+You can monitor the connection life-cycle with specific server events:
+
+- `upgradeAborted`: Fired if the handshake fails (timeout, auth failure).
+- `client`: Fired when the WebSocket is fully established.
+- `close`: Fired when the connection is cleanly closed or lost (after ping timeout).
+
+---
+
+## 3. Redis Data Flow (Clustering)
 
 When using `RedisAdapter`, the system does **not** become a "shared state" cluster automatically. Instead, it allows instances to communicate.
 
