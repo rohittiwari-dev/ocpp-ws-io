@@ -10,6 +10,7 @@ import type { TLSSocket } from "node:tls";
 import { createId } from "@paralleldrive/cuid2";
 import { WebSocketServer } from "ws";
 import { initLogger } from "./init-logger.js";
+import { executeMiddlewareChain, OCPPRouter } from "./router.js";
 import { OCPPServerClient } from "./server-client.js";
 
 import {
@@ -19,6 +20,8 @@ import {
   type AuthRoute,
   type ClientOptions,
   type CloseOptions,
+  type ConnectionContext,
+  type ConnectionMiddleware,
   type EventAdapterInterface,
   type HandshakeInfo,
   type ListenOptions,
@@ -49,6 +52,7 @@ import {
 export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<ServerEvents>) {
   private _options: ServerOptions;
   private _routes: AuthRoute[] = [];
+  private _routers: OCPPRouter[] = [];
   private _clients = new Set<OCPPServerClient>();
   private _httpServers = new Set<Server>();
   private _wss: WebSocketServer | null = null;
@@ -134,6 +138,29 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     } else if (callback) {
       this._routes.push({ pattern: routeOrCallback, handler: callback });
     }
+  }
+
+  // ─── Routing & Middleware ────────────────────────────────────
+
+  /**
+   * Registers a new Express-like router for multiplexing connections.
+   * `server.route("/api/:tenant", middlewareA).auth(cb).on("client", ...)`
+   */
+  route(...args: Array<string | RegExp | ConnectionMiddleware>): OCPPRouter {
+    const patterns: Array<string | RegExp> = [];
+    const middlewares: ConnectionMiddleware[] = [];
+
+    for (const arg of args) {
+      if (typeof arg === "string" || arg instanceof RegExp) {
+        patterns.push(arg);
+      } else if (typeof arg === "function") {
+        middlewares.push(arg as ConnectionMiddleware);
+      }
+    }
+
+    const router = new OCPPRouter(patterns, middlewares);
+    this._routers.push(router);
+    return router;
   }
 
   // ─── Listen ──────────────────────────────────────────────────
@@ -303,47 +330,85 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     );
 
     let matchedHandler: AuthCallback | undefined;
+    let matchedRouter: OCPPRouter | undefined;
     const params: Record<string, string> = {};
     const pathname = url.pathname;
 
-    for (const route of this._routes) {
-      // Fallback route (the original behavior)
-      if (route.pattern === null) {
-        matchedHandler = route.handler;
+    // 1. First, try to match against chainable modern Routers
+    for (const router of this._routers) {
+      let matched = false;
+      for (const pattern of router.patterns) {
+        if (typeof pattern === "string") {
+          const paramNames: string[] = [];
+          const regexStr = pattern.replace(/:([a-zA-Z0-9_]+)/g, (_, key) => {
+            paramNames.push(key);
+            return "([^/]+)";
+          });
+          const match = new RegExp(`^${regexStr}$`).exec(pathname);
+          if (match) {
+            matched = true;
+            paramNames.forEach((name, i) => {
+              params[name] = decodeURIComponent(match[i + 1] ?? "");
+            });
+            break;
+          }
+        } else if (pattern instanceof RegExp) {
+          const match = pattern.exec(pathname);
+          if (match) {
+            matched = true;
+            if (match.groups) {
+              for (const [key, val] of Object.entries(match.groups)) {
+                params[key] = decodeURIComponent(val ?? "");
+              }
+            }
+            break;
+          }
+        }
+      }
+      if (matched) {
+        matchedRouter = router;
+        matchedHandler =
+          (router.authCallback as AuthCallback | undefined) ?? undefined;
         break;
       }
+    }
 
-      if (typeof route.pattern === "string") {
-        // Simple string router (e.g. "/ocpp/:version/:identity")
-        // Convert Express-like path string into simple regex
-        const paramNames: string[] = [];
-        let regexStr = route.pattern.replace(/:([a-zA-Z0-9_]+)/g, (_, key) => {
-          paramNames.push(key);
-          return "([^/]+)";
-        });
-
-        // Exact match regex
-        regexStr = `^${regexStr}$`;
-        const match = new RegExp(regexStr).exec(pathname);
-
-        if (match) {
+    // 2. Fallback to legacy routes if no router matched
+    if (!matchedRouter) {
+      for (const route of this._routes) {
+        if (route.pattern === null) {
           matchedHandler = route.handler;
-          paramNames.forEach((name, i) => {
-            params[name] = decodeURIComponent(match[i + 1] ?? "");
-          });
           break;
         }
-      } else if (route.pattern instanceof RegExp) {
-        // RegExp matching
-        const match = route.pattern.exec(pathname);
-        if (match) {
-          matchedHandler = route.handler;
-          if (match.groups) {
-            for (const [key, val] of Object.entries(match.groups)) {
-              params[key] = decodeURIComponent(val ?? "");
-            }
+
+        if (typeof route.pattern === "string") {
+          const paramNames: string[] = [];
+          const regexStr = route.pattern.replace(
+            /:([a-zA-Z0-9_]+)/g,
+            (_, key) => {
+              paramNames.push(key);
+              return "([^/]+)";
+            },
+          );
+          const match = new RegExp(`^${regexStr}$`).exec(pathname);
+          if (match) {
+            matchedHandler = route.handler;
+            paramNames.forEach((name, i) => {
+              params[name] = decodeURIComponent(match[i + 1] ?? "");
+            });
+            break;
           }
-          break;
+        } else if (route.pattern instanceof RegExp) {
+          const match = route.pattern.exec(pathname);
+          if (match) {
+            matchedHandler = route.handler;
+            if (match.groups) {
+              for (const [key, val] of Object.entries(match.groups)) {
+                params[key] = decodeURIComponent(val ?? "");
+              }
+            }
+            break;
+          }
         }
       }
     }
@@ -426,7 +491,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     };
 
     // ── Step 8: Auth callback with AbortController + timeout ──
-    if (matchedHandler) {
+    if (matchedHandler || matchedRouter) {
       const ac = new AbortController();
 
       // Socket lifecycle → abort on premature close / error
@@ -447,45 +512,61 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
 
       try {
-        await new Promise<AuthAccept | undefined>((resolve, reject) => {
-          let settled = false;
-
-          const accept = (opts?: AuthAccept) => {
-            if (settled) return;
-            settled = true;
-            if (opts?.protocol) selectedProtocol = opts.protocol;
-            resolve(opts);
+        if (matchedRouter && matchedRouter.middlewares.length > 0) {
+          const ctx: ConnectionContext = {
+            handshake,
+            state: {},
           };
+          // Execute middleware chain
+          await executeMiddlewareChain(matchedRouter.middlewares, ctx);
+          // If middleware threw an error, execution skips to catch block
+        }
 
-          const rejectAuth = (code = 401, message = "Unauthorized") => {
-            if (settled) return;
-            settled = true;
-            reject({ code, message });
-          };
+        // Default auth pass-through if router didn't define auth
+        if (!matchedHandler) {
+          selectedProtocol =
+            handshake.protocols.values().next().value ?? undefined;
+        } else {
+          await new Promise<AuthAccept | undefined>((resolve, reject) => {
+            let settled = false;
 
-          // Guard: already aborted before we even start
-          if (ac.signal.aborted) {
-            reject(ac.signal.reason);
-            return;
-          }
+            const accept = (opts?: AuthAccept) => {
+              if (settled) return;
+              settled = true;
+              if (opts?.protocol) selectedProtocol = opts.protocol;
+              resolve(opts);
+            };
 
-          ac.signal.addEventListener(
-            "abort",
-            () => {
-              if (!settled) {
-                settled = true;
-                reject(ac.signal.reason);
-              }
-            },
-            { once: true },
-          );
+            const rejectAuth = (code = 401, message = "Unauthorized") => {
+              if (settled) return;
+              settled = true;
+              reject({ code, message });
+            };
 
-          this._logger?.debug?.("Executing route handler", {
-            identity,
-            pathname,
+            // Guard: already aborted before we even start
+            if (ac.signal.aborted) {
+              reject(ac.signal.reason);
+              return;
+            }
+
+            ac.signal.addEventListener(
+              "abort",
+              () => {
+                if (!settled) {
+                  settled = true;
+                  reject(ac.signal.reason);
+                }
+              },
+              { once: true },
+            );
+
+            this._logger?.debug?.("Executing route handler", {
+              identity,
+              pathname,
+            });
+            matchedHandler(accept, rejectAuth, handshake, ac.signal);
           });
-          matchedHandler(accept, rejectAuth, handshake, ac.signal);
-        });
+        }
       } catch (err) {
         if (ac.signal.aborted) {
           const reason = err instanceof Error ? err.message : "Unknown abort";
@@ -501,9 +582,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         }
 
         // Auth explicitly rejected
-        const { code, message } = err as { code: number; message: string };
+        const errObj = err as any;
+        const code = typeof errObj?.code === "number" ? errObj.code : 401;
+        const message =
+          typeof errObj?.message === "string" ? errObj.message : "Unauthorized";
+
         this._logger?.warn?.("Auth rejected", { identity, code });
-        abortHandshake(socket, code ?? 401, message ?? "Unauthorized");
+        abortHandshake(socket, code, message);
         return;
       } finally {
         if (timer) clearTimeout(timer);
@@ -511,7 +596,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         socket.removeListener("error", onSocketGone);
         socket.removeListener("end", onSocketGone);
       }
-    } else if (this._routes.length > 0) {
+    } else if (this._routes.length > 0 || this._routers.length > 0) {
       // If routes are defined but nothing matched, we must reject the connection.
       // E.g., user defined `server.auth("/api/:id", cb)` but client connected to `/wrong/path`
       this._logger?.warn?.("Connection rejected: No matching route found", {
@@ -597,7 +682,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         this._logger?.info?.("Client disconnected", { identity });
       });
 
+      // Dispatch route-specific "client" events
       this.emit("client", client);
+      if (matchedRouter) {
+        matchedRouter.emit("client", client);
+      }
 
       client.on("message", () => {
         this._updateSessionActivity(identity, client.session);

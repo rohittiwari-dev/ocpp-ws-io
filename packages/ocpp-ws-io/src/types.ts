@@ -26,7 +26,9 @@ export type {
  * on top of Node.js EventEmitter. This is the foundation for type-safe
  * event handling throughout the library.
  */
-export type TypedEventEmitter<TEvents extends Record<string, unknown[]>> = Omit<
+export type TypedEventEmitter<
+  TEvents extends Record<keyof TEvents, unknown[]>,
+> = Omit<
   EventEmitter,
   | "on"
   | "once"
@@ -36,52 +38,41 @@ export type TypedEventEmitter<TEvents extends Record<string, unknown[]>> = Omit<
   | "addListener"
   | "removeAllListeners"
 > & {
-  on<K extends keyof TEvents & string>(
+  on<K extends keyof TEvents | (string & {})>(
     event: K,
-    listener: (...args: TEvents[K]) => void,
+    listener: K extends keyof TEvents
+      ? (...args: TEvents[K]) => void
+      : (...args: unknown[]) => void,
   ): TypedEventEmitter<TEvents>;
-  on(
-    event: string,
-    listener: (...args: unknown[]) => void,
-  ): TypedEventEmitter<TEvents>;
-  once<K extends keyof TEvents & string>(
+  once<K extends keyof TEvents | (string & {})>(
     event: K,
-    listener: (...args: TEvents[K]) => void,
+    listener: K extends keyof TEvents
+      ? (...args: TEvents[K]) => void
+      : (...args: unknown[]) => void,
   ): TypedEventEmitter<TEvents>;
-  once(
-    event: string,
-    listener: (...args: unknown[]) => void,
-  ): TypedEventEmitter<TEvents>;
-  off<K extends keyof TEvents & string>(
+  off<K extends keyof TEvents | (string & {})>(
     event: K,
-    listener: (...args: TEvents[K]) => void,
+    listener: K extends keyof TEvents
+      ? (...args: TEvents[K]) => void
+      : (...args: unknown[]) => void,
   ): TypedEventEmitter<TEvents>;
-  off(
-    event: string,
-    listener: (...args: unknown[]) => void,
-  ): TypedEventEmitter<TEvents>;
-  emit<K extends keyof TEvents & string>(
+  emit<K extends keyof TEvents | (string & {})>(
     event: K,
-    ...args: TEvents[K]
+    ...args: K extends keyof TEvents ? TEvents[K] : unknown[]
   ): boolean;
-  emit(event: string, ...args: unknown[]): boolean;
-  addListener<K extends keyof TEvents & string>(
+  addListener<K extends keyof TEvents | (string & {})>(
     event: K,
-    listener: (...args: TEvents[K]) => void,
+    listener: K extends keyof TEvents
+      ? (...args: TEvents[K]) => void
+      : (...args: unknown[]) => void,
   ): TypedEventEmitter<TEvents>;
-  addListener(
-    event: string,
-    listener: (...args: unknown[]) => void,
-  ): TypedEventEmitter<TEvents>;
-  removeListener<K extends keyof TEvents & string>(
+  removeListener<K extends keyof TEvents | (string & {})>(
     event: K,
-    listener: (...args: TEvents[K]) => void,
+    listener: K extends keyof TEvents
+      ? (...args: TEvents[K]) => void
+      : (...args: unknown[]) => void,
   ): TypedEventEmitter<TEvents>;
-  removeListener(
-    event: string,
-    listener: (...args: unknown[]) => void,
-  ): TypedEventEmitter<TEvents>;
-  removeAllListeners<K extends keyof TEvents & string>(
+  removeAllListeners<K extends keyof TEvents | (string & {})>(
     event?: K,
   ): TypedEventEmitter<TEvents>;
 };
@@ -485,7 +476,6 @@ export interface ClientEvents {
   ping: [];
   pong: [];
   strictValidationFailure: [{ message: unknown; error: Error }];
-  [key: string]: unknown[];
 }
 
 import type { OCPPServerClient } from "./server-client.js";
@@ -504,7 +494,13 @@ export interface ServerEvents {
   ];
   closing: [];
   close: [];
-  [key: string]: unknown[];
+  // Native WebSocketServer events
+  connection: [
+    socket: import("ws").WebSocket,
+    request: import("node:http").IncomingMessage,
+  ];
+  listening: [];
+  headers: [headers: string[], request: import("node:http").IncomingMessage];
 }
 
 // ─── Event Adapter Interface ─────────────────────────────────────
@@ -555,3 +551,17 @@ export type MiddlewareContext =
     };
 
 export type { MiddlewareFunction, MiddlewareNext } from "./middleware.js";
+
+// ─── Router Component Types ──────────────────────────────────────────
+
+export interface ConnectionContext {
+  /** The handshake info from the upgrading WebSocket request */
+  handshake: HandshakeInfo;
+  /** Modifiable record object suitable for passing data between middlewares (e.g. auth tokens) */
+  state: Record<string, unknown>;
+}
+
+export type ConnectionMiddleware = (
+  ctx: ConnectionContext,
+  next: () => Promise<void>,
+) => Promise<void> | void;
