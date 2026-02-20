@@ -806,8 +806,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             args.length === 4
               ? args[2] // versioned: id, ver, method, params
               : args.length === 3
-              ? args[1] // global: id, method, params
-              : "unknown",
+                ? args[1] // global: id, method, params
+                : "unknown",
           error,
         });
       }
