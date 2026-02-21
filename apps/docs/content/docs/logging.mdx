@@ -67,11 +67,17 @@ The `exchangeLog` feature is now powered by the internal **Logging Middleware**.
 
 ### Output Format
 
-When **`prettify: true`** is also enabled, you get styled output:
+When **`prettify: true`** is also enabled, you get styled output distinguishing outbound calls, inbound calls, and asynchronous results:
 
 ```
+// Outbound RPC Call (from Station to CSMS)
 ⚡ CP-101  →  BootNotification  [OUT]
-✅ CP-101  ←  BootNotification  [IN]   { latencyMs: 45 }
+
+// Inbound RPC Call (from CSMS to Station)
+✅ CP-101  ←  GetConfiguration  [IN]
+
+// Asynchronous RPC Result / Error returned
+🔥 CP-101  ←  BootNotification  [RES]   { latencyMs: 45 }
 ```
 
 When **`prettify: false`** (production), logs are structured JSON:

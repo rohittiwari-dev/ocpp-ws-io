@@ -122,7 +122,64 @@ sequenceDiagram
 
 ---
 
-## 4. Data Validation Flow
+## 4. Best Implementation Practices
+
+When building a centralized management system for production, avoid putting all your logic into a single `server.on('client')` block. The best architecture utilizes `OCPPRouter`, isolated authentication, and strict logging:
+
+```typescript title="optimal-architecture.ts"
+import { OCPPServer } from "ocpp-ws-io";
+
+// 1. Initialize Server with Global Structured Logging
+const server = new OCPPServer({
+  protocols: ["ocpp1.6", "ocpp2.0.1"],
+  logging: {
+    prettify: process.env.NODE_ENV !== "production",
+    exchangeLog: true, // Auto-logs all IN/OUT metrics
+    level: "info",
+  },
+});
+
+// 2. Define Isolated Authentication per Protocol/Path
+const v1Router = server
+  .auth(async (accept, reject, handshake) => {
+    const token = handshake.headers.authorization;
+    if (!token) return reject(401, "Missing Auth");
+
+    // Validate token...
+    accept({ session: { version: "v1.6", tenant: "ACME" } });
+  })
+  .route("/api/v1/chargers/*");
+
+// 3. Attach Version-Aware Handlers to the specific Router
+v1Router.on("client", (client) => {
+  // Protocol inference matches the handlers
+  client.handle("ocpp1.6", "BootNotification", async ({ params }) => {
+    return {
+      status: "Accepted",
+      currentTime: new Date().toISOString(),
+      interval: 300,
+    };
+  });
+
+  client.handle("ocpp1.6", "Heartbeat", () => ({
+    currentTime: new Date().toISOString(),
+  }));
+});
+
+// 4. Implement a Catch-All Route for unknown endpoints
+server.use(async (ctx) => {
+  ctx.logger.warn(`Rejected unknown connection at ${ctx.handshake.pathname}`);
+  ctx.reject(404, "Unknown Endpoint");
+}); // Root route fall-through
+
+await server.listen(3000);
+```
+
+Using this architecture ensures your authentication requirements, routing boundaries, and payload validation handlers remain completely modular.
+
+---
+
+## 5. Data Validation Flow
 
 Validation happens at multiple layers to ensure OCPP compliance and system integrity.
 

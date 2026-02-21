@@ -17,19 +17,20 @@ const client = new OCPPClient(options: ClientOptions);
 
 #### ClientOptions
 
-| Option            | Type                     | Default    | Description                             |
-| :---------------- | :----------------------- | :--------- | :-------------------------------------- |
-| `identity`        | `string`                 | _required_ | Charging station ID                     |
-| `endpoint`        | `string`                 | _required_ | WebSocket URL (`ws://` or `wss://`)     |
-| `protocols`       | `string[]`               | `[]`       | OCPP subprotocols to negotiate          |
-| `securityProfile` | `SecurityProfile`        | `NONE`     | Security profile (0–3)                  |
-| `password`        | `string \| Buffer`       | —          | Password for Basic Auth (Profile 1 & 2) |
-| `tls`             | `TLSOptions`             | —          | TLS/SSL options (Profile 2 & 3)         |
-| `headers`         | `Record<string, string>` | —          | Additional WebSocket headers            |
-| `query`           | `Record<string, string>` | —          | Additional URL query parameters         |
-| `reconnect`       | `boolean`                | `true`     | Auto-reconnect on disconnect            |
-| `maxReconnects`   | `number`                 | `Infinity` | Max reconnection attempts               |
-| `strictMode`      | `boolean \| string[]`    | `false`    | Enable/restrict schema validation       |
+| Option            | Type                     | Default    | Description                                             |
+| :---------------- | :----------------------- | :--------- | :------------------------------------------------------ |
+| `identity`        | `string`                 | _required_ | Charging station ID                                     |
+| `endpoint`        | `string`                 | _required_ | WebSocket URL (`ws://` or `wss://`)                     |
+| `protocols`       | `string[]`               | `[]`       | OCPP subprotocols to negotiate                          |
+| `securityProfile` | `SecurityProfile`        | `NONE`     | Security profile (0–3)                                  |
+| `password`        | `string \| Buffer`       | —          | Password for Basic Auth (Profile 1 & 2)                 |
+| `tls`             | `TLSOptions`             | —          | TLS/SSL options (Profile 2 & 3)                         |
+| `headers`         | `Record<string, string>` | —          | Additional WebSocket headers                            |
+| `query`           | `Record<string, string>` | —          | Additional URL query parameters                         |
+| `reconnect`       | `boolean`                | `true`     | Auto-reconnect on disconnect                            |
+| `maxReconnects`   | `number`                 | `Infinity` | Max reconnection attempts                               |
+| `strictMode`      | `boolean \| string[]`    | `false`    | Enable/restrict schema validation                       |
+| `logging`         | `LoggingConfig`          | `true`     | Configure structured output (`prettify`, `exchangeLog`) |
 
 ### Methods
 
@@ -89,6 +90,16 @@ import { OCPPServer } from "ocpp-ws-io";
 const server = new OCPPServer(options?: ServerOptions);
 ```
 
+#### ServerOptions
+
+| Option               | Type              | Default | Description                          |
+| :------------------- | :---------------- | :------ | :----------------------------------- |
+| `protocols`          | `string[]`        | `[]`    | Accepted OCPP subprotocols           |
+| `securityProfile`    | `SecurityProfile` | `NONE`  | Security profile                     |
+| `handshakeTimeoutMs` | `number`          | `30000` | Timeout for WebSocket handshake (ms) |
+| `tls`                | `TLSOptions`      | —       | TLS options (Profile 2 & 3)          |
+| `logging`            | `LoggingConfig`   | `true`  | Configure built-in logging           |
+
 ### Methods
 
 #### `listen(port, host?, options?)`
@@ -101,7 +112,7 @@ Attach authentication logic.
 
 ```typescript
 server.auth((accept, reject, handshake) => {
-  // handshake has .identity, .password, .headers, etc.
+  // handshake has .identity, .pathname, .headers, etc.
   accept({ session: { ... } }); // Attach session data to client
 });
 ```
@@ -166,6 +177,7 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 | `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls       |
 | `maxBadMessages`            | `number`                 | `Infinity` | Close after N bad messages          |
 | `respondWithDetailedErrors` | `boolean`                | `false`    | Include error details in responses  |
+| `logging`                   | `LoggingConfig`          | `true`     | Configure client log output         |
 
 ### Methods
 

@@ -1,0 +1,137 @@
+---
+title: "Routing"
+description: "Express-style message routing for OCPP connections."
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+# Connection Routing
+
+When building a Central System (CSMS) that manages hundreds or thousands of charging stations, maintaining all your message handlers in a single `server.on('client')` block can quickly become unmanageable.
+
+`ocpp-ws-io` provides an **Express-like router (`OCPPRouter`)** to help you modularize your connection handling, organize middleware, and split authentication logic into distinct segments.
+
+<Callout type="info">
+  **Note on Connection vs. Message Routing:** Unlike traditional HTTP routing
+  (which routes individual requests), the `OCPPRouter` routes **WebSocket
+  connections** based on the URL path the client connects to. Once a connection
+  is routed, you apply your RPC message handlers (`client.handle(...)`) to that
+  connection.
+</Callout>
+
+---
+
+## Basic Routing
+
+To capture connections targeting a specific pathname, instantiate an `OCPPRouter` and mount it to your `OCPPServer`. Because the server extends the router API, you can use `.route()` directly:
+
+```typescript title="server.ts"
+import { OCPPServer } from "ocpp-ws-io";
+
+const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+// 1. Create a route for a specific path using wildcard parameter extraction
+const chargerRoute = server.route("/api/v1/chargers/:id");
+
+// 2. Attach handlers for clients matching this route
+chargerRoute.on("client", (client) => {
+  console.log(`Charger connected at endpoint: ${client.handshake.pathname}`);
+
+  client.handle("BootNotification", ({ params }) => {
+    return {
+      status: "Accepted",
+      currentTime: new Date().toISOString(),
+      interval: 300,
+    };
+  });
+});
+
+await server.listen(3000);
+```
+
+### Path Matching
+
+The `.route()` method supports exact string matching, Express-style parameters, and Regular Expressions:
+
+- **Exact Match**: `server.route("/secure/chargepoint")`
+- **Parameters**: `server.route("/api/v1/chargers/:stationId")`
+- **Wildcards**: `server.route("/public/*")`
+- **RegEx**: `server.route(/^\/legacy\/v[1-2]\/.*$/)`
+
+---
+
+## Router-level Middleware
+
+You can scope connection middleware to specific paths. A middleware placed on a route will only execute for clients connecting to that route's URL.
+
+```typescript title="middlewares.ts"
+const adminRouter = server
+  .use(async (ctx, next) => {
+    console.log(`[Admin Access Attempt] Identity: ${ctx.handshake.identity}`);
+
+    if (ctx.handshake.identity.startsWith("SYS-")) {
+      await next();
+    } else {
+      throw new Error("Unauthorized identity for admin endpoint");
+    }
+  })
+  .route("/api/admin/*");
+
+adminRouter.on("client", (client) => {
+  // Only SYS-* prefixed stations reach here
+  client.handle("TriggerMessage", () => ({ status: "Accepted" }));
+});
+```
+
+---
+
+## Path-Specific Authentication
+
+Similar to middleware, you can securely ringfence different authentication mechanisms per route. For instance, you might want to accept Basic Auth for legacy charging stations on `/api/v1`, but strictly enforce TLS Certificates on `/api/v2`.
+
+You can do this using `.auth(...)`:
+
+```typescript title="auth-routing.ts"
+// Allow Basic Auth for legacy route
+const legacyRouter = server
+  .auth(async (accept, reject, handshake) => {
+    if (handshake.headers.authorization) {
+      accept({ session: { version: "v1" } });
+    } else {
+      reject(401, "Basic Auth Required");
+    }
+  })
+  .route("/api/v1/*");
+
+// Enforce mTLS for modern route
+const modernRouter = server
+  .auth(async (accept, reject, handshake) => {
+    if (handshake.isSecure) {
+      accept({ session: { version: "v2" } });
+    } else {
+      reject(403, "TLS Certificate Required");
+    }
+  })
+  .route("/api/v2/*");
+```
+
+---
+
+## Catch-All & Fallbacks
+
+If a client connects to a URL that does not match any of your defined `.route()` paths, they will fall back to any handlers registered directly on the root `server`.
+
+If you prefer to define an explicit catch-all router to forcefully reject unknown endpoints, simply omit the `.route()` call:
+
+```typescript title="fallback.ts"
+// Specific route
+server.route("/api/chargers").on("client", handleCharger);
+
+// Catch-all (matches anything that didn't match above)
+const wildcardRouter = server.use(async (ctx, next) => {
+  // Reject connection without throwing RPC errors
+  ctx.reject(404, "Endpoint Not Found");
+});
+```
+
+Because `ocpp-ws-io` evaluates routes **in the order they are defined**, ensure your catch-all routers are placed at the bottom of your initialization code.

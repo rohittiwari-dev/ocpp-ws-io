@@ -46,7 +46,7 @@ npm install ocpp-ws-io
 import { OCPPClient, SecurityProfile } from "ocpp-ws-io";
 
 const client = new OCPPClient({
-  endpoint: "ws://localhost:3000",
+  endpoint: "ws://localhost:3000/api/v1/chargers",
   identity: "CP001",
   protocols: ["ocpp1.6"],
   securityProfile: SecurityProfile.NONE,
@@ -73,7 +73,17 @@ console.log("Status:", response.status); // "Accepted" | "Pending" | "Rejected"
 ```typescript
 import { OCPPServer } from "ocpp-ws-io";
 
-const server = new OCPPServer({ protocols: ["ocpp1.6", "ocpp2.0.1"] });
+const server = new OCPPServer({
+  protocols: ["ocpp1.6", "ocpp2.0.1"],
+  logging: { prettify: true, exchangeLog: true, level: "info" },
+});
+
+server.auth((accept, reject, handshake) => {
+  console.log(
+    `Connection from ${handshake.identity} at path ${handshake.pathname}`,
+  );
+  accept({ session: { authorized: true } });
+});
 
 server.on("client", (client) => {
   console.log(`${client.identity} connected (${client.protocol})`);
