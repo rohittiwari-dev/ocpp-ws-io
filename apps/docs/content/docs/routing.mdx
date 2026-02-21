@@ -66,11 +66,11 @@ You can scope connection middleware to specific paths. A middleware placed on a 
 
 ```typescript title="middlewares.ts"
 const adminRouter = server
-  .use(async (ctx, next) => {
+  .use(async (ctx) => {
     console.log(`[Admin Access Attempt] Identity: ${ctx.handshake.identity}`);
 
     if (ctx.handshake.identity.startsWith("SYS-")) {
-      await next();
+      await ctx.next();
     } else {
       throw new Error("Unauthorized identity for admin endpoint");
     }
@@ -94,22 +94,22 @@ You can do this using `.auth(...)`:
 ```typescript title="auth-routing.ts"
 // Allow Basic Auth for legacy route
 const legacyRouter = server
-  .auth(async (accept, reject, handshake) => {
-    if (handshake.headers.authorization) {
-      accept({ session: { version: "v1" } });
+  .auth(async (ctx) => {
+    if (ctx.handshake.headers.authorization) {
+      ctx.accept({ session: { version: "v1" } });
     } else {
-      reject(401, "Basic Auth Required");
+      ctx.reject(401, "Basic Auth Required");
     }
   })
   .route("/api/v1/*");
 
 // Enforce mTLS for modern route
 const modernRouter = server
-  .auth(async (accept, reject, handshake) => {
-    if (handshake.isSecure) {
-      accept({ session: { version: "v2" } });
+  .auth(async (ctx) => {
+    if (ctx.handshake.isSecure) {
+      ctx.accept({ session: { version: "v2" } });
     } else {
-      reject(403, "TLS Certificate Required");
+      ctx.reject(403, "TLS Certificate Required");
     }
   })
   .route("/api/v2/*");
@@ -128,13 +128,53 @@ If you prefer to define an explicit catch-all router to forcefully reject unknow
 server.route("/api/chargers").on("client", handleCharger);
 
 // Catch-all (matches anything that didn't match above)
-const wildcardRouter = server.use(async (ctx, next) => {
+const wildcardRouter = server.use(async (ctx) => {
   // Reject connection without throwing RPC errors
   ctx.reject(404, "Endpoint Not Found");
 });
 ```
 
 Because `ocpp-ws-io` evaluates routes **in the order they are defined**, ensure your catch-all routers are placed at the bottom of your initialization code.
+
+---
+
+## Execution Scope (Clarification on Route vs Global)
+
+A very important concept in `ocpp-ws-io` is understanding **where** middlewares and auth callbacks execute.
+
+### Route-level Scoping
+
+If you define `router.use()` and `router.auth()` on a specific `.route()`, they **only** execute for clients connecting to that exact URL path. They **do not** execute globally across your server.
+
+```typescript
+// 1. LEGACY ROUTE (Only runs for /api/v1/*)
+const legacyRouter = server.route("/api/v1/*");
+
+// This middleware ONLY runs for /api/v1/* connections
+legacyRouter.use(async (ctx) => {
+  console.log("Legacy connection attempted");
+  await ctx.next();
+});
+
+// This Auth ONLY runs for /api/v1/* connections
+legacyRouter.auth(async (ctx) => {
+  ctx.accept({ session: { version: "legacy" } });
+});
+```
+
+### Global Scoping
+
+If you want a middleware to run for **every** connection to your server regardless of the route (e.g., a global rate limiter), you attach it directly to the `server` instance _without_ calling `.route()`.
+
+```typescript
+// This runs for EVERY connection globally
+server.use(async (ctx) => {
+  console.log(
+    `Global connection attempt from IP: ${ctx.handshake.remoteAddress}`,
+  );
+  await ctx.next();
+});
+```
 
 ---
 
@@ -158,11 +198,11 @@ This happens the moment a charging station attempts to connect via WebSocket, bu
 
 Once the Auth Callback fires `accept()`, the client is successfully connected. The execution context now moves to the message layer (`OCPPClient`).
 
-4. **Message Middleware (`server.use` or `client.use`)**:
-   - **Execution Level**: Pre-Handler / Interceptor.
+4. **Message Middleware (`client.use`)**:
+   - **Execution Level**: Pre-Handler / Interceptor
    - **Purpose**: Runs every time a message is sent or received. It wraps the raw protocol payload. Use this to intercept outgoing calls, format logs, validate custom schemas, or drop bad messages before the business logic sees them.
-5. **Message Handlers (`server.handle` or `client.handle`)**:
-   - **Execution Level**: Business Logic.
+5. **Message Handlers (`client.handle`)**:
+   - **Execution Level**: Business Logic
    - **Purpose**: This is the very end of the line. It receives the parsed OCPP payload (e.g., `BootNotification`), performs your actual business logic, and returns the formal protocol response.
 
 ### Execution Flow Diagram

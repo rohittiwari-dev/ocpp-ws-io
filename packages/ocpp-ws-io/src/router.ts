@@ -14,7 +14,16 @@ export async function executeMiddlewareChain(
   ctx: Parameters<ConnectionMiddleware>[0],
 ): Promise<void> {
   let index = -1;
-  const dispatch = async (i: number): Promise<void> => {
+  const dispatch = async (
+    i: number,
+    payload?: Record<string, unknown>,
+  ): Promise<void> => {
+    if (payload) {
+      ctx.state = {
+        ...(ctx.state || {}),
+        ...(payload || {}),
+      };
+    }
     if (i <= index) {
       throw new Error("next() called multiple times in middleware");
     }
@@ -25,8 +34,11 @@ export async function executeMiddlewareChain(
     }
     if (!fn) return; // Should not happen
 
-    // Call the middleware, injecting `next()` mapping to i + 1
-    await fn(ctx, dispatch.bind(null, i + 1));
+    // Attach next to the context
+    ctx.next = dispatch.bind(null, i + 1);
+
+    // Call the middleware
+    await fn(ctx);
   };
   await dispatch(0);
 }

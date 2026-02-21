@@ -156,12 +156,12 @@ const server = new OCPPServer({
 
 // 2. Define Isolated Authentication per Protocol/Path
 const v1Router = server
-  .auth(async (accept, reject, handshake) => {
-    const token = handshake.headers.authorization;
-    if (!token) return reject(401, "Missing Auth");
+  .auth(async (ctx) => {
+    const token = ctx.handshake.headers.authorization;
+    if (!token) return ctx.reject(401, "Missing Auth");
 
     // Validate token...
-    accept({ session: { version: "v1.6", tenant: "ACME" } });
+    ctx.accept({ session: { version: "v1.6", tenant: "ACME" } });
   })
   .route("/api/v1/chargers/*");
 

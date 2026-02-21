@@ -153,9 +153,9 @@ Start listening on a port. Returns the `http.Server` instance.
 Attach authentication logic.
 
 ```typescript
-server.auth((accept, reject, handshake) => {
-  // handshake has .identity, .pathname, .headers, etc.
-  accept({ session: { ... } }); // Attach session data to client
+server.auth((ctx) => {
+  // ctx.handshake has .identity, .pathname, .headers, etc.
+  ctx.accept({ session: { ... } }); // Attach session data to client
 });
 ```
 

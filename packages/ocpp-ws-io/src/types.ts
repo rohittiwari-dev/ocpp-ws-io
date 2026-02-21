@@ -447,10 +447,7 @@ export interface AuthAccept<TSession = Record<string, unknown>> {
 }
 
 export type AuthCallback<TSession = Record<string, unknown>> = (
-  accept: (options?: AuthAccept<TSession>) => void,
-  reject: (code?: number, message?: string) => void,
-  handshake: HandshakeInfo,
-  signal: AbortSignal,
+  ctx: AuthContext<TSession>,
 ) => void | Promise<void>;
 
 export type RoutePattern = string | RegExp;
@@ -555,14 +552,28 @@ export type { MiddlewareFunction, MiddlewareNext } from "./middleware.js";
 
 // ─── Router Component Types ──────────────────────────────────────────
 
-export interface ConnectionContext {
+export interface BaseConnectionContext {
   /** The handshake info from the upgrading WebSocket request */
   handshake: HandshakeInfo;
   /** Modifiable record object suitable for passing data between middlewares (e.g. auth tokens) */
   state: Record<string, unknown>;
+  /** Safely reject the WebSocket connection explicitly with an HTTP code and reason */
+  reject: (code?: number, message?: string) => never;
+}
+
+export interface ConnectionContext extends BaseConnectionContext {
+  /** Triggers the next middleware in the execution chain, optionally merging a payload into ctx.state */
+  next: (payload?: Record<string, unknown>) => Promise<void>;
+}
+
+export interface AuthContext<TSession = Record<string, unknown>>
+  extends BaseConnectionContext {
+  /** The AbortSignal representing if the client abruptly closed the underlying socket */
+  signal: AbortSignal;
+  /** Grants the connection and optionally sets the negotiated protocol or session metadata */
+  accept: (options?: AuthAccept<TSession>) => void;
 }
 
 export type ConnectionMiddleware = (
   ctx: ConnectionContext,
-  next: () => Promise<void>,
 ) => Promise<void> | void;

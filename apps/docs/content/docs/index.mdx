@@ -127,9 +127,12 @@ const server = new OCPPServer({
   protocols: ["ocpp1.6", "ocpp2.0.1"],
 });
 
-server.auth((accept, reject, handshake) => {
-  console.log(`Connection from ${handshake.identity}`);
-  accept({ session: { authorized: true } });
+server.auth((ctx) => {
+  if (ctx.handshake.headers.authorization === "Bearer my-secret") {
+    ctx.accept({ protocol: "ocpp1.6" });
+  } else {
+    ctx.reject(401, "Unauthorized");
+  }
 });
 
 server.on("client", (client) => {

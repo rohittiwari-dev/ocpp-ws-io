@@ -20,7 +20,6 @@ import {
   type CallOptions,
   type ClientOptions,
   type CloseOptions,
-  type ConnectionContext,
   type ConnectionMiddleware,
   type EventAdapterInterface,
   type HandshakeInfo,
@@ -489,6 +488,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     };
 
     // ── Step 8: Auth callback with AbortController + timeout ──
+    let ctx: import("./types.js").ConnectionContext | undefined;
+    let acceptOptions: import("./types.js").AuthAccept | undefined;
+
     if (matchedHandler || matchedRouter) {
       const ac = new AbortController();
 
@@ -510,11 +512,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
 
       try {
+        ctx = {
+          handshake,
+          state: {},
+          reject: (code = 401, message = "Unauthorized") => {
+            throw { code, message, _isMiddlewareReject: true };
+          },
+          next: async (_payload?: Record<string, unknown>) => {}, // Bound dynamically inside executeMiddlewareChain
+        };
+
         if (matchedRouter && matchedRouter.middlewares.length > 0) {
-          const ctx: ConnectionContext = {
-            handshake,
-            state: {},
-          };
           // Execute middleware chain
           await executeMiddlewareChain(matchedRouter.middlewares, ctx);
           // If middleware threw an error, execution skips to catch block
@@ -525,45 +532,61 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           selectedProtocol =
             handshake.protocols.values().next().value ?? undefined;
         } else {
-          await new Promise<AuthAccept | undefined>((resolve, reject) => {
-            let settled = false;
+          acceptOptions = await new Promise<AuthAccept | undefined>(
+            (resolve, reject) => {
+              let settled = false;
 
-            const accept = (opts?: AuthAccept) => {
-              if (settled) return;
-              settled = true;
-              if (opts?.protocol) selectedProtocol = opts.protocol;
-              resolve(opts);
-            };
+              const accept = (opts?: AuthAccept) => {
+                if (settled) return;
+                settled = true;
+                if (opts?.protocol) selectedProtocol = opts.protocol;
+                resolve(opts);
+              };
 
-            const rejectAuth = (code = 401, message = "Unauthorized") => {
-              if (settled) return;
-              settled = true;
-              reject({ code, message });
-            };
-
-            // Guard: already aborted before we even start
-            if (ac.signal.aborted) {
-              reject(ac.signal.reason);
-              return;
-            }
-
-            ac.signal.addEventListener(
-              "abort",
-              () => {
+              const rejectAuth = (
+                code = 401,
+                message = "Unauthorized",
+              ): never => {
                 if (!settled) {
                   settled = true;
-                  reject(ac.signal.reason);
+                  reject({ code, message });
                 }
-              },
-              { once: true },
-            );
+                throw { code, message, _isMiddlewareReject: true };
+              };
 
-            this._logger?.debug?.("Executing route handler", {
-              identity,
-              pathname,
-            });
-            matchedHandler(accept, rejectAuth, handshake, ac.signal);
-          });
+              // Guard: already aborted before we even start
+              if (ac.signal.aborted) {
+                reject(ac.signal.reason);
+                return;
+              }
+
+              ac.signal.addEventListener(
+                "abort",
+                () => {
+                  if (!settled) {
+                    settled = true;
+                    reject(ac.signal.reason);
+                  }
+                },
+                { once: true },
+              );
+
+              this._logger?.debug?.("Executing route handler", {
+                identity,
+                pathname,
+              });
+
+              const authCtx: import("./types.js").AuthContext = {
+                handshake,
+                state: ctx!.state,
+                reject: rejectAuth,
+                signal: ac.signal,
+                accept,
+              };
+
+              matchedHandler(authCtx);
+            },
+          );
         }
       } catch (err) {
         if (ac.signal.aborted) {
@@ -635,10 +658,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         logging: this._options.logging,
       };
 
+      const finalSession = {
+        ...(ctx?.state || {}),
+        ...(this._sessions.get(identity)?.data || {}),
+        ...(((acceptOptions as any)?.session as Record<string, unknown>) || {}),
+      };
+
       const client = new OCPPServerClient(clientOptions, {
         ws,
         handshake,
-        session: this._sessions.get(identity)?.data ?? {},
+        session: finalSession,
         protocol: selectedProtocol,
       });
 

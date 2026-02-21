@@ -61,11 +61,11 @@ const server = new OCPPServer({
 });
 
 // Optional: Add authentication ringfence
-server.auth((accept, reject, handshake) => {
+server.auth((ctx) => {
   console.log(
-    `Connection from ${handshake.identity} at path ${handshake.pathname}`,
+    `Connection from ${ctx.handshake.identity} at path ${ctx.handshake.pathname}`,
   );
-  accept({ session: { authorized: true } });
+  ctx.accept({ session: { authorized: true } });
 });
 
 server.on("client", (client) => {
@@ -264,6 +264,26 @@ const result = await server.safeSendToClient(
 if (result) {
   console.log("Configuration:", result);
 }
+```
+
+### 2. Connection Middleware (Server)
+
+For intercepting HTTP WebSocket Upgrade requests before they become an OCPP Client.
+
+```typescript
+const rateLimiter = defineMiddleware(async (ctx) => {
+  const ip = ctx.handshake.remoteAddress;
+  if (isRateLimited(ip)) {
+    // Instantly aborts the WebSocket connection with an HTTP 429 status
+    ctx.reject(429, "Too Many Requests");
+  } else {
+    // Or proceed down the execution chain. You can optionally pass an object
+    // to next(), which will automatically be shallow-merged into `ctx.state`.
+    await ctx.next({ rateLimitRemaining: 99 });
+  }
+});
+
+server.use(rateLimiter);
 ```
 
 ## 🧩 Middleware

@@ -45,7 +45,7 @@ describe("OCPPServer", () => {
 
   it("should expose connected clients", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -72,7 +72,7 @@ describe("OCPPServer", () => {
 
   it('should emit "client" event when a station connects', async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -99,8 +99,8 @@ describe("OCPPServer", () => {
 
   it("should reject connections via auth callback", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((_accept, reject) => {
-      reject(401, "Bad credentials");
+    server.auth((ctx) => {
+      ctx.reject(401, "Bad credentials");
     });
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
@@ -122,9 +122,9 @@ describe("OCPPServer", () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
     let receivedIdentity = "";
 
-    server.auth((accept, _reject, handshake) => {
-      receivedIdentity = handshake.identity;
-      accept({ protocol: "ocpp1.6" });
+    server.auth((ctx) => {
+      receivedIdentity = ctx.handshake.identity;
+      ctx.accept({ protocol: "ocpp1.6" });
     });
 
     const httpServer = await server.listen(0);
@@ -144,7 +144,7 @@ describe("OCPPServer", () => {
 
   it("should remove client on disconnect", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -166,7 +166,7 @@ describe("OCPPServer", () => {
 
   it("should close all clients on server close", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -195,7 +195,7 @@ describe("OCPPServerClient", () => {
       protocols: ["ocpp1.6"],
       callTimeoutMs: 5000,
     });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -222,7 +222,7 @@ describe("OCPPServerClient", () => {
 
   it("should reject connect() call", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -248,7 +248,7 @@ describe("OCPPServerClient", () => {
 
   it("should expose session data", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -287,7 +287,7 @@ describe("OCPPServer - handleUpgrade, reconfigure, adapter, signal", () => {
   it("should allow handleUpgrade to be called from an external server", async () => {
     const http = await import("node:http");
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
 
     // listen(0) initializes the internal WSS needed by handleUpgrade
     await server.listen(0);
@@ -381,7 +381,7 @@ describe("OCPPServer - Robustness & Clustering", () => {
 
   it("should broadcast to local clients and publish to adapter", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -451,7 +451,7 @@ describe("OCPPServer - Robustness & Clustering", () => {
 
   it("should persist session data across reconnections", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -506,7 +506,7 @@ describe("OCPPServer - Robustness & Clustering", () => {
     // However, we can control the time advance.
 
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
 
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
