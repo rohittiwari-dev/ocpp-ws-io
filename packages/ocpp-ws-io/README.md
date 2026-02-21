@@ -57,6 +57,15 @@ import { OCPPServer } from "ocpp-ws-io";
 
 const server = new OCPPServer({
   protocols: ["ocpp1.6", "ocpp2.0.1"],
+  logging: { prettify: true, exchangeLog: true, level: "info" },
+});
+
+// Optional: Add authentication ringfence
+server.auth((accept, reject, handshake) => {
+  console.log(
+    `Connection from ${handshake.identity} at path ${handshake.pathname}`,
+  );
+  accept({ session: { authorized: true } });
 });
 
 server.on("client", (client) => {

@@ -10,6 +10,7 @@ import type { TLSSocket } from "node:tls";
 import { createId } from "@paralleldrive/cuid2";
 import { WebSocketServer } from "ws";
 import { initLogger } from "./init-logger.js";
+import { executeMiddlewareChain, OCPPRouter } from "./router.js";
 import { OCPPServerClient } from "./server-client.js";
 
 import {
@@ -18,6 +19,8 @@ import {
   type AuthCallback,
   type ClientOptions,
   type CloseOptions,
+  type ConnectionContext,
+  type ConnectionMiddleware,
   type EventAdapterInterface,
   type HandshakeInfo,
   type ListenOptions,
@@ -47,7 +50,7 @@ import {
  */
 export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<ServerEvents>) {
   private _options: ServerOptions;
-  private _authCallback: AuthCallback | null = null;
+  private _routers: OCPPRouter[] = [];
   private _clients = new Set<OCPPServerClient>();
   private _httpServers = new Set<Server>();
   private _wss: WebSocketServer | null = null;
@@ -122,8 +125,40 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   // ─── Auth ────────────────────────────────────────────────────
 
-  auth(callback: AuthCallback): void {
-    this._authCallback = callback;
+  // ─── Routing & Middleware ────────────────────────────────────
+
+  /**
+   * Registers a new routing dispatcher for multiplexing connections.
+   * `server.route("/api/:tenant").use(middleware).auth(cb).on("client", ...)`
+   */
+  route(...patterns: Array<string | RegExp>): OCPPRouter {
+    const router = new OCPPRouter();
+    router.route(...patterns);
+    this._routers.push(router);
+    return router;
+  }
+
+  /**
+   * Registers a new middleware chain, acting as a wildcard/catch-all router if no patterns are added.
+   * `server.use(middleware).route("/api").on("client", ...)`
+   */
+  use(...middlewares: ConnectionMiddleware[]): OCPPRouter {
+    const router = new OCPPRouter();
+    router.use(...middlewares);
+    this._routers.push(router);
+    return router;
+  }
+
+  /**
+   * Registers a top-level auth handler, returning a router to attach `.on()` or `.use()`.
+   */
+  auth<TSession = Record<string, unknown>>(
+    callback: AuthCallback<TSession>,
+  ): OCPPRouter {
+    const router = new OCPPRouter();
+    router.auth(callback);
+    this._routers.push(router);
+    return router;
   }
 
   // ─── Listen ──────────────────────────────────────────────────
@@ -286,13 +321,56 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return;
     }
 
-    // ── Step 2: Parse URL → identity + endpoint ──
+    // ── Step 2: Parse URL & Execute Router ──
     const url = new URL(
       req.url ?? "/",
       `http://${req.headers.host ?? "localhost"}`,
     );
-    const pathParts = url.pathname.split("/").filter(Boolean);
-    const identity = decodeURIComponent(pathParts[pathParts.length - 1] ?? "");
+
+    let matchedHandler: AuthCallback | undefined;
+    let matchedRouter: OCPPRouter | undefined;
+    const params: Record<string, string> = {};
+    const pathname = url.pathname;
+
+    // 1. First, try to match against chainable modern Routers
+    for (const router of this._routers) {
+      let matched = false;
+      if (router.compiledPatterns.length === 0) {
+        matched = true;
+      } else {
+        for (const compiled of router.compiledPatterns) {
+          const match = compiled.regex.exec(pathname);
+          if (match) {
+            matched = true;
+            if (compiled.paramNames.length > 0) {
+              compiled.paramNames.forEach((name, i) => {
+                params[name] = decodeURIComponent(match[i + 1] ?? "");
+              });
+            } else if (match.groups) {
+              for (const [key, val] of Object.entries(match.groups)) {
+                params[key] = decodeURIComponent(val ?? "");
+              }
+            }
+            break;
+          }
+        }
+      }
+      if (matched) {
+        matchedRouter = router;
+        matchedHandler =
+          (router.authCallback as AuthCallback | undefined) ?? undefined;
+        break;
+      }
+    }
+
+    // Determine the identity:
+    // 1. If it was successfully matched as a param, use it.
+    // 2. Otherwise extract it from the end of the pathname (legacy behavior).
+    let identity = params.identity;
+    if (!identity) {
+      const pathParts = pathname.split("/").filter(Boolean);
+      identity = decodeURIComponent(pathParts[pathParts.length - 1] ?? "");
+    }
 
     if (!identity) {
       abortHandshake(socket, 400, "Missing identity in URL path");
@@ -352,7 +430,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       remoteAddress: req.socket.remoteAddress ?? "",
       headers: req.headers as Record<string, string | string[] | undefined>,
       protocols,
-      endpoint: url.pathname,
+      pathname,
+      params,
       query: url.searchParams,
       request: req,
       password,
@@ -361,7 +440,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     };
 
     // ── Step 8: Auth callback with AbortController + timeout ──
-    if (this._authCallback) {
+    if (matchedHandler || matchedRouter) {
       const ac = new AbortController();
 
       // Socket lifecycle → abort on premature close / error
@@ -382,41 +461,61 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
 
       try {
-        await new Promise<AuthAccept | undefined>((resolve, reject) => {
-          let settled = false;
-
-          const accept = (opts?: AuthAccept) => {
-            if (settled) return;
-            settled = true;
-            if (opts?.protocol) selectedProtocol = opts.protocol;
-            resolve(opts);
+        if (matchedRouter && matchedRouter.middlewares.length > 0) {
+          const ctx: ConnectionContext = {
+            handshake,
+            state: {},
           };
+          // Execute middleware chain
+          await executeMiddlewareChain(matchedRouter.middlewares, ctx);
+          // If middleware threw an error, execution skips to catch block
+        }
 
-          const rejectAuth = (code = 401, message = "Unauthorized") => {
-            if (settled) return;
-            settled = true;
-            reject({ code, message });
-          };
+        // Default auth pass-through if router didn't define auth
+        if (!matchedHandler) {
+          selectedProtocol =
+            handshake.protocols.values().next().value ?? undefined;
+        } else {
+          await new Promise<AuthAccept | undefined>((resolve, reject) => {
+            let settled = false;
 
-          // Guard: already aborted before we even start
-          if (ac.signal.aborted) {
-            reject(ac.signal.reason);
-            return;
-          }
+            const accept = (opts?: AuthAccept) => {
+              if (settled) return;
+              settled = true;
+              if (opts?.protocol) selectedProtocol = opts.protocol;
+              resolve(opts);
+            };
 
-          ac.signal.addEventListener(
-            "abort",
-            () => {
-              if (!settled) {
-                settled = true;
-                reject(ac.signal.reason);
-              }
-            },
-            { once: true },
-          );
+            const rejectAuth = (code = 401, message = "Unauthorized") => {
+              if (settled) return;
+              settled = true;
+              reject({ code, message });
+            };
 
-          this._authCallback?.(accept, rejectAuth, handshake, ac.signal);
-        });
+            // Guard: already aborted before we even start
+            if (ac.signal.aborted) {
+              reject(ac.signal.reason);
+              return;
+            }
+
+            ac.signal.addEventListener(
+              "abort",
+              () => {
+                if (!settled) {
+                  settled = true;
+                  reject(ac.signal.reason);
+                }
+              },
+              { once: true },
+            );
+
+            this._logger?.debug?.("Executing route handler", {
+              identity,
+              pathname,
+            });
+            matchedHandler(accept, rejectAuth, handshake, ac.signal);
+          });
+        }
       } catch (err) {
         if (ac.signal.aborted) {
           const reason = err instanceof Error ? err.message : "Unknown abort";
@@ -432,9 +531,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         }
 
         // Auth explicitly rejected
-        const { code, message } = err as { code: number; message: string };
+        const errObj = err as any;
+        const code = typeof errObj?.code === "number" ? errObj.code : 401;
+        const message =
+          typeof errObj?.message === "string" ? errObj.message : "Unauthorized";
+
         this._logger?.warn?.("Auth rejected", { identity, code });
-        abortHandshake(socket, code ?? 401, message ?? "Unauthorized");
+        abortHandshake(socket, code, message);
         return;
       } finally {
         if (timer) clearTimeout(timer);
@@ -442,6 +545,14 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         socket.removeListener("error", onSocketGone);
         socket.removeListener("end", onSocketGone);
       }
+    } else if (this._routers.length > 0) {
+      // If routers are defined but nothing matched, we must reject the connection.
+      // E.g., user defined `server.route("/api/:id").auth(cb)` but client connected to `/wrong/path`
+      this._logger?.warn?.("Connection rejected: No matching route found", {
+        pathname,
+      });
+      abortHandshake(socket, 400, "Unexpected server response: 400");
+      return;
     }
 
     // ── Step 9: Socket readyState check before upgrade ──
@@ -520,7 +631,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         this._logger?.info?.("Client disconnected", { identity });
       });
 
+      // Dispatch route-specific "client" events
       this.emit("client", client);
+      if (matchedRouter) {
+        matchedRouter.emit("client", client);
+      }
 
       client.on("message", () => {
         this._updateSessionActivity(identity, client.session);

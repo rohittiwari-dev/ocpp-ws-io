@@ -36,8 +36,15 @@ export type {
 export type { OCPP16Methods } from "./generated/ocpp16.js";
 export type { OCPP21Methods } from "./generated/ocpp21.js";
 export type { OCPP201Methods } from "./generated/ocpp201.js";
-export * from "./middleware/logging.js";
+export {
+  combineAuth,
+  createLoggingMiddleware,
+  defineAuth,
+  defineMiddleware,
+  defineRpcMiddleware,
+} from "./helpers/index.js";
 export * from "./middleware.js";
+export { OCPPRouter } from "./router.js";
 export { OCPPServer } from "./server.js";
 export { OCPPServerClient } from "./server-client.js";
 export { standardValidators } from "./standard-validators.js";
@@ -51,6 +58,8 @@ export {
   type ClientEvents,
   type ClientOptions,
   type CloseOptions,
+  type ConnectionContext,
+  type ConnectionMiddleware,
   ConnectionState,
   type EventAdapterInterface,
   type HandlerContext,
