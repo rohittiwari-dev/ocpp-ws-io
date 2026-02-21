@@ -124,8 +124,8 @@ describe("OCPPServer - Express-like Routing", () => {
       ws.on("open", () => resolve(new Error("Should not have opened")));
     });
 
-    // Node WS client usually gives "Unexpected server response: 400"
-    expect(err.message).toMatch(/400/);
+    // Node WS client usually gives "Unexpected server response: 404"
+    expect(err.message).toMatch(/404/);
     expect(authSpy).not.toHaveBeenCalled();
   });
 

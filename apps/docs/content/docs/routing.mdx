@@ -138,13 +138,13 @@ Because `ocpp-ws-io` evaluates routes **in the order they are defined**, ensure 
 
 ---
 
-## Execution Scope (Clarification on Route vs Global)
+## Execution Scope (Additive Pipelines)
 
-A very important concept in `ocpp-ws-io` is understanding **where** middlewares and auth callbacks execute.
+A powerful concept in `ocpp-ws-io` is its **additive execution pipeline**. When a connection arrives, the server collects **all matching middlewares** across your global scopes and route-specific scopes, executing them sequentially in the order they were registered.
 
 ### Route-level Scoping
 
-If you define `router.use()` and `router.auth()` on a specific `.route()`, they **only** execute for clients connecting to that exact URL path. They **do not** execute globally across your server.
+If you define `router.use()` and `router.auth()` on a specific `.route()`, they **only** execute for clients connecting to that exact URL path.
 
 ```typescript
 // 1. LEGACY ROUTE (Only runs for /api/v1/*)
@@ -162,17 +162,22 @@ legacyRouter.auth(async (ctx) => {
 });
 ```
 
-### Global Scoping
+### Global Scoping & Stacking
 
-If you want a middleware to run for **every** connection to your server regardless of the route (e.g., a global rate limiter), you attach it directly to the `server` instance _without_ calling `.route()`.
+If you want a middleware to run for **every** connection to your server regardless of the route (e.g., a global rate limiter), you attach it directly to the `server` instance _without_ calling `.route()`. Global middlewares will execute _before_ any route-specific middlewares or auth callbacks.
 
 ```typescript
-// This runs for EVERY connection globally
+// 1. GLOBAL: Runs for EVERY connection first
 server.use(async (ctx) => {
   console.log(
     `Global connection attempt from IP: ${ctx.handshake.remoteAddress}`,
   );
   await ctx.next();
+});
+
+// 2. SCOPED: Runs ONLY for /api/v2/* connections AFTER the global middleware
+server.route("/api/v2/*").auth(async (ctx) => {
+  ctx.accept({ session: { version: "v2" } });
 });
 ```
 

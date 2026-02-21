@@ -180,8 +180,6 @@ export interface CallOptions {
   timeoutMs?: number;
   /** Abort signal */
   signal?: AbortSignal;
-  /** Suppress sending a response (server-side, NOREPLY) */
-  noReply?: boolean;
 }
 
 // ─── Close Options ───────────────────────────────────────────────

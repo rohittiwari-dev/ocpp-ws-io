@@ -376,16 +376,22 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     );
 
     let matchedHandler: AuthCallback | undefined;
-    let matchedRouter: OCPPRouter | undefined;
+    const matchedMiddlewares: ConnectionMiddleware[] = [];
+    const matchedRouters: OCPPRouter[] = [];
     const params: Record<string, string> = {};
     const pathname = url.pathname;
 
-    // 1. First, try to match against chainable modern Routers
+    let hasTerminalRoute = false;
+    let hasPatternRouters = false;
+
+    // 1. Additive Matching: Collect ALL middlewares from ALL matching routers
     for (const router of this._routers) {
       let matched = false;
       if (router.compiledPatterns.length === 0) {
+        // Global middleware (server.use) matches everything
         matched = true;
       } else {
+        hasPatternRouters = true;
         for (const compiled of router.compiledPatterns) {
           const match = compiled.regex.exec(pathname);
           if (match) {
@@ -399,15 +405,24 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
                 params[key] = decodeURIComponent(val ?? "");
               }
             }
-            break;
+            break; // Stop checking patterns within this single router
           }
         }
       }
+
       if (matched) {
-        matchedRouter = router;
-        matchedHandler =
-          (router.authCallback as AuthCallback | undefined) ?? undefined;
-        break;
+        matchedRouters.push(router);
+        if (router.compiledPatterns.length > 0) {
+          hasTerminalRoute = true;
+        }
+        // Accumulate middlewares
+        if (router.middlewares.length > 0) {
+          matchedMiddlewares.push(...router.middlewares);
+        }
+        // First matched explicit handler wins (respects route registration order)
+        if (router.authCallback && !matchedHandler) {
+          matchedHandler = router.authCallback as AuthCallback | undefined;
+        }
       }
     }
 
@@ -491,7 +506,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     let ctx: import("./types.js").ConnectionContext | undefined;
     let acceptOptions: import("./types.js").AuthAccept | undefined;
 
-    if (matchedHandler || matchedRouter) {
+    if (matchedHandler || matchedMiddlewares.length > 0) {
       const ac = new AbortController();
 
       // Socket lifecycle → abort on premature close / error
@@ -521,72 +536,85 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           next: async (_payload?: Record<string, unknown>) => {}, // Bound dynamically inside executeMiddlewareChain
         };
 
-        if (matchedRouter && matchedRouter.middlewares.length > 0) {
-          // Execute middleware chain
-          await executeMiddlewareChain(matchedRouter.middlewares, ctx);
-          // If middleware threw an error, execution skips to catch block
-        }
+        const chain = [...matchedMiddlewares];
+        let authCalled = false;
 
-        // Default auth pass-through if router didn't define auth
-        if (!matchedHandler) {
-          selectedProtocol =
-            handshake.protocols.values().next().value ?? undefined;
-        } else {
-          acceptOptions = await new Promise<AuthAccept | undefined>(
-            (resolve, reject) => {
-              let settled = false;
+        // Push the Auth check as the terminal handler of the middleware chain
+        chain.push(async (c) => {
+          authCalled = true;
+          if (!matchedHandler) {
+            // Default auth pass-through if no explicit auth callback was matched
+            selectedProtocol =
+              handshake.protocols.values().next().value ?? undefined;
+          } else {
+            acceptOptions = await new Promise<AuthAccept | undefined>(
+              (resolve, reject) => {
+                let settled = false;
 
-              const accept = (opts?: AuthAccept) => {
-                if (settled) return;
-                settled = true;
-                if (opts?.protocol) selectedProtocol = opts.protocol;
-                resolve(opts);
-              };
-
-              const rejectAuth = (
-                code = 401,
-                message = "Unauthorized",
-              ): never => {
-                if (!settled) {
+                const accept = (opts?: AuthAccept) => {
+                  if (settled) return;
                   settled = true;
-                  reject({ code, message });
-                }
-                throw { code, message, _isMiddlewareReject: true };
-              };
+                  if (opts?.protocol) selectedProtocol = opts.protocol;
+                  resolve(opts);
+                };
 
-              // Guard: already aborted before we even start
-              if (ac.signal.aborted) {
-                reject(ac.signal.reason);
-                return;
-              }
-
-              ac.signal.addEventListener(
-                "abort",
-                () => {
+                const rejectAuth = (
+                  code = 401,
+                  message = "Unauthorized",
+                ): never => {
                   if (!settled) {
                     settled = true;
-                    reject(ac.signal.reason);
+                    reject({ code, message });
                   }
-                },
-                { once: true },
-              );
+                  throw { code, message, _isMiddlewareReject: true };
+                };
 
-              this._logger?.debug?.("Executing route handler", {
-                identity,
-                pathname,
-              });
+                // Guard: already aborted before we even start
+                if (ac.signal.aborted) {
+                  reject(ac.signal.reason);
+                  return;
+                }
 
-              const authCtx: import("./types.js").AuthContext = {
-                handshake,
-                state: ctx!.state,
-                reject: rejectAuth,
-                signal: ac.signal,
-                accept,
-              };
+                ac.signal.addEventListener(
+                  "abort",
+                  () => {
+                    if (!settled) {
+                      settled = true;
+                      reject(ac.signal.reason);
+                    }
+                  },
+                  { once: true },
+                );
 
-              matchedHandler(authCtx);
-            },
-          );
+                this._logger?.debug?.("Executing auth callback", {
+                  identity,
+                  pathname,
+                });
+
+                const authCtx: import("./types.js").AuthContext = {
+                  handshake,
+                  state: c.state,
+                  reject: rejectAuth,
+                  signal: ac.signal,
+                  accept,
+                };
+
+                matchedHandler!(authCtx);
+              },
+            );
+          }
+        });
+
+        // Execute dynamic middleware pipeline
+        await executeMiddlewareChain(chain, ctx);
+
+        if (!authCalled) {
+          // A middleware halted the chain without calling next() or reject()
+          throw {
+            code: 500,
+            message: "Middleware chain halted unexpectedly without rejecting",
+            _isMiddlewareReject: true,
+          };
         }
       } catch (err) {
         if (ac.signal.aborted) {
@@ -617,13 +645,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         socket.removeListener("error", onSocketGone);
         socket.removeListener("end", onSocketGone);
       }
-    } else if (this._routers.length > 0) {
-      // If routers are defined but nothing matched, we must reject the connection.
-      // E.g., user defined `server.route("/api/:id").auth(cb)` but client connected to `/wrong/path`
+    } else if (hasPatternRouters && !hasTerminalRoute) {
+      // If specific routes were defined but user connected to an unknown path,
+      // reject the connection smoothly (e.g. connected to /wrong/path)
       this._logger?.warn?.("Connection rejected: No matching route found", {
         pathname,
       });
-      abortHandshake(socket, 400, "Unexpected server response: 400");
+      abortHandshake(socket, 404, "Endpoint Not Found");
       return;
     }
 
@@ -711,8 +739,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
       // Dispatch route-specific "client" events
       this.emit("client", client);
-      if (matchedRouter) {
-        matchedRouter.emit("client", client);
+      for (const router of matchedRouters) {
+        router.emit("client", client);
       }
 
       client.on("message", () => {

@@ -194,7 +194,24 @@ Using this architecture ensures your authentication requirements, routing bounda
 
 ---
 
-## 5. Data Validation Flow
+## 5. Strict RPC Adherence (No Fire-and-Forget)
+
+Unlike some other WebSocket libraries, `ocpp-ws-io` enforces **strict Request-Response tracking** for all outbound calls (`client.call()`). The library does NOT support a `noReply: true` "fire-and-forget" option for outbound messages, as this fundamentally violates the OCPP specification and leads to memory leaks or "Ghost Response" log spam when the station eventually replies.
+
+If you need to send a command without blocking your main execution thread, simply omit the `await` keyword and use `.catch()` or rely on `client.safeCall()`:
+
+```typescript
+// ✅ DO: Non-blocking Fire-and-Forget natively in JS
+client.safeCall("ocpp1.6", "Reset", { type: "Hard" }).then((res) => {
+  if (res) console.log("Station accepted reset");
+});
+
+// Code continues executing instantly...
+```
+
+---
+
+## 6. Data Validation Flow
 
 Validation happens at multiple layers to ensure OCPP compliance and system integrity.
 
