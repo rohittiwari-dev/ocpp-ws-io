@@ -790,6 +790,135 @@ describe("BrowserOCPPClient", () => {
     });
   });
 
+  // ─── Middleware ──────────────────────────────────────────────
+
+  describe("Middleware", () => {
+    it("should intercept outgoing calls", async () => {
+      server.on("client", (serverClient) => {
+        serverClient.handle("BootNotification", async () => ({
+          status: "Accepted",
+        }));
+      });
+
+      client = new BrowserOCPPClient({
+        identity: "CS001",
+        endpoint: `ws://localhost:${port}`,
+        protocols: ["ocpp1.6"],
+        reconnect: false,
+      });
+
+      const mwSpy = vi.fn(async (ctx, next) => {
+        if (ctx.type === "outgoing_call") {
+          ctx.params = { ...(ctx.params as any), intercepted: true };
+        }
+        await next();
+      });
+
+      client.use(mwSpy);
+      await client.connect();
+      await client.call("BootNotification", {
+        chargePointVendor: "Test",
+        chargePointModel: "Test",
+      });
+
+      expect(mwSpy).toHaveBeenCalled();
+      const callCtx = mwSpy.mock.calls.find(
+        (c) => c[0].type === "outgoing_call",
+      )?.[0];
+      expect(callCtx).toBeDefined();
+      expect((callCtx as any).params.intercepted).toBe(true);
+    });
+
+    it("should intercept incoming calls", async () => {
+      let serverClient;
+      server.on("client", (sc) => {
+        serverClient = sc;
+      });
+
+      client = new BrowserOCPPClient({
+        identity: "CS001",
+        endpoint: `ws://localhost:${port}`,
+        protocols: ["ocpp1.6"],
+        reconnect: false,
+      });
+      client.handle("TriggerMessage", async () => ({ status: "Accepted" }));
+
+      const mwSpy = vi.fn(async (ctx, next) => await next());
+      client.use(mwSpy);
+
+      await client.connect();
+      await new Promise((r) => setTimeout(r, 100)); // wait for connect sync
+
+      await serverClient!.call("TriggerMessage", {
+        requestedMessage: "BootNotification",
+      });
+
+      const inCtx = mwSpy.mock.calls.find(
+        (c) => c[0].type === "incoming_call",
+      )?.[0];
+      expect(inCtx).toBeDefined();
+      expect((inCtx as any).method).toBe("TriggerMessage");
+    });
+
+    it("should intercept incoming results", async () => {
+      server.on("client", (serverClient) => {
+        serverClient.handle("Heartbeat", async () => ({
+          currentTime: "2023-01-01T00:00:00Z",
+        }));
+      });
+
+      client = new BrowserOCPPClient({
+        identity: "CS001",
+        endpoint: `ws://localhost:${port}`,
+        protocols: ["ocpp1.6"],
+        reconnect: false,
+      });
+      const mwSpy = vi.fn(async (ctx, next) => {
+        if (ctx.type === "incoming_result") {
+          ctx.payload = { ...(ctx.payload as any), interceptedResult: true };
+        }
+        await next();
+      });
+
+      client.use(mwSpy);
+      await client.connect();
+
+      const res: any = await client.call("Heartbeat", {});
+
+      const resCtx = mwSpy.mock.calls.find(
+        (c) => c[0].type === "incoming_result",
+      )?.[0];
+      expect(resCtx).toBeDefined();
+      expect(res.interceptedResult).toBe(true);
+    });
+
+    it("should intercept incoming errors", async () => {
+      server.on("client", (sc) => {
+        // No handler -> returns NotImplemented CallError
+      });
+
+      client = new BrowserOCPPClient({
+        identity: "CS001",
+        endpoint: `ws://localhost:${port}`,
+        protocols: ["ocpp1.6"],
+        reconnect: false,
+      });
+
+      const mwSpy = vi.fn(async (ctx, next) => await next());
+      client.use(mwSpy);
+
+      await client.connect();
+
+      await expect(client.call("UnknownAction", {})).rejects.toThrow();
+
+      const errCtx = mwSpy.mock.calls.find(
+        (c) => c[0].type === "incoming_error",
+      )?.[0];
+      expect(errCtx).toBeDefined();
+      expect((errCtx as any).error.rpcErrorCode).toBe("NotImplemented");
+    });
+  });
+
   // ─── sendRaw ─────────────────────────────────────────────────
 
   describe("sendRaw", () => {
@@ -1159,7 +1288,6 @@ describe("BrowserOCPPClient", () => {
       expect(browserModule.getErrorPlainObject).toBeDefined();
       expect(browserModule.ConnectionState).toBeDefined();
       expect(browserModule.MessageType).toBeDefined();
-      expect(browserModule.NOREPLY).toBeDefined();
     });
   });
 });

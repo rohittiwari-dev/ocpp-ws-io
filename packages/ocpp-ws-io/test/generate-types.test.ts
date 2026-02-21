@@ -58,4 +58,79 @@ describe("Type Generation Script", () => {
       "Foo",
     );
   });
+
+  it("should convert complex schema structures to TS branches", () => {
+    const definitions = {};
+
+    // Enums
+    expect(jsonSchemaToTS({ enum: ["A", "B", "C"] }, definitions)).toBe(
+      '"A" | "B" | "C"',
+    );
+    expect(jsonSchemaToTS({ enum: [1, 2, 3] }, definitions)).toBe("1 | 2 | 3");
+
+    // anyOf / oneOf
+    expect(
+      jsonSchemaToTS(
+        { anyOf: [{ type: "string" }, { type: "number" }] },
+        definitions,
+      ),
+    ).toBe("(string | number)");
+
+    expect(
+      jsonSchemaToTS(
+        { oneOf: [{ type: "boolean" }, { type: "null" }] },
+        definitions,
+      ),
+    ).toBe("(boolean | null)");
+
+    // Type Arrays
+    expect(jsonSchemaToTS({ type: ["string", "null"] }, definitions)).toBe(
+      "string | null",
+    );
+
+    // Objects
+    expect(
+      jsonSchemaToTS(
+        {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            count: { type: "integer" },
+          },
+          required: ["id"],
+        },
+        definitions,
+      ),
+    ).toBe("{ id: string; count?: number }");
+
+    // Nested Arrays
+    expect(
+      jsonSchemaToTS(
+        {
+          type: "array",
+          items: { anyOf: [{ type: "string" }, { type: "number" }] },
+        },
+        definitions,
+      ),
+    ).toBe("((string | number))[]");
+
+    // Unknowns
+    expect(jsonSchemaToTS({ type: "unknownCustom" }, definitions)).toBe(
+      "unknown",
+    );
+    expect(jsonSchemaToTS(null, definitions)).toBe("unknown");
+    expect(jsonSchemaToTS({ type: "array" }, definitions)).toBe("unknown[]");
+    expect(jsonSchemaToTS({ type: "object" }, definitions)).toBe(
+      "Record<string, unknown>",
+    );
+    expect(
+      jsonSchemaToTS(
+        {
+          type: "object",
+          additionalProperties: { type: "string" },
+        },
+        definitions,
+      ),
+    ).toBe("Record<string, string>");
+  });
 });

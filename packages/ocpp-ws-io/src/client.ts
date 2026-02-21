@@ -14,9 +14,9 @@ import type {
   OCPPRequestType,
   OCPPResponseType,
 } from "./generated/index.js";
+import { createLoggingMiddleware } from "./helpers/index.js";
 import { initLogger } from "./init-logger.js";
 import { type MiddlewareFunction, MiddlewareStack } from "./middleware";
-import { createLoggingMiddleware } from "./middleware/logging";
 import { Queue } from "./queue.js";
 import { standardValidators } from "./standard-validators.js";
 import {
@@ -471,6 +471,9 @@ export class OCPPClient<
   handle(...args: any[]): void {
     if (args.length === 1 && typeof args[0] === "function") {
       // Wildcard handler
+      if (this._wildcardHandler) {
+        throw new Error("Wildcard handler is already registered.");
+      }
       this._wildcardHandler = args[0] as WildcardHandler;
     } else if (
       args.length === 2 &&
@@ -478,6 +481,9 @@ export class OCPPClient<
       typeof args[1] === "function"
     ) {
       // handle(method, handler) — default protocol
+      if (this._handlers.has(args[0])) {
+        throw new Error(`Handler for '${args[0]}' is already registered.`);
+      }
       this._handlers.set(args[0], args[1] as CallHandler);
     } else if (
       args.length === 3 &&
@@ -486,7 +492,13 @@ export class OCPPClient<
       typeof args[2] === "function"
     ) {
       // handle(version, method, handler) — version-specific
-      this._handlers.set(`${args[0]}:${args[1]}`, args[2] as CallHandler);
+      const key = `${args[0]}:${args[1]}`;
+      if (this._handlers.has(key)) {
+        throw new Error(
+          `Handler for '${args[1]}' (protocol: ${args[0]}) is already registered.`,
+        );
+      }
+      this._handlers.set(key, args[2] as CallHandler);
     } else {
       throw new Error(
         "Invalid arguments: provide (version, method, handler), (method, handler), or (wildcardHandler)",

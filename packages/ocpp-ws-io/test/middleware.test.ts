@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MiddlewareStack } from "../src/middleware";
-import { createLoggingMiddleware } from "../src/middleware/logging";
+import { createLoggingMiddleware } from "../src/helpers/index.js";
 import type { LoggerLike, MiddlewareContext } from "../src/types";
 
 describe("MiddlewareStack", () => {

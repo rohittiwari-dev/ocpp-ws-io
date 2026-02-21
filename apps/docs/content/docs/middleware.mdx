@@ -53,15 +53,76 @@ Middleware functions receive a `context` and a `next` function.
 | `messageId` | `string`                           | Unique ID of the message              |
 | `protocol`  | `OCPPProtocol`                     | negotiated protocol version           |
 
-### Example: Validation Middleware
-
 ```typescript
-client.use(async (ctx, next) => {
+import { defineRpcMiddleware } from "ocpp-ws-io/browser"; // Or "ocpp-ws-io" for Server/NodeClient
+
+const validationMiddleware = defineRpcMiddleware(async (ctx, next) => {
   if (ctx.type === "outgoing_call" && !ctx.params) {
     throw new Error("Payload cannot be empty");
   }
   await next();
 });
+
+client.use(validationMiddleware);
+```
+
+---
+
+## Connection Middleware (Server Setup)
+
+While clients only utilize RPC middleware (parsing payloads), the `OCPPServer` and `OCPPRouter` handle raw Connections. To gain type-safety when building connection middlewares (e.g. rate-limiting, authentication), use `defineMiddleware`:
+
+```typescript
+import { defineMiddleware } from "ocpp-ws-io";
+
+const rateLimitConnection = defineMiddleware(async (ctx, next) => {
+  // `ctx` includes full `IncomingMessage`, URL parsed `pathname`, and `headers`
+  console.log(`Connection attempt from: ${ctx.handshake.remoteAddress}`);
+  await next();
+});
+
+server.use(rateLimitConnection);
+```
+
+---
+
+## Authentication Helpers
+
+To secure incoming WebSocket connections on the `OCPPServer`, you attach an `auth()` hook. `ocpp-ws-io` provides two utilities to make authentication chains typed and composable.
+
+### `defineAuth`
+
+The `defineAuth` helper provides immediate IDE type inference for the `accept`, `reject`, and `handshake` parameters, so you don't need to manually type your callback.
+
+```typescript
+import { defineAuth } from "ocpp-ws-io";
+
+const verifyBasicAuth = defineAuth(async (accept, reject, handshake) => {
+  const token = handshake.headers.authorization;
+  if (!token) {
+    return reject(401, "Basic auth required");
+  }
+
+  // Inject arbitrary session properties that your RPC handlers can access later
+  accept({ session: { identity: handshake.identity, role: "admin" } });
+});
+
+server.auth(verifyBasicAuth);
+```
+
+### `combineAuth`
+
+When building modular endpoints with the `OCPPRouter`, you might need to combine multiple authentication rules (e.g. check a firewall IP, then check a JWT). `combineAuth` executes `defineAuth` callbacks sequentially.
+
+```typescript
+import { combineAuth, defineAuth } from "ocpp-ws-io";
+
+const checkFirewall = defineAuth((accept, reject, handshake) => {
+  if (handshake.remoteAddress === "1.2.3.4") reject(403, "IP Blocked");
+  else accept({}); // Pass immediately to the next auth handler
+});
+
+server.auth(combineAuth(checkFirewall, verifyBasicAuth));
 ```
 
 ## Execution Flow

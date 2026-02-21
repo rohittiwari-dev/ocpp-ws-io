@@ -89,6 +89,34 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 
 ---
 
+## Middleware
+
+The `BrowserOCPPClient` supports the exact same `MiddlewareStack` execution pattern as the Node.js client. This allows you to attach custom interceptors via `client.use()` directly in the browser:
+
+```typescript
+import { BrowserOCPPClient, defineRpcMiddleware, createLoggingMiddleware } from "ocpp-ws-io/browser";
+
+const client = new BrowserOCPPClient({ ... });
+
+// 1. Attach the built-in structured logger (outputs to browser console)
+client.use(createLoggingMiddleware(console, client.identity));
+
+// 2. Attach your custom type-safe middleware
+const browserInterceptor = defineRpcMiddleware(async (ctx, next) => {
+  console.log(`[Browser] Intercepting ${ctx.method}`);
+
+  if (ctx.type === "outgoing_call") {
+    ctx.params.timestamp = new Date().toISOString(); // Auto-inject timestamps
+  }
+
+  await next();
+});
+
+client.use(browserInterceptor);
+```
+
+---
+
 ## Connection Lifecycle
 
 <Mermaid
@@ -367,7 +395,9 @@ function useOCPP(identity: string, endpoint: string) {
     client.connect();
     clientRef.current = client;
 
-    return () => { client.close(); };
+    return () => {
+      client.close();
+    };
   }, [identity, endpoint]);
 
   return { client: clientRef.current, connected };
@@ -389,7 +419,9 @@ function ChargingStation() {
   return (
     <div>
       <p>Status: {connected ? "Connected" : "Disconnected"}</p>
-      <button onClick={sendBoot} disabled={!connected}>Send Boot</button>
+      <button onClick={sendBoot} disabled={!connected}>
+        Send Boot
+      </button>
     </div>
   );
 }
@@ -473,6 +505,10 @@ import {
   // Utilities
   createRPCError,
   getErrorPlainObject,
+
+  // Middleware Helpers
+  defineRpcMiddleware,
+  createLoggingMiddleware,
 
   // Constants
   ConnectionState,

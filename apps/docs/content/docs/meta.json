@@ -2,6 +2,7 @@
   "pages": [
     "index",
     "quick-start",
+    "routing",
     "system-design",
     "concepts/upgrades",
     "---Integrations---",

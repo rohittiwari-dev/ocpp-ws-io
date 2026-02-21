@@ -9,10 +9,11 @@ description: Get started with simple Client and Server examples.
 import { OCPPClient, SecurityProfile } from "ocpp-ws-io";
 
 const client = new OCPPClient({
-  endpoint: "ws://localhost:3000",
+  endpoint: "ws://localhost:3000/api/v1/chargers",
   identity: "CP001",
   protocols: ["ocpp1.6"],
   securityProfile: SecurityProfile.NONE,
+  logging: { prettify: true, exchangeLog: true }, // 🌈 Logs formatted IN/OUT traffic directly
 });
 
 // Register a handler — params are auto-typed for OCPP 1.6 Reset
@@ -41,10 +42,10 @@ const server = new OCPPServer({
   protocols: ["ocpp1.6", "ocpp2.0.1"],
 });
 
-// Optional: Add authentication
+// Optional: Add authentication mapped to a specific endpoint path
 server.auth((accept, reject, handshake) => {
   console.log(
-    `Connection from ${handshake.identity} @ ${handshake.remoteAddress}`,
+    `Connection from ${handshake.identity} at path ${handshake.pathname}`,
   );
 
   if (handshake.identity === "BLOCKED") {
@@ -91,3 +92,9 @@ server.on("client", (client) => {
 await server.listen(3000);
 console.log("OCPP Server listening on port 3000");
 ```
+
+---
+
+## Next Steps
+
+For larger CSMS projects, writing all logic inside a single `server.on('client')` handler isn't scalable. Check out **[Connection Routing](/docs/routing)** to learn how to compartmentalize distinct domains using the Express-like `OCPPRouter`!

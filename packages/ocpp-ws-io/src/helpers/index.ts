@@ -1,8 +1,100 @@
 import type {
+  AuthAccept,
+  AuthCallback,
+  ConnectionMiddleware,
   LoggerLike,
   MiddlewareContext,
   MiddlewareFunction,
 } from "../types.js";
+
+// ─── Middleware Definition ───────────────────────────────────────
+
+/**
+ * Utility to define and strongly-type a ConnectionMiddleware function.
+ * This provides immediate IDE autocomplete for the `ConnectionContext`.
+ */
+export function defineMiddleware(
+  mw: ConnectionMiddleware,
+): ConnectionMiddleware {
+  return mw;
+}
+
+/**
+ * Utility to define and strongly-type an RPC Middleware function.
+ * This provides immediate IDE autocomplete for the `MiddlewareContext`
+ * used when passing middleware to `client.use()`.
+ */
+export function defineRpcMiddleware<TContext = MiddlewareContext>(
+  mw: MiddlewareFunction<TContext>,
+): MiddlewareFunction<TContext> {
+  return mw;
+}
+
+// ─── Auth Definition & Composition ───────────────────────────────
+
+/**
+ * Utility to define and strongly-type an AuthCallback function.
+ * This provides immediate IDE autocomplete for the handshake and arguments.
+ */
+export function defineAuth<TSession = Record<string, unknown>>(
+  cb: AuthCallback<TSession>,
+): AuthCallback<TSession> {
+  return cb;
+}
+
+/**
+ * Combines multiple AuthCallback functions sequentially.
+ *
+ * Flow matching standard middleware logic:
+ * - If one callback `reject(err)` is called, the loop drops the connection instantly.
+ * - If one callback `accept(opts)` is called, the loop terminates and grants the connection.
+ * - If the loop finishes without anyone calling accept, it rejects with 401 Unauthorized.
+ */
+export function combineAuth(...cbs: AuthCallback[]): AuthCallback {
+  return async (accept, reject, handshake, signal) => {
+    let accepted = false;
+    let rejected = false;
+
+    // Wrap the underlying accept/reject purely to detect when they fire
+    const trackedAccept = (opts?: AuthAccept<any>) => {
+      accepted = true;
+      accept(opts);
+    };
+
+    const trackedReject = (code?: number, message?: string) => {
+      rejected = true;
+      reject(code, message);
+    };
+
+    try {
+      for (const cb of cbs) {
+        if (signal.aborted || accepted || rejected) break;
+
+        // Native callbacks from user might be sync or async
+        const p = cb(trackedAccept, trackedReject, handshake, signal);
+        if (p instanceof Promise) {
+          await p;
+        }
+
+        if (accepted || rejected) break;
+      }
+
+      // If loop finishes and nothing was explicitly decided, drop the connection
+      if (!accepted && !rejected) {
+        reject(
+          401,
+          "Unauthorized (All composeAuth handlers passed without accepting)",
+        );
+      }
+    } catch (_err) {
+      if (!rejected) {
+        reject(500, "Internal Server Error during auth compose execution");
+      }
+    }
+  };
+}
+
+// ─── Logging Middleware ──────────────────────────────────────────
 
 /**
  * Creates a middleware that logs all RPC exchanges using the provided logger.

@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import { initLogger } from "../src/init-logger";
-import { createLoggingMiddleware } from "../src/middleware/logging";
+import { createLoggingMiddleware } from "../src/helpers/index.js";
 import { NOOP_LOGGER } from "../src/util";
 
 // Mock voltlog-io
