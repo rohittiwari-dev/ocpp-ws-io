@@ -37,17 +37,17 @@ describe("initLogger", () => {
     expect(logger.transports).toEqual(["prettyTransport"]);
   });
 
-  test("returns custom handler if provided", () => {
+  test("returns custom logger if provided", () => {
     const custom = { info: vi.fn() };
     // @ts-ignore
-    expect(initLogger({ handler: custom })).toBe(custom);
+    expect(initLogger({ logger: custom })).toBe(custom);
   });
 
-  test("returns child of custom handler if defaultContext provided", () => {
+  test("returns child of custom logger if defaultContext provided", () => {
     const childFn = vi.fn(() => "childLogger");
     const custom = { info: vi.fn(), child: childFn };
     // @ts-ignore
-    expect(initLogger({ handler: custom }, { identity: "test" })).toBe(
+    expect(initLogger({ logger: custom }, { identity: "test" })).toBe(
       "childLogger",
     );
     expect(childFn).toHaveBeenCalledWith({ identity: "test" });
@@ -74,7 +74,10 @@ describe("createLoggingMiddleware", () => {
 
   beforeEach(() => {
     logger = { info: vi.fn(), error: vi.fn() };
-    middleware = createLoggingMiddleware(logger, "TestClient");
+    middleware = createLoggingMiddleware(logger, "TestClient", {
+      exchangeLog: true,
+      prettify: true,
+    });
   });
 
   test("logs incoming call start", async () => {
@@ -117,7 +120,7 @@ describe("createLoggingMiddleware", () => {
     await expect(middleware(ctx, next)).rejects.toThrow("Fail");
 
     expect(logger.error).toHaveBeenCalledWith(
-      "Handler error",
+      expect.stringContaining("🚨 TestClient  →  Test  [ERR]"),
       expect.anything(),
     );
   });

@@ -11,6 +11,27 @@ export const metadata: Metadata = {
   title: "The Type-Safe OCPP WebSocket Library for Node.js",
   description:
     "Build scalable CSMS and Charging Stations with ocpp-ws-io. Supports OCPP 1.6, 2.0.1, 2.1, strict validation, and clustering.",
+  keywords: [
+    "OCPP",
+    "WebSocket",
+    "RPC",
+    "CSMS",
+    "Charging Station",
+    "Ev Charging",
+    "Node.js",
+    "TypeScript",
+  ],
+  openGraph: {
+    title: "OCPP WS IO - The Type-Safe OCPP Library",
+    description: "Type-safe OCPP WebSocket RPC client & server for Node.js",
+    url: "https://ocpp-ws-io.rohittiwari.me",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "OCPP WS IO - The Type-Safe OCPP Library",
+    description: "Type-safe OCPP WebSocket RPC client & server for Node.js",
+  },
   alternates: {
     canonical: "./",
   },

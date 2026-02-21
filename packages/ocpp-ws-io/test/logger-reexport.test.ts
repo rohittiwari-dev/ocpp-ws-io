@@ -83,39 +83,45 @@ describe("initLogger utility", () => {
     expect(typeof logger?.info).toBe("function");
   });
 
-  it("should use custom handler when provided", () => {
-    const handler: LoggerLike = {
+  it("should use custom logger when provided", () => {
+    const loggerInstance: LoggerLike = {
       info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
       debug: vi.fn(),
     };
 
-    const logger = initLogger({ handler });
-    expect(logger).toBe(handler);
+    const logger = initLogger({ logger: loggerInstance });
+    expect(logger).toBe(loggerInstance);
   });
 
-  it("should call child() on custom handler when context is provided", () => {
+  it("should call child() on custom logger when context is provided", () => {
     const childLogger: LoggerLike = {
       info: vi.fn(),
     };
-    const handler: LoggerLike = {
+    const loggerInstance: LoggerLike = {
       info: vi.fn(),
       child: vi.fn().mockReturnValue(childLogger),
     };
 
-    const logger = initLogger({ handler }, { identity: "CP-002" });
-    expect(handler.child).toHaveBeenCalledWith({ identity: "CP-002" });
+    const logger = initLogger(
+      { logger: loggerInstance },
+      { identity: "CP-002" },
+    );
+    expect(loggerInstance.child).toHaveBeenCalledWith({ identity: "CP-002" });
     expect(logger).toBe(childLogger);
   });
 
-  it("should return handler as-is when handler has no child() and context is provided", () => {
-    const handler: LoggerLike = {
+  it("should return logger as-is when logger has no child() and context is provided", () => {
+    const loggerInstance: LoggerLike = {
       info: vi.fn(),
     };
 
-    const logger = initLogger({ handler }, { identity: "CP-003" });
-    expect(logger).toBe(handler);
+    const logger = initLogger(
+      { logger: loggerInstance },
+      { identity: "CP-003" },
+    );
+    expect(logger).toBe(loggerInstance);
   });
 
   it("should use prettyTransport when exchangeLog is true", () => {

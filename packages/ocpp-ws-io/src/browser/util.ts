@@ -1,6 +1,8 @@
 import type { RPCError } from "./errors.js";
 import * as errors from "./errors.js";
 
+export { NOOP_LOGGER } from "../util.js";
+
 // ─── RPC Error Factory ──────────────────────────────────────────
 
 const RPC_ERROR_REGISTRY = new Map<

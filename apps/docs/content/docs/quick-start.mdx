@@ -31,6 +31,10 @@ const response = await client.call("ocpp1.6", "BootNotification", {
 });
 
 console.log("Status:", response.status); // typed: "Accepted" | "Pending" | "Rejected"
+
+// Send a fire-and-forget message safely (won't throw if station disconnects)
+const { success } = await client.safeCall("ocpp1.6", "Heartbeat", {});
+if (success) client.logger.info("Heartbeat sent successfully!");
 ```
 
 ## Server (Central System)

@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { blogSource } from "@/lib/blog";
 import { source } from "@/lib/source";
 
 export default function sitemap(): MetadataRoute.Sitemap {
@@ -11,9 +12,21 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "weekly",
       priority: 1,
     },
+    {
+      url: `${url}/blog`,
+      lastModified: new Date(),
+      changeFrequency: "weekly",
+      priority: 0.9,
+    },
     ...source.getPages().map((page) => ({
       url: `${url}${page.url}`,
-      lastModified: new Date(), // getting from git history could be an optimization later
+      lastModified: new Date(),
+      changeFrequency: "weekly" as const,
+      priority: 0.8,
+    })),
+    ...blogSource.getPages().map((page) => ({
+      url: `${url}${page.url}`,
+      lastModified: new Date(),
       changeFrequency: "weekly" as const,
       priority: 0.8,
     })),

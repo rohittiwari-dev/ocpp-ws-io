@@ -5,20 +5,22 @@
  * allowing cross-cutting concerns like logging, authentication, and validation.
  */
 
-export type MiddlewareNext = () => Promise<void>;
+export type MiddlewareNext<TReturn = unknown> = () => Promise<TReturn>;
 
-export type MiddlewareFunction<TContext> = (
+export type MiddlewareFunction<TContext, TReturn = unknown> = (
   context: TContext,
-  next: MiddlewareNext,
-) => Promise<void> | void;
+  next: MiddlewareNext<TReturn>,
+) => Promise<TReturn> | TReturn;
 
 export class MiddlewareStack<TContext> {
-  private _stack: MiddlewareFunction<TContext>[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _stack: MiddlewareFunction<TContext, any>[] = [];
 
   /**
    * Add a middleware function to the stack.
    */
-  use(middleware: MiddlewareFunction<TContext>): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  use<TReturn = any>(middleware: MiddlewareFunction<TContext, TReturn>): void {
     this._stack.push(middleware);
   }
 
@@ -28,13 +30,13 @@ export class MiddlewareStack<TContext> {
    * @param context The context object to pass through middleware
    * @param runner The final function to execute (the "core" logic)
    */
-  async execute(
+  async execute<TReturn = unknown>(
     context: TContext,
-    runner: (context: TContext) => Promise<void> | void,
-  ): Promise<void> {
+    runner: (context: TContext) => Promise<TReturn> | TReturn,
+  ): Promise<TReturn> {
     let index = -1;
 
-    const dispatch = async (i: number): Promise<void> => {
+    const dispatch = async (i: number): Promise<TReturn> => {
       if (i <= index) {
         throw new Error("next() called multiple times");
       }
@@ -47,10 +49,10 @@ export class MiddlewareStack<TContext> {
       }
 
       if (!fn) {
-        return;
+        return undefined as unknown as TReturn;
       }
 
-      await fn(context, () => dispatch(i + 1));
+      return fn(context, () => dispatch(i + 1));
     };
 
     return dispatch(0);

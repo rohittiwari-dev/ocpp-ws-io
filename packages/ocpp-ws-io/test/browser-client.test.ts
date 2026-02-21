@@ -110,6 +110,83 @@ describe("BrowserOCPPClient", () => {
     });
   });
 
+  // ─── Logging ─────────────────────────────────────────────────
+
+  describe("Logging", () => {
+    it("should provide a default logger when not specified", () => {
+      client = new BrowserOCPPClient({
+        identity: "CS001",
+        endpoint: `ws://localhost:${port}`,
+        reconnect: false,
+      });
+      expect(client.log).toBeDefined();
+      expect(typeof client.log.info).toBe("function");
+    });
+
+    it("should provide a safe NOOP logger when logging is false", () => {
+      client = new BrowserOCPPClient({
+        identity: "CS001",
+        endpoint: `ws://localhost:${port}`,
+        reconnect: false,
+        logging: false,
+      });
+      // The logger should exist and have functions that don't do anything, but importantly not crash.
+      expect(client.log).toBeDefined();
+      expect(typeof client.log.info).toBe("function");
+      expect(typeof client.log.warn).toBe("function");
+
+      // Attempting to call should not throw
+      expect(() => client.log.info("Hidden message")).not.toThrow();
+    });
+
+    it("should use a custom logger instance and attempt to bind context via child()", () => {
+      const customLogger = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        child: vi.fn().mockReturnThis(),
+      };
+
+      client = new BrowserOCPPClient({
+        identity: "CS001",
+        endpoint: `ws://localhost:${port}`,
+        reconnect: false,
+        logging: { logger: customLogger as any },
+      });
+
+      expect(client.log).toBe(customLogger);
+      expect(customLogger.child).toHaveBeenCalledWith({
+        component: "BrowserOCPPClient",
+        identity: "CS001",
+      });
+    });
+
+    it("should apply a custom handler transport correctly", async () => {
+      const handlerLog = vi.fn();
+
+      client = new BrowserOCPPClient({
+        identity: "CS001",
+        endpoint: `ws://localhost:${port}`,
+        reconnect: false,
+        logging: { handler: handlerLog },
+      });
+
+      client.log.info("Test browser handler message");
+      // handler executions might be on the microtask queue, yield briefly
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(handlerLog).toHaveBeenCalled();
+      const entry = handlerLog.mock.calls[0][0];
+      expect(entry.message).toContain("Test browser handler message");
+      expect(entry.level).toBe(30);
+      expect(entry.context).toMatchObject({
+        component: "BrowserOCPPClient",
+        identity: "CS001",
+      });
+    });
+  });
+
   // ─── Connection ──────────────────────────────────────────────
 
   describe("Connection", () => {

@@ -1,8 +1,35 @@
 import { BookOpen, Code, Shield } from "lucide-react";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { BlogPostsList } from "@/components/blog/blog-posts-list";
 import { Footer } from "@/components/landing/footer";
 import { blogSource } from "@/lib/blog";
+
+export const metadata: Metadata = {
+  title: "Blog",
+  description:
+    "Latest updates, guides, and deep dives into OCPP and EV charging infrastructure.",
+  keywords: [
+    "OCPP blog",
+    "EV charging tutorial",
+    "CSMS guides",
+    "ocpp-ws-io updates",
+    "Node.js OCPP",
+  ],
+  openGraph: {
+    title: "Blog | OCPP WS IO",
+    description:
+      "Latest updates, guides, and deep dives into OCPP and EV charging infrastructure.",
+    url: "https://ocpp-ws-io.rohittiwari.me/blog",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Blog | OCPP WS IO",
+    description:
+      "Latest updates, guides, and deep dives into OCPP and EV charging infrastructure.",
+  },
+};
 
 export default function BlogPage() {
   const posts = [...blogSource.getPages()]
