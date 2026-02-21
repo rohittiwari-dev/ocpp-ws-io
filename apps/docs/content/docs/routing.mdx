@@ -135,3 +135,59 @@ const wildcardRouter = server.use(async (ctx, next) => {
 ```
 
 Because `ocpp-ws-io` evaluates routes **in the order they are defined**, ensure your catch-all routers are placed at the bottom of your initialization code.
+
+---
+
+## Server & Router Execution Flow
+
+Understanding the precise execution flow of `ocpp-ws-io` is critical for properly separating your authentication, rate-limiting, and validation logic. The framework operates in a **strict, two-phase execution hierarchy**: the Connection Phase and the Message Phase.
+
+### 1. The Connection Phase (HTTP Upgrade)
+
+This happens the moment a charging station attempts to connect via WebSocket, but _before_ the connection is truly accepted. Everything bound to the `OCPPRouter` runs here.
+
+1. **Route Matching (`router.route`)**: The incoming URL is evaluated against your defined patterns.
+2. **Connection Middleware (`router.use`)**:
+   - **Execution Level**: Pre-Authentication.
+   - **Purpose**: Runs horizontally (similar to Express.js). Use this to inspect HTTP headers, IP addresses (`ctx.handshake`), enforce early rate-limiting, or inject data into `ctx.state`.
+3. **Auth Callback (`router.auth`)**:
+   - **Execution Level**: Authentication & Acceptance.
+   - **Purpose**: Runs _last_ in the HTTP upgrade chain. It looks at everything the middleware prepared, communicates with your database, and definitively calls `accept()` or `reject()`. If accepted, the WebSocket officially opens.
+
+### 2. The Message Phase (WebSocket Open)
+
+Once the Auth Callback fires `accept()`, the client is successfully connected. The execution context now moves to the message layer (`OCPPClient`).
+
+4. **Message Middleware (`server.use` or `client.use`)**:
+   - **Execution Level**: Pre-Handler / Interceptor.
+   - **Purpose**: Runs every time a message is sent or received. It wraps the raw protocol payload. Use this to intercept outgoing calls, format logs, validate custom schemas, or drop bad messages before the business logic sees them.
+5. **Message Handlers (`server.handle` or `client.handle`)**:
+   - **Execution Level**: Business Logic.
+   - **Purpose**: This is the very end of the line. It receives the parsed OCPP payload (e.g., `BootNotification`), performs your actual business logic, and returns the formal protocol response.
+
+### Execution Flow Diagram
+
+<Mermaid chart={`
+sequenceDiagram
+    participant Station as Charging Station
+    participant HTTP as Base HTTP Server
+    participant R as OCPPRouter
+    participant M as Message Middleware
+    participant H as Message Handler
+
+    Note over Station,HTTP: Phase 1: Connection & Authentication
+    Station->>HTTP: WS Upgrade Request (/ws/CP-101)
+    HTTP->>R: 1. Match Route
+    R->>R: 2. Run Connection Middlewares (Rate Limit, etc)
+    R->>R: 3. Run Auth Callback (Database Check)
+    R-->>Station: 101 Switching Protocols (Accepted)
+
+    Note over Station,H: Phase 2: Open WebSocket Messaging
+    Station->>M: 4. Send BootNotification
+    M->>M: Run Pre-Handler Middleware (Schema Check, Logging)
+    M->>H: 5. Trigger client.handle('BootNotification')
+    H->>H: Business Logic executed
+    H-->>M: Return Accepted Response
+    M-->>Station: Deliver WebSocket Payload
+
+`} />

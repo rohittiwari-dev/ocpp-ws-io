@@ -131,6 +131,22 @@ server.on("upgradeError", ({ error, socket }) => {
 });
 ```
 
+### Server & Router Execution Flow
+
+The `OCPPServer` and its internal `OCPPRouter` handle connections and messages in a strict, two-phase execution hierarchy:
+
+#### 1. Connection Phase (HTTP Upgrade)
+
+Executes before the WebSocket connection is officially accepted.
+
+1. **Route Matching (`router.route`)**: The incoming URL is matched against defined patterns.
+2. **Connection Middleware (`router.use`)**: Runs sequentially. Used to extract tokens, inspect headers, or implement early rate-limiting logic.
+3. **Auth Callback (`router.auth`)**: Runs **last** in the HTTP upgrade chain. Used to validate credentials against a database and finally accept/reject the connection.
+
+#### 2. Message Phase (WebSocket Open)
+
+Executes after the connection is accepted and messages start flowing. 4. **Message Middleware (`client.use` / `server.use`)**: Intercepts every outgoing/incoming message for logging, schema validation, or metric tracking. 5. **Message Handlers (`client.handle` / `server.handle`)**: The **final piece of business logic** where the system reacts to a specific OCPP action (e.g., `BootNotification`).
+
 ## 📝 Logging
 
 ocpp-ws-io comes with **built-in structured logging** via [voltlog-io](https://www.npmjs.com/package/voltlog-io).
@@ -192,24 +208,62 @@ const client = new OCPPClient({
 
 ### Safe Calls (`safeCall`)
 
-Perform RPC calls without `try/catch` blocks. Returns `null` on failure and logs the error automatically.
+Perform RPC calls without `try/catch` blocks. Returns the response data on success, or `undefined` on failure while automatically logging the error. You can also pass per-call config options like timeouts.
 
-```typescript
-const result = await client.safeCall("ocpp1.6", "Heartbeat", {});
+````typescript
+const result = await client.safeCall(
+  "ocpp1.6",
+  "Heartbeat",
+  {},
+  {
+    timeoutMs: 15000, // Finely control the timeout specifically for this request
+  },
+);
+
 if (result) {
+  // Checked for undefined
   console.log("Heartbeat accepted:", result.currentTime);
 }
-```
 
-### Unicast Routing (`safeSendToClient`) [Server]
+### Unicast Routing (`sendToClient` / `safeSendToClient`) [Server]
 
 Send a message to a specific client ID, even if they are connected to a different node in the cluster.
 
+You have two options depending on your error-handling preference:
+
+#### 1. Standard approach (`sendToClient`)
+Throws an error if the client responds with a `CALLERROR` or if the timeout is reached.
 ```typescript
-// Best-effort routing (Cluster-aware)
-await server.safeSendToClient("CP001", "ocpp1.6", "GetConfiguration", {
-  key: ["ClockAlignedDataInterval"],
-});
+try {
+  const result = await server.sendToClient(
+    "CP001",
+    "ocpp1.6",
+    "GetConfiguration",
+    { key: ["ClockAlignedDataInterval"] },
+    { timeoutMs: 10000 },
+  );
+  console.log("Configuration:", result);
+} catch (error) {
+  console.error("Failed to get configuration:", error);
+}
+````
+
+#### 2. Safe approach (`safeSendToClient`)
+
+Returns the response on success, or `undefined` on error, automatically logging the failure internally.
+
+```typescript
+const result = await server.safeSendToClient(
+  "CP001",
+  "ocpp1.6",
+  "GetConfiguration",
+  { key: ["ClockAlignedDataInterval"] },
+  { timeoutMs: 10000 },
+);
+
+if (result) {
+  console.log("Configuration:", result);
+}
 ```
 
 ## 🧩 Middleware

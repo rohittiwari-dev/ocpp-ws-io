@@ -72,15 +72,17 @@ const result = await client.call("ocpp1.6", "BootNotification", { ... });
 
 #### `safeCall(protocol?, method, params, options?)`
 
-Exactly like `call()`, except it catches all errors and returns an object of `{ success: boolean, result?, error? }` rather than throwing. Useful for fire-and-forget or localized error handling without breaking loops.
+Exactly like `call()`, except it catches all errors and returns the response payload on success, or `undefined` on error rather than throwing. Useful for fire-and-forget or localized error handling without breaking loops.
 
 ```typescript
-const { success, result, error } = await client.safeCall(
+const result = await client.safeCall(
   "ocpp1.6",
   "ClearCache",
   {},
+  { timeoutMs: 15000 },
 );
-if (!success) {
+
+if (result === undefined) {
   client.logger.warn("Station failed to clear cache", { error });
 }
 ```
@@ -170,25 +172,36 @@ server.on("client", (client) => {
 
 #### `sendToClient(identity, protocol?, method, params, options?)`
 
-Helper method to dispatch an outgoing RPC call to a specific connected client by its `identity`. Throws an error if the station is not connected. Matches the `client.call()` signature.
+Helper method to dispatch an outgoing RPC call to a specific connected client by its `identity`. Throws an error if the station is not connected. Matches the `client.call()` signature and supports `timeoutMs` in the options argument.
 
 ```typescript
-const result = await server.sendToClient("CP-001", "ocpp1.6", "Reset", {
-  type: "Soft",
-});
+const result = await server.sendToClient(
+  "CP-001",
+  "ocpp1.6",
+  "Reset",
+  {
+    type: "Soft",
+  },
+  { timeoutMs: 10000 },
+);
 ```
 
 #### `safeSendToClient(identity, protocol?, method, params, options?)`
 
-Exactly like `sendToClient()`, but catches errors (and disconnected station errors), returning a standard `{ success: boolean, result?, error? }` structure. Highly recommended for bulk operations across your cluster.
+Exactly like `sendToClient()`, but catches errors (and disconnected station errors), returning the response payload on success, or `undefined` on error. Highly recommended for bulk operations across your cluster where individual failures shouldn't throw exceptions.
 
 ```typescript
-const { success, error } = await server.safeSendToClient(
+const result = await server.safeSendToClient(
   "CP-001",
   "ocpp1.6",
   "UpdateFirmware",
   { location: "..." },
+  { timeoutMs: 30000 },
 );
+
+if (result !== undefined) {
+  console.log("Firmware update accepted");
+}
 ```
 
 ### Properties
