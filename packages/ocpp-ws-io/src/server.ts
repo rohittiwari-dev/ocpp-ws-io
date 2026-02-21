@@ -17,6 +17,7 @@ import {
   type AllMethodNames,
   type AuthAccept,
   type AuthCallback,
+  type CallOptions,
   type ClientOptions,
   type CloseOptions,
   type ConnectionContext,
@@ -28,6 +29,7 @@ import {
   type LoggerLikeNotOptional,
   type OCPPProtocol,
   type OCPPRequestType,
+  type OCPPResponseType,
   SecurityProfile,
   type ServerEvents,
   type ServerOptions,
@@ -121,6 +123,53 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   get state(): "OPEN" | "CLOSING" | "CLOSED" {
     return this._state;
+  }
+
+  /**
+   * Synchronously returns the OCPPServerClient instance if the specific identity
+   * is connected to THIS local server node.
+   * Note: In a clustered environment, clients connected to other nodes will NOT be returned here.
+   *
+   * @param identity The client identity (username/station ID)
+   */
+  getLocalClient(identity: string): OCPPServerClient | undefined {
+    for (const client of this._clients) {
+      if (client.identity === identity) {
+        return client;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Synchronously checks if the specific identity is connected to THIS local server node.
+   * Note: In a clustered environment, this will return false if the client is connected to another node.
+   *
+   * @param identity The client identity (username/station ID)
+   */
+  hasLocalClient(identity: string): boolean {
+    return this.getLocalClient(identity) !== undefined;
+  }
+
+  /**
+   * Asynchronously checks if the specific identity is connected to the server.
+   * In a single-node setup, this checks the local connections.
+   * In a clustered setup (with a pub/sub adapter), this will also check the global presence registry
+   * to see if the client is connected to ANY node in the cluster.
+   *
+   * @param identity The client identity (username/station ID)
+   */
+  async isClientConnected(identity: string): Promise<boolean> {
+    if (this.hasLocalClient(identity)) {
+      return true;
+    }
+
+    if (this._adapter?.getPresence) {
+      const nodeId = await this._adapter.getPresence(identity);
+      return nodeId !== null && nodeId !== undefined;
+    }
+
+    return false;
   }
 
   // ─── Auth ────────────────────────────────────────────────────
@@ -732,14 +781,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     version: V,
     method: M,
     params: OCPPRequestType<V, M>,
-  ): Promise<void>;
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<V, M> | undefined>;
 
   // 2. Global overload (infers method from any protocol)
   async sendToClient<M extends AllMethodNames<any>>(
     identity: string,
     method: M,
     params: OCPPRequestType<any, M>,
-  ): Promise<void>;
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<any, M> | undefined>;
 
   // 3. Custom/Loose overload
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -747,38 +798,41 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     identity: string,
     method: string,
     params: Record<string, any>,
-  ): Promise<void>;
+    options?: CallOptions,
+  ): Promise<any | undefined>;
 
-  async sendToClient(...args: any[]): Promise<void> {
+  async sendToClient(...args: any[]): Promise<any> {
     let identity: string;
     let method: string;
     let params: any;
+    let options: CallOptions | undefined;
 
     // Parse overloads
     if (
-      args.length === 4 &&
+      args.length >= 4 &&
       typeof args[0] === "string" &&
       typeof args[1] === "string" &&
       typeof args[2] === "string"
     ) {
-      // (identity, version, method, params)
+      // (identity, version, method, params, options)
       identity = args[0];
       // version = args[1]; // Not used for routing yet, but could be validation
       method = args[2];
       params = args[3];
+      options = args[4];
     } else {
-      // (identity, method, params)
+      // (identity, method, params, options)
       identity = args[0];
       method = args[1];
       params = args[2];
+      options = args[3];
     }
 
     // 1. Check local
     for (const client of this._clients) {
       if (client.identity === identity) {
         // Found locally
-        await client.call(method as any, params as any);
-        return;
+        return await client.call(method as any, params as any, options);
       }
     }
 
@@ -792,6 +846,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           target: identity,
           method,
           params,
+          options,
         });
         return;
       } else {
@@ -814,14 +869,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     version: V,
     method: M,
     params: OCPPRequestType<V, M>,
-  ): Promise<boolean>;
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<V, M> | undefined>;
 
   // 2. Global overload
   async safeSendToClient<M extends AllMethodNames<any>>(
     identity: string,
     method: M,
     params: OCPPRequestType<any, M>,
-  ): Promise<boolean>;
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<any, M> | undefined>;
 
   // 3. Custom/Loose overload
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -829,13 +886,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     identity: string,
     method: string,
     params: Record<string, any>,
-  ): Promise<boolean>;
+    options?: CallOptions,
+  ): Promise<any | undefined>;
 
-  async safeSendToClient(...args: any[]): Promise<boolean> {
+  async safeSendToClient(...args: any[]): Promise<any> {
     try {
       // @ts-expect-error
-      await this.sendToClient(...args);
-      return true;
+      return await this.sendToClient(...args);
     } catch (error) {
       if (
         this._logger &&
@@ -845,15 +902,17 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         this._logger.warn("SafeSendToClient failed", {
           identity: args[0],
           method:
-            args.length === 4
-              ? args[2] // versioned: id, ver, method, params
-              : args.length === 3
-                ? args[1] // global: id, method, params
+            args.length >= 4 &&
+            typeof args[1] === "string" &&
+            typeof args[2] === "string"
+              ? args[2] // versioned: id, ver, method, params, options
+              : args.length >= 3 && typeof args[1] === "string"
+                ? args[1] // global: id, method, params, options
                 : "unknown",
           error,
         });
       }
-      return false;
+      return undefined;
     }
   }
 
@@ -905,6 +964,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         target: string;
         method: string;
         params: unknown;
+        options?: CallOptions;
       };
 
       // Unicast is meant for ME, but specifically for a TARGET client
@@ -912,14 +972,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       // Unlike broadcast, I don't need to iterate all.
       for (const client of this._clients) {
         if (client.identity === payload.target) {
-          client.call(payload.method, payload.params as any).catch((err) => {
-            if ((err as Error).name !== "TimeoutError") {
-              this._logger?.error?.("Error delivering unicast to client", {
-                identity: payload.target,
-                error: err,
-              });
-            }
-          });
+          client
+            .call(payload.method, payload.params as any, payload.options)
+            .catch((err) => {
+              if ((err as Error).name !== "TimeoutError") {
+                this._logger?.error?.("Error delivering unicast to client", {
+                  identity: payload.target,
+                  error: err,
+                });
+              }
+            });
           return;
         }
       }

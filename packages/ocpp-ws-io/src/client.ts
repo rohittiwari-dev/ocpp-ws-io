@@ -615,14 +615,14 @@ export class OCPPClient<
   // ─── Safe Call (Best Effort) ─────────────────────────────────
 
   /**
-   * Version-specific safe call. Returns `null` on error instead of throwing.
+   * Version-specific safe call. Returns `undefined` on error instead of throwing.
    */
   async safeCall<V extends OCPPProtocol, M extends AllMethodNames<V>>(
     version: V,
     method: M,
     params: OCPPRequestType<V, M>,
     options?: CallOptions,
-  ): Promise<OCPPResponseType<V, M> | null>;
+  ): Promise<OCPPResponseType<V, M> | undefined>;
 
   /**
    * Custom/Extension safe call.
@@ -633,21 +633,21 @@ export class OCPPClient<
     method: string,
     params: Record<string, any>,
     options?: CallOptions,
-  ): Promise<TResult | null>;
+  ): Promise<TResult | undefined>;
 
   /** Default protocol safe call. */
   async safeCall<M extends AllMethodNames<P>>(
     method: M,
     params: OCPPRequestType<P, M>,
     options?: CallOptions,
-  ): Promise<OCPPResponseType<P, M> | null>;
+  ): Promise<OCPPResponseType<P, M> | undefined>;
 
   /** Explicit result safe call. */
   async safeCall<TResult = unknown>(
     method: string,
     params?: Record<string, unknown>,
     options?: CallOptions,
-  ): Promise<TResult | null>;
+  ): Promise<TResult | undefined>;
 
   async safeCall(...args: any[]): Promise<any> {
     try {
@@ -667,7 +667,7 @@ export class OCPPClient<
           console.warn("SafeCall failed", payload);
         }
       }
-      return null;
+      return undefined;
     }
   }
 
