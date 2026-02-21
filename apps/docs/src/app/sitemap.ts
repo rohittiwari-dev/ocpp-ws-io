@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
-import { source } from "@/lib/source";
 import { blogSource } from "@/lib/blog";
+import { source } from "@/lib/source";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const url = "https://ocpp-ws-io.rohittiwari.me";

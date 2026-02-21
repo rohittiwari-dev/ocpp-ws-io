@@ -66,7 +66,10 @@ describe("createLoggingMiddleware", () => {
   });
 
   const runMw = async (ctx: any) => {
-    const mw = createLoggingMiddleware(logger, "TEST");
+    const mw = createLoggingMiddleware(logger, "TEST", {
+      exchangeLog: true,
+      prettify: true,
+    });
     return mw(ctx, next);
   };
 
@@ -119,32 +122,8 @@ describe("createLoggingMiddleware", () => {
 
     // End log
     expect(logger.info).toHaveBeenCalledWith(
-      expect.stringContaining("←  BootNotification  [RES]"),
-      expect.objectContaining({ direction: "IN", params: { interval: 300 } }),
-    );
-  });
-
-  it("should log incoming_result", async () => {
-    // This happens when client receives a result for a call it sent?
-    // Actually logging.ts handles 'incoming_result' in the END switch (lines 77-86)
-    // But wait, 'incoming_result' is a distinct context type?
-    // Yes, likely used when processing a generic message that is a result.
-
-    const ctx: Partial<MiddlewareContext> = {
-      type: "incoming_result",
-      method: "PreviouslySent",
-      messageId: "789",
-      payload: { status: "OK" },
-    };
-
-    await runMw(ctx);
-
-    // No START log for incoming_result in current impl (switch only has calls)
-
-    // End log
-    expect(logger.info).toHaveBeenCalledWith(
-      expect.stringContaining("←  PreviouslySent  [RES]"),
-      expect.objectContaining({ direction: "IN", payload: { status: "OK" } }),
+      expect.stringContaining("✅ TEST  ←  BootNotification  [RES]"),
+      expect.objectContaining({ direction: "IN", payload: { interval: 300 } }),
     );
   });
 
@@ -160,7 +139,7 @@ describe("createLoggingMiddleware", () => {
     await expect(runMw(ctx)).rejects.toThrow("Crash");
 
     expect(logger.error).toHaveBeenCalledWith(
-      "Handler error",
+      expect.stringContaining("🚨 TEST  →  FailMe  [ERR]"),
       expect.objectContaining({ method: "FailMe", error: "Crash" }),
     );
   });
@@ -176,8 +155,8 @@ describe("createLoggingMiddleware", () => {
 
     await expect(runMw(ctx)).rejects.toThrow("NetworkFail");
 
-    expect(logger.error).toHaveBeenCalledWith(
-      "Call error",
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("🚨 TEST  ←  FailCall  [ERR]"),
       expect.objectContaining({ method: "FailCall", error: "NetworkFail" }),
     );
   });

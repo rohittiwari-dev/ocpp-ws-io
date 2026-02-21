@@ -1,8 +1,8 @@
 import { BookOpen, Code, Shield } from "lucide-react";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { BlogPostsList } from "@/components/blog/blog-posts-list";
 import { Footer } from "@/components/landing/footer";
-import type { Metadata } from "next";
 import { blogSource } from "@/lib/blog";
 
 export const metadata: Metadata = {

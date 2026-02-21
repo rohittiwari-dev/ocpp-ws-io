@@ -167,7 +167,13 @@ export class OCPPClient<
 
     if (this._options.logging) {
       // Since logging is enabled, initLogger ensures _logger is set.
-      this.use(createLoggingMiddleware(this._logger, this._identity));
+      this.use(
+        createLoggingMiddleware(
+          this._logger,
+          this._identity,
+          this._options.logging,
+        ),
+      );
     }
 
     // Set up strict mode validators
@@ -648,13 +654,19 @@ export class OCPPClient<
       // @ts-expect-error - Spread arguments to the matching call overload
       return await this.call(...args);
     } catch (error) {
-      const log = this?._logger?.warn ?? console.warn;
-      log("SafeCall failed", {
-        method: args.find(
-          (a) => typeof a === "string" && !a.startsWith("ocpp"),
-        ), // heuristic
-        error,
-      });
+      if ((error as Error).name !== "TimeoutError") {
+        const payload = {
+          method: args.find(
+            (a) => typeof a === "string" && !a.startsWith("ocpp"),
+          ), // heuristic
+          error,
+        };
+        if (this._logger?.warn) {
+          this._logger.warn("SafeCall failed", payload);
+        } else {
+          console.warn("SafeCall failed", payload);
+        }
+      }
       return null;
     }
   }
@@ -702,11 +714,6 @@ export class OCPPClient<
       callResult = await new Promise<unknown>((resolve, reject) => {
         const timeoutHandle = setTimeout(() => {
           this._pendingCalls.delete(msgId);
-          this._logger?.warn?.("Call timed out", {
-            messageId: msgId,
-            method: ctxvals.method,
-            timeoutMs,
-          });
           reject(
             new TimeoutError(
               `Call to "${ctxvals.method}" timed out after ${timeoutMs}ms`,
@@ -743,13 +750,7 @@ export class OCPPClient<
               this._pendingCalls.delete(msgId);
               reject(err);
             } else {
-              if (this._exchangeLog) {
-                this._logExchange("OUT", "CALL", ctxvals.method, {
-                  messageId: msgId,
-                  method: ctxvals.method,
-                  payload: ctxvals.params,
-                });
-              }
+              // Handled by createLoggingMiddleware
             }
           });
         } else if (this._state === CONNECTING) {
@@ -763,6 +764,8 @@ export class OCPPClient<
           reject(new Error(`WebSocket is not open (state: ${this._state})`));
         }
       });
+
+      return callResult;
     });
 
     return callResult;
@@ -877,113 +880,114 @@ export class OCPPClient<
       protocol: this._protocol,
     };
 
-    await this._middleware.execute(ctx, async (c) => {
-      const ctxvals = c as Extract<
-        MiddlewareContext,
-        { type: "incoming_call" }
-      >;
+    try {
+      await this._middleware.execute(ctx, async (c) => {
+        const ctxvals = c as Extract<
+          MiddlewareContext,
+          { type: "incoming_call" }
+        >;
 
-      // Legacy logging removed in favor of middleware
-      // this._logExchange("IN", "CALL", ctxvals.method, { ... });
-
-      const modifiedMessage: OCPPCall = [
-        MessageType.CALL,
-        ctxvals.messageId,
-        ctxvals.method,
-        ctxvals.params,
-      ];
-      this.emit("call", modifiedMessage);
-
-      if (this._state !== OPEN) {
-        return;
-      }
-
-      try {
-        if (this._pendingResponses.has(ctxvals.messageId)) {
-          throw createRPCError(
-            "RpcFrameworkError",
-            `Already processing call with ID: ${ctxvals.messageId}`,
-          );
-        }
-
-        const specificHandler =
-          (this._protocol
-            ? this._handlers.get(`${this._protocol}:${ctxvals.method}`)
-            : undefined) ?? this._handlers.get(ctxvals.method);
-
-        if (!specificHandler && !this._wildcardHandler) {
-          throw new RPCNotImplementedError(
-            `Method "${ctxvals.method}" not implemented`,
-          );
-        }
-
-        // Strict mode: validate inbound call params
-        if (this._options.strictMode && this._protocol) {
-          this._validateInbound(ctxvals.method, ctxvals.params, "req");
-        }
-
-        this._pendingResponses.add(ctxvals.messageId);
-
-        const ac = new AbortController();
-        const context: HandlerContext = {
-          messageId: ctxvals.messageId,
-          method: ctxvals.method,
-          protocol: this._protocol,
-          params: ctxvals.params,
-          signal: ac.signal,
-        };
-
-        let result: unknown;
-        if (specificHandler) {
-          result = await specificHandler(context);
-        } else if (this._wildcardHandler) {
-          result = await this._wildcardHandler(ctxvals.method, context);
-        }
-
-        this._pendingResponses.delete(ctxvals.messageId);
-
-        if (result === NOREPLY) return;
-
-        // Strict mode: validate outbound response
-        if (this._options.strictMode && this._protocol) {
-          this._validateOutbound(ctxvals.method, result, "conf");
-        }
-
-        const response: OCPPCallResult = [
-          MessageType.CALLRESULT,
+        const modifiedMessage: OCPPCall = [
+          MessageType.CALL,
           ctxvals.messageId,
-          result,
+          ctxvals.method,
+          ctxvals.params,
         ];
-        this._ws?.send(JSON.stringify(response));
-        this.emit("callResult", response);
-      } catch (err) {
-        this._pendingResponses.delete(ctxvals.messageId);
-        this._logger?.error?.("Handler error", {
-          messageId: ctxvals.messageId,
-          method: ctxvals.method,
-          error: (err as Error).message,
-        });
+        this.emit("call", modifiedMessage);
 
-        const rpcErr =
-          err instanceof RPCGenericError || (err as RPCError).rpcErrorCode
-            ? (err as RPCError)
-            : createRPCError("InternalError", (err as Error).message);
+        if (this._state !== OPEN) {
+          return;
+        }
 
-        const details = this._options.respondWithDetailedErrors
-          ? getErrorPlainObject(err as Error)
-          : {};
+        try {
+          if (this._pendingResponses.has(ctxvals.messageId)) {
+            throw createRPCError(
+              "RpcFrameworkError",
+              `Already processing call with ID: ${ctxvals.messageId}`,
+            );
+          }
 
-        const errorResponse: OCPPCallError = [
-          MessageType.CALLERROR,
-          ctxvals.messageId,
-          rpcErr.rpcErrorCode,
-          rpcErr.rpcErrorMessage || (err as Error).message || "",
-          details,
-        ];
-        this._ws?.send(JSON.stringify(errorResponse));
-        this.emit("callError", errorResponse);
-      }
-    });
+          const specificHandler =
+            (this._protocol
+              ? this._handlers.get(`${this._protocol}:${ctxvals.method}`)
+              : undefined) ?? this._handlers.get(ctxvals.method);
+
+          if (!specificHandler && !this._wildcardHandler) {
+            throw new RPCNotImplementedError(
+              `Method "${ctxvals.method}" not implemented`,
+            );
+          }
+
+          if (this._options.strictMode && this._protocol) {
+            this._validateInbound(ctxvals.method, ctxvals.params, "req");
+          }
+
+          this._pendingResponses.add(ctxvals.messageId);
+
+          const ac = new AbortController();
+          const context: HandlerContext = {
+            messageId: ctxvals.messageId,
+            method: ctxvals.method,
+            protocol: this._protocol,
+            params: ctxvals.params,
+            signal: ac.signal,
+          };
+
+          let result: unknown;
+          if (specificHandler) {
+            result = await specificHandler(context);
+          } else if (this._wildcardHandler) {
+            result = await this._wildcardHandler(ctxvals.method, context);
+          }
+
+          this._pendingResponses.delete(ctxvals.messageId);
+
+          if (result === NOREPLY) return;
+
+          if (this._options.strictMode && this._protocol) {
+            this._validateOutbound(ctxvals.method, result, "conf");
+          }
+
+          const response: OCPPCallResult = [
+            MessageType.CALLRESULT,
+            ctxvals.messageId,
+            result,
+          ];
+          this._ws?.send(JSON.stringify(response));
+          this.emit("callResult", response);
+
+          return result;
+        } catch (err) {
+          this._pendingResponses.delete(ctxvals.messageId);
+
+          const rpcErr =
+            err instanceof RPCGenericError || (err as RPCError).rpcErrorCode
+              ? (err as RPCError)
+              : createRPCError("InternalError", (err as Error).message);
+
+          const details = this._options.respondWithDetailedErrors
+            ? getErrorPlainObject(err as Error)
+            : {};
+
+          const errorResponse: OCPPCallError = [
+            MessageType.CALLERROR,
+            ctxvals.messageId,
+            rpcErr.rpcErrorCode,
+            rpcErr.rpcErrorMessage || (err as Error).message || "",
+            details,
+          ];
+          this._ws?.send(JSON.stringify(errorResponse));
+          this.emit("callError", errorResponse);
+
+          throw err;
+        }
+      });
+    } catch {
+      // Ignored: The error was already sent as a CALLERROR to the peer,
+      // and logged explicitly by the createLoggingMiddleware.
+      // We swallow it here to prevent an UnhandledPromiseRejection
+      // since _handleIncomingCall is executed synchronously by _onMessage.
+    }
   }
 
   private async _handleCallResult(message: OCPPCallResult): Promise<void> {
@@ -1013,13 +1017,7 @@ export class OCPPClient<
       const pendingCtx = this._pendingCalls.get(ctxvals.messageId);
       if (!pendingCtx) return;
 
-      this._logExchange("IN", "CALLRESULT", ctxvals.method, {
-        messageId: ctxvals.messageId,
-        method: ctxvals.method,
-        protocol: this._protocol,
-        payload: ctxvals.payload,
-        durationMs: Date.now() - pendingCtx.sentAt,
-      });
+      // Handled by createLoggingMiddleware
 
       this.emit("callResult", message);
 
@@ -1060,15 +1058,7 @@ export class OCPPClient<
       const pendingCtx = this._pendingCalls.get(ctxvals.messageId);
       if (!pendingCtx) return;
 
-      this._logExchange("IN", "CALLERROR", code, {
-        messageId: ctxvals.messageId,
-        method: pendingCtx.method,
-        errorCode: code,
-        errorMessage: msg,
-        protocol: this._protocol,
-        durationMs: Date.now() - pendingCtx.sentAt,
-        errorDetails: details,
-      });
+      // Handled by createLoggingMiddleware
 
       this.emit("callError", ctxvals.error);
 

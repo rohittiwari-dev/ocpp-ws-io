@@ -38,17 +38,19 @@ const client = new OCPPClient({
 
 The `logging` option accepts a `LoggingConfig` object:
 
-| Option             | Type         | Default     | Description                                                             |
-| :----------------- | :----------- | :---------- | :---------------------------------------------------------------------- |
-| `enabled`          | `boolean`    | `true`      | Enable or disable all logging.                                          |
-| `level`            | `string`     | `'info'`    | Minimum log level (`trace`, `debug`, `info`, `warn`, `error`, `fatal`). |
-| `prettify`         | `boolean`    | `false`     | Use `prettyTransport` for human-readable output (colors, icons).        |
-| `exchangeLog`      | `boolean`    | `false`     | Log all OCPP messages with direction (`IN`/`OUT`) and metadata.         |
-| `handler`          | `LoggerLike` | `undefined` | Custom logger instance (e.g., Pino) to replace the default logger.      |
-| `showMetadata`     | `boolean`    | `true`      | Show trailing metadata object in logs.                                  |
-| `showSourceMeta`   | `boolean`    | `true`      | Show source context (component, identity).                              |
-| `prettifySource`   | `boolean`    | `false`     | Compact source tag `[OCPPServer/CP-1]`.                                 |
-| `prettifyMetadata` | `boolean`    | `false`     | Format metadata as key=value pairs.                                     |
+| Option             | Type         | Default     | Description                                                                             |
+| :----------------- | :----------- | :---------- | :-------------------------------------------------------------------------------------- |
+| `enabled`          | `boolean`    | `true`      | Enable or disable all logging.                                                          |
+| `logging` (root)   | `boolean`    | `undefined` | Can be set directly to `false` to completely disable logging with a safe NOOP fallback. |
+| `level`            | `string`     | `'info'`    | Minimum log level (`trace`, `debug`, `info`, `warn`, `error`, `fatal`).                 |
+| `prettify`         | `boolean`    | `false`     | Use `prettyTransport` for human-readable output (colors, icons).                        |
+| `exchangeLog`      | `boolean`    | `false`     | Log all OCPP messages with direction (`IN`/`OUT`) and metadata.                         |
+| `logger`           | `LoggerLike` | `undefined` | Custom logger instance (e.g., Pino) to replace the default logger.                      |
+| `handler`          | `function`   | `undefined` | Custom `voltlog-io` transport function `(entry) => void \| Promise<void>`               |
+| `showMetadata`     | `boolean`    | `true`      | Show trailing metadata object in logs.                                                  |
+| `showSourceMeta`   | `boolean`    | `true`      | Show source context (component, identity).                                              |
+| `prettifySource`   | `boolean`    | `false`     | Compact source tag `[OCPPServer/CP-1]`.                                                 |
+| `prettifyMetadata` | `boolean`    | `false`     | Format metadata as key=value pairs.                                                     |
 
 ### Levels
 
@@ -107,7 +109,7 @@ const logger = createLogger({
 logger.info("System started");
 ```
 
-### Using a Custom Logger
+### Using a Custom Logger Instance
 
 If you already use Pino, Winston, or another logger, you can pass it to `ocpp-ws-io`. The logger must satisfy the `LoggerLike` interface (methods: `debug`, `info`, `warn`, `error`, `child`).
 
@@ -121,7 +123,29 @@ const myLogger = pino();
 
 const server = new OCPPServer({
   logging: {
-    handler: myLogger, // ocpp-ws-io will use this instance
+    logger: myLogger, // ocpp-ws-io will use this instance
+  },
+});
+```
+
+### Using a Custom Transport Handler
+
+If you prefer to let `ocpp-ws-io` handle the logger initialization (and middleware enrichment) but want to siphon the formatted log items to an external observability platform (like Datadog, Sentry, an external file, or a custom UI), you can provide a custom `handler` callback.
+
+This `handler` will receive the fully resolved `LogEntry` directly from the internal `voltlog-io` pipeline!
+
+```typescript
+const server = new OCPPServer({
+  logging: {
+    enabled: true,
+    handler: async (entry) => {
+      // example: Send log to a remote ingest API
+      await fetch("https://logs.example.com/ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(entry),
+      });
+    },
   },
 });
 ```

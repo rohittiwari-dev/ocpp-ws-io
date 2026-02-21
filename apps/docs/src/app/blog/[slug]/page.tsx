@@ -1,10 +1,12 @@
 import { DocsBody } from "fumadocs-ui/layouts/docs/page";
+import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { LLMCopyButton, ViewOptions } from "@/components/ai/page-actions";
 import { Footer } from "@/components/landing/footer";
-import type { Metadata } from "next";
 import { blogSource, getRelatedDocs, getRelatedPosts } from "@/lib/blog";
+import { gitConfig } from "@/lib/layout.shared";
 import { getMDXComponents } from "@/mdx-components";
 
 export async function generateMetadata({
@@ -143,8 +145,29 @@ export default async function BlogPostPage({
           </article>
 
           {/* Right Sidebar */}
-          <aside className="hidden lg:block pl-10 shrink-0">
-            <div className="sticky top-10 space-y-8 max-h-[calc(100vh-6rem)] overflow-y-auto pb-8 pr-5 scrollbar-thin">
+          <aside className="hidden bg-transparent! shadow-none!  lg:block pl-10 shrink-0">
+            <div className="sticky bg-transparent! shadow-none! top-10 space-y-8 max-h-[calc(100vh-6rem)] overflow-y-auto pb-8 pr-5 scrollbar-thin">
+              {/* Page Actions */}
+              <div className="flex items-center gap-3">
+                <LLMCopyButton markdownUrl={`/llms.mdx${page.url}`} />
+                <ViewOptions
+                  markdownUrl={`/llms.mdx${page.url}`}
+                  githubUrl={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/apps/docs/content/blog/${page.info.path}`}
+                />
+                <Link
+                  href={`/docs`}
+                  className="inline-flex items-center gap-2 bg-gray-100 rounded-md border border-fd-border px-2 py-1.5 text-xs font-medium text-fd-muted-foreground transition-all hover:bg-fd-card hover:text-fd-foreground hover:shadow-sm"
+                >
+                  View Docs
+                </Link>
+                <Link
+                  href={`/`}
+                  className="inline-flex items-center gap-2 bg-gray-100 rounded-md border border-fd-border px-2 py-1.5 text-xs font-medium text-fd-muted-foreground transition-all hover:bg-fd-card hover:text-fd-foreground hover:shadow-sm"
+                >
+                  Home
+                </Link>
+              </div>
+
               {/* Table of Contents */}
               {toc.length > 0 && (
                 <div>

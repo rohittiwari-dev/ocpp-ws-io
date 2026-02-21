@@ -17,20 +17,35 @@ const client = new OCPPClient(options: ClientOptions);
 
 #### ClientOptions
 
-| Option            | Type                     | Default    | Description                                             |
-| :---------------- | :----------------------- | :--------- | :------------------------------------------------------ |
-| `identity`        | `string`                 | _required_ | Charging station ID                                     |
-| `endpoint`        | `string`                 | _required_ | WebSocket URL (`ws://` or `wss://`)                     |
-| `protocols`       | `string[]`               | `[]`       | OCPP subprotocols to negotiate                          |
-| `securityProfile` | `SecurityProfile`        | `NONE`     | Security profile (0–3)                                  |
-| `password`        | `string \| Buffer`       | —          | Password for Basic Auth (Profile 1 & 2)                 |
-| `tls`             | `TLSOptions`             | —          | TLS/SSL options (Profile 2 & 3)                         |
-| `headers`         | `Record<string, string>` | —          | Additional WebSocket headers                            |
-| `query`           | `Record<string, string>` | —          | Additional URL query parameters                         |
-| `reconnect`       | `boolean`                | `true`     | Auto-reconnect on disconnect                            |
-| `maxReconnects`   | `number`                 | `Infinity` | Max reconnection attempts                               |
-| `strictMode`      | `boolean \| string[]`    | `false`    | Enable/restrict schema validation                       |
-| `logging`         | `LoggingConfig`          | `true`     | Configure structured output (`prettify`, `exchangeLog`) |
+| Option            | Type                     | Default    | Description                             |
+| :---------------- | :----------------------- | :--------- | :-------------------------------------- |
+| `identity`        | `string`                 | _required_ | Charging station ID                     |
+| `endpoint`        | `string`                 | _required_ | WebSocket URL (`ws://` or `wss://`)     |
+| `protocols`       | `string[]`               | `[]`       | OCPP subprotocols to negotiate          |
+| `securityProfile` | `SecurityProfile`        | `NONE`     | Security profile (0–3)                  |
+| `password`        | `string \| Buffer`       | —          | Password for Basic Auth (Profile 1 & 2) |
+| `tls`             | `TLSOptions`             | —          | TLS/SSL options (Profile 2 & 3)         |
+| `headers`         | `Record<string, string>` | —          | Additional WebSocket headers            |
+| `query`           | `Record<string, string>` | —          | Additional URL query parameters         |
+| `reconnect`       | `boolean`                | `true`     | Auto-reconnect on disconnect            |
+| `maxReconnects`   | `number`                 | `Infinity` | Max reconnection attempts               |
+| `strictMode`      | `boolean \| string[]`    | `false`    | Enable/restrict schema validation       |
+| `logging`         | `LoggingConfig`          | `{}`       | Configuration for structured logging.   |
+
+#### LoggingConfig
+
+| Option             | Type         | Default     | Description                                                               |
+| :----------------- | :----------- | :---------- | :------------------------------------------------------------------------ |
+| `enabled`          | `boolean`    | `true`      | Enable or disable all logging.                                            |
+| `level`            | `string`     | `'info'`    | Minimum log level (`trace`, `debug`, `info`, `warn`, `error`, `fatal`).   |
+| `prettify`         | `boolean`    | `false`     | Use `prettyTransport` for human-readable output (colors, icons).          |
+| `exchangeLog`      | `boolean`    | `false`     | Log all OCPP messages with direction (`IN`/`OUT`) and metadata.           |
+| `logger`           | `LoggerLike` | `undefined` | Custom logger instance (e.g., Pino) to replace the default logger.        |
+| `handler`          | `function`   | `undefined` | Custom `voltlog-io` transport function `(entry) => void \| Promise<void>` |
+| `showMetadata`     | `boolean`    | `true`      | Show trailing metadata object in logs.                                    |
+| `showSourceMeta`   | `boolean`    | `true`      | Show source context (component, identity).                                |
+| `prettifySource`   | `boolean`    | `false`     | Compact source tag `[OCPPServer/CP-1]`.                                   |
+| `prettifyMetadata` | `boolean`    | `false`     | Format metadata as key=value pairs.                                       |
 
 ### Methods
 
@@ -44,7 +59,7 @@ await client.connect();
 
 #### `call(protocol?, method, params, options?)`
 
-Make an RPC call.
+Make an RPC call. Throws a `TimeoutError` or protocol-level Error if the request fails.
 
 - `protocol`: Optional. e.g., "ocpp1.6". If omitted, generic type inference is used.
 - `method`: The OCPP method name (e.g., "BootNotification").
@@ -53,6 +68,21 @@ Make an RPC call.
 
 ```typescript
 const result = await client.call("ocpp1.6", "BootNotification", { ... });
+```
+
+#### `safeCall(protocol?, method, params, options?)`
+
+Exactly like `call()`, except it catches all errors and returns an object of `{ success: boolean, result?, error? }` rather than throwing. Useful for fire-and-forget or localized error handling without breaking loops.
+
+```typescript
+const { success, result, error } = await client.safeCall(
+  "ocpp1.6",
+  "ClearCache",
+  {},
+);
+if (!success) {
+  client.logger.warn("Station failed to clear cache", { error });
+}
 ```
 
 #### `handle(protocol?, method, handler)`
@@ -78,6 +108,16 @@ client.handle((method, { params }) => { ... });
 
 Close the connection.
 
+### Properties
+
+#### `logger`
+
+A fully initialized `voltlog-io` instance localized to this client. Automatically includes the client `identity` and `component: "OCPPClient"` in the context of every log message.
+
+```typescript
+client.logger.info("Initializing updates", { pendingFiles: 4 });
+```
+
 ## OCPPServer
 
 ```typescript
@@ -92,13 +132,13 @@ const server = new OCPPServer(options?: ServerOptions);
 
 #### ServerOptions
 
-| Option               | Type              | Default | Description                          |
-| :------------------- | :---------------- | :------ | :----------------------------------- |
-| `protocols`          | `string[]`        | `[]`    | Accepted OCPP subprotocols           |
-| `securityProfile`    | `SecurityProfile` | `NONE`  | Security profile                     |
-| `handshakeTimeoutMs` | `number`          | `30000` | Timeout for WebSocket handshake (ms) |
-| `tls`                | `TLSOptions`      | —       | TLS options (Profile 2 & 3)          |
-| `logging`            | `LoggingConfig`   | `true`  | Configure built-in logging           |
+| Option               | Type              | Default | Description                           |
+| :------------------- | :---------------- | :------ | :------------------------------------ |
+| `protocols`          | `string[]`        | `[]`    | Accepted OCPP subprotocols            |
+| `securityProfile`    | `SecurityProfile` | `NONE`  | Security profile                      |
+| `handshakeTimeoutMs` | `number`          | `30000` | Timeout for WebSocket handshake (ms)  |
+| `tls`                | `TLSOptions`      | —       | TLS options (Profile 2 & 3)           |
+| `logging`            | `LoggingConfig`   | `{}`    | Configuration for structured logging. |
 
 ### Methods
 
@@ -126,6 +166,39 @@ server.on("client", (client) => {
   // client is an OCPPServerClient (extends OCPPClient)
   console.log(client.session); // Access session data
 });
+```
+
+#### `sendToClient(identity, protocol?, method, params, options?)`
+
+Helper method to dispatch an outgoing RPC call to a specific connected client by its `identity`. Throws an error if the station is not connected. Matches the `client.call()` signature.
+
+```typescript
+const result = await server.sendToClient("CP-001", "ocpp1.6", "Reset", {
+  type: "Soft",
+});
+```
+
+#### `safeSendToClient(identity, protocol?, method, params, options?)`
+
+Exactly like `sendToClient()`, but catches errors (and disconnected station errors), returning a standard `{ success: boolean, result?, error? }` structure. Highly recommended for bulk operations across your cluster.
+
+```typescript
+const { success, error } = await server.safeSendToClient(
+  "CP-001",
+  "ocpp1.6",
+  "UpdateFirmware",
+  { location: "..." },
+);
+```
+
+### Properties
+
+#### `logger`
+
+An initialized `voltlog-io` logger isolated to the Server context (via `component: "OCPPServer"`). Automatically utilized by the internal router and exchange logs.
+
+```typescript
+server.logger.warn("Unrecognized protocol attempted", { requested: "ocpp1.5" });
 ```
 
 ## Protocol Constants
@@ -163,21 +236,21 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 
 #### BrowserClientOptions
 
-| Option                      | Type                     | Default    | Description                         |
-| :-------------------------- | :----------------------- | :--------- | :---------------------------------- |
-| `identity`                  | `string`                 | _required_ | Charging station ID                 |
-| `endpoint`                  | `string`                 | _required_ | WebSocket URL (`ws://` or `wss://`) |
-| `protocols`                 | `string[]`               | `[]`       | OCPP subprotocols to negotiate      |
-| `query`                     | `Record<string, string>` | —          | Additional URL query parameters     |
-| `reconnect`                 | `boolean`                | `true`     | Auto-reconnect on disconnect        |
-| `maxReconnects`             | `number`                 | `Infinity` | Max reconnection attempts           |
-| `backoffMin`                | `number`                 | `1000`     | Initial reconnect delay (ms)        |
-| `backoffMax`                | `number`                 | `30000`    | Maximum reconnect delay (ms)        |
-| `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)       |
-| `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls       |
-| `maxBadMessages`            | `number`                 | `Infinity` | Close after N bad messages          |
-| `respondWithDetailedErrors` | `boolean`                | `false`    | Include error details in responses  |
-| `logging`                   | `LoggingConfig`          | `true`     | Configure client log output         |
+| Option                      | Type                     | Default    | Description                           |
+| :-------------------------- | :----------------------- | :--------- | :------------------------------------ |
+| `identity`                  | `string`                 | _required_ | Charging station ID                   |
+| `endpoint`                  | `string`                 | _required_ | WebSocket URL (`ws://` or `wss://`)   |
+| `protocols`                 | `string[]`               | `[]`       | OCPP subprotocols to negotiate        |
+| `query`                     | `Record<string, string>` | —          | Additional URL query parameters       |
+| `reconnect`                 | `boolean`                | `true`     | Auto-reconnect on disconnect          |
+| `maxReconnects`             | `number`                 | `Infinity` | Max reconnection attempts             |
+| `backoffMin`                | `number`                 | `1000`     | Initial reconnect delay (ms)          |
+| `backoffMax`                | `number`                 | `30000`    | Maximum reconnect delay (ms)          |
+| `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)         |
+| `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls         |
+| `maxBadMessages`            | `number`                 | `Infinity` | Close after N bad messages            |
+| `respondWithDetailedErrors` | `boolean`                | `false`    | Include error details in responses    |
+| `logging`                   | `LoggingConfig`          | `{}`       | Configuration for structured logging. |
 
 ### Methods
 
@@ -188,6 +261,7 @@ await client.connect();
 
 // Version-aware typed call
 const result = await client.call("ocpp1.6", "BootNotification", { ... });
+const { success } = await client.safeCall("ocpp1.6", "Heartbeat", {});
 
 // Register handlers (version-specific, generic, wildcard)
 client.handle("ocpp1.6", "Reset", ({ params }) => { ... });
@@ -209,6 +283,16 @@ client.removeAllHandlers();
 
 // Raw message
 client.sendRaw(JSON.stringify([2, "uuid", "Heartbeat", {}]));
+```
+
+### Properties
+
+#### `logger`
+
+A fully initialized `logger` specific to the browser console. Works seamlessly with browser contexts.
+
+```typescript
+client.logger.info("Retrying connection...");
 ```
 
 ### Events

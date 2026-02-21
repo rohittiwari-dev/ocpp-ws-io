@@ -27,18 +27,20 @@ describe("initLogger", () => {
     expect(initLogger({ enabled: false })).toBeNull();
   });
 
-  it("should return custom handler if provided", () => {
-    const customHandler = { info: vi.fn(), child: vi.fn() } as any;
-    expect(initLogger({ handler: customHandler })).toBe(customHandler);
+  it("should return custom logger if provided", () => {
+    const custom = { info: vi.fn() };
+    // @ts-ignore
+    expect(initLogger({ logger: custom })).toBe(custom);
   });
 
-  it("should call handler.child if defaultContext provided", () => {
-    const childSpy = vi.fn().mockReturnValue("childLogger");
-    const customHandler = { info: vi.fn(), child: childSpy } as any;
-    const ctx = { identity: "test" };
-
-    expect(initLogger({ handler: customHandler }, ctx)).toBe("childLogger");
-    expect(childSpy).toHaveBeenCalledWith(ctx);
+  it("should return child of custom logger if defaultContext provided", () => {
+    const childFn = vi.fn(() => "childLogger");
+    const custom = { info: vi.fn(), child: childFn };
+    // @ts-ignore
+    expect(initLogger({ logger: custom }, { identity: "test" })).toBe(
+      "childLogger",
+    );
+    expect(childFn).toHaveBeenCalledWith({ identity: "test" });
   });
 
   it("should create a default logger if config is undefined", () => {
@@ -115,7 +117,7 @@ describe("initLogger", () => {
       };
 
       const result = runMiddleware(mw, entry);
-      expect(result.message).toBe("[Comp/ID] hello");
+      expect(result.message).toBe("\x1b[2;37m[Comp/ID]\x1b[0m hello");
       expect(result.context).toBeUndefined();
     });
 
@@ -148,7 +150,9 @@ describe("initLogger", () => {
       };
 
       const result = runMiddleware(mw, entry);
-      expect(result.message).toBe("hello  foo=bar num=123");
+      expect(result.message).toBe(
+        "hello  \x1b[36mfoo\x1b[0m=\x1b[2;37mbar\x1b[0m \x1b[36mnum\x1b[0m=\x1b[2;37m123\x1b[0m",
+      );
       expect(result.meta).toEqual({});
     });
 
