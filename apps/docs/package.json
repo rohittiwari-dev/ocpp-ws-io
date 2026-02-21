@@ -2,6 +2,12 @@
   "name": "docs",
   "version": "2.0.2",
   "private": true,
+  "keywords": [
+    "ocpp",
+    "documentation",
+    "fumadocs",
+    "nextjs"
+  ],
   "scripts": {
     "build": "next build",
     "dev": "next dev",

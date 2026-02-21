@@ -67,7 +67,18 @@ export async function generateMetadata(
   return {
     title: page.data.title,
     description: page.data.description,
+    keywords: page.data.keywords,
     openGraph: {
+      title: page.data.title,
+      description: page.data.description,
+      type: "article",
+      url: `https://ocpp-ws-io.rohittiwari.me${page.url}`,
+      images: getPageImage(page).url,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: page.data.title,
+      description: page.data.description,
       images: getPageImage(page).url,
     },
   };

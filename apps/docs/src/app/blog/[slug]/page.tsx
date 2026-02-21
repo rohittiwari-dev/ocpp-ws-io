@@ -3,8 +3,44 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Footer } from "@/components/landing/footer";
+import type { Metadata } from "next";
 import { blogSource, getRelatedDocs, getRelatedPosts } from "@/lib/blog";
 import { getMDXComponents } from "@/mdx-components";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const page = blogSource.getPage([slug]);
+
+  if (!page) notFound();
+
+  return {
+    title: page.title,
+    description: page.description,
+    keywords: page.tags,
+    openGraph: {
+      title: page.title,
+      description: page.description,
+      type: "article",
+      url: `https://ocpp-ws-io.rohittiwari.me${page.url}`,
+      images: page.image ? [page.image] : undefined,
+      publishedTime: new Date(page.date).toISOString(),
+      authors: [page.author.name],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: page.title,
+      description: page.description,
+      images: page.image ? [page.image] : undefined,
+      creator: page.author.twitter
+        ? `@${page.author.twitter.split("/").pop()}`
+        : undefined,
+    },
+  };
+}
 
 export function generateStaticParams() {
   return blogSource.generateParams();
