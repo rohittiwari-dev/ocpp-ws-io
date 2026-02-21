@@ -35,9 +35,9 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
         {page.data.description}
       </DocsDescription>
       <div className="flex flex-row gap-2 items-center border-b pb-6">
-        <LLMCopyButton markdownUrl={`${page.url}.mdx`} />
+        <LLMCopyButton markdownUrl={`/llms.mdx${page.url}`} />
         <ViewOptions
-          markdownUrl={`${page.url}.mdx`}
+          markdownUrl={`/llms.mdx${page.url}`}
           githubUrl={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/apps/docs/content/docs/${page.path}`}
         />
       </div>
@@ -67,7 +67,18 @@ export async function generateMetadata(
   return {
     title: page.data.title,
     description: page.data.description,
+    keywords: page.data.keywords,
     openGraph: {
+      title: page.data.title,
+      description: page.data.description,
+      type: "article",
+      url: `https://ocpp-ws-io.rohittiwari.me${page.url}`,
+      images: getPageImage(page).url,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: page.data.title,
+      description: page.data.description,
       images: getPageImage(page).url,
     },
   };

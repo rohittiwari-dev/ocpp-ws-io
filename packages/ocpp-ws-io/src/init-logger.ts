@@ -44,6 +44,11 @@ function buildDisplayMiddleware(config: LoggingConfig): LogMiddleware {
   const prettySrc = config.prettifySource ?? false;
   const prettyMeta = config.prettifyMetadata ?? false;
 
+  // ANSI color codes for prettification
+  const DIM = "\x1b[2;37m"; // dim white
+  const RESET = "\x1b[0m"; // reset all styles
+  const CYAN = "\x1b[36m"; // cyan
+
   return (entry: LogEntry, next: (e: LogEntry) => void) => {
     // ── Source context ──
     if (!showSource) {
@@ -56,7 +61,7 @@ function buildDisplayMiddleware(config: LoggingConfig): LogMiddleware {
       if (entry.context.identity) parts.push(String(entry.context.identity));
       if (parts.length > 0) {
         // Embed into message and clear context
-        entry.message = `[${parts.join("/")}] ${entry.message}`;
+        entry.message = `${DIM}[${parts.join("/")}]${RESET} ${entry.message}`;
         entry.context = undefined;
       }
     }
@@ -70,10 +75,16 @@ function buildDisplayMiddleware(config: LoggingConfig): LogMiddleware {
       // Build key=value pairs, embed into message, clear meta
       const pairs = Object.entries(meta)
         .filter(([, v]) => v !== undefined && v !== null)
-        .map(
-          ([k, v]) =>
-            `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`,
-        )
+        .map(([k, v]) => {
+          let valStr = typeof v === "object" ? JSON.stringify(v) : String(v);
+          // Apply some basic dimming for non-string values or objects to keep it clean
+          if (typeof v === "string") {
+            valStr = `${DIM}${valStr}${RESET}`;
+          } else {
+            valStr = `${DIM}${valStr}${RESET}`;
+          }
+          return `${CYAN}${k}${RESET}=${valStr}`;
+        })
         .join(" ");
       if (pairs) {
         entry.message = `${entry.message}  ${pairs}`;
@@ -98,12 +109,12 @@ export function initLogger(
   if (config === false) return null;
   if (config?.enabled === false) return null;
 
-  // Custom handler provided — use as-is
-  if (config?.handler) {
-    if (defaultContext && config.handler.child) {
-      return config.handler.child(defaultContext);
+  // Custom external logger provided — use as-is
+  if (config?.logger) {
+    if (defaultContext && config.logger.child) {
+      return config.logger.child(defaultContext);
     }
-    return config.handler;
+    return config.logger;
   }
 
   // Build default voltlog-io
@@ -113,6 +124,14 @@ export function initLogger(
   const transports = usePrettify
     ? [prettyTransport({ level })]
     : [consoleTransport({ level })];
+
+  if (config?.handler) {
+    const customTransport = config.handler;
+    transports.push({
+      name: "customHandler",
+      write: (entry) => customTransport(entry),
+    });
+  }
 
   // Build display middleware if any display options are set
   const middleware: LogMiddleware[] = [];

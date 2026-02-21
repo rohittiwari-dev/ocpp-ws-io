@@ -1,6 +1,6 @@
 {
   "name": "ocpp-ws-io-monorepo",
-  "version": "2.0.2",
+  "version": "2.1.1",
   "private": true,
   "scripts": {
     "build": "turbo run build",
@@ -29,13 +29,30 @@
   },
   "keywords": [
     "ocpp",
+    "ocpp-j",
     "websocket",
     "rpc",
-    "ev-charging",
-    "csms",
     "ocpp1.6",
     "ocpp2.0.1",
-    "type-safe"
+    "ocpp2.1",
+    "ev-charging",
+    "evse",
+    "csms",
+    "charge-point",
+    "charge-point-simulator",
+    "smart-charging",
+    "iot",
+    "pubsub",
+    "clustering",
+    "redis",
+    "type-safe",
+    "typescript",
+    "nodejs",
+    "browser",
+    "nextjs",
+    "iso15118",
+    "electric-vehicle",
+    "charging-station"
   ],
   "devDependencies": {
     "@biomejs/biome": "^2.4.2",

@@ -13,6 +13,7 @@
  * - NOREPLY support
  */
 import { createId } from "@paralleldrive/cuid2";
+import { initLogger } from "../init-logger.js";
 import { type MiddlewareFunction, MiddlewareStack } from "../middleware.js";
 import type { MiddlewareContext } from "../types.js";
 import { EventEmitter } from "./emitter.js";
@@ -32,6 +33,7 @@ import {
   ConnectionState,
   type HandlerContext,
   type LoggerLike,
+  type LoggerLikeNotOptional,
   MessageType,
   NOREPLY,
   type OCPPCall,
@@ -43,7 +45,7 @@ import {
   type OCPPResponseType,
   type WildcardHandler,
 } from "./types.js";
-import { createRPCError, getErrorPlainObject } from "./util.js";
+import { createRPCError, getErrorPlainObject, NOOP_LOGGER } from "./util.js";
 
 const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
 
@@ -119,7 +121,7 @@ export class BrowserOCPPClient<
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _badMessageCount = 0;
   private _outboundBuffer: string[] = [];
-  private _logger: LoggerLike | null = null;
+  private _logger: LoggerLike;
   private _middleware: MiddlewareStack<MiddlewareContext>;
 
   constructor(options: BrowserClientOptions) {
@@ -147,22 +149,17 @@ export class BrowserOCPPClient<
     this._middleware = new MiddlewareStack<MiddlewareContext>();
 
     // Initialize logger
-    const logging = this._options.logging;
-    if (logging !== false && logging?.enabled !== false) {
-      this._logger = logging?.handler ?? console;
-      if (this._logger?.child) {
-        this._logger = this._logger.child({
-          component: "BrowserOCPPClient",
-          identity: this._identity,
-        });
-      }
-    }
+    const loggerInstance = initLogger(this._options.logging, {
+      component: "BrowserOCPPClient",
+      identity: this._identity,
+    });
+    this._logger = loggerInstance || NOOP_LOGGER;
   }
 
   // ─── Getters ─────────────────────────────────────────────────
 
-  get log(): LoggerLike {
-    return this._logger ?? console;
+  get log(): LoggerLikeNotOptional {
+    return this._logger as LoggerLikeNotOptional;
   }
   get identity(): string {
     return this._identity;
@@ -191,7 +188,7 @@ export class BrowserOCPPClient<
     return new Promise<void>((resolve, reject) => {
       const endpoint = this._buildEndpoint();
 
-      this._logger?.debug?.("Connecting", { url: endpoint });
+      this._logger.debug?.("Connecting", { url: endpoint });
       this.emit("connecting", { url: endpoint });
 
       let ws: WebSocket;
@@ -226,7 +223,7 @@ export class BrowserOCPPClient<
           for (const msg of buffer) this._ws?.send(msg);
         }
 
-        this._logger?.info?.("Connected", {
+        this._logger.info?.("Connected", {
           protocol: ws.protocol || undefined,
         });
         this.emit("open", event);
@@ -236,7 +233,7 @@ export class BrowserOCPPClient<
       const onError = (event: Event) => {
         cleanup();
         this._state = CLOSED;
-        this._logger?.error?.("Connection error");
+        this._logger.error?.("Connection error");
         this.emit("error", event);
         reject(event);
       };
@@ -527,7 +524,7 @@ export class BrowserOCPPClient<
       callResult = await new Promise<unknown>((resolve, reject) => {
         const timeoutHandle = setTimeout(() => {
           this._pendingCalls.delete(msgId);
-          this._logger?.warn?.("Call timed out", {
+          this._logger.warn?.("Call timed out", {
             messageId: msgId,
             method: ctxvals.method,
             timeoutMs,
@@ -727,7 +724,7 @@ export class BrowserOCPPClient<
         this.emit("callResult", response);
       } catch (err) {
         this._pendingResponses.delete(ctxvals.messageId);
-        this._logger?.error?.("Handler error", {
+        this._logger.error?.("Handler error", {
           messageId: ctxvals.messageId,
           method: ctxvals.method,
           error: (err as Error).message,
@@ -759,7 +756,7 @@ export class BrowserOCPPClient<
     const [, msgId, result] = message;
 
     if (!this._pendingCalls.has(msgId)) {
-      this._logger?.warn?.("Received CallResult for unknown messageId", {
+      this._logger.warn?.("Received CallResult for unknown messageId", {
         messageId: msgId,
       });
       return;
@@ -797,7 +794,7 @@ export class BrowserOCPPClient<
     const [, msgId, errorCode, errorMessage, errorDetails] = message;
 
     if (!this._pendingCalls.has(msgId)) {
-      this._logger?.warn?.("Received CallError for unknown messageId", {
+      this._logger.warn?.("Received CallError for unknown messageId", {
         messageId: msgId,
       });
       return;

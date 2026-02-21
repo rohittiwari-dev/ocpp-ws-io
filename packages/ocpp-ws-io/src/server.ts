@@ -837,7 +837,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       await this.sendToClient(...args);
       return true;
     } catch (error) {
-      if (this._logger && typeof this._logger.warn === "function") {
+      if (
+        this._logger &&
+        typeof this._logger.warn === "function" &&
+        (error as Error).name !== "TimeoutError"
+      ) {
         this._logger.warn("SafeSendToClient failed", {
           identity: args[0],
           method:
@@ -908,12 +912,14 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       // Unlike broadcast, I don't need to iterate all.
       for (const client of this._clients) {
         if (client.identity === payload.target) {
-          client.call(payload.method, payload.params as any).catch((err) =>
-            this._logger?.error?.("Error delivering unicast to client", {
-              identity: payload.target,
-              error: err,
-            }),
-          );
+          client.call(payload.method, payload.params as any).catch((err) => {
+            if ((err as Error).name !== "TimeoutError") {
+              this._logger?.error?.("Error delivering unicast to client", {
+                identity: payload.target,
+                error: err,
+              });
+            }
+          });
           return;
         }
       }

@@ -84,6 +84,17 @@ server.setAdapter(adapter);
 
 // This call reaches ALL chargers on ALL nodes
 server.broadcast("Reset", { type: "Soft" });
+
+// Send safely to a single targeted station (avoids unhandled rejections if disconnected)
+const { success, result, error } = await server.safeSendToClient(
+  "CP-001",
+  "ocpp1.6",
+  "GetConfiguration",
+  { key: [] },
+);
+if (!success) {
+  server.logger.error("Failed to get config from CP-001", { error });
+}
 ```
 
 ### Session Persistence & Robustness
@@ -136,6 +147,10 @@ const server = new OCPPServer({
     prettify: process.env.NODE_ENV !== "production",
     exchangeLog: true, // Auto-logs all IN/OUT metrics
     level: "info",
+    handler: (entry) => {
+      // Stream final JSON logs to Datadog/Sentry
+      sendToDatadog(entry);
+    },
   },
 });
 

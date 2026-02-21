@@ -2,6 +2,7 @@ import type { EventEmitter } from "node:events";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import type { TLSSocket } from "node:tls";
+import type { LogEntry } from "voltlog-io";
 import type {
   AllMethodNames,
   OCPPMethodMap,
@@ -296,7 +297,9 @@ export interface LoggingConfig {
   /** Log level for the default voltlog-io logger (default: 'INFO') */
   level?: string;
   /** Custom logger — replaces the default voltlog-io entirely */
-  handler?: LoggerLike;
+  logger?: LoggerLike;
+  /** Custom VoltLog transport function — receives formatted logs */
+  handler?: (entry: LogEntry) => void | Promise<void>;
 
   // ─── Display Options (only apply to default voltlog-io logger) ──
 

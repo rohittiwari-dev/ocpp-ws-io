@@ -105,7 +105,7 @@ describe("Logger Integration - Client", () => {
       endpoint: `ws://localhost:${port}`,
       protocols: ["ocpp1.6"],
       reconnect: false,
-      logging: { handler: mockLogger },
+      logging: { logger: mockLogger },
     });
 
     await client.connect();
@@ -144,7 +144,7 @@ describe("Logger Integration - Client", () => {
       endpoint: `ws://localhost:${port}`,
       protocols: ["ocpp1.6"],
       reconnect: false,
-      logging: { handler: mockLogger },
+      logging: { logger: mockLogger, exchangeLog: true, prettify: true },
     });
 
     await client.connect();
@@ -158,7 +158,7 @@ describe("Logger Integration - Client", () => {
 
     // Should have logged inbound CALLRESULT
     expect(mockLogger.info).toHaveBeenCalledWith(
-      expect.stringContaining("⚡ CS_LOG_CALL  ←  Heartbeat  [RES]"),
+      expect.stringContaining("✅ CS_LOG_CALL  ←  Heartbeat  [RES]"),
       expect.objectContaining({
         messageId: expect.any(String),
         direction: "IN",
@@ -179,7 +179,7 @@ describe("Logger Integration - Client", () => {
       endpoint: `ws://localhost:${port}`,
       protocols: ["ocpp1.6"],
       reconnect: false,
-      logging: { handler: mockLogger },
+      logging: { logger: mockLogger, exchangeLog: true, prettify: true },
     });
 
     client.handle("Buggy", async () => {
@@ -208,7 +208,7 @@ describe("Logger Integration - Client", () => {
 
     // Should have logged handler error
     expect(mockLogger.error).toHaveBeenCalledWith(
-      "Handler error",
+      expect.stringContaining("🚨 CS_LOG_ERR  →  Buggy  [ERR]"),
       expect.objectContaining({
         method: "Buggy",
         error: "handler crashed",
@@ -229,7 +229,7 @@ describe("Logger Integration - Client", () => {
       endpoint: `ws://localhost:${port}`,
       protocols: ["ocpp1.6"],
       reconnect: false,
-      logging: { handler: mockLogger },
+      logging: { logger: mockLogger, exchangeLog: true, prettify: true },
       callTimeoutMs: 2000,
     });
 
@@ -242,8 +242,8 @@ describe("Logger Integration - Client", () => {
       // expected
     }
 
-    expect(mockLogger.error).toHaveBeenCalledWith(
-      "Call error",
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("🚨 CS_LOG_CALLERR  ←  NonExistent  [ERR]"),
       expect.objectContaining({ error: expect.any(String) }),
     );
   });
@@ -261,7 +261,7 @@ describe("Logger Integration - Client", () => {
       endpoint: `ws://localhost:${port}`,
       protocols: ["ocpp1.6"],
       reconnect: false,
-      logging: { handler: mockLogger },
+      logging: { logger: mockLogger },
     });
 
     await client.connect();
@@ -294,7 +294,7 @@ describe("Logger Integration - Client", () => {
       maxReconnects: 1,
       backoffMin: 100,
       backoffMax: 200,
-      logging: { handler: mockLogger },
+      logging: { logger: mockLogger },
     });
 
     client.on("error", () => {}); // suppress
@@ -326,7 +326,7 @@ describe("Logger Integration - Client", () => {
       endpoint: `ws://localhost:${port}`,
       protocols: ["ocpp1.6"],
       reconnect: false,
-      logging: { handler: mockLogger },
+      logging: { logger: mockLogger },
     });
 
     await client.connect();
@@ -357,7 +357,7 @@ describe("Logger Integration - Client", () => {
       endpoint: `ws://localhost:${port}`,
       protocols: ["ocpp1.6"],
       reconnect: false,
-      logging: { enabled: false, handler: mockLogger },
+      logging: { enabled: false, logger: mockLogger },
     });
 
     await client.connect();
@@ -380,7 +380,7 @@ describe("Logger Integration - Server", () => {
 
     server = new OCPPServer({
       protocols: ["ocpp1.6"],
-      logging: { handler: mockLogger },
+      logging: { logger: mockLogger },
     });
     server.auth((accept) => accept({ protocol: "ocpp1.6" }));
 
@@ -397,7 +397,7 @@ describe("Logger Integration - Server", () => {
 
     server = new OCPPServer({
       protocols: ["ocpp1.6"],
-      logging: { handler: mockLogger },
+      logging: { logger: mockLogger },
     });
     server.auth((accept) => accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
@@ -432,7 +432,7 @@ describe("Logger Integration - Server", () => {
 
     server = new OCPPServer({
       protocols: ["ocpp1.6"],
-      logging: { handler: mockLogger },
+      logging: { logger: mockLogger },
     });
     server.auth((_accept, reject) => {
       reject(403, "Forbidden");
@@ -466,7 +466,7 @@ describe("Logger Integration - Server", () => {
 
     server = new OCPPServer({
       protocols: ["ocpp1.6"],
-      logging: { handler: mockLogger },
+      logging: { logger: mockLogger },
     });
     server.auth((accept) => accept({ protocol: "ocpp1.6" }));
     await server.listen(0);
@@ -484,7 +484,7 @@ describe("Logger Integration - Server", () => {
 
     server = new OCPPServer({
       protocols: ["ocpp1.6"],
-      logging: { handler: mockLogger },
+      logging: { logger: mockLogger },
     });
     server.auth((accept) => accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);

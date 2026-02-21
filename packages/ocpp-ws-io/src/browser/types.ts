@@ -18,6 +18,7 @@ import type {
   CloseOptions as _CloseOptions,
   HandlerContext as _HandlerContext,
   LoggerLike as _LoggerLike,
+  LoggerLikeNotOptional as _LoggerLikeNotOptional,
   LoggingConfig as _LoggingConfig,
   OCPPCall as _OCPPCall,
   OCPPCallError as _OCPPCallError,
@@ -43,6 +44,7 @@ export type WildcardHandler = _WildcardHandler;
 export type CallOptions = _CallOptions;
 export type CloseOptions = _CloseOptions;
 export type LoggerLike = _LoggerLike;
+export type LoggerLikeNotOptional = _LoggerLikeNotOptional;
 export type LoggingConfig = _LoggingConfig;
 export type AllMethodNames<V extends OCPPProtocol> = _AllMethodNames<V>;
 export type OCPPRequestType<
