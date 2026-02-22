@@ -22,7 +22,7 @@ export async function virtualStationCommand(options: {
   const protocol = options.protocol || "ocpp1.6";
 
   console.log(
-    pc.cyan(`\n⚡ ocpp-cli: Virtual Station Simulator [${protocol}]`),
+    pc.cyan(`\n⚡ ocpp-ws-cli: Virtual Station Simulator [${protocol}]`),
   );
   console.log(pc.gray(` Identity:   ${id}`));
   console.log(pc.gray(` Target:     ${url}`));
@@ -56,7 +56,7 @@ export async function virtualStationCommand(options: {
     // 1. Boot Sequence
     console.log(pc.gray(`Initiating Boot Sequence...`));
     const bootRes: any = await client.call("BootNotification", {
-      chargePointVendor: "ocpp-cli",
+      chargePointVendor: "ocpp-ws-cli",
       chargePointModel: "VirtualStation-v1.0",
     });
 

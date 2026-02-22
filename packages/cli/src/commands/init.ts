@@ -4,7 +4,7 @@ import pc from "picocolors";
 
 export async function initCommand(dir = ".") {
   const targetDir = join(process.cwd(), dir);
-  console.log(pc.cyan(`\n⚡ ocpp-cli: Scaffolding\n`));
+  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Scaffolding\n`));
   console.log(pc.gray(`Target directory: ${targetDir}`));
 
   try {

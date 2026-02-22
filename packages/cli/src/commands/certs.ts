@@ -11,7 +11,7 @@ export async function certsCommand(options: {
   out?: string;
   type?: "ca" | "server" | "client";
 }) {
-  console.log(pc.cyan(`\n⚡ ocpp-cli: Local TLS Certificate Authority`));
+  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Local TLS Certificate Authority`));
 
   const type = options.type || "server";
   const identity = options.identity || "CP-001";

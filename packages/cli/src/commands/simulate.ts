@@ -6,7 +6,7 @@ export async function simulateCommand(options: {
   identity?: string;
   endpoint?: string;
 }) {
-  console.log(pc.cyan(`\n⚡ ocpp-cli: Interactive Simulator\n`));
+  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Interactive Simulator\n`));
   const id = options.identity || "Simulated-CP-01";
 
   let wsUrl: URL;

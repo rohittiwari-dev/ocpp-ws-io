@@ -3,7 +3,7 @@ import { join, parse } from "node:path";
 import pc from "picocolors";
 
 export async function sdkCommand(options: { schemas?: string; out?: string }) {
-  console.log(pc.cyan(`\n⚡ ocpp-cli: TypeScript SDK Generator`));
+  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: TypeScript SDK Generator`));
 
   const schemaDir = join(process.cwd(), options.schemas || "./schemas");
   const outFile = join(process.cwd(), options.out || "./src/generated/sdk.ts");

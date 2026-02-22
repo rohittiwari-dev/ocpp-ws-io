@@ -6,7 +6,7 @@ export async function callCommand(
   payloadStr: string,
   options: { endpoint?: string; identity?: string },
 ) {
-  console.log(pc.cyan(`\n⚡ ocpp-cli: One-off Command Engine`));
+  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: One-off Command Engine`));
 
   const targetUrl = options.endpoint || "ws://localhost:3000";
   const id = options.identity || "CLI-Agent";

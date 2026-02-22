@@ -5,7 +5,7 @@ export async function fuzzCommand(options: {
   endpoint?: string;
   workers?: number;
 }) {
-  console.log(pc.cyan(`\n⚡ ocpp-cli: Protocol Security Fuzzer`));
+  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Protocol Security Fuzzer`));
 
   const targetUrl = options.endpoint || "ws://localhost:3000";
   const numWorkers = Number(options.workers || 5);

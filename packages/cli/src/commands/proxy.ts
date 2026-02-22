@@ -5,7 +5,7 @@ export async function proxyCommand(options: {
   listen?: number;
   target?: string;
 }) {
-  console.log(pc.cyan(`\n⚡ ocpp-cli: Reverse Proxy Interceptor (MITM)`));
+  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Reverse Proxy Interceptor (MITM)`));
 
   const port = Number(options.listen || 8080);
   const targetUrlStr = options.target;

@@ -7,7 +7,7 @@ export async function replayCommand(
   logFile: string,
   options: { target?: string },
 ) {
-  console.log(pc.cyan(`\n⚡ ocpp-cli: Network Frame Replay Engine`));
+  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Network Frame Replay Engine`));
 
   if (!logFile) {
     console.error(pc.red(`Error: Please specify an incident log file.`));

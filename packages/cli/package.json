@@ -1,5 +1,5 @@
 {
-  "name": "ocpp-cli",
+  "name": "ocpp-ws-cli",
   "version": "2.1.2",
   "description": "The ultimate CLI ecosystem for ocpp-ws-io",
   "main": "dist/index.js",

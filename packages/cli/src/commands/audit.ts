@@ -5,7 +5,7 @@ export async function auditCommand(options: {
   endpoint?: string;
   generateReport?: boolean;
 }) {
-  console.log(pc.cyan(`\n⚡ ocpp-cli: CSMS Compliance Auditor`));
+  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: CSMS Compliance Auditor`));
 
   const targetUrl = options.endpoint || "ws://localhost:3000";
   console.log(pc.gray(`Target CSMS: ${targetUrl}\n`));

@@ -10,7 +10,7 @@ export async function tailCommand(options: {
   const idFilter = options.identity;
   const methodFilter = options.method;
 
-  console.log(pc.cyan(`\n⚡ ocpp-cli: Network Sniffer (tail)`));
+  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Network Sniffer (tail)`));
 
   const filters: string[] = [];
   if (idFilter) filters.push(`Identity: ${pc.yellow(idFilter)}`);

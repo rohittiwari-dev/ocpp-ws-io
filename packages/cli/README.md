@@ -1,4 +1,4 @@
-# ocpp-cli
+# ocpp-ws-cli
 
 The official Command Line Toolchain for the **ocpp-ws-io** ecosystem.
 
@@ -7,13 +7,13 @@ A breathtakingly fast, immensely powerful suite of 15 CLI commands that complete
 ## Global Installation
 
 ```bash
-npm install -g ocpp-cli
+npm install -g ocpp-ws-cli
 ```
 
 _Or, run instantly without installing via `npx`:_
 
 ```bash
-npx ocpp-cli init my-new-csms
+npx ocpp-ws-cli init my-new-csms
 ```
 
 ## The Toolchain

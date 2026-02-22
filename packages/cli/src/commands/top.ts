@@ -4,7 +4,7 @@ import { createClient } from "redis";
 export async function topCommand(options: { redis?: string }) {
   const redisUrl = options.redis || "redis://localhost:6379";
 
-  console.log(pc.cyan(`\n⚡ ocpp-cli: Live Cluster Dashboard (top)`));
+  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Live Cluster Dashboard (top)`));
   console.log(pc.gray(`Connecting to Redis: ${redisUrl}...\n`));
 
   const client = createClient({ url: redisUrl });
@@ -22,7 +22,7 @@ export async function topCommand(options: { redis?: string }) {
         const keys = await client.keys("ocpp:stats:*");
 
         console.clear();
-        console.log(pc.cyan(`⚡ ocpp-cli | Live Cluster Dashboard`));
+        console.log(pc.cyan(`⚡ ocpp-ws-cli | Live Cluster Dashboard`));
         console.log(
           pc.gray(`═════════════════════════════════════════════════`),
         );

@@ -1,4 +1,4 @@
-# ocpp-cli
+# ocpp-ws-cli
 
 ## 2.1.2
 

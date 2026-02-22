@@ -5,7 +5,7 @@ export async function mockCommand(options: { port?: number; rate?: number }) {
   const port = Number(options.port || 8080);
   const msInterval = Number(options.rate || 1000);
 
-  console.log(pc.cyan(`\n⚡ ocpp-cli: Mock API Server`));
+  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Mock API Server`));
   console.log(pc.gray(`Starting HTTP Server on port ${port}...`));
   console.log(pc.gray(`Message rate: 1 event every ${msInterval}ms\n`));
 

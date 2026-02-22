@@ -6,7 +6,7 @@ export async function loadTestCommand(options: {
   clients?: number;
   rampUp?: number;
 }) {
-  console.log(pc.cyan(`\n⚡ ocpp-cli: Distributed Load Testing\n`));
+  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Distributed Load Testing\n`));
 
   const targetUrl = options.endpoint || "ws://localhost:3000";
   const numClients = Number(options.clients || 100);

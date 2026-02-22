@@ -6,7 +6,7 @@ export async function parseCommand(
   rawPayload: string,
   options: { protocol?: string; method?: string },
 ) {
-  console.log(pc.cyan(`\n⚡ ocpp-cli: Payload Translator`));
+  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Payload Translator`));
 
   let payloadStr = rawPayload || "";
 

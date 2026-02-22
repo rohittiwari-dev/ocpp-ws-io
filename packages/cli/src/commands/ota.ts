@@ -14,7 +14,7 @@ function escapeHtml(str: string): string {
 }
 
 export async function otaCommand(dir: string, options: { port?: number }) {
-  console.log(pc.cyan(`\n⚡ ocpp-cli: Local Firmware Hosting Server (OTA)`));
+  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Local Firmware Hosting Server (OTA)`));
 
   const targetDir = join(process.cwd(), dir || ".");
   const port = Number(options.port || 4000);
