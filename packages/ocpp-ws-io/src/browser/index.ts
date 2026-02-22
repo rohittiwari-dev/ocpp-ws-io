@@ -2,7 +2,6 @@
 
 export * from "../helpers/index.js";
 export * from "../middleware.js";
-export { standardValidators } from "../standard-validators.js";
 export type { Validator, ValidatorSchema } from "../validator.js";
 export { BrowserOCPPClient } from "./client.js";
 // ─── Errors ──────────────────────────────────────────────────────
