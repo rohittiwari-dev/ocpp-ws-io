@@ -55,10 +55,11 @@ export async function otaCommand(dir: string, options: { port?: number }) {
         let basePath = "/";
         if (req.url && req.url !== "/") {
           const qIndex = req.url.indexOf("?");
-          const rawPath = qIndex === -1 ? req.url : req.url.substring(0, qIndex);
+          const rawPath =
+            qIndex === -1 ? req.url : req.url.substring(0, qIndex);
           basePath = rawPath.endsWith("/") ? rawPath.slice(0, -1) : rawPath;
           if (!basePath.startsWith("/")) {
-            basePath = "/" + basePath;
+            basePath = `/${basePath}`;
           }
         }
 
