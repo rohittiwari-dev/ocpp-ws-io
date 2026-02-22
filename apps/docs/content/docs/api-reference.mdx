@@ -62,6 +62,7 @@ await client.connect();
 #### `call(protocol?, method, params, options?)`
 
 Make an RPC call. Throws a `TimeoutError` or protocol-level Error if the request fails.
+Make an RPC call. Throws a `TimeoutError` or protocol-level Error if the request fails.
 
 - `protocol`: Optional. e.g., "ocpp1.6". If omitted, generic type inference is used.
 - `method`: The OCPP method name (e.g., "BootNotification").
@@ -324,6 +325,7 @@ import { BrowserOCPPClient } from "ocpp-ws-io/browser";
 A browser-compatible OCPP client with the same typed API as `OCPPClient`. Uses the native browser `WebSocket` API — no Node.js dependencies.
 
 > See [Browser Client](/docs/browser-client) for the full guide with examples.
+> See [Browser Client](/docs/browser-client) for the full guide with examples.
 
 ### Constructor
 
@@ -333,6 +335,21 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 
 #### BrowserClientOptions
 
+| Option                      | Type                     | Default    | Description                           |
+| :-------------------------- | :----------------------- | :--------- | :------------------------------------ |
+| `identity`                  | `string`                 | _required_ | Charging station ID                   |
+| `endpoint`                  | `string`                 | _required_ | WebSocket URL (`ws://` or `wss://`)   |
+| `protocols`                 | `string[]`               | `[]`       | OCPP subprotocols to negotiate        |
+| `query`                     | `Record<string, string>` | —          | Additional URL query parameters       |
+| `reconnect`                 | `boolean`                | `true`     | Auto-reconnect on disconnect          |
+| `maxReconnects`             | `number`                 | `Infinity` | Max reconnection attempts             |
+| `backoffMin`                | `number`                 | `1000`     | Initial reconnect delay (ms)          |
+| `backoffMax`                | `number`                 | `30000`    | Maximum reconnect delay (ms)          |
+| `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)         |
+| `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls         |
+| `maxBadMessages`            | `number`                 | `Infinity` | Close after N bad messages            |
+| `respondWithDetailedErrors` | `boolean`                | `false`    | Include error details in responses    |
+| `logging`                   | `LoggingConfig`          | `{}`       | Configuration for structured logging. |
 | Option                      | Type                     | Default    | Description                           |
 | :-------------------------- | :----------------------- | :--------- | :------------------------------------ |
 | `identity`                  | `string`                 | _required_ | Charging station ID                   |
@@ -359,6 +376,7 @@ await client.connect();
 // Version-aware typed call
 const result = await client.call("ocpp1.6", "BootNotification", { ... });
 const { success } = await client.safeCall("ocpp1.6", "Heartbeat", {});
+const { success } = await client.safeCall("ocpp1.6", "Heartbeat", {});
 
 // Register handlers (version-specific, generic, wildcard)
 client.handle("ocpp1.6", "Reset", ({ params }) => { ... });
@@ -380,6 +398,16 @@ client.removeAllHandlers();
 
 // Raw message
 client.sendRaw(JSON.stringify([2, "uuid", "Heartbeat", {}]));
+```
+
+### Properties
+
+#### `logger`
+
+A fully initialized `logger` specific to the browser console. Works seamlessly with browser contexts.
+
+```typescript
+client.logger.info("Retrying connection...");
 ```
 
 ### Properties
