@@ -2,6 +2,10 @@
   "name": "ocpp-ws-cli",
   "version": "2.1.2",
   "description": "The ultimate CLI ecosystem for ocpp-ws-io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rohittiwari-dev/ocpp-ws-io"
+  },
   "main": "dist/index.js",
   "bin": {
     "ocpp": "./dist/index.js"
