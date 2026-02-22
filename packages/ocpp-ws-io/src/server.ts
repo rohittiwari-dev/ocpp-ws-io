@@ -55,6 +55,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _options: ServerOptions;
   private _routers: OCPPRouter[] = [];
   private _clients = new Set<OCPPServerClient>();
+  private _clientsByIdentity = new Map<string, OCPPServerClient>();
   private _httpServers = new Set<Server>();
   private _wss: WebSocketServer | null = null;
   private _state: "OPEN" | "CLOSING" | "CLOSED" = "OPEN";
@@ -139,7 +140,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       activeSessions: this._sessions.size,
     };
   }
-
+  /**
+   * Returns observability statistics from the active Event Adapter (e.g. Redis).
+   * Useful for tracking consumer backlog and enabling Horizontal Pod Autoscaling.
+   */
+  async adapterMetrics(): Promise<Record<string, unknown> | null> {
+    if (!this._adapter || !this._adapter.metrics) return null;
+    try {
+      return await this._adapter.metrics();
+    } catch (err) {
+      this._logger?.warn?.("Failed to fetch adapter metrics", { error: err });
+      return null;
+    }
+  }
   /**
    * Synchronously returns the OCPPServerClient instance if the specific identity
    * is connected to THIS local server node.
@@ -148,12 +161,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * @param identity The client identity (username/station ID)
    */
   getLocalClient(identity: string): OCPPServerClient | undefined {
-    for (const client of this._clients) {
-      if (client.identity === identity) {
-        return client;
-      }
-    }
-    return undefined;
+    return this._clientsByIdentity.get(identity);
   }
 
   /**
@@ -747,7 +755,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         maxBadMessages: this._options.maxBadMessages,
         respondWithDetailedErrors: this._options.respondWithDetailedErrors,
         strictMode: matchedRouterConfig?.strictMode ?? this._options.strictMode,
+        strictModeMethods:
+          matchedRouterConfig?.strictModeMethods ??
+          this._options.strictModeMethods,
         strictModeValidators: this._options.strictModeValidators,
+        rateLimit: matchedRouterConfig?.rateLimit ?? this._options.rateLimit,
         reconnect: false,
         logging: this._options.logging,
       };
@@ -767,6 +779,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
       this._updateSessionActivity(identity, client.session);
       this._clients.add(client);
+      this._clientsByIdentity.set(identity, client);
 
       // Register presence
       if (this._adapter?.setPresence) {
@@ -791,6 +804,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
       client.on("close", () => {
         this._clients.delete(client);
+        if (this._clientsByIdentity.get(identity) === client) {
+          this._clientsByIdentity.delete(identity);
+        }
         // Remove presence
         if (this?._adapter?.removePresence) {
           this._adapter.removePresence(identity).catch((err) => {
@@ -1147,5 +1163,87 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       : Promise.resolve();
 
     await Promise.all([Promise.all(localPromises), remotePromise]);
+  }
+
+  /**
+   * Send a specific method & params to a list of specific clients efficiently.
+   * This leverages adapter pipelining (e.g. Redis .pipeline()) to minimize network overhead
+   * when communicating with thousands of nodes simultaneously.
+   *
+   * @param identities Array of target client identities
+   * @param method The OCPP method to send
+   * @param params The request parameters
+   * @param options Call options
+   */
+  async broadcastBatch<V extends AllMethodNames<any>>(
+    identities: string[],
+    method: V,
+    params: OCPPRequestType<any, V>,
+    options?: CallOptions,
+  ): Promise<void> {
+    const localIdentities = new Set<string>();
+    const localPromises: Promise<any>[] = [];
+
+    // 1. Send to local clients immediately (O(1) lookup via _clientsByIdentity)
+    for (const identity of identities) {
+      const client = this._clientsByIdentity.get(identity);
+      if (client) {
+        localIdentities.add(identity);
+        localPromises.push(
+          client.call(method as any, params as any, options).catch(() => {}),
+        );
+      }
+    }
+
+    // 2. Resolve remote clients
+    const remoteIdentities = identities.filter(
+      (id) => !localIdentities.has(id),
+    );
+
+    if (remoteIdentities.length > 0 && this._adapter) {
+      // 2a. Fetch presence in batch
+      let presences: (string | null)[] = [];
+      if (this._adapter.getPresenceBatch) {
+        presences = await this._adapter.getPresenceBatch(remoteIdentities);
+      } else if (this._adapter.getPresence) {
+        presences = await Promise.all(
+          remoteIdentities.map((id) => this._adapter!.getPresence!(id)),
+        );
+      }
+
+      // 2b. Prepare batch messages payload
+      const batchMessages: { channel: string; data: unknown }[] = [];
+
+      for (let i = 0; i < remoteIdentities.length; i++) {
+        const nodeId = presences[i];
+        if (nodeId) {
+          batchMessages.push({
+            channel: `ocpp:node:${nodeId}`,
+            data: {
+              source: this._nodeId,
+              target: remoteIdentities[i],
+              method,
+              params,
+              options,
+            },
+          });
+        }
+      }
+
+      // 2c. Publish in batch via adapter
+      if (batchMessages.length > 0) {
+        if (this._adapter.publishBatch) {
+          await this._adapter.publishBatch(batchMessages);
+        } else {
+          await Promise.all(
+            batchMessages.map((bm) =>
+              this._adapter!.publish(bm.channel, bm.data),
+            ),
+          );
+        }
+      }
+    }
+
+    await Promise.all(localPromises);
   }
 }

@@ -1259,10 +1259,16 @@ export class OCPPClient<
         }, pongTimeoutMs);
       }
 
-      this._pingTimer = setTimeout(doPing, this._options.pingIntervalMs);
+      // Add ±25% jitter to prevent thundering herds on mass reconnections
+      const jitteredInterval =
+        this._options.pingIntervalMs * (0.75 + Math.random() * 0.5);
+      this._pingTimer = setTimeout(doPing, jitteredInterval);
     };
 
-    this._pingTimer = setTimeout(doPing, this._options.pingIntervalMs);
+    // Add ±25% jitter to the very first ping as well
+    const initialJitteredInterval =
+      this._options.pingIntervalMs * (0.75 + Math.random() * 0.5);
+    this._pingTimer = setTimeout(doPing, initialJitteredInterval);
   }
 
   private _stopPing(): void {
@@ -1300,6 +1306,13 @@ export class OCPPClient<
     const validator = this._findValidator();
     if (!validator) return;
 
+    if (
+      this._options.strictModeMethods &&
+      !this._options.strictModeMethods.includes(method as any)
+    ) {
+      return; // Skip validation if method is not in the explicit strict list
+    }
+
     const schemaId = `urn:${method}.${suffix}`;
     try {
       validator.validate(schemaId, params);
@@ -1319,6 +1332,13 @@ export class OCPPClient<
   ): void {
     const validator = this._findValidator();
     if (!validator) return;
+
+    if (
+      this._options.strictModeMethods &&
+      !this._options.strictModeMethods.includes(method as any)
+    ) {
+      return; // Skip validation if method is not in the explicit strict list
+    }
 
     const schemaId = `urn:${method}.${suffix}`;
     try {

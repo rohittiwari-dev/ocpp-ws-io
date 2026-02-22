@@ -20,6 +20,14 @@ export class InMemoryAdapter implements EventAdapterInterface {
     }
   }
 
+  async publishBatch(
+    messages: { channel: string; data: unknown }[],
+  ): Promise<void> {
+    for (const msg of messages) {
+      await this.publish(msg.channel, msg.data);
+    }
+  }
+
   async subscribe(
     channel: string,
     handler: (data: unknown) => void,
@@ -54,6 +62,10 @@ export class InMemoryAdapter implements EventAdapterInterface {
 
   async getPresence(identity: string): Promise<string | null> {
     return this._presence.get(identity) || null;
+  }
+
+  async getPresenceBatch(identities: string[]): Promise<(string | null)[]> {
+    return identities.map((id) => this._presence.get(id) || null);
   }
 
   async removePresence(identity: string): Promise<void> {

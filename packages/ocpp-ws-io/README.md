@@ -89,26 +89,30 @@ await server.listen(3000);
 
 ### `OCPPClient` Options
 
-| Option            | Type                  | Default    | Description                             |
-| ----------------- | --------------------- | ---------- | --------------------------------------- |
-| `identity`        | `string`              | _required_ | Charging station ID                     |
-| `endpoint`        | `string`              | _required_ | WebSocket URL (`ws://` or `wss://`)     |
-| `protocols`       | `OCPPProtocol[]`      | `[]`       | OCPP subprotocols to negotiate          |
-| `securityProfile` | `SecurityProfile`     | `NONE`     | Security profile (0–3)                  |
-| `password`        | `string \| Buffer`    | —          | Password for Basic Auth (Profile 1 & 2) |
-| `tls`             | `TLSOptions`          | —          | TLS/SSL options (Profile 2 & 3)         |
-| `reconnect`       | `boolean`             | `true`     | Auto-reconnect on disconnect            |
-| `strictMode`      | `boolean \| string[]` | `false`    | Enable/restrict schema validation       |
+| Option              | Type                  | Default    | Description                             |
+| ------------------- | --------------------- | ---------- | --------------------------------------- |
+| `identity`          | `string`              | _required_ | Charging station ID                     |
+| `endpoint`          | `string`              | _required_ | WebSocket URL (`ws://` or `wss://`)     |
+| `protocols`         | `OCPPProtocol[]`      | `[]`       | OCPP subprotocols to negotiate          |
+| `securityProfile`   | `SecurityProfile`     | `NONE`     | Security profile (0–3)                  |
+| `password`          | `string \| Buffer`    | —          | Password for Basic Auth (Profile 1 & 2) |
+| `tls`               | `TLSOptions`          | —          | TLS/SSL options (Profile 2 & 3)         |
+| `reconnect`         | `boolean`             | `true`     | Auto-reconnect on disconnect            |
+| `pingIntervalMs`    | `number`              | `30000`    | Includes ±25% randomized jitter         |
+| `strictMode`        | `boolean \| string[]` | `false`    | Enable/restrict schema validation       |
+| `strictModeMethods` | `string[]`            | —          | Restrict validation to specific methods |
 
 ### `OCPPServer` Options
 
-| Option               | Type              | Default | Description                               |
-| -------------------- | ----------------- | ------- | ----------------------------------------- |
-| `protocols`          | `OCPPProtocol[]`  | `[]`    | Accepted OCPP subprotocols                |
-| `securityProfile`    | `SecurityProfile` | `NONE`  | Security profile for auto-created servers |
-| `handshakeTimeoutMs` | `number`          | `30000` | Timeout for WebSocket handshake (ms)      |
-| `tls`                | `TLSOptions`      | —       | TLS options (Profile 2 & 3)               |
-| `logging`            | `LoggingConfig`   | `true`  | Configure built-in logging                |
+| Option               | Type               | Default   | Description                                |
+| -------------------- | ------------------ | --------- | ------------------------------------------ |
+| `protocols`          | `OCPPProtocol[]`   | `[]`      | Accepted OCPP subprotocols                 |
+| `securityProfile`    | `SecurityProfile`  | `NONE`    | Security profile for auto-created servers  |
+| `handshakeTimeoutMs` | `number`           | `30000`   | Timeout for WebSocket handshake (ms)       |
+| `tls`                | `TLSOptions`       | —         | TLS options (Profile 2 & 3)                |
+| `logging`            | `LoggingConfig`    | `true`    | Configure built-in logging                 |
+| `sessionTtlMs`       | `number`           | `7200000` | Garbage collection inactivity timeout (ms) |
+| `rateLimit`          | `RateLimitOptions` | —         | Token bucket socket & method rate-limiter  |
 
 ## 🛠️ Advanced Server Configuration
 
@@ -286,6 +290,27 @@ const rateLimiter = defineMiddleware(async (ctx) => {
 server.use(rateLimiter);
 ```
 
+### 3. Advanced Rate Limiting (Token Bucket)
+
+To protect your CSMS from Noisy-Neighbor problems or firmware loops (e.g., a charger rapidly spamming `MeterValues`), you can enable the built-in Token Bucket Rate Limiter.
+
+The Rate Limiter safely throttles connections without dropping the connection immediately. You can define global limits, method-specific limits, and provide a custom action callback when the limit is breached.
+
+```typescript
+const server = new OCPPServer({
+  protocols: ["ocpp1.6"],
+  rateLimit: {
+    limit: 100, // Global limit
+    windowMs: 60000, // per 60 seconds
+    onLimitExceeded: "disconnect", // or "ignore", or a Custom Callback
+    methods: {
+      MeterValues: { limit: 10, windowMs: 60000 },
+      Heartbeat: { limit: 2, windowMs: 60000 },
+    },
+  },
+});
+```
+
 ## 🧩 Middleware
 
 Intercept and modify OCPP messages using the middleware stack.
@@ -317,8 +342,11 @@ Scale your OCPP server across multiple nodes using Redis.
 
    const redis = new Redis(process.env.REDIS_URL);
    const server = new OCPPServer({
-     adapter: new RedisAdapter(redis), // Uses Redis Streams for reliability
+     protocols: ["ocpp1.6"],
    });
+
+   // Uses Redis Streams for clustering reliability
+   await server.setAdapter(new RedisAdapter(redis));
    ```
 
 **Features:**
@@ -326,3 +354,44 @@ Scale your OCPP server across multiple nodes using Redis.
 - **Unicast Routing**: Send messages to any client on any node.
 - **Presence**: Track connected clients across the cluster.
 - **Reliability**: Zero message loss during node restarts (via Redis Streams).
+- **Batch Processing**: Use `server.broadcastBatch` to combine multi-node calls effortlessly.
+
+### Custom Adapters (`EventAdapterInterface`)
+
+You can build custom clustering adapters (e.g., RabbitMQ, Kafka, Postgres PUB/SUB) by implementing the exported `EventAdapterInterface`:
+
+```typescript
+import type { EventAdapterInterface } from "ocpp-ws-io";
+
+export class CustomAdapter implements EventAdapterInterface {
+  async publish(channel: string, data: unknown): Promise<void> {
+    /* ... */
+  }
+  async subscribe(
+    channel: string,
+    handler: (data: unknown) => void,
+  ): Promise<void> {
+    /* ... */
+  }
+  async unsubscribe(channel: string): Promise<void> {
+    /* ... */
+  }
+  async disconnect(): Promise<void> {
+    /* ... */
+  }
+
+  // Optional primitives for advanced routing:
+  async setPresence?(
+    identity: string,
+    nodeId: string,
+    ttl: number,
+  ): Promise<void>;
+  async getPresence?(identity: string): Promise<string | null>;
+  async removePresence?(identity: string): Promise<void>;
+  async getPresenceBatch?(identities: string[]): Promise<(string | null)[]>;
+  async publishBatch?(
+    messages: { channel: string; data: unknown }[],
+  ): Promise<void>;
+  async metrics?(): Promise<Record<string, unknown>>;
+}
+```
