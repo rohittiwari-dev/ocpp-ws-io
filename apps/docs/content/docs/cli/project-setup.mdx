@@ -1,0 +1,119 @@
+---
+title: Project Setup & Generation
+description: Commands for scaffolding projects, generating types, and managing certificates.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+## `ocpp init`
+
+Scaffolds a new production-ready ocpp-ws-io project with best practices.
+
+### Usage
+
+```bash
+npx ocpp-cli init <directory>
+```
+
+### Arguments
+
+| Argument | Description |
+| :--- | :--- |
+| `directory` | The directory to create the new project in. |
+
+### What it does
+
+- Creates a new directory structure.
+- Initializes a `package.json` with necessary dependencies.
+- Sets up `tsconfig.json` for optimal TypeScript configuration.
+- Creates a basic `src/index.ts` entry point with an `OCPPServer` instance.
+
+---
+
+## `ocpp generate`
+
+Generates TypeScript declaration files (`.d.ts`) from custom JSON schemas. This is crucial for ensuring type safety when working with vendor-specific OCPP extensions.
+
+### Usage
+
+```bash
+ocpp generate [options]
+```
+
+### Options
+
+| Option | Alias | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--schemas` | `-s` | - | Directory containing your custom JSON schema files. |
+| `--out` | `-o` | - | Output directory for the generated `.d.ts` files. |
+
+### Example
+
+```bash
+ocpp generate --schemas ./custom-schemas --out ./src/types/generated
+```
+
+---
+
+## `ocpp sdk`
+
+Automatically generates a frontend-ready TypeScript SDK based on your JSON schemas. This allows your frontend or mobile teams to interact with your CSMS using a type-safe API.
+
+### Usage
+
+```bash
+ocpp sdk [options]
+```
+
+### Options
+
+| Option | Alias | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--schemas` | `-s` | `./schemas` | Directory containing JSON schemas. |
+| `--out` | `-o` | `./src/generated/sdk.ts` | Output path for the generated TypeScript SDK file. |
+
+### Example
+
+```bash
+ocpp sdk --schemas ./schemas --out ./frontend/src/api/ocpp-client.ts
+```
+
+---
+
+## `ocpp certs`
+
+A local TLS Certificate Authority (CA) manager. It helps you generate self-signed certificates for development and testing of secure WebSocket connections (WSS).
+
+### Usage
+
+```bash
+ocpp certs [options]
+```
+
+### Options
+
+| Option | Alias | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--type` | `-t` | `server` | Type of certificate to generate: `ca`, `server`, or `client`. |
+| `--identity` | `-i` | - | Common Name (CN) for the certificate (e.g., `CP-001`, `localhost`). |
+| `--out` | `-o` | `./certs` | Output directory for generated certificates and keys. |
+
+### Workflow Example
+
+1.  **Generate a Root CA:**
+    ```bash
+    ocpp certs --type ca
+    ```
+    This creates `ca.key` and `ca.crt`.
+
+2.  **Generate a Server Certificate (signed by CA):**
+    ```bash
+    ocpp certs --type server --identity localhost
+    ```
+    This creates `server.key` and `server.crt`.
+
+3.  **Generate a Client Certificate (for a Charge Point):**
+    ```bash
+    ocpp certs --type client --identity CP-001
+    ```
+    This creates `client.key` and `client.crt`.

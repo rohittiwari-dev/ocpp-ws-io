@@ -222,9 +222,18 @@ export class OCPPClient<
   get log() {
     return (this._logger || NOOP_LOGGER) as LoggerLikeNotOptional;
   }
-  get identity(): string {
-    return this._identity;
+  public get identity(): string {
+    return this._options.identity;
   }
+
+  public get endpoint(): string {
+    return this._options.endpoint;
+  }
+
+  public get options(): Readonly<ClientOptions> {
+    return this._options;
+  }
+
   get protocol(): string | undefined {
     return this._protocol;
   }
@@ -615,14 +624,14 @@ export class OCPPClient<
   // ─── Safe Call (Best Effort) ─────────────────────────────────
 
   /**
-   * Version-specific safe call. Returns `null` on error instead of throwing.
+   * Version-specific safe call. Returns `undefined` on error instead of throwing.
    */
   async safeCall<V extends OCPPProtocol, M extends AllMethodNames<V>>(
     version: V,
     method: M,
     params: OCPPRequestType<V, M>,
     options?: CallOptions,
-  ): Promise<OCPPResponseType<V, M> | null>;
+  ): Promise<OCPPResponseType<V, M> | undefined>;
 
   /**
    * Custom/Extension safe call.
@@ -633,21 +642,21 @@ export class OCPPClient<
     method: string,
     params: Record<string, any>,
     options?: CallOptions,
-  ): Promise<TResult | null>;
+  ): Promise<TResult | undefined>;
 
   /** Default protocol safe call. */
   async safeCall<M extends AllMethodNames<P>>(
     method: M,
     params: OCPPRequestType<P, M>,
     options?: CallOptions,
-  ): Promise<OCPPResponseType<P, M> | null>;
+  ): Promise<OCPPResponseType<P, M> | undefined>;
 
   /** Explicit result safe call. */
   async safeCall<TResult = unknown>(
     method: string,
     params?: Record<string, unknown>,
     options?: CallOptions,
-  ): Promise<TResult | null>;
+  ): Promise<TResult | undefined>;
 
   async safeCall(...args: any[]): Promise<any> {
     try {
@@ -667,7 +676,7 @@ export class OCPPClient<
           console.warn("SafeCall failed", payload);
         }
       }
-      return null;
+      return undefined;
     }
   }
 
@@ -1250,10 +1259,16 @@ export class OCPPClient<
         }, pongTimeoutMs);
       }
 
-      this._pingTimer = setTimeout(doPing, this._options.pingIntervalMs);
+      // Add ±25% jitter to prevent thundering herds on mass reconnections
+      const jitteredInterval =
+        this._options.pingIntervalMs * (0.75 + Math.random() * 0.5);
+      this._pingTimer = setTimeout(doPing, jitteredInterval);
     };
 
-    this._pingTimer = setTimeout(doPing, this._options.pingIntervalMs);
+    // Add ±25% jitter to the very first ping as well
+    const initialJitteredInterval =
+      this._options.pingIntervalMs * (0.75 + Math.random() * 0.5);
+    this._pingTimer = setTimeout(doPing, initialJitteredInterval);
   }
 
   private _stopPing(): void {
@@ -1291,6 +1306,13 @@ export class OCPPClient<
     const validator = this._findValidator();
     if (!validator) return;
 
+    if (
+      this._options.strictModeMethods &&
+      !this._options.strictModeMethods.includes(method as any)
+    ) {
+      return; // Skip validation if method is not in the explicit strict list
+    }
+
     const schemaId = `urn:${method}.${suffix}`;
     try {
       validator.validate(schemaId, params);
@@ -1310,6 +1332,13 @@ export class OCPPClient<
   ): void {
     const validator = this._findValidator();
     if (!validator) return;
+
+    if (
+      this._options.strictModeMethods &&
+      !this._options.strictModeMethods.includes(method as any)
+    ) {
+      return; // Skip validation if method is not in the explicit strict list
+    }
 
     const schemaId = `urn:${method}.${suffix}`;
     try {

@@ -65,16 +65,16 @@ server.on("upgradeError", ({ error, socket }) => {
 // Define server with 2s timeout
 const server = new OCPPServer({ handshakeTimeoutMs: 2000 });
 
-server.auth(async (accept, reject, handshake) => {
+server.auth(async (ctx) => {
   // Simulate slow DB lookup
-  const station = await db.findStation(handshake.identity);
+  const station = await db.findStation(ctx.handshake.identity);
 
   if (!station) {
-    reject(404, "Station not found");
-  } else if (station.password !== handshake.password) {
-    reject(401, "Invalid password");
+    ctx.reject(404, "Station not found");
+  } else if (station.password !== ctx.handshake.password) {
+    ctx.reject(401, "Invalid password");
   } else {
-    accept({ session: { tenantId: station.tenantId } });
+    ctx.accept({ session: { tenantId: station.tenantId } });
   }
 });
 ```

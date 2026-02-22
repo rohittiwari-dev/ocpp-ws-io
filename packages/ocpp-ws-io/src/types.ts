@@ -173,6 +173,16 @@ export type WildcardHandler = (
   context: HandlerContext,
 ) => unknown | Promise<unknown>;
 
+export interface RouterHandlerContext<T = unknown> extends HandlerContext<T> {
+  /** The specific server client that issued the message. */
+  client: import("./server-client.js").OCPPServerClient;
+}
+
+export type RouterWildcardHandler = (
+  method: string,
+  context: RouterHandlerContext,
+) => unknown | Promise<unknown>;
+
 // ─── Call Options ────────────────────────────────────────────────
 
 export interface CallOptions {
@@ -180,8 +190,6 @@ export interface CallOptions {
   timeoutMs?: number;
   /** Abort signal */
   signal?: AbortSignal;
-  /** Suppress sending a response (server-side, NOREPLY) */
-  noReply?: boolean;
 }
 
 // ─── Close Options ───────────────────────────────────────────────
@@ -369,7 +377,9 @@ export interface ClientOptions {
   /** Maximum concurrent outbound calls (default: 1) */
   callConcurrency?: number;
   /** Enable strict mode validation (default: false) */
-  strictMode?: boolean | string[];
+  strictMode?: boolean | OCPPProtocol[];
+  /** If defined, restricts strict mode validation ONLY to these methods */
+  strictModeMethods?: Array<AllMethodNames<OCPPProtocol>>;
   /** Custom validators for strict mode */
   strictModeValidators?: Validator[];
   /** Max number of bad messages before closing (default: Infinity) */
@@ -383,6 +393,66 @@ export interface ClientOptions {
    * - `LoggingConfig` → custom configuration
    */
   logging?: LoggingConfig | false;
+  /** Rate Limiting configuration (Token Bucket) */
+  rateLimit?: RateLimitOptions;
+}
+
+// ─── Rate Limit Options ──────────────────────────────────────────
+
+export interface RateLimitOptions {
+  /** Maximum number of messages allowed within the window */
+  limit: number;
+  /** Window size in milliseconds */
+  windowMs: number;
+  /**
+   * Action to take when rate limit is exceeded.
+   * - 'disconnect': Terminate the socket immediately (hard enforce).
+   * - 'ignore': Drop the message entirely, letting the client back-off and retry.
+   * - Custom callback: Perform custom logging or logic when exceeded.
+   * (default: 'ignore')
+   */
+  onLimitExceeded?:
+    | "disconnect"
+    | "ignore"
+    | ((
+        client: import("./server-client.js").OCPPServerClient,
+        rawData: unknown,
+      ) => void | Promise<void>);
+  /**
+   * Specific limits applied purely to individual methods (e.g. Heartbeat, BootNotification).
+   * Note: The method must be parsed from the raw JSON payload to apply this.
+   */
+  methods?: Record<string, { limit: number; windowMs: number }>;
+}
+
+// ─── Router Options ──────────────────────────────────────────────
+
+export interface RouterConfig {
+  /** Accepted OCPP subprotocols (e.g. ["ocpp1.6"]) */
+  protocols?: AnyOCPPProtocol[];
+  /** Call timeout in ms — overrides server default */
+  callTimeoutMs?: number;
+  /** Ping interval in ms — overrides server default */
+  pingIntervalMs?: number;
+  /** Defer pings if activity detected — overrides server default */
+  deferPingsOnActivity?: boolean;
+  /** Max concurrent outbound calls — overrides server default */
+  callConcurrency?: number;
+  /** Enable strict mode validation — overrides server default */
+  strictMode?: boolean | OCPPProtocol[];
+  /** If defined, restricts strict mode validation ONLY to these methods */
+  strictModeMethods?: Array<AllMethodNames<OCPPProtocol>>;
+  /** Rate Limiting configuration — overrides server default */
+  rateLimit?: RateLimitOptions;
+}
+
+export interface CORSOptions {
+  /** Allowed IPv4, IPv6, or CIDR ranges (e.g. "10.0.0.0/8") */
+  allowedIPs?: string[];
+  /** Allowed Origin header values (e.g. "https://dashboard.example.com") */
+  allowedOrigins?: string[];
+  /** Allowed WebSocket protocol schemes */
+  allowedSchemes?: ("ws" | "wss")[];
 }
 
 // ─── Server Options ──────────────────────────────────────────────
@@ -403,13 +473,22 @@ export interface ServerOptions {
   /** Max concurrent outbound calls — inherited (default: 1) */
   callConcurrency?: number;
   /** Enable strict mode — inherited (default: false) */
-  strictMode?: boolean | string[];
+  strictMode?: boolean | OCPPProtocol[];
+  /** If defined, restricts strict mode validation ONLY to these methods */
+  strictModeMethods?: Array<AllMethodNames<OCPPProtocol>>;
   /** Custom validators — inherited */
   strictModeValidators?: Validator[];
+  /** Rate Limiting configuration — inherited */
+  rateLimit?: RateLimitOptions;
   /** Max bad messages — inherited (default: Infinity) */
   maxBadMessages?: number;
   /** Include error details in responses — inherited (default: false) */
   respondWithDetailedErrors?: boolean;
+  /**
+   * Session inactivity timeout in milliseconds before garbage collection.
+   * (default: 7200000 / 2 hours)
+   */
+  sessionTtlMs?: number;
   /**
    * Maximum time (ms) to wait for the auth callback to resolve during
    * a WebSocket upgrade handshake. If the callback does not settle within
@@ -424,6 +503,30 @@ export interface ServerOptions {
    * - `LoggingConfig` → custom configuration
    */
   logging?: LoggingConfig | false;
+}
+
+// ─── Observability ─────────────────────────────────────────────────
+
+export interface OCPPServerStats {
+  /** Number of currently connected WebSockets */
+  connectedClients: number;
+  /** Number of active memory sessions */
+  activeSessions: number;
+  /** Process uptime in seconds */
+  uptimeSeconds: number;
+  /** Process Memory Usage (bytes) */
+  memoryUsage: NodeJS.MemoryUsage;
+  /** Process CPU Time (microseconds) */
+  cpuUsage: NodeJS.CpuUsage;
+  /** Process ID */
+  pid: number;
+  /** Low-level WebSocket Server metrics */
+  webSockets?: {
+    /** Total active clients managed by the underlying ws server */
+    total: number;
+    /** Current messages waiting to be flushed to network (bytes) */
+    bufferedAmount: number;
+  };
 }
 
 // ─── Listen Options ──────────────────────────────────────────────
@@ -447,10 +550,7 @@ export interface AuthAccept<TSession = Record<string, unknown>> {
 }
 
 export type AuthCallback<TSession = Record<string, unknown>> = (
-  accept: (options?: AuthAccept<TSession>) => void,
-  reject: (code?: number, message?: string) => void,
-  handshake: HandshakeInfo,
-  signal: AbortSignal,
+  ctx: AuthContext<TSession>,
 ) => void | Promise<void>;
 
 export type RoutePattern = string | RegExp;
@@ -508,6 +608,7 @@ export interface ServerEvents {
 
 export interface EventAdapterInterface {
   publish(channel: string, data: unknown): Promise<void>;
+  publishBatch?(messages: { channel: string; data: unknown }[]): Promise<void>;
   subscribe(channel: string, handler: (data: unknown) => void): Promise<void>;
   unsubscribe(channel: string): Promise<void>;
   disconnect(): Promise<void>;
@@ -515,7 +616,11 @@ export interface EventAdapterInterface {
   // Presence Registry (Optional)
   setPresence?(identity: string, nodeId: string, ttl: number): Promise<void>;
   getPresence?(identity: string): Promise<string | null>;
+  getPresenceBatch?(identities: string[]): Promise<(string | null)[]>;
   removePresence?(identity: string): Promise<void>;
+
+  // Observability Pipeline (Optional)
+  metrics?(): Promise<Record<string, unknown>>;
 }
 
 // ─── Symbols ─────────────────────────────────────────────────────
@@ -555,14 +660,28 @@ export type { MiddlewareFunction, MiddlewareNext } from "./middleware.js";
 
 // ─── Router Component Types ──────────────────────────────────────────
 
-export interface ConnectionContext {
+export interface BaseConnectionContext {
   /** The handshake info from the upgrading WebSocket request */
   handshake: HandshakeInfo;
   /** Modifiable record object suitable for passing data between middlewares (e.g. auth tokens) */
   state: Record<string, unknown>;
+  /** Safely reject the WebSocket connection explicitly with an HTTP code and reason */
+  reject: (code?: number, message?: string) => never;
+}
+
+export interface ConnectionContext extends BaseConnectionContext {
+  /** Triggers the next middleware in the execution chain, optionally merging a payload into ctx.state */
+  next: (payload?: Record<string, unknown>) => Promise<void>;
+}
+
+export interface AuthContext<TSession = Record<string, unknown>>
+  extends BaseConnectionContext {
+  /** The AbortSignal representing if the client abruptly closed the underlying socket */
+  signal: AbortSignal;
+  /** Grants the connection and optionally sets the negotiated protocol or session metadata */
+  accept: (options?: AuthAccept<TSession>) => void;
 }
 
 export type ConnectionMiddleware = (
   ctx: ConnectionContext,
-  next: () => Promise<void>,
 ) => Promise<void> | void;

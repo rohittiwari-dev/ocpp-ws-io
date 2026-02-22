@@ -36,7 +36,7 @@ describe("OCPPClient safeCall", () => {
 
     // We expect safeCall to catch the error from our overridden call()
     const result = await client.safeCall("Test", {});
-    expect(result).toBeNull();
+    expect(result).toBeUndefined();
     expect(warnSpy).toHaveBeenCalledWith(
       "SafeCall failed",
       expect.objectContaining({

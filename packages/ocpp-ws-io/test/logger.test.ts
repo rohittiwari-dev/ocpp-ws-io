@@ -48,7 +48,7 @@ describe("Logger Integration - Client", () => {
 
   it("should use default voltlog-io logger when no logging config is set", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"], logging: false });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -67,7 +67,7 @@ describe("Logger Integration - Client", () => {
 
   it("should not log when logging is disabled", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"], logging: false });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -94,7 +94,7 @@ describe("Logger Integration - Client", () => {
 
   it("should use custom handler when provided", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"], logging: false });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -127,7 +127,7 @@ describe("Logger Integration - Client", () => {
 
   it("should log CALL sent and received", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"], logging: false });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -168,7 +168,7 @@ describe("Logger Integration - Client", () => {
 
   it("should log incoming CALL and handler errors", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"], logging: false });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -218,7 +218,7 @@ describe("Logger Integration - Client", () => {
 
   it("should log CALLERROR received", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"], logging: false });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -250,7 +250,7 @@ describe("Logger Integration - Client", () => {
 
   it("should log disconnect", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"], logging: false });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -280,7 +280,7 @@ describe("Logger Integration - Client", () => {
 
   it("should log reconnection attempts", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"], logging: false });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -315,7 +315,7 @@ describe("Logger Integration - Client", () => {
 
   it("should log bad messages", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"], logging: false });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -346,7 +346,7 @@ describe("Logger Integration - Client", () => {
 
   it("should respect logging.enabled = false", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"], logging: false });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -382,7 +382,7 @@ describe("Logger Integration - Server", () => {
       protocols: ["ocpp1.6"],
       logging: { logger: mockLogger },
     });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
 
     await server.listen(0);
 
@@ -399,7 +399,7 @@ describe("Logger Integration - Server", () => {
       protocols: ["ocpp1.6"],
       logging: { logger: mockLogger },
     });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -434,8 +434,8 @@ describe("Logger Integration - Server", () => {
       protocols: ["ocpp1.6"],
       logging: { logger: mockLogger },
     });
-    server.auth((_accept, reject) => {
-      reject(403, "Forbidden");
+    server.auth((ctx) => {
+      ctx.reject(403, "Forbidden");
     });
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
@@ -468,7 +468,7 @@ describe("Logger Integration - Server", () => {
       protocols: ["ocpp1.6"],
       logging: { logger: mockLogger },
     });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     await server.listen(0);
 
     await server.close();
@@ -486,7 +486,7 @@ describe("Logger Integration - Server", () => {
       protocols: ["ocpp1.6"],
       logging: { logger: mockLogger },
     });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -529,7 +529,7 @@ describe("Logger Integration - Server", () => {
       protocols: ["ocpp1.6"],
       logging: false,
     });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 

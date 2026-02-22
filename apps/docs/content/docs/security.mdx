@@ -39,18 +39,18 @@ const client = new OCPPClient({
 **Server:**
 
 ```typescript
-server.auth((accept, reject, handshake) => {
-  const expectedPassword = getPasswordForStation(handshake.identity);
+server.auth((ctx) => {
+  const expectedPassword = getPasswordForStation(ctx.handshake.identity);
 
   // Buffer comparison to avoid timing attacks is recommended
   if (
-    !handshake.password ||
-    !handshake.password.equals(Buffer.from(expectedPassword))
+    !ctx.handshake.password ||
+    !ctx.handshake.password.equals(Buffer.from(expectedPassword))
   ) {
-    return reject(401, "Invalid credentials");
+    return ctx.reject(401, "Invalid credentials");
   }
 
-  accept();
+  ctx.accept();
 });
 ```
 
@@ -125,14 +125,14 @@ const server = new OCPPServer({
   },
 });
 
-server.auth((accept, reject, handshake) => {
-  const cert = handshake.clientCertificate;
+server.auth((ctx) => {
+  const cert = ctx.handshake.clientCertificate;
 
   // Verify the certificate CN matches the identity (OCPP requirement)
-  if (!cert || cert.subject?.CN !== handshake.identity) {
-    return reject(401, "Certificate identity mismatch");
+  if (!cert || cert.subject?.CN !== ctx.handshake.identity) {
+    return ctx.reject(401, "Certificate identity mismatch");
   }
 
-  accept();
+  ctx.accept();
 });
 ```

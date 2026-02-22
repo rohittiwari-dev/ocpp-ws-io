@@ -1,0 +1,4 @@
+{
+  "title": "OCPP CLI",
+  "pages": ["index", "project-setup", "simulation", "monitoring", "development"]
+}

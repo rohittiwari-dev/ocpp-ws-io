@@ -1,5 +1,14 @@
 # ocpp-ws-io
 
+## 2.1.2
+
+### Patch Changes
+
+- **Router Enhancements**: Added modular router options with `createRouter` for flexible routing configurations.
+- **CORS Support**: Implemented router configuration support for Cross-Origin Resource Sharing (CORS).
+- **Performance Optimizations**: improved client session management, message handling, and connection statistics.
+- **Bundle Size**: Optimized build artifacts to reduce overall bundle size.
+
 ## 2.1.1
 
 ### Patch Changes

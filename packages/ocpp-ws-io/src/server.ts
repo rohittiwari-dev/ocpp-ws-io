@@ -9,6 +9,7 @@ import type { Duplex } from "node:stream";
 import type { TLSSocket } from "node:tls";
 import { createId } from "@paralleldrive/cuid2";
 import { WebSocketServer } from "ws";
+import { checkCORS } from "./cors.js";
 import { initLogger } from "./init-logger.js";
 import { executeMiddlewareChain, OCPPRouter } from "./router.js";
 import { OCPPServerClient } from "./server-client.js";
@@ -17,9 +18,10 @@ import {
   type AllMethodNames,
   type AuthAccept,
   type AuthCallback,
+  type CallOptions,
   type ClientOptions,
   type CloseOptions,
-  type ConnectionContext,
+  type CORSOptions,
   type ConnectionMiddleware,
   type EventAdapterInterface,
   type HandshakeInfo,
@@ -28,6 +30,7 @@ import {
   type LoggerLikeNotOptional,
   type OCPPProtocol,
   type OCPPRequestType,
+  type OCPPResponseType,
   SecurityProfile,
   type ServerEvents,
   type ServerOptions,
@@ -52,12 +55,14 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _options: ServerOptions;
   private _routers: OCPPRouter[] = [];
   private _clients = new Set<OCPPServerClient>();
+  private _clientsByIdentity = new Map<string, OCPPServerClient>();
   private _httpServers = new Set<Server>();
   private _wss: WebSocketServer | null = null;
   private _state: "OPEN" | "CLOSING" | "CLOSED" = "OPEN";
   private _adapter: EventAdapterInterface | null = null;
   private _httpServerAbortControllers = new Set<AbortController>();
   private _logger: LoggerLike | null = null;
+  private _globalCORS?: CORSOptions;
 
   // Robustness & Clustering
   private readonly _nodeId = createId();
@@ -66,8 +71,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     { data: Record<string, any>; lastActive: number }
   >();
   private _gcInterval: NodeJS.Timeout | null = null;
-  // Default session timeout: 2 hours
-  private readonly _sessionTimeoutMs = 2 * 60 * 60 * 1000;
+  private readonly _sessionTimeoutMs: number;
 
   constructor(options: ServerOptions = {}) {
     super();
@@ -89,8 +93,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       maxBadMessages: Infinity,
       respondWithDetailedErrors: false,
       handshakeTimeoutMs: 30000,
+      sessionTtlMs: 2 * 60 * 60 * 1000,
       ...options,
     };
+
+    this._sessionTimeoutMs = this._options.sessionTtlMs!;
 
     // Initialize WebSocketServer immediately (ws best practice: noServer mode)
     this._wss = new WebSocketServer({ noServer: true });
@@ -123,9 +130,100 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     return this._state;
   }
 
+  /**
+   * Returns current node observability statistics
+   * (e.g. connected socket count, tracked memory sessions, and process CPU/Memory usage).
+   * Fully compatible with Loki/Prometheus node metric ingestion.
+   */
+  stats(): import("./types.js").OCPPServerStats {
+    let bufferedAmount = 0;
+    if (this._wss) {
+      for (const ws of this._wss.clients) {
+        bufferedAmount += ws.bufferedAmount;
+      }
+    }
+
+    return {
+      connectedClients: this._clients.size,
+      activeSessions: this._sessions.size,
+      uptimeSeconds: process.uptime(),
+      pid: process.pid,
+      memoryUsage: process.memoryUsage(),
+      cpuUsage: process.cpuUsage(),
+      webSockets: this._wss
+        ? {
+            total: this._wss.clients.size,
+            bufferedAmount,
+          }
+        : undefined,
+    };
+  }
+  /**
+   * Returns observability statistics from the active Event Adapter (e.g. Redis).
+   * Useful for tracking consumer backlog and enabling Horizontal Pod Autoscaling.
+   */
+  async adapterMetrics(): Promise<Record<string, unknown> | null> {
+    if (!this._adapter || !this._adapter.metrics) return null;
+    try {
+      return await this._adapter.metrics();
+    } catch (err) {
+      this._logger?.warn?.("Failed to fetch adapter metrics", { error: err });
+      return null;
+    }
+  }
+  /**
+   * Synchronously returns the OCPPServerClient instance if the specific identity
+   * is connected to THIS local server node.
+   * Note: In a clustered environment, clients connected to other nodes will NOT be returned here.
+   *
+   * @param identity The client identity (username/station ID)
+   */
+  getLocalClient(identity: string): OCPPServerClient | undefined {
+    return this._clientsByIdentity.get(identity);
+  }
+
+  /**
+   * Synchronously checks if the specific identity is connected to THIS local server node.
+   * Note: In a clustered environment, this will return false if the client is connected to another node.
+   *
+   * @param identity The client identity (username/station ID)
+   */
+  hasLocalClient(identity: string): boolean {
+    return this.getLocalClient(identity) !== undefined;
+  }
+
+  /**
+   * Asynchronously checks if the specific identity is connected to the server.
+   * In a single-node setup, this checks the local connections.
+   * In a clustered setup (with a pub/sub adapter), this will also check the global presence registry
+   * to see if the client is connected to ANY node in the cluster.
+   *
+   * @param identity The client identity (username/station ID)
+   */
+  async isClientConnected(identity: string): Promise<boolean> {
+    if (this.hasLocalClient(identity)) {
+      return true;
+    }
+
+    if (this._adapter?.getPresence) {
+      const nodeId = await this._adapter.getPresence(identity);
+      return nodeId !== null && nodeId !== undefined;
+    }
+
+    return false;
+  }
+
   // ─── Auth ────────────────────────────────────────────────────
 
   // ─── Routing & Middleware ────────────────────────────────────
+
+  /**
+   * Applies global CORS rules to all incoming connections before routing.
+   */
+  cors(options: CORSOptions): this {
+    this._globalCORS = options;
+    return this;
+  }
 
   /**
    * Registers a new routing dispatcher for multiplexing connections.
@@ -136,6 +234,15 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     router.route(...patterns);
     this._routers.push(router);
     return router;
+  }
+
+  /**
+   * Attaches one or more standalone modular routers created via `createRouter()`.
+   * This is useful for separating route definitions across different files.
+   */
+  attachRouters(...routers: OCPPRouter[]): this {
+    this._routers.push(...routers);
+    return this;
   }
 
   /**
@@ -321,6 +428,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return;
     }
 
+    // ── Step 1.5: Global CORS gate ──
+    if (this._globalCORS) {
+      const { allowed, reason } = checkCORS(req, this._globalCORS);
+      if (!allowed) {
+        this._logger?.warn?.("CORS rejected connection", {
+          reason,
+          ip: req.socket.remoteAddress,
+        });
+        abortHandshake(socket, 403, "Forbidden");
+        return;
+      }
+    }
+
     // ── Step 2: Parse URL & Execute Router ──
     const url = new URL(
       req.url ?? "/",
@@ -328,16 +448,23 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     );
 
     let matchedHandler: AuthCallback | undefined;
-    let matchedRouter: OCPPRouter | undefined;
+    const matchedMiddlewares: ConnectionMiddleware[] = [];
+    const matchedRouters: OCPPRouter[] = [];
     const params: Record<string, string> = {};
     const pathname = url.pathname;
 
-    // 1. First, try to match against chainable modern Routers
+    let hasTerminalRoute = false;
+    let hasPatternRouters = false;
+    let matchedRouterConfig: import("./types.js").RouterConfig | undefined;
+
+    // 1. Additive Matching: Collect ALL middlewares from ALL matching routers
     for (const router of this._routers) {
       let matched = false;
       if (router.compiledPatterns.length === 0) {
+        // Global middleware (server.use) matches everything
         matched = true;
       } else {
+        hasPatternRouters = true;
         for (const compiled of router.compiledPatterns) {
           const match = compiled.regex.exec(pathname);
           if (match) {
@@ -351,15 +478,31 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
                 params[key] = decodeURIComponent(val ?? "");
               }
             }
-            break;
+            break; // Stop checking patterns within this single router
           }
         }
       }
+
       if (matched) {
-        matchedRouter = router;
-        matchedHandler =
-          (router.authCallback as AuthCallback | undefined) ?? undefined;
-        break;
+        matchedRouters.push(router);
+        if (router.compiledPatterns.length > 0) {
+          hasTerminalRoute = true;
+          // Use the config of the most specific router
+          if (router._routeConfig) {
+            matchedRouterConfig = Object.assign(
+              matchedRouterConfig || {},
+              router._routeConfig,
+            );
+          }
+        }
+        // Accumulate middlewares
+        if (router.middlewares.length > 0) {
+          matchedMiddlewares.push(...router.middlewares);
+        }
+        // First matched explicit handler wins (respects route registration order)
+        if (router.authCallback && !matchedHandler) {
+          matchedHandler = router.authCallback as AuthCallback | undefined;
+        }
       }
     }
 
@@ -375,6 +518,21 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     if (!identity) {
       abortHandshake(socket, 400, "Missing identity in URL path");
       return;
+    }
+
+    // ── Step 2.5: Route-level CORS gate ──
+    for (const router of matchedRouters) {
+      if (router._routeCORS) {
+        const { allowed, reason } = checkCORS(req, router._routeCORS);
+        if (!allowed) {
+          this._logger?.warn?.("Route CORS rejected connection", {
+            reason,
+            ip: req.socket.remoteAddress,
+          });
+          abortHandshake(socket, 403, "Forbidden");
+          return;
+        }
+      }
     }
 
     // ── Step 3: TCP Keep-Alive ──
@@ -394,7 +552,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
     }
 
-    const serverProtocols = this._options.protocols ?? [];
+    const serverProtocols =
+      matchedRouterConfig?.protocols ?? this._options.protocols ?? [];
     let selectedProtocol: string | undefined;
 
     if (serverProtocols.length > 0) {
@@ -440,7 +599,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     };
 
     // ── Step 8: Auth callback with AbortController + timeout ──
-    if (matchedHandler || matchedRouter) {
+    let ctx: import("./types.js").ConnectionContext | undefined;
+    let acceptOptions: import("./types.js").AuthAccept | undefined;
+
+    if (matchedHandler || matchedMiddlewares.length > 0) {
       const ac = new AbortController();
 
       // Socket lifecycle → abort on premature close / error
@@ -461,60 +623,94 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
 
       try {
-        if (matchedRouter && matchedRouter.middlewares.length > 0) {
-          const ctx: ConnectionContext = {
-            handshake,
-            state: {},
-          };
-          // Execute middleware chain
-          await executeMiddlewareChain(matchedRouter.middlewares, ctx);
-          // If middleware threw an error, execution skips to catch block
-        }
+        ctx = {
+          handshake,
+          state: {},
+          reject: (code = 401, message = "Unauthorized") => {
+            throw { code, message, _isMiddlewareReject: true };
+          },
+          next: async (_payload?: Record<string, unknown>) => {}, // Bound dynamically inside executeMiddlewareChain
+        };
 
-        // Default auth pass-through if router didn't define auth
-        if (!matchedHandler) {
-          selectedProtocol =
-            handshake.protocols.values().next().value ?? undefined;
-        } else {
-          await new Promise<AuthAccept | undefined>((resolve, reject) => {
-            let settled = false;
+        const chain = [...matchedMiddlewares];
+        let authCalled = false;
 
-            const accept = (opts?: AuthAccept) => {
-              if (settled) return;
-              settled = true;
-              if (opts?.protocol) selectedProtocol = opts.protocol;
-              resolve(opts);
-            };
+        // Push the Auth check as the terminal handler of the middleware chain
+        chain.push(async (c) => {
+          authCalled = true;
+          if (!matchedHandler) {
+            // Default auth pass-through if no explicit auth callback was matched
+            selectedProtocol =
+              handshake.protocols.values().next().value ?? undefined;
+          } else {
+            acceptOptions = await new Promise<AuthAccept | undefined>(
+              (resolve, reject) => {
+                let settled = false;
 
-            const rejectAuth = (code = 401, message = "Unauthorized") => {
-              if (settled) return;
-              settled = true;
-              reject({ code, message });
-            };
-
-            // Guard: already aborted before we even start
-            if (ac.signal.aborted) {
-              reject(ac.signal.reason);
-              return;
-            }
-
-            ac.signal.addEventListener(
-              "abort",
-              () => {
-                if (!settled) {
+                const accept = (opts?: AuthAccept) => {
+                  if (settled) return;
                   settled = true;
-                  reject(ac.signal.reason);
-                }
-              },
-              { once: true },
-            );
+                  if (opts?.protocol) selectedProtocol = opts.protocol;
+                  resolve(opts);
+                };
 
-            this._logger?.debug?.("Executing route handler", {
-              identity,
-              pathname,
-            });
-            matchedHandler(accept, rejectAuth, handshake, ac.signal);
-          });
+                const rejectAuth = (
+                  code = 401,
+                  message = "Unauthorized",
+                ): never => {
+                  if (!settled) {
+                    settled = true;
+                    reject({ code, message });
+                  }
+                  throw { code, message, _isMiddlewareReject: true };
+                };
+
+                // Guard: already aborted before we even start
+                if (ac.signal.aborted) {
+                  reject(ac.signal.reason);
+                  return;
+                }
+
+                ac.signal.addEventListener(
+                  "abort",
+                  () => {
+                    if (!settled) {
+                      settled = true;
+                      reject(ac.signal.reason);
+                    }
+                  },
+                  { once: true },
+                );
+
+                this._logger?.debug?.("Executing auth callback", {
+                  identity,
+                  pathname,
+                });
+
+                const authCtx: import("./types.js").AuthContext = {
+                  handshake,
+                  state: c.state,
+                  reject: rejectAuth,
+                  signal: ac.signal,
+                  accept,
+                };
+
+                matchedHandler!(authCtx);
+              },
+            );
+          }
+        });
+
+        // Execute dynamic middleware pipeline
+        await executeMiddlewareChain(chain, ctx);
+
+        if (!authCalled) {
+          // A middleware halted the chain without calling next() or reject()
+          throw {
+            code: 500,
+            message: "Middleware chain halted unexpectedly without rejecting",
+            _isMiddlewareReject: true,
+          };
         }
       } catch (err) {
         if (ac.signal.aborted) {
@@ -545,13 +741,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         socket.removeListener("error", onSocketGone);
         socket.removeListener("end", onSocketGone);
       }
-    } else if (this._routers.length > 0) {
-      // If routers are defined but nothing matched, we must reject the connection.
-      // E.g., user defined `server.route("/api/:id").auth(cb)` but client connected to `/wrong/path`
+    } else if (hasPatternRouters && !hasTerminalRoute) {
+      // If specific routes were defined but user connected to an unknown path,
+      // reject the connection smoothly (e.g. connected to /wrong/path)
       this._logger?.warn?.("Connection rejected: No matching route found", {
         pathname,
       });
-      abortHandshake(socket, 400, "Unexpected server response: 400");
+      abortHandshake(socket, 404, "Endpoint Not Found");
       return;
     }
 
@@ -574,27 +770,43 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       const clientOptions: ClientOptions = {
         identity,
         endpoint: "",
-        callTimeoutMs: this._options.callTimeoutMs,
-        pingIntervalMs: this._options.pingIntervalMs,
-        deferPingsOnActivity: this._options.deferPingsOnActivity,
-        callConcurrency: this._options.callConcurrency,
+        callTimeoutMs:
+          matchedRouterConfig?.callTimeoutMs ?? this._options.callTimeoutMs,
+        pingIntervalMs:
+          matchedRouterConfig?.pingIntervalMs ?? this._options.pingIntervalMs,
+        deferPingsOnActivity:
+          matchedRouterConfig?.deferPingsOnActivity ??
+          this._options.deferPingsOnActivity,
+        callConcurrency:
+          matchedRouterConfig?.callConcurrency ?? this._options.callConcurrency,
         maxBadMessages: this._options.maxBadMessages,
         respondWithDetailedErrors: this._options.respondWithDetailedErrors,
-        strictMode: this._options.strictMode,
+        strictMode: matchedRouterConfig?.strictMode ?? this._options.strictMode,
+        strictModeMethods:
+          matchedRouterConfig?.strictModeMethods ??
+          this._options.strictModeMethods,
         strictModeValidators: this._options.strictModeValidators,
+        rateLimit: matchedRouterConfig?.rateLimit ?? this._options.rateLimit,
         reconnect: false,
         logging: this._options.logging,
+      };
+
+      const finalSession = {
+        ...(ctx?.state || {}),
+        ...(this._sessions.get(identity)?.data || {}),
+        ...(((acceptOptions as any)?.session as Record<string, unknown>) || {}),
       };
 
       const client = new OCPPServerClient(clientOptions, {
         ws,
         handshake,
-        session: this._sessions.get(identity)?.data ?? {},
+        session: finalSession,
         protocol: selectedProtocol,
       });
 
       this._updateSessionActivity(identity, client.session);
       this._clients.add(client);
+      this._clientsByIdentity.set(identity, client);
 
       // Register presence
       if (this._adapter?.setPresence) {
@@ -619,6 +831,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
       client.on("close", () => {
         this._clients.delete(client);
+        if (this._clientsByIdentity.get(identity) === client) {
+          this._clientsByIdentity.delete(identity);
+        }
         // Remove presence
         if (this?._adapter?.removePresence) {
           this._adapter.removePresence(identity).catch((err) => {
@@ -633,8 +848,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
       // Dispatch route-specific "client" events
       this.emit("client", client);
-      if (matchedRouter) {
-        matchedRouter.emit("client", client);
+      for (const router of matchedRouters) {
+        router.emit("client", client);
       }
 
       client.on("message", () => {
@@ -732,14 +947,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     version: V,
     method: M,
     params: OCPPRequestType<V, M>,
-  ): Promise<void>;
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<V, M> | undefined>;
 
   // 2. Global overload (infers method from any protocol)
   async sendToClient<M extends AllMethodNames<any>>(
     identity: string,
     method: M,
     params: OCPPRequestType<any, M>,
-  ): Promise<void>;
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<any, M> | undefined>;
 
   // 3. Custom/Loose overload
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -747,38 +964,41 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     identity: string,
     method: string,
     params: Record<string, any>,
-  ): Promise<void>;
+    options?: CallOptions,
+  ): Promise<any | undefined>;
 
-  async sendToClient(...args: any[]): Promise<void> {
+  async sendToClient(...args: any[]): Promise<any> {
     let identity: string;
     let method: string;
     let params: any;
+    let options: CallOptions | undefined;
 
     // Parse overloads
     if (
-      args.length === 4 &&
+      args.length >= 4 &&
       typeof args[0] === "string" &&
       typeof args[1] === "string" &&
       typeof args[2] === "string"
     ) {
-      // (identity, version, method, params)
+      // (identity, version, method, params, options)
       identity = args[0];
       // version = args[1]; // Not used for routing yet, but could be validation
       method = args[2];
       params = args[3];
+      options = args[4];
     } else {
-      // (identity, method, params)
+      // (identity, method, params, options)
       identity = args[0];
       method = args[1];
       params = args[2];
+      options = args[3];
     }
 
     // 1. Check local
     for (const client of this._clients) {
       if (client.identity === identity) {
         // Found locally
-        await client.call(method as any, params as any);
-        return;
+        return await client.call(method as any, params as any, options);
       }
     }
 
@@ -792,6 +1012,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           target: identity,
           method,
           params,
+          options,
         });
         return;
       } else {
@@ -814,14 +1035,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     version: V,
     method: M,
     params: OCPPRequestType<V, M>,
-  ): Promise<boolean>;
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<V, M> | undefined>;
 
   // 2. Global overload
   async safeSendToClient<M extends AllMethodNames<any>>(
     identity: string,
     method: M,
     params: OCPPRequestType<any, M>,
-  ): Promise<boolean>;
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<any, M> | undefined>;
 
   // 3. Custom/Loose overload
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -829,13 +1052,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     identity: string,
     method: string,
     params: Record<string, any>,
-  ): Promise<boolean>;
+    options?: CallOptions,
+  ): Promise<any | undefined>;
 
-  async safeSendToClient(...args: any[]): Promise<boolean> {
+  async safeSendToClient(...args: any[]): Promise<any> {
     try {
       // @ts-expect-error
-      await this.sendToClient(...args);
-      return true;
+      return await this.sendToClient(...args);
     } catch (error) {
       if (
         this._logger &&
@@ -845,15 +1068,17 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         this._logger.warn("SafeSendToClient failed", {
           identity: args[0],
           method:
-            args.length === 4
-              ? args[2] // versioned: id, ver, method, params
-              : args.length === 3
-                ? args[1] // global: id, method, params
+            args.length >= 4 &&
+            typeof args[1] === "string" &&
+            typeof args[2] === "string"
+              ? args[2] // versioned: id, ver, method, params, options
+              : args.length >= 3 && typeof args[1] === "string"
+                ? args[1] // global: id, method, params, options
                 : "unknown",
           error,
         });
       }
-      return false;
+      return undefined;
     }
   }
 
@@ -905,6 +1130,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         target: string;
         method: string;
         params: unknown;
+        options?: CallOptions;
       };
 
       // Unicast is meant for ME, but specifically for a TARGET client
@@ -912,14 +1138,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       // Unlike broadcast, I don't need to iterate all.
       for (const client of this._clients) {
         if (client.identity === payload.target) {
-          client.call(payload.method, payload.params as any).catch((err) => {
-            if ((err as Error).name !== "TimeoutError") {
-              this._logger?.error?.("Error delivering unicast to client", {
-                identity: payload.target,
-                error: err,
-              });
-            }
-          });
+          client
+            .call(payload.method, payload.params as any, payload.options)
+            .catch((err) => {
+              if ((err as Error).name !== "TimeoutError") {
+                this._logger?.error?.("Error delivering unicast to client", {
+                  identity: payload.target,
+                  error: err,
+                });
+              }
+            });
           return;
         }
       }
@@ -962,5 +1190,87 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       : Promise.resolve();
 
     await Promise.all([Promise.all(localPromises), remotePromise]);
+  }
+
+  /**
+   * Send a specific method & params to a list of specific clients efficiently.
+   * This leverages adapter pipelining (e.g. Redis .pipeline()) to minimize network overhead
+   * when communicating with thousands of nodes simultaneously.
+   *
+   * @param identities Array of target client identities
+   * @param method The OCPP method to send
+   * @param params The request parameters
+   * @param options Call options
+   */
+  async broadcastBatch<V extends AllMethodNames<any>>(
+    identities: string[],
+    method: V,
+    params: OCPPRequestType<any, V>,
+    options?: CallOptions,
+  ): Promise<void> {
+    const localIdentities = new Set<string>();
+    const localPromises: Promise<any>[] = [];
+
+    // 1. Send to local clients immediately (O(1) lookup via _clientsByIdentity)
+    for (const identity of identities) {
+      const client = this._clientsByIdentity.get(identity);
+      if (client) {
+        localIdentities.add(identity);
+        localPromises.push(
+          client.call(method as any, params as any, options).catch(() => {}),
+        );
+      }
+    }
+
+    // 2. Resolve remote clients
+    const remoteIdentities = identities.filter(
+      (id) => !localIdentities.has(id),
+    );
+
+    if (remoteIdentities.length > 0 && this._adapter) {
+      // 2a. Fetch presence in batch
+      let presences: (string | null)[] = [];
+      if (this._adapter.getPresenceBatch) {
+        presences = await this._adapter.getPresenceBatch(remoteIdentities);
+      } else if (this._adapter.getPresence) {
+        presences = await Promise.all(
+          remoteIdentities.map((id) => this._adapter!.getPresence!(id)),
+        );
+      }
+
+      // 2b. Prepare batch messages payload
+      const batchMessages: { channel: string; data: unknown }[] = [];
+
+      for (let i = 0; i < remoteIdentities.length; i++) {
+        const nodeId = presences[i];
+        if (nodeId) {
+          batchMessages.push({
+            channel: `ocpp:node:${nodeId}`,
+            data: {
+              source: this._nodeId,
+              target: remoteIdentities[i],
+              method,
+              params,
+              options,
+            },
+          });
+        }
+      }
+
+      // 2c. Publish in batch via adapter
+      if (batchMessages.length > 0) {
+        if (this._adapter.publishBatch) {
+          await this._adapter.publishBatch(batchMessages);
+        } else {
+          await Promise.all(
+            batchMessages.map((bm) =>
+              this._adapter!.publish(bm.channel, bm.data),
+            ),
+          );
+        }
+      }
+    }
+
+    await Promise.all(localPromises);
   }
 }

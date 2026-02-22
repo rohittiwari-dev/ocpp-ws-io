@@ -58,8 +58,8 @@ const getPort = (srv: import("node:http").Server): number => {
 describe("BrowserOCPPClient", () => {
   beforeEach(async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept, _reject, _handshake) => {
-      accept({ protocol: "ocpp1.6" });
+    server.auth((ctx) => {
+      ctx.accept({ protocol: "ocpp1.6" });
     });
     const httpServer = await server.listen(0);
     port = getPort(httpServer);

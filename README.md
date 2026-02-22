@@ -78,11 +78,11 @@ const server = new OCPPServer({
   logging: { prettify: true, exchangeLog: true, level: "info" },
 });
 
-server.auth((accept, reject, handshake) => {
+server.auth((ctx) => {
   console.log(
-    `Connection from ${handshake.identity} at path ${handshake.pathname}`,
+    `Connection from ${ctx.handshake.identity} at path ${ctx.handshake.pathname}`,
   );
-  accept({ session: { authorized: true } });
+  ctx.accept({ session: { authorized: true } });
 });
 
 server.on("client", (client) => {

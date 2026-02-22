@@ -61,11 +61,11 @@ const server = new OCPPServer({
 });
 
 // Optional: Add authentication ringfence
-server.auth((accept, reject, handshake) => {
+server.auth((ctx) => {
   console.log(
-    `Connection from ${handshake.identity} at path ${handshake.pathname}`,
+    `Connection from ${ctx.handshake.identity} at path ${ctx.handshake.pathname}`,
   );
-  accept({ session: { authorized: true } });
+  ctx.accept({ session: { authorized: true } });
 });
 
 server.on("client", (client) => {
@@ -89,26 +89,30 @@ await server.listen(3000);
 
 ### `OCPPClient` Options
 
-| Option            | Type                  | Default    | Description                             |
-| ----------------- | --------------------- | ---------- | --------------------------------------- |
-| `identity`        | `string`              | _required_ | Charging station ID                     |
-| `endpoint`        | `string`              | _required_ | WebSocket URL (`ws://` or `wss://`)     |
-| `protocols`       | `OCPPProtocol[]`      | `[]`       | OCPP subprotocols to negotiate          |
-| `securityProfile` | `SecurityProfile`     | `NONE`     | Security profile (0–3)                  |
-| `password`        | `string \| Buffer`    | —          | Password for Basic Auth (Profile 1 & 2) |
-| `tls`             | `TLSOptions`          | —          | TLS/SSL options (Profile 2 & 3)         |
-| `reconnect`       | `boolean`             | `true`     | Auto-reconnect on disconnect            |
-| `strictMode`      | `boolean \| string[]` | `false`    | Enable/restrict schema validation       |
+| Option              | Type                  | Default    | Description                             |
+| ------------------- | --------------------- | ---------- | --------------------------------------- |
+| `identity`          | `string`              | _required_ | Charging station ID                     |
+| `endpoint`          | `string`              | _required_ | WebSocket URL (`ws://` or `wss://`)     |
+| `protocols`         | `OCPPProtocol[]`      | `[]`       | OCPP subprotocols to negotiate          |
+| `securityProfile`   | `SecurityProfile`     | `NONE`     | Security profile (0–3)                  |
+| `password`          | `string \| Buffer`    | —          | Password for Basic Auth (Profile 1 & 2) |
+| `tls`               | `TLSOptions`          | —          | TLS/SSL options (Profile 2 & 3)         |
+| `reconnect`         | `boolean`             | `true`     | Auto-reconnect on disconnect            |
+| `pingIntervalMs`    | `number`              | `30000`    | Includes ±25% randomized jitter         |
+| `strictMode`        | `boolean \| string[]` | `false`    | Enable/restrict schema validation       |
+| `strictModeMethods` | `string[]`            | —          | Restrict validation to specific methods |
 
 ### `OCPPServer` Options
 
-| Option               | Type              | Default | Description                               |
-| -------------------- | ----------------- | ------- | ----------------------------------------- |
-| `protocols`          | `OCPPProtocol[]`  | `[]`    | Accepted OCPP subprotocols                |
-| `securityProfile`    | `SecurityProfile` | `NONE`  | Security profile for auto-created servers |
-| `handshakeTimeoutMs` | `number`          | `30000` | Timeout for WebSocket handshake (ms)      |
-| `tls`                | `TLSOptions`      | —       | TLS options (Profile 2 & 3)               |
-| `logging`            | `LoggingConfig`   | `true`  | Configure built-in logging                |
+| Option               | Type               | Default   | Description                                |
+| -------------------- | ------------------ | --------- | ------------------------------------------ |
+| `protocols`          | `OCPPProtocol[]`   | `[]`      | Accepted OCPP subprotocols                 |
+| `securityProfile`    | `SecurityProfile`  | `NONE`    | Security profile for auto-created servers  |
+| `handshakeTimeoutMs` | `number`           | `30000`   | Timeout for WebSocket handshake (ms)       |
+| `tls`                | `TLSOptions`       | —         | TLS options (Profile 2 & 3)                |
+| `logging`            | `LoggingConfig`    | `true`    | Configure built-in logging                 |
+| `sessionTtlMs`       | `number`           | `7200000` | Garbage collection inactivity timeout (ms) |
+| `rateLimit`          | `RateLimitOptions` | —         | Token bucket socket & method rate-limiter  |
 
 ## 🛠️ Advanced Server Configuration
 
@@ -130,6 +134,22 @@ server.on("upgradeError", ({ error, socket }) => {
   console.error("Upgrade failed:", error);
 });
 ```
+
+### Server & Router Execution Flow
+
+The `OCPPServer` and its internal `OCPPRouter` handle connections and messages in a strict, two-phase execution hierarchy:
+
+#### 1. Connection Phase (HTTP Upgrade)
+
+Executes before the WebSocket connection is officially accepted.
+
+1. **Route Matching (`router.route`)**: The incoming URL is matched against defined patterns.
+2. **Connection Middleware (`router.use`)**: Runs sequentially. Used to extract tokens, inspect headers, or implement early rate-limiting logic.
+3. **Auth Callback (`router.auth`)**: Runs **last** in the HTTP upgrade chain. Used to validate credentials against a database and finally accept/reject the connection.
+
+#### 2. Message Phase (WebSocket Open)
+
+Executes after the connection is accepted and messages start flowing. 4. **Message Middleware (`client.use` / `server.use`)**: Intercepts every outgoing/incoming message for logging, schema validation, or metric tracking. 5. **Message Handlers (`client.handle` / `server.handle`)**: The **final piece of business logic** where the system reacts to a specific OCPP action (e.g., `BootNotification`).
 
 ## 📝 Logging
 
@@ -192,23 +212,102 @@ const client = new OCPPClient({
 
 ### Safe Calls (`safeCall`)
 
-Perform RPC calls without `try/catch` blocks. Returns `null` on failure and logs the error automatically.
+Perform RPC calls without `try/catch` blocks. Returns the response data on success, or `undefined` on failure while automatically logging the error. You can also pass per-call config options like timeouts.
 
-```typescript
-const result = await client.safeCall("ocpp1.6", "Heartbeat", {});
+````typescript
+const result = await client.safeCall(
+  "ocpp1.6",
+  "Heartbeat",
+  {},
+  {
+    timeoutMs: 15000, // Finely control the timeout specifically for this request
+  },
+);
+
 if (result) {
+  // Checked for undefined
   console.log("Heartbeat accepted:", result.currentTime);
 }
-```
 
-### Unicast Routing (`safeSendToClient`) [Server]
+### Unicast Routing (`sendToClient` / `safeSendToClient`) [Server]
 
 Send a message to a specific client ID, even if they are connected to a different node in the cluster.
 
+You have two options depending on your error-handling preference:
+
+#### 1. Standard approach (`sendToClient`)
+Throws an error if the client responds with a `CALLERROR` or if the timeout is reached.
 ```typescript
-// Best-effort routing (Cluster-aware)
-await server.safeSendToClient("CP001", "ocpp1.6", "GetConfiguration", {
-  key: ["ClockAlignedDataInterval"],
+try {
+  const result = await server.sendToClient(
+    "CP001",
+    "ocpp1.6",
+    "GetConfiguration",
+    { key: ["ClockAlignedDataInterval"] },
+    { timeoutMs: 10000 },
+  );
+  console.log("Configuration:", result);
+} catch (error) {
+  console.error("Failed to get configuration:", error);
+}
+````
+
+#### 2. Safe approach (`safeSendToClient`)
+
+Returns the response on success, or `undefined` on error, automatically logging the failure internally.
+
+```typescript
+const result = await server.safeSendToClient(
+  "CP001",
+  "ocpp1.6",
+  "GetConfiguration",
+  { key: ["ClockAlignedDataInterval"] },
+  { timeoutMs: 10000 },
+);
+
+if (result) {
+  console.log("Configuration:", result);
+}
+```
+
+### 2. Connection Middleware (Server)
+
+For intercepting HTTP WebSocket Upgrade requests before they become an OCPP Client.
+
+```typescript
+const rateLimiter = defineMiddleware(async (ctx) => {
+  const ip = ctx.handshake.remoteAddress;
+  if (isRateLimited(ip)) {
+    // Instantly aborts the WebSocket connection with an HTTP 429 status
+    ctx.reject(429, "Too Many Requests");
+  } else {
+    // Or proceed down the execution chain. You can optionally pass an object
+    // to next(), which will automatically be shallow-merged into `ctx.state`.
+    await ctx.next({ rateLimitRemaining: 99 });
+  }
+});
+
+server.use(rateLimiter);
+```
+
+### 3. Advanced Rate Limiting (Token Bucket)
+
+To protect your CSMS from Noisy-Neighbor problems or firmware loops (e.g., a charger rapidly spamming `MeterValues`), you can enable the built-in Token Bucket Rate Limiter.
+
+The Rate Limiter safely throttles connections without dropping the connection immediately. You can define global limits, method-specific limits, and provide a custom action callback when the limit is breached.
+
+```typescript
+const server = new OCPPServer({
+  protocols: ["ocpp1.6"],
+  rateLimit: {
+    limit: 100, // Global limit
+    windowMs: 60000, // per 60 seconds
+    onLimitExceeded: "disconnect", // or "ignore", or a Custom Callback
+    methods: {
+      MeterValues: { limit: 10, windowMs: 60000 },
+      Heartbeat: { limit: 2, windowMs: 60000 },
+    },
+  },
 });
 ```
 
@@ -243,8 +342,11 @@ Scale your OCPP server across multiple nodes using Redis.
 
    const redis = new Redis(process.env.REDIS_URL);
    const server = new OCPPServer({
-     adapter: new RedisAdapter(redis), // Uses Redis Streams for reliability
+     protocols: ["ocpp1.6"],
    });
+
+   // Uses Redis Streams for clustering reliability
+   await server.setAdapter(new RedisAdapter(redis));
    ```
 
 **Features:**
@@ -252,3 +354,44 @@ Scale your OCPP server across multiple nodes using Redis.
 - **Unicast Routing**: Send messages to any client on any node.
 - **Presence**: Track connected clients across the cluster.
 - **Reliability**: Zero message loss during node restarts (via Redis Streams).
+- **Batch Processing**: Use `server.broadcastBatch` to combine multi-node calls effortlessly.
+
+### Custom Adapters (`EventAdapterInterface`)
+
+You can build custom clustering adapters (e.g., RabbitMQ, Kafka, Postgres PUB/SUB) by implementing the exported `EventAdapterInterface`:
+
+```typescript
+import type { EventAdapterInterface } from "ocpp-ws-io";
+
+export class CustomAdapter implements EventAdapterInterface {
+  async publish(channel: string, data: unknown): Promise<void> {
+    /* ... */
+  }
+  async subscribe(
+    channel: string,
+    handler: (data: unknown) => void,
+  ): Promise<void> {
+    /* ... */
+  }
+  async unsubscribe(channel: string): Promise<void> {
+    /* ... */
+  }
+  async disconnect(): Promise<void> {
+    /* ... */
+  }
+
+  // Optional primitives for advanced routing:
+  async setPresence?(
+    identity: string,
+    nodeId: string,
+    ttl: number,
+  ): Promise<void>;
+  async getPresence?(identity: string): Promise<string | null>;
+  async removePresence?(identity: string): Promise<void>;
+  async getPresenceBatch?(identities: string[]): Promise<(string | null)[]>;
+  async publishBatch?(
+    messages: { channel: string; data: unknown }[],
+  ): Promise<void>;
+  async metrics?(): Promise<Record<string, unknown>>;
+}
+```

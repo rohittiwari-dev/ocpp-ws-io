@@ -8,7 +8,7 @@ class TestServer extends OCPPServer {
 }
 
 describe("OCPPServer safeSendToClient", () => {
-  test("returns false when client not found (instead of throwing)", async () => {
+  test("returns undefined when client not found (instead of throwing)", async () => {
     const server = new TestServer();
 
     // Mock logger
@@ -23,14 +23,14 @@ describe("OCPPServer safeSendToClient", () => {
     };
 
     // sendToClient throws if client not found
-    // safeSendToClient should return false
+    // safeSendToClient should return undefined
     const result = await server.safeSendToClient(
       "non-existent-client",
       "Heartbeat",
       {},
     );
 
-    expect(result).toBe(false);
+    expect(result).toBeUndefined();
     expect(warnSpy).toHaveBeenCalledWith(
       "SafeSendToClient failed",
       expect.objectContaining({

@@ -57,6 +57,43 @@ export class RedisAdapter implements EventAdapterInterface {
     }
   }
 
+  async publishBatch(
+    messages: { channel: string; data: unknown }[],
+  ): Promise<void> {
+    const streamMessages: { stream: string; args: Record<string, string> }[] =
+      [];
+    const broadcastMessages: { channel: string; message: string }[] = [];
+
+    for (const msg of messages) {
+      const prefixedChannel = this._prefix + msg.channel;
+      const message = JSON.stringify(msg.data);
+
+      if (msg.channel.startsWith("ocpp:node:")) {
+        streamMessages.push({ stream: prefixedChannel, args: { message } });
+      } else {
+        broadcastMessages.push({ channel: prefixedChannel, message });
+      }
+    }
+
+    const promises: Promise<void>[] = [];
+
+    if (streamMessages.length > 0) {
+      promises.push(this._driver.xaddBatch(streamMessages, this._streamMaxLen));
+    }
+
+    if (broadcastMessages.length > 0) {
+      promises.push(
+        Promise.all(
+          broadcastMessages.map((bm) =>
+            this._driver.publish(bm.channel, bm.message),
+          ),
+        ).then(() => {}), // Map `Promise<void[]>` to `Promise<void>`
+      );
+    }
+
+    await Promise.all(promises);
+  }
+
   async subscribe(
     channel: string,
     handler: (data: unknown) => void,
@@ -190,8 +227,44 @@ export class RedisAdapter implements EventAdapterInterface {
     return await this._driver.get(key);
   }
 
+  async getPresenceBatch(identities: string[]): Promise<(string | null)[]> {
+    if (identities.length === 0) return [];
+    const keys = identities.map((id) => `${this._prefix}presence:${id}`);
+    if (this._driver.mget) {
+      return await this._driver.mget(keys);
+    }
+    // Fallback if mget not available
+    return await Promise.all(keys.map((k) => this._driver.get(k)));
+  }
+
   async removePresence(identity: string): Promise<void> {
     const key = `${this._prefix}presence:${identity}`;
     await this._driver.del(key);
+  }
+
+  // ─── Observability Pipeline ────────────────────────────────────────
+
+  async metrics(): Promise<Record<string, unknown>> {
+    let pendingMessages = 0;
+    const streamDetails: Record<string, number> = {};
+
+    // Calculate "consumer lag" by checking the length of all active streams
+    // Since we use MAXLEN for trimming, XLEN directly equals pending unread messages
+    for (const streamKey of this._streams) {
+      try {
+        const length = await this._driver.xlen(streamKey);
+        pendingMessages += length;
+        streamDetails[streamKey] = length;
+      } catch {
+        // Ignore failures for individual stream stats
+        streamDetails[streamKey] = -1;
+      }
+    }
+
+    return {
+      pendingMessages,
+      activeStreams: this._streams.size,
+      streamDetails,
+    };
   }
 }

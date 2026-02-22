@@ -16,7 +16,7 @@ describe("Inbound Validation (Strict Mode)", () => {
 
   beforeEach(async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
   });
@@ -52,7 +52,7 @@ describe("Inbound Validation (Strict Mode)", () => {
     await clientConnectPromise;
 
     // Wait for client to process
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 10));
 
     expect(handler).toHaveBeenCalled();
   });

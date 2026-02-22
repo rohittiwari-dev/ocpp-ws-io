@@ -31,7 +31,7 @@ describe("Phase 3 — Reconnect State Transitions", () => {
 
   beforeEach(async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
   });
@@ -59,7 +59,7 @@ describe("Phase 3 — Reconnect State Transitions", () => {
 
     // Force server close to trigger reconnect
     await server.close({ force: true });
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 10));
 
     // During reconnect backoff, state should be CONNECTING
     expect(client.state).toBe(CONNECTING);
@@ -82,7 +82,7 @@ describe("Phase 3 — Reconnect State Transitions", () => {
 
     await client.connect();
     await server.close({ force: true });
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 10));
 
     expect(client.state).toBe(CONNECTING);
     await expect(client.connect()).rejects.toThrow("Cannot connect");
@@ -96,7 +96,7 @@ describe("Phase 3 — disconnect vs close Events", () => {
 
   beforeEach(async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
   });
@@ -125,7 +125,7 @@ describe("Phase 3 — disconnect vs close Events", () => {
 
     await client.connect();
     await server.close({ force: true });
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 10));
 
     // Only disconnect should fire immediately, not close
     expect(events).toContain("disconnect");
@@ -149,7 +149,7 @@ describe("Phase 3 — disconnect vs close Events", () => {
 
     await client.connect();
     await server.close({ force: true });
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 10));
 
     // Both disconnect and close should fire (disconnect first, then close)
     expect(events).toContain("disconnect");
@@ -213,7 +213,7 @@ describe("Phase 3 — Close Code Validation", () => {
 
   beforeEach(async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
   });
@@ -270,7 +270,7 @@ describe("Phase 3 — Outbound Message Buffering", () => {
 
   beforeEach(async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
   });
@@ -305,7 +305,7 @@ describe("Phase 3 — Outbound Message Buffering", () => {
 
     // Force disconnect for reconnect
     await server.close({ force: true });
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 10));
 
     expect(client.state).toBe(CONNECTING);
 
@@ -315,7 +315,7 @@ describe("Phase 3 — Outbound Message Buffering", () => {
 
     // Restart server for reconnect to succeed
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     server.on("client", (sc) => {
       sc.on("badMessage", (data) => {
         receivedMessages.push(data.message);
@@ -359,7 +359,7 @@ describe("Phase 3 — Outbound Message Buffering", () => {
 
     await client.connect();
     client.sendRaw("immediate-msg");
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 10));
 
     expect(received).toBe(true);
   });
@@ -372,7 +372,7 @@ describe("Phase 3 — Pending Call Rejection", () => {
 
   beforeEach(async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
   });
@@ -407,7 +407,7 @@ describe("Phase 3 — Pending Call Rejection", () => {
     const resultPromise = callPromise.catch((e) => e);
 
     // Force server close while call is pending
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 10));
     await server.close({ force: true });
 
     const result = await resultPromise;
@@ -419,7 +419,7 @@ describe("Phase 3 — Pending Call Rejection", () => {
 describe("Phase 3 — Protocol Narrowing", () => {
   it("should narrow protocols to negotiated protocol after first connect", async () => {
     const server = new OCPPServer({ protocols: ["ocpp1.6", "ocpp2.0.1"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     const port = getPort(httpServer);
 

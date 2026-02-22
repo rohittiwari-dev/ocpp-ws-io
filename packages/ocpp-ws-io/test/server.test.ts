@@ -45,7 +45,7 @@ describe("OCPPServer", () => {
 
   it("should expose connected clients", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -72,7 +72,7 @@ describe("OCPPServer", () => {
 
   it('should emit "client" event when a station connects', async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -99,8 +99,8 @@ describe("OCPPServer", () => {
 
   it("should reject connections via auth callback", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((_accept, reject) => {
-      reject(401, "Bad credentials");
+    server.auth((ctx) => {
+      ctx.reject(401, "Bad credentials");
     });
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
@@ -122,9 +122,9 @@ describe("OCPPServer", () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
     let receivedIdentity = "";
 
-    server.auth((accept, _reject, handshake) => {
-      receivedIdentity = handshake.identity;
-      accept({ protocol: "ocpp1.6" });
+    server.auth((ctx) => {
+      receivedIdentity = ctx.handshake.identity;
+      ctx.accept({ protocol: "ocpp1.6" });
     });
 
     const httpServer = await server.listen(0);
@@ -144,7 +144,7 @@ describe("OCPPServer", () => {
 
   it("should remove client on disconnect", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -166,7 +166,7 @@ describe("OCPPServer", () => {
 
   it("should close all clients on server close", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -183,6 +183,43 @@ describe("OCPPServer", () => {
     await server.close({ force: true });
     expect(server.clients.size).toBe(0);
   });
+
+  it("should expose server stats", async () => {
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
+    const httpServer = await server.listen(0);
+    port = getPort(httpServer);
+
+    const stats1 = server.stats();
+    expect(stats1.connectedClients).toBe(0);
+    expect(stats1.activeSessions).toBe(0);
+    expect(stats1.uptimeSeconds).toBeTypeOf("number");
+    expect(stats1.pid).toBeTypeOf("number");
+    expect(stats1.memoryUsage).toBeDefined();
+    expect(stats1.memoryUsage.heapUsed).toBeTypeOf("number");
+    expect(stats1.cpuUsage).toBeDefined();
+    expect(stats1.webSockets).toBeDefined();
+    expect(stats1.webSockets?.total).toBe(0);
+    expect(stats1.webSockets?.bufferedAmount).toBe(0);
+
+    const client = new OCPPClient({
+      identity: "CS_STATS",
+      endpoint: `ws://localhost:${port}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 100));
+
+    const stats2 = server.stats();
+    expect(stats2.connectedClients).toBe(1);
+    expect(stats2.activeSessions).toBe(1);
+    expect(stats2.uptimeSeconds).toBeGreaterThan(0);
+    expect(stats2.webSockets?.total).toBe(1);
+
+    await client.close();
+  });
 });
 
 describe("OCPPServerClient", () => {
@@ -195,7 +232,7 @@ describe("OCPPServerClient", () => {
       protocols: ["ocpp1.6"],
       callTimeoutMs: 5000,
     });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -222,7 +259,7 @@ describe("OCPPServerClient", () => {
 
   it("should reject connect() call", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -248,7 +285,7 @@ describe("OCPPServerClient", () => {
 
   it("should expose session data", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -271,6 +308,38 @@ describe("OCPPServerClient", () => {
 
     await client.close({ force: true });
   });
+
+  it("should support forceful close() from server side", async () => {
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
+    const httpServer = await server.listen(0);
+    port = getPort(httpServer);
+
+    const clientReceived = new Promise<OCPPServerClient>((resolve) => {
+      server.on("client", (sc) => resolve(sc as OCPPServerClient));
+    });
+
+    const client = new OCPPClient({
+      identity: "CS_SERVER_CLOSE",
+      endpoint: `ws://localhost:${port}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+
+    await client.connect();
+    const sc = await clientReceived;
+
+    const disconnectSpy = vi.fn();
+    client.on("close", disconnectSpy);
+
+    await sc.close({ code: 4000, reason: "Kicked" });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(client.state).toBe(OCPPClient.CLOSED);
+    expect(disconnectSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 4000, reason: "Kicked" }),
+    );
+  });
 });
 
 describe("OCPPServer - handleUpgrade, reconfigure, adapter, signal", () => {
@@ -287,7 +356,7 @@ describe("OCPPServer - handleUpgrade, reconfigure, adapter, signal", () => {
   it("should allow handleUpgrade to be called from an external server", async () => {
     const http = await import("node:http");
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
 
     // listen(0) initializes the internal WSS needed by handleUpgrade
     await server.listen(0);
@@ -381,7 +450,7 @@ describe("OCPPServer - Robustness & Clustering", () => {
 
   it("should broadcast to local clients and publish to adapter", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -451,7 +520,7 @@ describe("OCPPServer - Robustness & Clustering", () => {
 
   it("should persist session data across reconnections", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -505,8 +574,11 @@ describe("OCPPServer - Robustness & Clustering", () => {
     // but currently it's hardcoded private.
     // However, we can control the time advance.
 
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server = new OCPPServer({
+      protocols: ["ocpp1.6"],
+      sessionTtlMs: 2 * 60 * 60 * 1000,
+    });
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
 
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
@@ -689,5 +761,161 @@ describe("OCPPServer - Robustness & Clustering", () => {
       "Error processing broadcast message",
       expect.objectContaining({ error: "Iterator Error" }),
     );
+  });
+
+  it("should handle broadcastBatch properly routing local vs remote clients", async () => {
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    const nodeId = (server as any)._nodeId;
+
+    const localClientSpy = vi.fn().mockResolvedValue(undefined);
+    const localClient2Spy = vi.fn().mockResolvedValue(undefined);
+
+    (server as any)._clientsByIdentity = new Map([
+      ["LocalClient1", { call: localClientSpy }],
+      ["LocalClient2", { call: localClient2Spy }],
+    ]);
+
+    const publishedBatches: any[][] = [];
+
+    const mockAdapter = {
+      connect: async () => {},
+      disconnect: async () => {},
+      publish: async () => {},
+      subscribe: async () => {},
+      unsubscribe: async () => {},
+      getPresenceBatch: async (ids: string[]) => {
+        // Mock remote presence: RemoteClient1 is on NodeX, RemoteClient2 is on NodeY, OfflineClient not found
+        return ids.map((id) => {
+          if (id === "RemoteClient1") return "NodeX";
+          if (id === "RemoteClient2") return "NodeY";
+          return null; // OfflineClient
+        });
+      },
+      publishBatch: async (messages: any[]) => {
+        publishedBatches.push(messages);
+      },
+    };
+
+    server.setAdapter(mockAdapter as any);
+
+    await server.broadcastBatch(
+      ["LocalClient1", "RemoteClient1", "OfflineClient", "RemoteClient2"],
+      "Reset",
+      { type: "Hard" },
+    );
+
+    // 1. Verify local clients were called exactly once with correct args
+    expect(localClientSpy).toHaveBeenCalledWith(
+      "Reset",
+      { type: "Hard" },
+      undefined,
+    );
+    expect(localClient2Spy).not.toHaveBeenCalled(); // Was not in the broadcastBatch list
+
+    // 2. Verify remote presence was batched correctly
+    expect(publishedBatches.length).toBe(1);
+    expect(publishedBatches[0]).toHaveLength(2); // Only RemoteClient1 and RemoteClient2 were found
+
+    const remoteMessage1 = publishedBatches[0].find(
+      (m: any) => m.channel === "ocpp:node:NodeX",
+    );
+    expect(remoteMessage1.data).toEqual({
+      source: nodeId,
+      target: "RemoteClient1",
+      method: "Reset",
+      params: { type: "Hard" },
+      options: undefined,
+    });
+
+    const remoteMessage2 = publishedBatches[0].find(
+      (m: any) => m.channel === "ocpp:node:NodeY",
+    );
+    expect(remoteMessage2.data.target).toBe("RemoteClient2");
+  });
+});
+
+describe("OCPPServer Rate Limiter", () => {
+  let server: OCPPServer;
+  let port: number;
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    if (server) await server.close();
+  });
+
+  it("should ignore messages when global limit exceeded", async () => {
+    server = new OCPPServer({
+      protocols: ["ocpp1.6"],
+      rateLimit: {
+        limit: 2,
+        windowMs: 1000,
+        onLimitExceeded: "ignore",
+      },
+    });
+
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
+    let receivedCalls = 0;
+    server.on("client", (client) => {
+      client.handle("BootNotification", async () => {
+        receivedCalls++;
+        return { currentTime: "now", interval: 300, status: "Accepted" };
+      });
+    });
+
+    const httpServer = await server.listen(0);
+    port = getPort(httpServer);
+
+    const client = new OCPPClient({
+      identity: "RL_CS",
+      endpoint: `ws://localhost:${port}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+    await client.connect();
+
+    // Send 3 requests immediately
+    client.call("BootNotification", {}).catch(() => {});
+    client.call("BootNotification", {}).catch(() => {});
+    client.call("BootNotification", {}).catch(() => {});
+
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(receivedCalls).toBe(2); // 3rd request should be ignored
+
+    await client.close({ awaitPending: false });
+  });
+
+  it("should disconnect client when limit exceeded if configured", async () => {
+    server = new OCPPServer({
+      protocols: ["ocpp1.6"],
+      rateLimit: {
+        limit: 2,
+        windowMs: 1000,
+        onLimitExceeded: "disconnect",
+      },
+    });
+
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
+    const httpServer = await server.listen(0);
+    port = getPort(httpServer);
+
+    const client = new OCPPClient({
+      identity: "RL_CS_DC",
+      endpoint: `ws://localhost:${port}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+    await client.connect();
+
+    const disconnectSpy = vi.fn();
+    client.on("close", disconnectSpy);
+
+    client.call("BootNotification", {}).catch(() => {});
+    client.call("BootNotification", {}).catch(() => {});
+    client.call("BootNotification", {}).catch(() => {}); // This triggers disconnect
+
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(disconnectSpy).toHaveBeenCalled();
   });
 });

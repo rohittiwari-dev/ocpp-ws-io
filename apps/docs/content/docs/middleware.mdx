@@ -70,15 +70,26 @@ client.use(validationMiddleware);
 
 ## Connection Middleware (Server Setup)
 
-While clients only utilize RPC middleware (parsing payloads), the `OCPPServer` and `OCPPRouter` handle raw Connections. To gain type-safety when building connection middlewares (e.g. rate-limiting, authentication), use `defineMiddleware`:
+While clients only utilize RPC middleware (parsing payloads), the `OCPPServer` and `OCPPRouter` handle raw HTTP upgrades. To gain type-safety when building connection middlewares (e.g. rate-limiting, authentication), use `defineMiddleware` and the native `ctx` controls:
 
 ```typescript
 import { defineMiddleware } from "ocpp-ws-io";
 
-const rateLimitConnection = defineMiddleware(async (ctx, next) => {
+const rateLimitConnection = defineMiddleware(async (ctx) => {
   // `ctx` includes full `IncomingMessage`, URL parsed `pathname`, and `headers`
   console.log(`Connection attempt from: ${ctx.handshake.remoteAddress}`);
-  await next();
+
+  if (isRateLimited(ctx.handshake.remoteAddress)) {
+    // Instantly aborts the WebSocket connection with an HTTP code
+    ctx.reject(429, "Too Many Requests");
+  } else {
+    // Or proceed down the execution chain. You can optionally pass an object
+    // to next(), which will automatically be shallow-merged into `ctx.state`.
+    await ctx.next({
+      isTrusted: true,
+      rateLimitRemaining: 99,
+    });
+  }
 });
 
 server.use(rateLimitConnection);
@@ -97,14 +108,14 @@ The `defineAuth` helper provides immediate IDE type inference for the `accept`, 
 ```typescript
 import { defineAuth } from "ocpp-ws-io";
 
-const verifyBasicAuth = defineAuth(async (accept, reject, handshake) => {
-  const token = handshake.headers.authorization;
+const verifyBasicAuth = defineAuth(async (ctx) => {
+  const token = ctx.handshake.headers.authorization;
   if (!token) {
-    return reject(401, "Basic auth required");
+    return ctx.reject(401, "Basic auth required");
   }
 
   // Inject arbitrary session properties that your RPC handlers can access later
-  accept({ session: { identity: handshake.identity, role: "admin" } });
+  ctx.accept({ session: { identity: ctx.handshake.identity, role: "admin" } });
 });
 
 server.auth(verifyBasicAuth);
@@ -117,16 +128,33 @@ When building modular endpoints with the `OCPPRouter`, you might need to combine
 ```typescript
 import { combineAuth, defineAuth } from "ocpp-ws-io";
 
-const checkFirewall = defineAuth((accept, reject, handshake) => {
-  if (handshake.remoteAddress === "1.2.3.4") reject(403, "IP Blocked");
-  else accept({}); // Pass immediately to the next auth handler
+const checkFirewall = defineAuth((ctx) => {
+  if (ctx.handshake.remoteAddress === "1.2.3.4") ctx.reject(403, "IP Blocked");
+  else ctx.accept({}); // Pass immediately to the next auth handler
 });
 
 server.auth(combineAuth(checkFirewall, verifyBasicAuth));
+
+// Alternatively, inline:
+server.auth(
+  combineAuth(
+    // Firewall Check
+    async (ctx) => {
+      if (isBlocked(ctx.handshake.headers["x-forwarded-for"])) {
+        return ctx.reject(403, "IP Blocked");
+      }
+    },
+    // Basic Auth
+    async (ctx) => {
+      if (!ctx.handshake.headers.authorization) {
+        return ctx.reject(401, "Missing Auth");
+      }
+      ctx.accept({ protocol: "ocpp1.6" });
+    },
+  ),
+);
 ```
 
 ## Execution Flow
 
-1. **Request Phase**: Middleware runs from first to last.
-2. **Handler**: The core logic (your `handle` function) executes.
 3. **Response Phase**: Middleware runs from last to first (after `await next()`).

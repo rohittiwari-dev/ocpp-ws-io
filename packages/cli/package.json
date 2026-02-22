@@ -1,0 +1,30 @@
+{
+  "name": "ocpp-cli",
+  "version": "2.1.2",
+  "description": "The ultimate CLI ecosystem for ocpp-ws-io",
+  "main": "dist/index.js",
+  "bin": {
+    "ocpp": "./dist/index.js"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "cac": "^6.7.14",
+    "json-schema-to-typescript": "^15.0.4",
+    "ocpp-ws-io": "*",
+    "picocolors": "^1.0.0",
+    "redis": "^5.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.5"
+  }
+}

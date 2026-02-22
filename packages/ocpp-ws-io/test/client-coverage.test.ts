@@ -66,11 +66,13 @@ describe("OCPPClient Coverage", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2020-01-01T00:00:00Z"));
+    vi.spyOn(Math, "random").mockReturnValue(0.5); // 0.75 + 0.5 * 0.5 = 1.0 multiplier
     vi.clearAllMocks();
     client = new TestClient({ identity: "test", endpoint: "ws://test" });
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 

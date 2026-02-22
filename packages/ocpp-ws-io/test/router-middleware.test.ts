@@ -22,17 +22,17 @@ describe("OCPPRouter - Middleware & Multiplexing", () => {
     const port = (httpServer.address() as any).port;
 
     const mwOrder: string[] = [];
-    const mw1 = async (ctx: ConnectionContext, next: () => Promise<void>) => {
+    const mw1 = async (ctx: ConnectionContext) => {
       mwOrder.push("mw1");
       ctx.state.tenant = ctx.handshake.params.tenant;
-      await next();
+      await ctx.next();
       mwOrder.push("mw1-after");
     };
 
-    const mw2 = async (ctx: ConnectionContext, next: () => Promise<void>) => {
+    const mw2 = async (ctx: ConnectionContext) => {
       mwOrder.push("mw2");
       expect(ctx.state.tenant).toBe("acme");
-      await next();
+      await ctx.next();
     };
 
     const adminRoute = server
@@ -94,9 +94,9 @@ describe("OCPPRouter - Middleware & Multiplexing", () => {
 
     let useCalled = false;
     server
-      .use(async (ctx, next) => {
+      .use(async (ctx) => {
         useCalled = true;
-        await next();
+        await ctx.next();
       })
       .on("client", (client) => {
         client.handle("BootNotification", async ({ params }) => {
@@ -115,5 +115,87 @@ describe("OCPPRouter - Middleware & Multiplexing", () => {
 
     await client1.connect();
     expect(useCalled).toBe(true);
+  });
+
+  it("should securely reject connections using ctx.reject()", async () => {
+    server = new OCPPServer({ logging: { level: "debug" } });
+    httpServer = await server.listen(0);
+    const port = (httpServer.address() as any).port;
+
+    server.use(async (ctx) => {
+      // Instantly abort connection natively
+      ctx.reject(403, "Blocked by context reject");
+    });
+
+    client1 = new OCPPClient({
+      identity: "CP-1",
+      endpoint: `ws://localhost:${port}/any/random/path`,
+    });
+
+    client1.on("error", () => {}); // Supress unhandled error log
+    await expect(client1.connect()).rejects.toThrow("403");
+  });
+
+  it("should merge payload into ctx.state when using ctx.next(payload)", async () => {
+    server = new OCPPServer({ logging: { level: "debug" } });
+    httpServer = await server.listen(0);
+    const port = (httpServer.address() as any).port;
+
+    let finalState: any = null;
+
+    server.use(
+      async (ctx) => {
+        // Setup initial state
+        ctx.state.initial = "hello";
+        await ctx.next({ injectedData: "world" });
+      },
+      async (ctx) => {
+        // Data should be merged
+        finalState = ctx.state;
+        await ctx.next();
+      },
+    );
+
+    client1 = new OCPPClient({
+      identity: "CP-1",
+      endpoint: `ws://localhost:${port}/any/random/path`,
+    });
+
+    await client1.connect();
+    expect(finalState).toBeDefined();
+    expect(finalState.initial).toBe("hello");
+    expect(finalState.injectedData).toBe("world");
+  });
+
+  it("should support defining handlers directly on the router via .handle()", async () => {
+    server = new OCPPServer({ logging: false });
+    httpServer = await server.listen(0);
+    const port = (httpServer.address() as any).port;
+
+    server
+      .route("/direct/:id/:identity")
+      .handle("BootNotification", async (ctx) => {
+        return {
+          currentTime: new Date().toISOString(),
+          interval: 300,
+          status: "Accepted",
+        };
+      });
+
+    client1 = new OCPPClient({
+      identity: "CP-1",
+      endpoint: `ws://localhost:${port}/direct/123`,
+      protocols: ["ocpp1.6"],
+    });
+
+    await client1.connect();
+
+    const response = await client1.call("ocpp1.6", "BootNotification", {
+      chargePointVendor: "VendorX",
+      chargePointModel: "ModelY",
+    });
+
+    expect(response.status).toBe("Accepted");
+    expect((response as any).interval).toBe(300);
   });
 });

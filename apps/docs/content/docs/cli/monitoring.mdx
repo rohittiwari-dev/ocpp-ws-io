@@ -1,0 +1,151 @@
+---
+title: Monitoring & Auditing
+description: Real-time dashboards, packet sniffing, and compliance auditing for your OCPP infrastructure.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+## `ocpp top`
+
+A live, terminal-based dashboard (TUI) for monitoring your Redis cluster. It displays real-time statistics on active sessions, server nodes, memory usage, and message throughput.
+
+### Usage
+
+```bash
+ocpp top [options]
+```
+
+### Options
+
+| Option | Alias | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--redis` | `-r` | `redis://localhost:6379` | Connection string to your Redis instance. |
+
+### Metrics Displayed
+
+- **Active Server Nodes**: Number of backend instances in the cluster.
+- **Active TCP Sockets**: Total connected WebSocket clients.
+- **Active OCPP Sessions**: Number of authenticated Charge Points.
+- **Redis Memory**: Memory used by the pub/sub infrastructure.
+
+---
+
+## `ocpp tail`
+
+A WebSocket network sniffer that subscribes to your Redis pub/sub channels and streams live traffic to your terminal. It acts like `tail -f` for your entire charging network.
+
+### Usage
+
+```bash
+ocpp tail [options]
+```
+
+### Options
+
+| Option | Alias | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--redis` | `-r` | `redis://localhost:6379` | Redis connection URL. |
+| `--identity` | `-i` | - | Filter messages by specific Charge Point Identity. |
+| `--method` | `-m` | - | Filter messages by OCPP Method (e.g., `BootNotification`). |
+
+### Example
+
+Stream only `StatusNotification` messages from any Charge Point:
+
+```bash
+ocpp tail --method StatusNotification
+```
+
+Stream all traffic for `CP-001`:
+
+```bash
+ocpp tail --identity CP-001
+```
+
+---
+
+## `ocpp audit`
+
+An automated CSMS Compliance Auditor. It connects to your server as a special "Audit Client" and runs a series of tests to verify protocol compliance, security headers, and correct response formats.
+
+### Usage
+
+```bash
+ocpp audit [options]
+```
+
+### Options
+
+| Option | Alias | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--endpoint` | `-e` | `ws://localhost:3000/ocpp` | The WebSocket URL of your CSMS server. |
+| `--generate-report` | `-g` | - | Export results to a Markdown report file. |
+
+### Checks Performed
+
+- **WebSocket Handshake**: Verifies subprotocol negotiation (`ocpp1.6`, `ocpp2.0.1`).
+- **Schema Validation**: Sends valid/invalid payloads and checks for correct `CallError` responses.
+- **Security**: Checks for `Sec-WebSocket-Protocol` headers and basic auth handling.
+
+---
+
+## `ocpp proxy`
+
+Starts a Man-in-the-Middle (MITM) reverse proxy server. It sits between your Charge Points and your real CSMS, allowing you to intercept, log, and modify traffic in flight.
+
+### Usage
+
+```bash
+ocpp proxy [options]
+```
+
+### Options
+
+| Option | Alias | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--listen` | `-l` | `8080` | Local port for the proxy server to listen on. |
+| `--target` | `-t` | - | The real remote CSMS WebSocket URL to forward traffic to. |
+
+### Example
+
+1.  Start the proxy pointing to your production server:
+    ```bash
+    ocpp proxy --listen 9000 --target wss://production-api.csms.com
+    ```
+2.  Point your Charge Point (or Simulator) to `ws://localhost:9000`.
+3.  Observe all traffic flowing through your terminal.
+
+---
+
+## `ocpp parse`
+
+A standalone utility to parse, validate, and pretty-print raw OCPP JSON payloads. Useful for debugging logs or verifying manual JSON construction.
+
+### Usage
+
+```bash
+ocpp parse <payload> [options]
+```
+
+### Options
+
+| Option | Alias | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--protocol` | `-p` | - | Protocol version context (e.g., `1.6`). |
+| `--method` | `-m` | - | Expected method context for validation. |
+
+### Example
+
+```bash
+ocpp parse '[2, "123", "Heartbeat", {}]'
+```
+
+**Output:**
+
+```text
+[CALL]  → Method: Heartbeat  | MsgID: 123
+{
+  "chargePointModel": "Unknown",
+  "chargePointVendor": "Unknown"
+}
+```

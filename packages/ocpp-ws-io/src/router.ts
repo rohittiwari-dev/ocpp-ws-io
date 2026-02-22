@@ -1,7 +1,18 @@
 import { EventEmitter } from "node:events";
 import type {
+  AllMethodNames,
+  OCPPRequestType,
+  OCPPResponseType,
+} from "./generated/index.js";
+import type { OCPPServerClient } from "./server-client.js";
+import type {
   AuthCallback,
+  CORSOptions,
   ConnectionMiddleware,
+  OCPPProtocol,
+  RouterConfig,
+  RouterHandlerContext,
+  RouterWildcardHandler,
   ServerEvents,
   TypedEventEmitter,
 } from "./types.js";
@@ -14,7 +25,16 @@ export async function executeMiddlewareChain(
   ctx: Parameters<ConnectionMiddleware>[0],
 ): Promise<void> {
   let index = -1;
-  const dispatch = async (i: number): Promise<void> => {
+  const dispatch = async (
+    i: number,
+    payload?: Record<string, unknown>,
+  ): Promise<void> => {
+    if (payload) {
+      ctx.state = {
+        ...(ctx.state || {}),
+        ...(payload || {}),
+      };
+    }
     if (i <= index) {
       throw new Error("next() called multiple times in middleware");
     }
@@ -25,8 +45,11 @@ export async function executeMiddlewareChain(
     }
     if (!fn) return; // Should not happen
 
-    // Call the middleware, injecting `next()` mapping to i + 1
-    await fn(ctx, dispatch.bind(null, i + 1));
+    // Attach next to the context
+    ctx.next = dispatch.bind(null, i + 1);
+
+    // Call the middleware
+    await fn(ctx);
   };
   await dispatch(0);
 }
@@ -45,6 +68,8 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
   public compiledPatterns: CompiledPattern[] = [];
   public middlewares: ConnectionMiddleware[];
   public authCallback: AuthCallback<unknown> | null = null;
+  public _routeCORS?: CORSOptions;
+  public _routeConfig?: RouterConfig;
 
   constructor(
     patterns?: Array<string | RegExp>,
@@ -99,6 +124,22 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
   }
 
   /**
+   * Applies specific CORS rules to connections matching this router's paths.
+   */
+  cors(options: CORSOptions): this {
+    this._routeCORS = options;
+    return this;
+  }
+
+  /**
+   * Overrides global connection settings (e.g. timeouts, protocols) for this router.
+   */
+  config(options: RouterConfig): this {
+    this._routeConfig = options;
+    return this;
+  }
+
+  /**
    * Registers an authentication and protocol-negotiation callback for this route endpoint.
    */
   auth<TSession = Record<string, unknown>>(
@@ -107,4 +148,84 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
     this.authCallback = callback as AuthCallback<unknown>;
     return this;
   }
+
+  /**
+   * Binds a version-specific OCPP message handler directly to all clients that match this route.
+   */
+  handle<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+    version: V,
+    method: M,
+    handler: (
+      context: RouterHandlerContext<OCPPRequestType<V, M>>,
+    ) => OCPPResponseType<V, M> | Promise<OCPPResponseType<V, M>>,
+  ): this;
+
+  /**
+   * Binds a custom/extension message handler directly to all clients that match this route.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handle<S extends string>(
+    version: S extends OCPPProtocol ? never : S,
+    method: string,
+    handler: (context: RouterHandlerContext<Record<string, any>>) => any,
+  ): this;
+
+  /**
+   * Binds a message handler directly to all clients that match this route using the default protocol.
+   */
+  handle<M extends AllMethodNames<OCPPProtocol>>(
+    method: M,
+    handler: (
+      context: RouterHandlerContext<OCPPRequestType<OCPPProtocol, M>>,
+    ) =>
+      | OCPPResponseType<OCPPProtocol, M>
+      | Promise<OCPPResponseType<OCPPProtocol, M>>,
+  ): this;
+
+  /** Binds a custom/extension method not in the typed map. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handle(
+    method: string,
+    handler: (context: RouterHandlerContext<Record<string, any>>) => any,
+  ): this;
+
+  /** Binds a wildcard handler to all clients that match this route. */
+  handle(handler: RouterWildcardHandler): this;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handle(...args: any[]): this {
+    this.on("client", (client: OCPPServerClient) => {
+      const originalHandler = args[args.length - 1];
+      const wrappedArgs = [...args];
+
+      if (typeof originalHandler === "function") {
+        wrappedArgs[wrappedArgs.length - 1] = (...handlerArgs: any[]) => {
+          const contextIndex = handlerArgs.length - 1;
+          const context = handlerArgs[contextIndex];
+
+          if (context && typeof context === "object") {
+            Object.defineProperty(context, "client", {
+              value: client,
+              enumerable: true,
+              configurable: true,
+            });
+          }
+
+          return originalHandler(...handlerArgs);
+        };
+      }
+
+      // @ts-expect-error - forward arguments to client
+      client.handle(...wrappedArgs);
+    });
+    return this;
+  }
+}
+
+/**
+ * Creates a standalone, modular `OCPPRouter` instance that can be attached
+ * to an `OCPPServer` later via `server.attachRouters()`.
+ */
+export function createRouter(...patterns: Array<string | RegExp>): OCPPRouter {
+  return new OCPPRouter(patterns);
 }

@@ -52,27 +52,33 @@ export function defineAuth<TSession = Record<string, unknown>>(
  * - If the loop finishes without anyone calling accept, it rejects with 401 Unauthorized.
  */
 export function combineAuth(...cbs: AuthCallback[]): AuthCallback {
-  return async (accept, reject, handshake, signal) => {
+  return async (ctx) => {
     let accepted = false;
     let rejected = false;
 
     // Wrap the underlying accept/reject purely to detect when they fire
     const trackedAccept = (opts?: AuthAccept<any>) => {
       accepted = true;
-      accept(opts);
+      ctx.accept(opts);
     };
 
-    const trackedReject = (code?: number, message?: string) => {
+    const trackedReject = (code?: number, message?: string): never => {
       rejected = true;
-      reject(code, message);
+      return ctx.reject(code, message);
+    };
+
+    const trackedCtx: import("../types.js").AuthContext = {
+      ...ctx,
+      accept: trackedAccept,
+      reject: trackedReject,
     };
 
     try {
       for (const cb of cbs) {
-        if (signal.aborted || accepted || rejected) break;
+        if (ctx.signal.aborted || accepted || rejected) break;
 
         // Native callbacks from user might be sync or async
-        const p = cb(trackedAccept, trackedReject, handshake, signal);
+        const p = cb(trackedCtx);
         if (p instanceof Promise) {
           await p;
         }
@@ -82,14 +88,17 @@ export function combineAuth(...cbs: AuthCallback[]): AuthCallback {
 
       // If loop finishes and nothing was explicitly decided, drop the connection
       if (!accepted && !rejected) {
-        reject(
+        trackedReject(
           401,
           "Unauthorized (All composeAuth handlers passed without accepting)",
         );
       }
     } catch (_err) {
       if (!rejected) {
-        reject(500, "Internal Server Error during auth compose execution");
+        trackedReject(
+          500,
+          "Internal Server Error during auth compose execution",
+        );
       }
     }
   };

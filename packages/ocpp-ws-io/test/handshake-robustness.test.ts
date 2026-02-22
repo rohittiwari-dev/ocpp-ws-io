@@ -35,7 +35,7 @@ describe("OCPPServer - Handshake Robustness", () => {
     });
 
     // Auth callback that never resolves
-    ocppServer.auth((_accept, _reject, _handshake, _signal) => {
+    ocppServer.auth((_ctx) => {
       // Intentionally never settle — simulate slow DB lookup
       return new Promise(() => {});
     });
@@ -77,7 +77,7 @@ describe("OCPPServer - Handshake Robustness", () => {
       ocppServer.on("upgradeAborted", resolve);
     });
 
-    ocppServer.auth((_accept, _reject, _handshake, _signal) => {
+    ocppServer.auth((_ctx) => {
       // Never settle — triggers timeout
       return new Promise(() => {});
     });
@@ -110,9 +110,9 @@ describe("OCPPServer - Handshake Robustness", () => {
   it("should connect successfully with valid auth", async () => {
     await startServer();
 
-    ocppServer.auth((accept, _reject, handshake) => {
-      if (handshake.password?.toString() === "correctpassword") {
-        accept();
+    ocppServer.auth((ctx) => {
+      if (ctx.handshake.password?.toString() === "correctpassword") {
+        ctx.accept();
       }
     });
 
@@ -142,9 +142,9 @@ describe("OCPPServer - Handshake Robustness", () => {
 
     let capturedPassword: Buffer | undefined;
 
-    ocppServer.auth((accept, _reject, handshake) => {
-      capturedPassword = handshake.password;
-      accept();
+    ocppServer.auth((ctx) => {
+      capturedPassword = ctx.handshake.password;
+      ctx.accept();
     });
 
     const identity = "station:01";

@@ -84,9 +84,11 @@ describe("Unicast Routing (Phase 1)", () => {
     }
 
     expect(called).toBe(true);
-    expect(clientA?.call).toHaveBeenCalledWith("GetDiagnostics", {
-      location: "remote",
-    });
+    expect(clientA?.call).toHaveBeenCalledWith(
+      "GetDiagnostics",
+      { location: "remote" },
+      undefined,
+    );
 
     console.log("Verification passed.");
 

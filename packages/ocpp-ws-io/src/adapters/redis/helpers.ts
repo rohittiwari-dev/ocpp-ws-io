@@ -41,6 +41,7 @@ export interface RedisPubSubDriver {
   // Key-Value Store for Presence
   set(key: string, value: string, ttlSeconds?: number): Promise<void>;
   get(key: string): Promise<string | null>;
+  mget(keys: string[]): Promise<(string | null)[]>;
   del(key: string): Promise<void>;
 
   // Streams
@@ -49,11 +50,16 @@ export interface RedisPubSubDriver {
     args: Record<string, string>,
     maxLen?: number,
   ): Promise<string>;
+  xaddBatch(
+    messages: { stream: string; args: Record<string, string> }[],
+    maxLen?: number,
+  ): Promise<void>;
   xread(
     streams: { key: string; id: string }[],
     count?: number,
     block?: number,
   ): Promise<StreamEntry[] | null>;
+  xlen(stream: string): Promise<number>;
 }
 
 export class IoRedisDriver implements RedisPubSubDriver {
@@ -101,6 +107,11 @@ export class IoRedisDriver implements RedisPubSubDriver {
     return (await this.pub.get(key)) || null;
   }
 
+  async mget(keys: string[]): Promise<(string | null)[]> {
+    if (keys.length === 0) return [];
+    return await this.pub.mget(...keys);
+  }
+
   async del(key: string): Promise<void> {
     await this.pub.del(key);
   }
@@ -119,6 +130,26 @@ export class IoRedisDriver implements RedisPubSubDriver {
       flatArgs.push(k, v);
     }
     return (await this.pub.xadd(stream, ...flatArgs)) as string;
+  }
+
+  async xaddBatch(
+    messages: { stream: string; args: Record<string, string> }[],
+    maxLen?: number,
+  ): Promise<void> {
+    if (messages.length === 0) return;
+    const pipeline = this.pub.pipeline();
+    for (const msg of messages) {
+      const flatArgs: string[] = [];
+      if (maxLen) {
+        flatArgs.push("MAXLEN", "~", maxLen.toString());
+      }
+      flatArgs.push("*");
+      for (const [k, v] of Object.entries(msg.args)) {
+        flatArgs.push(k, v);
+      }
+      pipeline.xadd(msg.stream, ...flatArgs);
+    }
+    await pipeline.exec();
   }
 
   async xread(
@@ -162,6 +193,10 @@ export class IoRedisDriver implements RedisPubSubDriver {
         return { id, data };
       }),
     }));
+  }
+
+  async xlen(stream: string): Promise<number> {
+    return (await this.pub.xlen(stream)) as number;
   }
 
   async disconnect(): Promise<void> {
@@ -208,6 +243,11 @@ export class NodeRedisDriver implements RedisPubSubDriver {
     return (await this.pub.get(key)) || null;
   }
 
+  async mget(keys: string[]): Promise<(string | null)[]> {
+    if (keys.length === 0) return [];
+    return await this.pub.mGet(keys);
+  }
+
   async del(key: string): Promise<void> {
     await this.pub.del(key);
   }
@@ -238,6 +278,26 @@ export class NodeRedisDriver implements RedisPubSubDriver {
           }
         : undefined,
     });
+  }
+
+  async xaddBatch(
+    messages: { stream: string; args: Record<string, string> }[],
+    maxLen?: number,
+  ): Promise<void> {
+    if (messages.length === 0) return;
+    const multi = this.pub.multi();
+    for (const msg of messages) {
+      multi.xAdd(msg.stream, "*", msg.args, {
+        TRIM: maxLen
+          ? {
+              strategy: "MAXLEN",
+              strategyModifier: "~",
+              threshold: maxLen,
+            }
+          : undefined,
+      });
+    }
+    await multi.exec();
   }
 
   async xread(
@@ -271,6 +331,10 @@ export class NodeRedisDriver implements RedisPubSubDriver {
         data: msg.message,
       })),
     }));
+  }
+
+  async xlen(stream: string): Promise<number> {
+    return (await this.pub.xLen(stream)) as number;
   }
 
   async disconnect(): Promise<void> {
