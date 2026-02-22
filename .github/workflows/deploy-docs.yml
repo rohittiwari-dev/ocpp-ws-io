@@ -3,7 +3,7 @@ name: Deploy Docs to Netlify
 on:
   push:
     tags:
-      - "v*.*.*"
+      - "docs-v*.*.*"
 
 jobs:
   deploy:
