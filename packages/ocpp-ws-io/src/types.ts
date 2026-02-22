@@ -383,6 +383,34 @@ export interface ClientOptions {
   logging?: LoggingConfig | false;
 }
 
+// ─── Router Options ──────────────────────────────────────────────
+
+export interface RouterConfig {
+  /** Accepted OCPP subprotocols (e.g. ["ocpp1.6"]) */
+  protocols?: AnyOCPPProtocol[];
+  /** Call timeout in ms — overrides server default */
+  callTimeoutMs?: number;
+  /** Ping interval in ms — overrides server default */
+  pingIntervalMs?: number;
+  /** Defer pings if activity detected — overrides server default */
+  deferPingsOnActivity?: boolean;
+  /** Max concurrent outbound calls — overrides server default */
+  callConcurrency?: number;
+  /** Enable strict mode validation — overrides server default */
+  strictMode?: boolean | string[];
+}
+
+// ─── CORS Options ────────────────────────────────────────────────
+
+export interface CORSOptions {
+  /** Allowed IPv4, IPv6, or CIDR ranges (e.g. "10.0.0.0/8") */
+  allowedIPs?: string[];
+  /** Allowed Origin header values (e.g. "https://dashboard.example.com") */
+  allowedOrigins?: string[];
+  /** Allowed WebSocket protocol schemes */
+  allowedSchemes?: ("ws" | "wss")[];
+}
+
 // ─── Server Options ──────────────────────────────────────────────
 
 export interface ServerOptions {

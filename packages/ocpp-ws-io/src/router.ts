@@ -2,6 +2,8 @@ import { EventEmitter } from "node:events";
 import type {
   AuthCallback,
   ConnectionMiddleware,
+  CORSOptions,
+  RouterConfig,
   ServerEvents,
   TypedEventEmitter,
 } from "./types.js";
@@ -57,6 +59,8 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
   public compiledPatterns: CompiledPattern[] = [];
   public middlewares: ConnectionMiddleware[];
   public authCallback: AuthCallback<unknown> | null = null;
+  public _routeCORS?: CORSOptions;
+  public _routeConfig?: RouterConfig;
 
   constructor(
     patterns?: Array<string | RegExp>,
@@ -107,6 +111,22 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
    */
   use(...middlewares: ConnectionMiddleware[]): this {
     this.middlewares.push(...middlewares);
+    return this;
+  }
+
+  /**
+   * Applies specific CORS rules to connections matching this router's paths.
+   */
+  cors(options: CORSOptions): this {
+    this._routeCORS = options;
+    return this;
+  }
+
+  /**
+   * Overrides global connection settings (e.g. timeouts, protocols) for this router.
+   */
+  config(options: RouterConfig): this {
+    this._routeConfig = options;
     return this;
   }
 

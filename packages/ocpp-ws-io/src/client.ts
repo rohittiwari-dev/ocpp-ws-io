@@ -222,9 +222,18 @@ export class OCPPClient<
   get log() {
     return (this._logger || NOOP_LOGGER) as LoggerLikeNotOptional;
   }
-  get identity(): string {
-    return this._identity;
+  public get identity(): string {
+    return this._options.identity;
   }
+
+  public get endpoint(): string {
+    return this._options.endpoint;
+  }
+
+  public get options(): Readonly<ClientOptions> {
+    return this._options;
+  }
+
   get protocol(): string | undefined {
     return this._protocol;
   }

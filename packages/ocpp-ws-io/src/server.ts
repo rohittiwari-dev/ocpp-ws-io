@@ -11,6 +11,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { WebSocketServer } from "ws";
 import { initLogger } from "./init-logger.js";
 import { executeMiddlewareChain, OCPPRouter } from "./router.js";
+import { checkCORS } from "./cors.js";
 import { OCPPServerClient } from "./server-client.js";
 
 import {
@@ -21,6 +22,7 @@ import {
   type ClientOptions,
   type CloseOptions,
   type ConnectionMiddleware,
+  type CORSOptions,
   type EventAdapterInterface,
   type HandshakeInfo,
   type ListenOptions,
@@ -59,6 +61,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _adapter: EventAdapterInterface | null = null;
   private _httpServerAbortControllers = new Set<AbortController>();
   private _logger: LoggerLike | null = null;
+  private _globalCORS?: CORSOptions;
 
   // Robustness & Clustering
   private readonly _nodeId = createId();
@@ -174,6 +177,14 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   // ─── Auth ────────────────────────────────────────────────────
 
   // ─── Routing & Middleware ────────────────────────────────────
+
+  /**
+   * Applies global CORS rules to all incoming connections before routing.
+   */
+  cors(options: CORSOptions): this {
+    this._globalCORS = options;
+    return this;
+  }
 
   /**
    * Registers a new routing dispatcher for multiplexing connections.
@@ -369,6 +380,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return;
     }
 
+    // ── Step 1.5: Global CORS gate ──
+    if (this._globalCORS) {
+      const { allowed, reason } = checkCORS(req, this._globalCORS);
+      if (!allowed) {
+        this._logger?.warn?.("CORS rejected connection", {
+          reason,
+          ip: req.socket.remoteAddress,
+        });
+        abortHandshake(socket, 403, "Forbidden");
+        return;
+      }
+    }
+
     // ── Step 2: Parse URL & Execute Router ──
     const url = new URL(
       req.url ?? "/",
@@ -383,6 +407,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
     let hasTerminalRoute = false;
     let hasPatternRouters = false;
+    let matchedRouterConfig: import("./types.js").RouterConfig | undefined;
 
     // 1. Additive Matching: Collect ALL middlewares from ALL matching routers
     for (const router of this._routers) {
@@ -414,6 +439,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         matchedRouters.push(router);
         if (router.compiledPatterns.length > 0) {
           hasTerminalRoute = true;
+          // Use the config of the most specific router
+          if (router._routeConfig) {
+            matchedRouterConfig = Object.assign(
+              matchedRouterConfig || {},
+              router._routeConfig,
+            );
+          }
         }
         // Accumulate middlewares
         if (router.middlewares.length > 0) {
@@ -440,6 +472,21 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return;
     }
 
+    // ── Step 2.5: Route-level CORS gate ──
+    for (const router of matchedRouters) {
+      if (router._routeCORS) {
+        const { allowed, reason } = checkCORS(req, router._routeCORS);
+        if (!allowed) {
+          this._logger?.warn?.("Route CORS rejected connection", {
+            reason,
+            ip: req.socket.remoteAddress,
+          });
+          abortHandshake(socket, 403, "Forbidden");
+          return;
+        }
+      }
+    }
+
     // ── Step 3: TCP Keep-Alive ──
     if ("setKeepAlive" in socket) {
       (socket as import("node:net").Socket).setKeepAlive(true);
@@ -457,7 +504,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
     }
 
-    const serverProtocols = this._options.protocols ?? [];
+    const serverProtocols =
+      matchedRouterConfig?.protocols ?? this._options.protocols ?? [];
     let selectedProtocol: string | undefined;
 
     if (serverProtocols.length > 0) {
@@ -674,13 +722,18 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       const clientOptions: ClientOptions = {
         identity,
         endpoint: "",
-        callTimeoutMs: this._options.callTimeoutMs,
-        pingIntervalMs: this._options.pingIntervalMs,
-        deferPingsOnActivity: this._options.deferPingsOnActivity,
-        callConcurrency: this._options.callConcurrency,
+        callTimeoutMs:
+          matchedRouterConfig?.callTimeoutMs ?? this._options.callTimeoutMs,
+        pingIntervalMs:
+          matchedRouterConfig?.pingIntervalMs ?? this._options.pingIntervalMs,
+        deferPingsOnActivity:
+          matchedRouterConfig?.deferPingsOnActivity ??
+          this._options.deferPingsOnActivity,
+        callConcurrency:
+          matchedRouterConfig?.callConcurrency ?? this._options.callConcurrency,
         maxBadMessages: this._options.maxBadMessages,
         respondWithDetailedErrors: this._options.respondWithDetailedErrors,
-        strictMode: this._options.strictMode,
+        strictMode: matchedRouterConfig?.strictMode ?? this._options.strictMode,
         strictModeValidators: this._options.strictModeValidators,
         reconnect: false,
         logging: this._options.logging,
@@ -964,8 +1017,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             typeof args[2] === "string"
               ? args[2] // versioned: id, ver, method, params, options
               : args.length >= 3 && typeof args[1] === "string"
-                ? args[1] // global: id, method, params, options
-                : "unknown",
+              ? args[1] // global: id, method, params, options
+              : "unknown",
           error,
         });
       }
