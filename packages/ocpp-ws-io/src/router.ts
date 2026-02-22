@@ -1,10 +1,10 @@
 import { EventEmitter } from "node:events";
-import type { OCPPServerClient } from "./server-client.js";
 import type {
   AllMethodNames,
   OCPPRequestType,
   OCPPResponseType,
 } from "./generated/index.js";
+import type { OCPPServerClient } from "./server-client.js";
 import type {
   AuthCallback,
   CORSOptions,
