@@ -64,6 +64,10 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/cli-v}"
           npm version "$VERSION" --no-git-tag-version --allow-same-version -w packages/cli
 
+      - name: Ensure repository for provenance
+        run: |
+          npm pkg set repository.type=git repository.url=https://github.com/rohittiwari-dev/ocpp-ws-io -w packages/cli
+
       - name: Publish to npm
         run: npm publish --provenance --access public --tag ${{ steps.dist-tag.outputs.tag }} -w packages/cli
         env:

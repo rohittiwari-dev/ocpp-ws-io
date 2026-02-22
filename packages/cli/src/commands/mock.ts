@@ -1,13 +1,18 @@
 import * as http from "node:http";
+import { intro, log, outro, spinner } from "@clack/prompts";
 import pc from "picocolors";
 
 export async function mockCommand(options: { port?: number; rate?: number }) {
   const port = Number(options.port || 8080);
   const msInterval = Number(options.rate || 1000);
 
-  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Mock API Server`));
-  console.log(pc.gray(`Starting HTTP Server on port ${port}...`));
-  console.log(pc.gray(`Message rate: 1 event every ${msInterval}ms\n`));
+  console.clear();
+  intro(pc.inverse(` ⚡ Mock API Server `));
+  log.info(`Port:         ${pc.blue(port)}`);
+  log.info(`Message Rate: 1 event every ${msInterval}ms\n`);
+
+  const serverSpinner = spinner();
+  serverSpinner.start(pc.gray(`Starting HTTP Server...`));
 
   const server = http.createServer((req, res) => {
     // Allow CORS for frontend dev
@@ -64,13 +69,13 @@ export async function mockCommand(options: { port?: number; rate?: number }) {
 
         const evt = events[Math.floor(Math.random() * events.length)];
 
-        console.log(pc.dim(`Sent ${evt.method} event...`));
+        log.step(pc.dim(`Sent ${evt.method} event...`));
         res.write(`data: ${JSON.stringify(evt)}\n\n`);
       }, msInterval);
 
       req.on("close", () => {
         clearInterval(timer);
-        console.log(pc.yellow(`Client disconnected from /events stream.`));
+        log.warn(pc.yellow(`Client disconnected from /events stream.`));
       });
     } else {
       res.writeHead(404, { "Content-Type": "application/json" });
@@ -81,17 +86,18 @@ export async function mockCommand(options: { port?: number; rate?: number }) {
   });
 
   server.listen(port, () => {
-    console.log(
-      pc.green(`✔ Mock Server listening at http://localhost:${port}`),
+    serverSpinner.stop(
+      pc.green(`Mock Server listening at http://localhost:${port}`),
     );
-    console.log(
+    log.message(
       pc.blue(`  → Connect frontend to: http://localhost:${port}/events`),
     );
   });
 
   process.on("SIGINT", () => {
-    console.log(pc.yellow(`\nShutting down Mock API...`));
+    log.warn(pc.yellow(`Shutting down Mock API...`));
     server.close();
+    outro("Mock Server closed. ⚡");
     process.exit(0);
   });
 }

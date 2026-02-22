@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import { stat } from "node:fs/promises";
 import * as http from "node:http";
 import { extname, join } from "node:path";
+import { intro, log, outro, spinner } from "@clack/prompts";
 import pc from "picocolors";
 
 function escapeHtml(str: string): string {
@@ -14,7 +15,8 @@ function escapeHtml(str: string): string {
 }
 
 export async function otaCommand(dir: string, options: { port?: number }) {
-  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Local Firmware Hosting Server (OTA)`));
+  console.clear();
+  intro(pc.inverse(` ⚡ Local Firmware Hosting Server (OTA) `));
 
   const targetDir = join(process.cwd(), dir || ".");
   const port = Number(options.port || 4000);
@@ -23,9 +25,15 @@ export async function otaCommand(dir: string, options: { port?: number }) {
     const dirStat = await stat(targetDir);
     if (!dirStat.isDirectory()) throw new Error("Target is not a directory");
   } catch (_err) {
-    console.error(pc.red(`Error: Firmware directory '${dir}' does not exist.`));
+    log.error(pc.red(`Error: Firmware directory '${dir}' does not exist.`));
     process.exit(1);
   }
+
+  log.info(`Target Dir: ${pc.blue(targetDir)}`);
+  log.info(`Port:       ${pc.bold(port)}`);
+
+  const serverSpinner = spinner();
+  serverSpinner.start(pc.gray(`Starting HTTP Server...`));
 
   const server = http.createServer(async (req, res) => {
     if (req.method !== "GET" && req.method !== "HEAD") {
@@ -46,12 +54,10 @@ export async function otaCommand(dir: string, options: { port?: number }) {
       const fileStat = await stat(securePath);
 
       if (fileStat.isDirectory()) {
-        // Render a simple directory index
         const files = await fs.readdir(securePath);
         res.writeHead(200, { "Content-Type": "text/html" });
         res.write("<h1>Firmware Listing</h1><ul>");
 
-        // Derive a safe base path from the request URL (path only, normalized)
         let basePath = "/";
         if (req.url && req.url !== "/") {
           const qIndex = req.url.indexOf("?");
@@ -73,23 +79,20 @@ export async function otaCommand(dir: string, options: { port?: number }) {
         }
         res.write("</ul>");
         res.end();
-        console.log(pc.gray(`[GET] ${req.url} (Directory Listing)`));
+        log.step(pc.gray(`[GET] ${req.url} (Directory Listing)`));
         return;
       }
 
       const fileSize = fileStat.size;
       const range = req.headers.range;
 
-      // Determine Content Type
       const ext = extname(securePath).toLowerCase();
-      let contentType = "application/octet-stream"; // Default for .bin files
+      let contentType = "application/octet-stream";
       if (ext === ".tar.gz" || ext === ".tgz") contentType = "application/gzip";
       if (ext === ".zip") contentType = "application/zip";
       if (ext === ".json") contentType = "application/json";
 
-      // EV Chargers strictly require Accept-Ranges and Content-Length headers
       if (range) {
-        // Handle Range requests (Chunked OTA downloads)
         const parts = range.replace(/bytes=/, "").split("-");
         const start = parseInt(parts[0], 10);
         const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
@@ -113,11 +116,10 @@ export async function otaCommand(dir: string, options: { port?: number }) {
           "Content-Type": contentType,
         });
 
-        console.log(pc.cyan(`[PARTIAL] ${req.url} (${start}-${end})`));
+        log.step(pc.cyan(`[PARTIAL] ${req.url} (${start}-${end})`));
         stream.pipe(res);
         stream.on("end", () => fileHandle.close());
       } else {
-        // Handle full downloads
         res.writeHead(200, {
           "Content-Length": fileSize,
           "Accept-Ranges": "bytes",
@@ -125,10 +127,10 @@ export async function otaCommand(dir: string, options: { port?: number }) {
         });
 
         if (req.method === "HEAD") {
-          console.log(pc.gray(`[HEAD] ${req.url} (${fileSize} bytes)`));
+          log.step(pc.gray(`[HEAD] ${req.url} (${fileSize} bytes)`));
           res.end();
         } else {
-          console.log(pc.blue(`[DOWNLOAD] ${req.url} (${fileSize} bytes)`));
+          log.step(pc.blue(`[DOWNLOAD] ${req.url} (${fileSize} bytes)`));
           const fileHandle = await fs.open(securePath, "r");
           const stream = fileHandle.createReadStream();
           stream.pipe(res);
@@ -142,22 +144,24 @@ export async function otaCommand(dir: string, options: { port?: number }) {
       } else {
         res.writeHead(500);
         res.end("Internal Server Error");
-        console.error(pc.red(`Error serving file: ${err.message}`));
+        log.error(pc.red(`Error serving file: ${err.message}`));
       }
     }
   });
 
   server.listen(port, () => {
-    console.log(pc.gray(`Hosting files from: ${targetDir}`));
-    console.log(pc.green(`✔ OTA Server listening at http://localhost:${port}`));
-    console.log(
+    serverSpinner.stop(
+      pc.green(`✔ Server listening at http://localhost:${port}`),
+    );
+    log.message(
       pc.yellow(`Use this URL in your 'UpdateFirmware' OCPP requests.`),
     );
   });
 
   process.on("SIGINT", () => {
-    console.log(pc.yellow(`\nShutting down OTA API...`));
+    log.warn(pc.yellow(`Shutting down OTA API...`));
     server.close();
+    outro("OTA Server closed. ⚡");
     process.exit(0);
   });
 }

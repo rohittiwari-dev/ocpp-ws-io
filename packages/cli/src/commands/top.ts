@@ -1,11 +1,13 @@
+import { intro, log, outro } from "@clack/prompts";
 import pc from "picocolors";
 import { createClient } from "redis";
 
 export async function topCommand(options: { redis?: string }) {
   const redisUrl = options.redis || "redis://localhost:6379";
 
-  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Live Cluster Dashboard (top)`));
-  console.log(pc.gray(`Connecting to Redis: ${redisUrl}...\n`));
+  console.clear();
+  intro(pc.inverse(` ⚡ Live Cluster Dashboard (top) `));
+  log.step(pc.gray(`Connecting to Redis: ${redisUrl}...`));
 
   const client = createClient({ url: redisUrl });
 
@@ -22,11 +24,8 @@ export async function topCommand(options: { redis?: string }) {
         const keys = await client.keys("ocpp:stats:*");
 
         console.clear();
-        console.log(pc.cyan(`⚡ ocpp-ws-cli | Live Cluster Dashboard`));
-        console.log(
-          pc.gray(`═════════════════════════════════════════════════`),
-        );
-        console.log(`Connected to: ${pc.blue(redisUrl)}\n`);
+        intro(pc.inverse(` ⚡ Live Cluster Dashboard `));
+        log.info(`Connected to: ${pc.blue(redisUrl)}`);
 
         let totalSessions = 0;
         let totalConnections = 0;
@@ -81,12 +80,19 @@ export async function topCommand(options: { redis?: string }) {
         }
 
         console.log(pc.gray(`\nPress Ctrl+C to exit...`));
+        console.log(pc.gray(`\nPress Ctrl+C to exit...`));
       } catch (err: any) {
-        console.error(pc.red(`Metrics error: ${err.message}`));
+        log.error(pc.red(`Metrics error: ${err.message}`));
       }
     }, 1000);
+
+    process.on("SIGINT", () => {
+      console.clear();
+      outro(pc.yellow(`Stopped cluster dashboard.`));
+      process.exit(0);
+    });
   } catch (error: any) {
-    console.error(pc.red(`\nFailed to connect to Redis: ${error.message}`));
+    log.error(pc.red(`Failed to connect to Redis: ${error.message}`));
     process.exit(1);
   }
 }

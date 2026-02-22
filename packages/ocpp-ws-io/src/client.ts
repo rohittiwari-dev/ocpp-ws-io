@@ -1217,7 +1217,6 @@ export class OCPPClient<
   // ─── Internal: Ping/Pong ─────────────────────────────────────
 
   private _startPing(): void {
-    console.log("_startPing called", this._options.pingIntervalMs);
     if (this._options.pingIntervalMs <= 0) return;
 
     const pongTimeoutMs =
@@ -1225,18 +1224,11 @@ export class OCPPClient<
       this._options.pingIntervalMs + 5000;
 
     const doPing = () => {
-      console.log("doPing executed");
       // console.log("doPing called", this._state, !!this._ws, "interval", this._options.pingIntervalMs);
       if (this._state !== OPEN || !this._ws) return;
 
       if (this._options.deferPingsOnActivity) {
         const elapsed = Date.now() - this._lastActivity;
-        console.log(
-          "elapsed",
-          elapsed,
-          "deferring?",
-          elapsed < this._options.pingIntervalMs,
-        );
         if (elapsed < this._options.pingIntervalMs) {
           this._pingTimer = setTimeout(
             doPing,

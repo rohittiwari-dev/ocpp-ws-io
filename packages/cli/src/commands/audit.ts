@@ -7,7 +7,7 @@ export async function auditCommand(options: {
 }) {
   console.log(pc.cyan(`\n⚡ ocpp-ws-cli: CSMS Compliance Auditor`));
 
-  const targetUrl = options.endpoint || "ws://localhost:3000";
+  const targetUrl = options.endpoint ?? "ws://localhost:3000";
   console.log(pc.gray(`Target CSMS: ${targetUrl}\n`));
   console.log(pc.yellow(`Starting OCA compliance assault. Stand by...\n`));
 
@@ -25,7 +25,7 @@ export async function auditCommand(options: {
   client.on("open", async () => {
     // 1. Valid BootNotification
     await runTest("Valid BootNotification", async () => {
-      const res = await client.call("BootNotification", {
+      const res = await client.call("ocpp1.6", "BootNotification", {
         chargePointModel: "Auditor",
         chargePointVendor: "OCA",
       });
@@ -37,7 +37,17 @@ export async function auditCommand(options: {
     await runTest("Malformed Missing Field (Strict Mode Test)", async () => {
       try {
         // Missing chargePointModel/Vendor
-        await client.call("BootNotification", {});
+        await client.call("ocpp1.6", "BootNotification", {
+          chargePointVendor: "Auditor",
+          chargePointModel: "Auditor",
+          chargePointSerialNumber: "1234567890",
+          chargeBoxSerialNumber: "1234567890",
+          firmwareVersion: "1.0.0",
+          iccid: "1234567890",
+          imsi: "1234567890",
+          meterType: "1234567890",
+          meterSerialNumber: "1234567890",
+        });
         throw new Error(
           "Server accepted an invalid payload without schema rejection.",
         );
@@ -53,7 +63,7 @@ export async function auditCommand(options: {
     await runTest("Spurious Array Payload (Fuzzer Defense)", async () => {
       try {
         // Send an array instead of an object body
-        await client.call("Heartbeat", [] as any);
+        await client.call("ocpp1.6", "Heartbeat", [] as any);
         throw new Error(
           "Server accepted an Array instead of an Object payload.",
         );

@@ -21,7 +21,7 @@ export async function initCommand(dir = ".") {
         start: "node dist/index.js",
       },
       dependencies: {
-        "ocpp-ws-io": "^2.1.1",
+        "ocpp-ws-io": "^1.0.0",
       },
       devDependencies: {
         "@types/node": "^20.0.0",
@@ -45,19 +45,33 @@ export async function initCommand(dir = ".") {
 
     const indexTs = `import { OCPPServer } from "ocpp-ws-io";
 
-const server = new OCPPServer({});
-
-server.route("BootNotification", (ctx) => {
-  return {
-    currentTime: new Date().toISOString(),
-    interval: 300,
-    status: "Accepted",
-  };
+const server = new OCPPServer({
+  protocols: ["ocpp1.6"],
 });
 
-// Start the server
-// await server.listen(3000);
-console.log("OCPP Server initialized and ready!");
+server.on("client", (client) => {
+  console.log(\`\${client.identity} connected (\${client.protocol})\`);
+
+  client.handle("ocpp1.6", "BootNotification", ({ params }) => {
+    return {
+      status: "Accepted",
+      currentTime: new Date().toISOString(),
+      interval: 300,
+    };
+  });
+
+  client.handle("ocpp1.6", "Heartbeat", () => ({
+    currentTime: new Date().toISOString(),
+  }));
+
+  client.on("close", () => {
+    console.log(\`\${client.identity} disconnected\`);
+  });
+});
+
+const port = 3000;
+await server.listen(port);
+console.log(\`OCPP Server listening on ws://localhost:\${port}\`);
 `;
 
     await fs.writeFile(

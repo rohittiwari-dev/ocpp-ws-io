@@ -1,3 +1,4 @@
+import { intro, log, outro, spinner } from "@clack/prompts";
 import pc from "picocolors";
 import WebSocket from "ws";
 
@@ -5,15 +6,16 @@ export async function fuzzCommand(options: {
   endpoint?: string;
   workers?: number;
 }) {
-  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Protocol Security Fuzzer`));
+  console.clear();
+  intro(pc.inverse(pc.red(` ⚡ Protocol Security Fuzzer `)));
 
   const targetUrl = options.endpoint || "ws://localhost:3000";
   const numWorkers = Number(options.workers || 5);
 
-  console.log(pc.gray(`Target Endpoint: ${targetUrl}`));
-  console.log(pc.gray(`Attack Threads: ${numWorkers}\n`));
-  console.log(
-    pc.red(`[WARNING] This will aggressively spam the target server.`),
+  log.info(`Target Endpoint: ${pc.blue(targetUrl)}`);
+  log.info(`Attack Threads:  ${pc.bold(numWorkers)}`);
+  log.warn(
+    pc.yellow(`[WARNING] This will aggressively spam the target server.`),
   );
 
   let packetsFired = 0;
@@ -43,8 +45,21 @@ export async function fuzzCommand(options: {
     '[2, "msg5", "BootNotification", { "chargePointVendor": "\'; DROP TABLE users; --" }]',
   ];
 
+  const attackSpinner = spinner();
+  attackSpinner.start(pc.gray(`Engaging payload launchers...`));
+
   for (let i = 0; i < numWorkers; i++) {
     spawnWorker(i);
+  }
+
+  function updateSpinner() {
+    attackSpinner.message(
+      `${pc.blue(`Packets Sent: ${packetsFired}`)} | ${pc.green(
+        `Graceful Schema Rejects: ${rejects}`,
+      )} | ${pc.magenta(
+        `Drops (Rate Limit/Crash): ${unexpectedDrops}`,
+      )} | Threads: ${activeThreads}  `,
+    );
   }
 
   function spawnWorker(id: number) {
@@ -65,7 +80,7 @@ export async function fuzzCommand(options: {
           ws.send(attack);
           packetsFired++;
         }
-        printStats();
+        updateSpinner();
         setImmediate(loop);
       };
       loop();
@@ -80,7 +95,7 @@ export async function fuzzCommand(options: {
       } catch {
         // Ignored
       }
-      printStats();
+      updateSpinner();
     });
 
     ws.on("close", (code) => {
@@ -89,14 +104,12 @@ export async function fuzzCommand(options: {
         unexpectedDrops++;
       }
       activeThreads--;
-      printStats();
+      updateSpinner();
 
       if (activeThreads === 0) {
-        console.log(
-          pc.yellow(
-            `\nAll fuzzing threads collapsed. Server may have engaged Rate Limiting or died.`,
-          ),
-        );
+        attackSpinner.stop(pc.red(`All fuzzing threads collapsed.`));
+        log.warn(pc.yellow(`Server may have engaged Rate Limiting or died.`));
+        outro(`Fuzzing complete.`);
         process.exit(0);
       }
     });
@@ -107,18 +120,9 @@ export async function fuzzCommand(options: {
     });
   }
 
-  function printStats() {
-    process.stdout.write(
-      `\r${pc.blue(`Packets Sent: ${packetsFired}`)} | ${pc.green(
-        `Graceful Schema Rejects: ${rejects}`,
-      )} | ${pc.yellow(
-        `Drops (Rate Limit/Crash): ${unexpectedDrops}`,
-      )} | Threads: ${activeThreads}  `,
-    );
-  }
-
   process.on("SIGINT", () => {
-    console.log(pc.magenta(`\n\nFuzzing cancelled.`));
+    attackSpinner.stop(pc.yellow(`Fuzzing cancelled.`));
+    outro(`Fuzzing aborted.`);
     process.exit(0);
   });
 }

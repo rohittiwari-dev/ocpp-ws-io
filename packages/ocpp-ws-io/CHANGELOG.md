@@ -1,17 +1,14 @@
 # ocpp-ws-io
 
-## 2.1.2
-
-### Patch Changes
+## 1.0.0
 
 - **Router Enhancements**: Added modular router options with `createRouter` for flexible routing configurations.
-- **CORS Support**: Implemented router configuration support for Cross-Origin Resource Sharing (CORS).
-- **Performance Optimizations**: improved client session management, message handling, and connection statistics.
-- **Bundle Size**: Optimized build artifacts to reduce overall bundle size.
-
-## 2.1.1
 
 ### Patch Changes
+
+- d7e7f08: fix: handleupgrade function did not upgrade the http server with socket
+- Type mismatch in OCPPServer client event
+- c2e1c7f: added packages rules, bumping version with chnages, uploading loading , fixed of potential linting fixes
 
 This patch release encapsulates several major registry layout optimizations and extensive internal runtime bug fixes.
 
@@ -27,7 +24,9 @@ This patch release encapsulates several major registry layout optimizations and 
 - **LLM Context Router Extractors**: Fully refactored Fumadocs indexing APIs (\`llms.txt\`, \`llms-full.txt\`) on the primary website router to abandon internal text processing in favor of direct, raw \`.mdx\` filesystem extractions. These APIs dynamically resolve all components extending across the \`docs\` and \`blog\` namespaces respectively, generating absolute URL targets ideal for direct scraping by LLM web parsers without UI contamination natively.
 - **UI Enhancements**: Implemented the \`LLMCopyButton\` schema universally across the blog architectures matching the documentation structures, and removed \`clerk\` shadow injections from the base documentation layout Table of Contents (\`DocsPage\`).
 
-## 2.1.0
+- **CORS Support**: Implemented router configuration support for Cross-Origin Resource Sharing (CORS).
+- **Performance Optimizations**: improved client session management, message handling, and connection statistics.
+- **Bundle Size**: Optimized build artifacts to reduce overall bundle size.
 
 ### Minor Changes
 
@@ -44,10 +43,6 @@ This patch release encapsulates several major registry layout optimizations and 
   - **Duplicate Handler Collisions**: Protected `client.handle()` RPC registration tables from silently overriding each other by throwing explicit runtime errors when identical handlers are accidentally attached.
   - **Global Server Fallbacks**: Modernized the core `OCPPServer` HTTP routing logic to cleanly enforce wildcard sub-routers, providing built-in unauthenticated catch-alls that terminate hanging connections.
   - **Logging Formatter Duplication**: Resolved manual format injection overhead inside the browser bundles by deferring payload formatting accurately to `createLoggingMiddleware()`.
-
-## 2.0.2
-
-### Minor Changes
 
 - # Reliability, Middleware, and Type Safety
 
@@ -66,19 +61,3 @@ This patch release encapsulates several major registry layout optimizations and 
   - Comprehensive updates to `README.md` and `apps/docs`.
   - New guides for **Middleware**, **Clustering (Redis Streams)**, **Logging**, and **Connection Upgrades**.
   - Added **Bun** and **Deno** integration examples.
-
-### Patch Changes
-
-- d7e7f08: fix: handleupgrade function did not upgrade the http server with socket
-
-## 2.0.1
-
-### Patch Changes
-
-- Type mismatch in OCPPServer client event
-
-## 2.0.0
-
-### Major Changes
-
-- c2e1c7f: added packages rules, bumping version with chnages, uploading loading , fixed of potential linting fixes

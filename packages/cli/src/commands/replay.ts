@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import { resolve } from "node:path";
+import { intro, log, outro, spinner } from "@clack/prompts";
 import { OCPPClient } from "ocpp-ws-io";
 import pc from "picocolors";
 
@@ -7,11 +8,12 @@ export async function replayCommand(
   logFile: string,
   options: { target?: string },
 ) {
-  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Network Frame Replay Engine`));
+  console.clear();
+  intro(pc.inverse(` ⚡ Network Frame Replay Engine `));
 
   if (!logFile) {
-    console.error(pc.red(`Error: Please specify an incident log file.`));
-    console.log(
+    log.error(pc.red(`Error: Please specify an incident log file.`));
+    log.message(
       pc.gray(
         `Example: ocpp replay ./incidents/crash.json --target ws://localhost:3000`,
       ),
@@ -22,8 +24,8 @@ export async function replayCommand(
   const targetUrl = options.target || "ws://localhost:3000";
   const filePath = resolve(process.cwd(), logFile);
 
-  console.log(pc.gray(`Loading frames: ${filePath}`));
-  console.log(pc.gray(`Replay target:  ${targetUrl}\n`));
+  log.info(`Target CSMS:  ${pc.blue(targetUrl)}`);
+  log.info(`Loading File: ${pc.bold(filePath)}`);
 
   let frames: any[] = [];
   try {
@@ -35,11 +37,11 @@ export async function replayCommand(
     if (!Array.isArray(frames))
       throw new Error("Log file must be a JSON array of event frames.");
   } catch (err: any) {
-    console.error(pc.red(`Failed to parse replay file: ${err.message}`));
+    log.error(pc.red(`Failed to parse replay file: ${err.message}`));
     process.exit(1);
   }
 
-  console.log(pc.blue(`✔ Loaded ${frames.length} frames for playback.`));
+  log.success(pc.blue(`Loaded ${frames.length} frames for playback.`));
 
   const client = new OCPPClient({
     identity: `Replay-Agent`,
@@ -49,44 +51,50 @@ export async function replayCommand(
     strictMode: false, // We need to ensure we can replay malformed payloads exactly as they were!
   });
 
+  const replaySpinner = spinner();
+  replaySpinner.start(pc.gray(`Connecting to target CSMS sandbox...`));
+
   client.on("open", async () => {
-    console.log(
-      pc.green(`✔ Connected to target CSMS sandbox. Beginning playback...\n`),
+    replaySpinner.stop(
+      pc.green(`Connected to CSMS. Beginning playback sequence...`),
     );
 
     for (const frame of frames) {
-      if (frame.delayMs) {
-        console.log(pc.gray(`⏳ Waiting ${frame.delayMs}ms...`));
-        await new Promise((r) => setTimeout(r, frame.delayMs));
+      const delayMs = frame.delayMs ?? frame.delay ?? 0;
+      if (delayMs > 0) {
+        log.step(pc.gray(`⏳ Waiting ${delayMs}ms...`));
+        await new Promise((r) => setTimeout(r, delayMs));
       }
 
       try {
-        console.log(
+        log.message(
           pc.magenta(`→ Sending ${frame.method || "raw payload"}: `) +
             pc.gray(JSON.stringify(frame.payload)),
         );
 
-        // Cast around strict types to allow sending potentially broken/malformed replay data directly
-        client
-          .call(frame.method as any, frame.payload)
-          .then((res) => {
-            console.log(pc.green(`  ← [OK] `) + pc.gray(JSON.stringify(res)));
-          })
-          .catch((err) => {
-            console.log(pc.red(`  ← [ERROR] `) + pc.gray(err.message));
-          });
-      } catch (sendErr: any) {
-        console.log(pc.red(`✖ Frame failed: ${sendErr.message}`));
+        // Version-aware call per API; cast for malformed replay payloads
+        const res = await client.call(
+          "ocpp1.6",
+          frame.method as any,
+          frame.payload,
+          { timeoutMs: 15000 },
+        );
+        log.success(pc.green(`  ← [OK] `) + pc.gray(JSON.stringify(res)));
+      } catch (err: any) {
+        log.error(pc.red(`  ← [ERROR] `) + pc.gray(err.message));
       }
     }
 
-    console.log(pc.cyan(`\n✨ Playback sequence complete.`));
+    outro(pc.cyan(`Playback sequence complete. ✨`));
     await new Promise((r) => setTimeout(r, 1000)); // drain
-    client.close();
+    await client.close();
+    process.exit(0);
   });
 
   client.on("error", (err: any) => {
-    console.log(pc.red(`\nSocket Error during playback: ${err.message}`));
+    replaySpinner.stop(pc.red(`Socket Error during playback.`));
+    log.error(pc.red(err.message));
+    process.exit(1);
   });
 
   client.connect();

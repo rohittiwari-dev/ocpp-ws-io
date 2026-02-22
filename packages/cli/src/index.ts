@@ -21,6 +21,7 @@ import { simulateCommand } from "./commands/simulate.js";
 import { tailCommand } from "./commands/tail.js";
 import { topCommand } from "./commands/top.js";
 import { virtualStationCommand } from "./commands/virtual-station.js";
+import { runDashboard } from "./dashboard.js";
 
 // Get version from package.json safely
 const __filename = fileURLToPath(import.meta.url);
@@ -45,6 +46,10 @@ cli
   )
   .option("-s, --schemas <dir>", "Directory containing JSON schema files")
   .option("-o, --out <dir>", "Output directory for the generated .d.ts files")
+  .option(
+    "-p, --protocol <name>",
+    "Generate an index.ts mapping the schemas to an ocpp-ws-io protocol (e.g. vendor-proto)",
+  )
   .action(generateCommand);
 
 // ─── Command: init ─────────────────────────────────────────────────────────
@@ -62,6 +67,9 @@ cli
   })
   .option("-e, --endpoint <ws>", "WebSocket endpoint of the CSMS server", {
     default: "ws://localhost:3000",
+  })
+  .option("-p, --protocol <ver>", "OCPP Protocol (e.g. ocpp1.6, ocpp2.0.1)", {
+    default: "ocpp1.6",
   })
   .action(simulateCommand);
 
@@ -149,7 +157,7 @@ cli
 cli
   .command("fuzz", "Protocol Fuzzing & Security Tester")
   .option("-e, --endpoint <ws>", "Target CSMS URL", {
-    default: "ws://localhost:3000/ocpp",
+    default: "ws://localhost:3000",
   })
   .option("-w, --workers <num>", "Concurrent attack threads", { default: 5 })
   .action(fuzzCommand);
@@ -166,7 +174,7 @@ cli
 cli
   .command("audit", "CSMS Compliance Auditor")
   .option("-e, --endpoint <ws>", "Target CSMS URL", {
-    default: "ws://localhost:3000/ocpp",
+    default: "ws://localhost:3000",
   })
   .option("-g, --generate-report", "Export results to Markdown")
   .action(auditCommand);
@@ -192,10 +200,48 @@ cli
 cli.help();
 cli.version(version);
 
-try {
-  cli.parse(process.argv, { run: false });
-  cli.runMatchedCommand();
-} catch (err: any) {
-  console.error(pc.red(`\nError: ${err.message}`));
+// ─── Global Error Handlers ──────────────────────────────────────────────────
+
+function handleGlobalError(err: unknown) {
+  console.error();
+  console.error(pc.bgRed(pc.white(" ⚡ CRITICAL ERROR ")));
+  console.error(pc.red("─".repeat(50)));
+
+  if (err instanceof Error) {
+    console.error(pc.red(`Message: ${err.message}`));
+    if (err.stack) {
+      console.error(pc.gray(err.stack.split("\n").slice(1).join("\n")));
+    }
+  } else {
+    console.error(pc.red(String(err)));
+  }
+
+  console.error(pc.red("─".repeat(50)));
   process.exit(1);
 }
+
+process.on("unhandledRejection", handleGlobalError);
+process.on("uncaughtException", handleGlobalError);
+
+// ─── Executor ─────────────────────────────────────────────────────────────
+
+async function main() {
+  cli.help();
+  cli.version(version);
+
+  const parsed = cli.parse(process.argv, { run: false });
+
+  // If no command is provided, launch the beautiful dashboard
+  if (!cli.matchedCommandName && parsed.args.length === 0) {
+    await runDashboard();
+    return;
+  }
+
+  try {
+    await cli.runMatchedCommand();
+  } catch (err: any) {
+    handleGlobalError(err);
+  }
+}
+
+main();

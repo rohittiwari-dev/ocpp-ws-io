@@ -1,6 +1,6 @@
 {
   "name": "ocpp-ws-io-monorepo",
-  "version": "2.1.2",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "build": "turbo run build",
@@ -15,7 +15,9 @@
     "prepare": "npm -e \"if (!process.env.CI) process.exit(1)\" || husky",
     "commitlint": "commitlint --edit",
     "version": "changeset version",
-    "release": "npm run build && changeset publish"
+    "release": "npm run build && changeset publish",
+    "cli": "node packages/cli/dist/index.js",
+    "build:cli": "npm run build -w packages/cli"
   },
   "config": {
     "commitizen": {

@@ -30,7 +30,6 @@ export async function callCommand(
     endpoint: targetUrl,
     protocols: ["ocpp1.6"],
     reconnect: false,
-    callTimeoutMs: 10000,
   });
 
   client.on("open", async () => {
@@ -40,7 +39,9 @@ export async function callCommand(
     );
 
     try {
-      const response = await client.call(method as any, payload);
+      const response = await client.call("ocpp1.6", method as any, payload, {
+        timeoutMs: 10000,
+      });
       console.log(pc.green(`\n← [SUCCESS] Response:`));
       console.dir(response, { depth: null, colors: true });
     } catch (err: any) {

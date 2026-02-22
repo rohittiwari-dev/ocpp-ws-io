@@ -1,3 +1,4 @@
+import { intro, log, outro } from "@clack/prompts";
 import pc from "picocolors";
 import { createClient } from "redis";
 
@@ -10,19 +11,20 @@ export async function tailCommand(options: {
   const idFilter = options.identity;
   const methodFilter = options.method;
 
-  console.log(pc.cyan(`\n⚡ ocpp-ws-cli: Network Sniffer (tail)`));
+  console.clear();
+  intro(pc.inverse(` ⚡ Network Sniffer (tail) `));
 
   const filters: string[] = [];
   if (idFilter) filters.push(`Identity: ${pc.yellow(idFilter)}`);
   if (methodFilter) filters.push(`Method: ${pc.yellow(methodFilter)}`);
 
   if (filters.length > 0) {
-    console.log(pc.gray(`Filters active | ${filters.join(" | ")}`));
+    log.info(pc.gray(`Filters active   | ${filters.join(" | ")}`));
   } else {
-    console.log(pc.yellow(`No filters set. Tailing all cluster traffic.`));
+    log.info(pc.yellow(`No filters set. Tailing all cluster traffic.`));
   }
 
-  console.log(pc.gray(`Connecting to Redis Pub/Sub: ${redisUrl}...\n`));
+  log.step(pc.gray(`Connecting to Redis Pub/Sub: ${redisUrl}...`));
 
   const subscriber = createClient({ url: redisUrl });
 
@@ -83,12 +85,17 @@ export async function tailCommand(options: {
       }
     });
 
-    console.log(pc.green(`✔ Connected and tailing... (Press Ctrl+C to exit)`));
+    log.success(pc.green(`Connected and tailing... (Press Ctrl+C to exit)`));
     console.log(
       pc.gray(`══════════════════════════════════════════════════════════════`),
     );
+
+    process.on("SIGINT", () => {
+      outro(pc.yellow(`Stopped tailing.`));
+      process.exit(0);
+    });
   } catch (error: any) {
-    console.error(pc.red(`\nFailed to subscribe to Redis: ${error.message}`));
+    log.error(pc.red(`Failed to subscribe to Redis: ${error.message}`));
     process.exit(1);
   }
 }
