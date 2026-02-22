@@ -41,9 +41,22 @@ export async function otaCommand(dir: string, options: { port?: number }) {
         const files = await fs.readdir(securePath);
         res.writeHead(200, { "Content-Type": "text/html" });
         res.write("<h1>Firmware Listing</h1><ul>");
+
+        // Derive a safe base path from the request URL (path only, normalized)
+        let basePath = "/";
+        if (req.url && req.url !== "/") {
+          const qIndex = req.url.indexOf("?");
+          const rawPath = qIndex === -1 ? req.url : req.url.substring(0, qIndex);
+          basePath = rawPath.endsWith("/") ? rawPath.slice(0, -1) : rawPath;
+          if (!basePath.startsWith("/")) {
+            basePath = "/" + basePath;
+          }
+        }
+
         for (const f of files) {
+          const encodedName = encodeURIComponent(f);
           res.write(
-            `<li><a href="${req.url === "/" ? "" : req.url}/${f}">${f}</a></li>`,
+            `<li><a href="${basePath}/${encodedName}">${f}</a></li>`,
           );
         }
         res.write("</ul>");
