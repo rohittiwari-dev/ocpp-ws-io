@@ -47,7 +47,7 @@ export async function loadTestCommand(options: {
             chargePointVendor: "ocpp-ws-io",
           });
           messagesSent++;
-          if ((res as any).status === "Accepted") {
+          if ((res as { status: string }).status === "Accepted") {
             bootAccepted++;
           }
         } catch (_err) {
