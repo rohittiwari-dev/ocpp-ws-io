@@ -4,6 +4,15 @@ import * as http from "node:http";
 import { extname, join } from "node:path";
 import pc from "picocolors";
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export async function otaCommand(dir: string, options: { port?: number }) {
   console.log(pc.cyan(`\n⚡ ocpp-cli: Local Firmware Hosting Server (OTA)`));
 
@@ -55,8 +64,10 @@ export async function otaCommand(dir: string, options: { port?: number }) {
 
         for (const f of files) {
           const encodedName = encodeURIComponent(f);
+          const safeBasePath = escapeHtml(basePath);
+          const safeLabel = escapeHtml(f);
           res.write(
-            `<li><a href="${basePath}/${encodedName}">${f}</a></li>`,
+            `<li><a href="${safeBasePath}/${encodedName}">${safeLabel}</a></li>`,
           );
         }
         res.write("</ul>");
