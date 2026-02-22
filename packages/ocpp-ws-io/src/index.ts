@@ -1,7 +1,7 @@
 // ─── Core ────────────────────────────────────────────────────────
 
 // ─── Adapters ────────────────────────────────────────────────────
-export { InMemoryAdapter } from "./adapters/adapter.js";
+export { defineAdapter, InMemoryAdapter } from "./adapters/adapter.js";
 export { RedisAdapter } from "./adapters/redis/index.js";
 
 export { OCPPClient } from "./client.js";
@@ -44,7 +44,7 @@ export {
   defineRpcMiddleware,
 } from "./helpers/index.js";
 export * from "./middleware.js";
-export { OCPPRouter } from "./router.js";
+export { createRouter, OCPPRouter } from "./router.js";
 export { OCPPServer } from "./server.js";
 export { OCPPServerClient } from "./server-client.js";
 export { standardValidators } from "./standard-validators.js";

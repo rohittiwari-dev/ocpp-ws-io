@@ -165,6 +165,45 @@ const dashboardRouter = server
 
 ---
 
+## Modular Routing
+
+For larger applications, defining all your routes on the central `server` instance can get messy. You can decouple your routes into separate files using the `createRouter` helper, and then mount them back to the server using `server.attachRouters()`.
+
+```typescript title="routes/admin.ts"
+import { createRouter } from "ocpp-ws-io";
+
+// Create a standalone router independent of the server
+export const adminRouter = createRouter("/api/admin/*");
+
+adminRouter.auth(async (ctx) => {
+  if (ctx.handshake.headers["authorization"] !== "Bearer my-secret") {
+    ctx.reject(401, "Unauthorized");
+    return;
+  }
+  ctx.accept({ session: { role: "admin" } });
+});
+
+adminRouter.handle("BootNotification", () => ({
+  status: "Accepted",
+  interval: 10,
+  currentTime: new Date().toISOString(),
+}));
+```
+
+```typescript title="index.ts"
+import { OCPPServer } from "ocpp-ws-io";
+import { adminRouter } from "./routes/admin.js";
+
+const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+// Attach the externally defined router back to the main server!
+server.attachRouters(adminRouter);
+
+server.listen(3000);
+```
+
+---
+
 ## Catch-All & Fallbacks
 
 If a client connects to a URL that does not match any of your defined `.route()` paths, they will fall back to any handlers registered directly on the root `server`.

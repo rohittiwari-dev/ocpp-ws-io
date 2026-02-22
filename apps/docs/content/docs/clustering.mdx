@@ -106,49 +106,50 @@ This is automatically utilized when you call `server.broadcastBatch()`.
 
 ## Custom Adapters (EventAdapterInterface)
 
-If you don't use Redis, you can implement your own clustering mechanism (e.g., using RabbitMQ, NATS, or Kafka) by conforming to the `EventAdapterInterface`. An adapter must implement four basic responsibilities:
+If you don't use Redis, you can easily implement your own clustering mechanism (e.g., using RabbitMQ, NATS, or Kafka) by using the `defineAdapter` helper function or by creating a class that implements `EventAdapterInterface`.
+
+Using `defineAdapter` is the recommended way to create highly-typed adapters without boilerplate classes:
 
 ```typescript
-import { EventAdapterInterface, OCPPMessage } from "ocpp-ws-io";
+import { defineAdapter } from "ocpp-ws-io";
 
-export class MyCustomAdapter implements EventAdapterInterface {
-  /**
-   * 1. Bind to the local server instance
-   * Called automatically by `server.setAdapter(adapter)`
-   */
-  public bind(server: OCPPServer): void {
-    // Store the server reference and subscribe to external messaging topics
-  }
+const myRabbitMQAdapter = defineAdapter({
+  // 1. Broadcast an outbound message/event from this node to others
+  publish: async (channel, data) => {
+    await rabbitmq.publish(channel, JSON.stringify(data));
+  },
 
-  /**
-   * 2. Broadcast a global event
-   * Tell the adapter to broadcast an event (like a disconnect) to ALL nodes.
-   */
-  public publishEvent(event: string, payload: unknown): void {
-    // e.g. nats.publish("ocpp-global", JSON.stringify({ event, payload }))
-  }
+  // 2. Point-to-Point Messaging (Mass Delivery)
+  publishBatch: async (messages) => {
+    // Optional: optimize delivery if your broker supports batching
+  },
 
-  /**
-   * 3. Track Presence
-   * Record that a charging station is currently governed by THIS node.
-   */
-  public async registerClient(identity: string): Promise<void> {
-    // e.g. cache.set(`presence:${identity}`, server.nodeId)
-  }
+  // 3. Listen for incoming messages from the broker
+  subscribe: async (channel, handler) => {
+    rabbitmq.subscribe(channel, (msg) => handler(JSON.parse(msg)));
+  },
 
-  /**
-   * 4. Point-to-Point Messaging
-   * Send a raw OCPP WebSocket message to a specific station on the cluster.
-   */
-  public async sendToClient(
-    identity: string,
-    message: OCPPMessage,
-  ): Promise<void> {
-    // 1. Find which node ID owns `identity`
-    // 2. Publish `message` to that node's specific queue
-    // 3. The receiving node will call `server.getLocalClient(identity)?.sendRaw(...)`
-  }
-}
+  // 4. Cleanup
+  unsubscribe: async (channel) => {
+    rabbitmq.unsubscribe(channel);
+  },
+
+  disconnect: async () => {
+    await rabbitmq.close();
+  },
+
+  // Optional: Advanced Presence Tracking
+  setPresence: async (identity, nodeId, ttl) => {
+    /* ... */
+  },
+  getPresence: async (identity) => {
+    /* ... */ return null;
+  },
+  removePresence: async (identity) => {
+    /* ... */
+  },
+});
+
+// Attach it to your server!
+await server.setAdapter(myRabbitMQAdapter);
 ```
-
-Once implemented, simply use your adapter: `server.setAdapter(new MyCustomAdapter())`.

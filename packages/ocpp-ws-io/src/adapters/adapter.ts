@@ -72,3 +72,24 @@ export class InMemoryAdapter implements EventAdapterInterface {
     this._presence.delete(identity);
   }
 }
+
+/**
+ * Helper function to create a custom EventAdapter without needing to define a rigid Class.
+ * Provides full TypeScript inference for the `EventAdapterInterface`.
+ *
+ * @example
+ * ```typescript
+ * const myAdapter = defineAdapter({
+ *   publish: async (channel, data) => { ... },
+ *   subscribe: async (channel, handler) => { ... },
+ *   unsubscribe: async (channel) => { ... },
+ *   disconnect: async () => { ... }
+ * });
+ * server.setAdapter(myAdapter);
+ * ```
+ */
+export function defineAdapter(
+  adapter: EventAdapterInterface,
+): EventAdapterInterface {
+  return adapter;
+}

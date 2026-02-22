@@ -237,6 +237,15 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   }
 
   /**
+   * Attaches one or more standalone modular routers created via `createRouter()`.
+   * This is useful for separating route definitions across different files.
+   */
+  attachRouters(...routers: OCPPRouter[]): this {
+    this._routers.push(...routers);
+    return this;
+  }
+
+  /**
    * Registers a new middleware chain, acting as a wildcard/catch-all router if no patterns are added.
    * `server.use(middleware).route("/api").on("client", ...)`
    */

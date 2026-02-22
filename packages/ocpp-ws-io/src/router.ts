@@ -221,3 +221,11 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
     return this;
   }
 }
+
+/**
+ * Creates a standalone, modular `OCPPRouter` instance that can be attached
+ * to an `OCPPServer` later via `server.attachRouters()`.
+ */
+export function createRouter(...patterns: Array<string | RegExp>): OCPPRouter {
+  return new OCPPRouter(patterns);
+}
