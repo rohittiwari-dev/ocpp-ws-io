@@ -17,8 +17,8 @@ const getPort = (srv: import("node:http").Server): number => {
 describe("OCPPClient", () => {
   beforeEach(async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept, _reject, _handshake) => {
-      accept({ protocol: "ocpp1.6" });
+    server.auth((ctx) => {
+      ctx.accept({ protocol: "ocpp1.6" });
     });
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
@@ -270,9 +270,9 @@ describe("OCPPClient - Security Profiles", () => {
     let receivedPassword: Buffer | undefined;
 
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept, _reject, handshake) => {
-      receivedPassword = handshake.password;
-      accept({ protocol: "ocpp1.6" });
+    server.auth((ctx) => {
+      receivedPassword = ctx.handshake.password;
+      ctx.accept({ protocol: "ocpp1.6" });
     });
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
@@ -304,7 +304,7 @@ describe("Version-Aware Handle", () => {
 
   it("should support version-specific handler with typed params", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -344,7 +344,7 @@ describe("Version-Aware Handle", () => {
 
   it("should expose protocol in HandlerContext for generic handlers", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -388,7 +388,7 @@ describe("Version-Aware Handle", () => {
 
   it("should prioritize version-specific handler over generic handler", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -429,7 +429,7 @@ describe("Version-Aware Handle", () => {
 
   it("should fall back to generic handler when version-specific is removed", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -472,7 +472,7 @@ describe("Version-Aware Handle", () => {
 
   it("should handle wildcard for unknown methods", async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
 
@@ -547,7 +547,7 @@ describe("OCPPClient - Advanced Features", () => {
 
   it("should remove all handlers with removeAllHandlers", async () => {
     const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await srv.listen(0);
     const p = getPort(httpServer);
 
@@ -582,7 +582,7 @@ describe("OCPPClient - Advanced Features", () => {
 
   it("should send raw message via sendRaw", async () => {
     const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await srv.listen(0);
     const p = getPort(httpServer);
 
@@ -612,7 +612,7 @@ describe("OCPPClient - Advanced Features", () => {
 
   it("should reconfigure options at runtime", async () => {
     const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await srv.listen(0);
     const p = getPort(httpServer);
 
@@ -633,7 +633,7 @@ describe("OCPPClient - Advanced Features", () => {
 
   it("should reconfigure and re-setup validators when strictMode changes", async () => {
     const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await srv.listen(0);
     const p = getPort(httpServer);
 
@@ -653,7 +653,7 @@ describe("OCPPClient - Advanced Features", () => {
 
   it("should reconfigure ping interval", async () => {
     const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await srv.listen(0);
     const p = getPort(httpServer);
 
@@ -674,7 +674,7 @@ describe("OCPPClient - Advanced Features", () => {
 
   it("should handle bad messages and emit badMessage event", async () => {
     const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await srv.listen(0);
     const p = getPort(httpServer);
 
@@ -704,7 +704,7 @@ describe("OCPPClient - Advanced Features", () => {
 
   it("should attempt reconnect on unexpected disconnect", async () => {
     const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await srv.listen(0);
     const p = getPort(httpServer);
 
@@ -749,7 +749,7 @@ describe("OCPPClient - Advanced Features", () => {
 
   it("should use ping when pingIntervalMs is set", async () => {
     const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await srv.listen(0);
     const p = getPort(httpServer);
 
@@ -770,7 +770,7 @@ describe("OCPPClient - Advanced Features", () => {
 
   it("should validate outbound calls in strict mode", async () => {
     const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     srv.on("client", (sc) => {
       sc.handle("Heartbeat", async () => ({
         currentTime: new Date().toISOString(),
@@ -812,7 +812,7 @@ describe("OCPPClient - Version-Aware Call", () => {
 
   it("should call with version-specific typed params (ocpp1.6)", async () => {
     const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     srv.on("client", (sc) => {
       sc.handle("ocpp1.6", "BootNotification", async ({ params }) => {
         // ocpp1.6 BootNotification has chargePointModel/chargePointVendor
@@ -849,7 +849,7 @@ describe("OCPPClient - Version-Aware Call", () => {
 
   it("should call with version-specific typed params (ocpp2.0.1)", async () => {
     const srv = new OCPPServer({ protocols: ["ocpp2.0.1"] });
-    srv.auth((accept) => accept({ protocol: "ocpp2.0.1" }));
+    srv.auth((ctx) => ctx.accept({ protocol: "ocpp2.0.1" }));
     srv.on("client", (sc) => {
       sc.handle("ocpp2.0.1", "BootNotification", async ({ params }) => {
         // ocpp2.0.1 BootNotification has chargingStation/reason
@@ -886,7 +886,7 @@ describe("OCPPClient - Version-Aware Call", () => {
 
   it("should still work with non-versioned call (default protocol)", async () => {
     const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     srv.on("client", (sc) => {
       sc.handle("Heartbeat", async () => ({
         currentTime: new Date().toISOString(),
@@ -912,7 +912,7 @@ describe("OCPPClient - Version-Aware Call", () => {
 
   it("should support version-aware call from server to client", async () => {
     const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
 
     const callResult = new Promise<unknown>((resolve, reject) => {
       srv.on("client", async (sc) => {
@@ -1030,6 +1030,45 @@ describe("OCPPClient - Version-Aware Call", () => {
       "strictValidationFailure",
       expect.objectContaining({
         error: expect.any(Error),
+      }),
+    );
+  });
+
+  it("should emit strictValidationFailure on outbound validation error", () => {
+    const client = new OCPPClient({
+      identity: "CS_OUT_ERR",
+      endpoint: "ws://localhost:9999",
+      protocols: ["ocpp1.6"],
+      strictMode: true,
+      reconnect: false,
+    });
+
+    // Inject a mock validator that throws
+    const mockValidator = {
+      subprotocol: "ocpp1.6",
+      validate: vi.fn().mockImplementation(() => {
+        throw new Error("Outbound validation failed");
+      }),
+    };
+    (client as any)._validators = [mockValidator];
+    (client as any)._protocol = "ocpp1.6";
+
+    const emitSpy = vi.spyOn(client, "emit");
+
+    // Trigger validation logic via private method
+    expect(() => {
+      (client as any)._validateOutbound(
+        "BootNotification",
+        { status: "InvalidStatus" },
+        "conf",
+      );
+    }).toThrow("Outbound validation failed");
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      "strictValidationFailure",
+      expect.objectContaining({
+        error: expect.any(Error),
+        message: { status: "InvalidStatus" },
       }),
     );
   });

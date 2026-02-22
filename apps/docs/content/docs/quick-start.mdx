@@ -47,16 +47,19 @@ const server = new OCPPServer({
 });
 
 // Optional: Add authentication mapped to a specific endpoint path
-server.auth((accept, reject, handshake) => {
-  console.log(
-    `Connection from ${handshake.identity} at path ${handshake.pathname}`,
-  );
+server.auth((ctx) => {
+  // Access connection info
+  const { query, headers } = ctx.handshake;
+  const token = query.token;
 
-  if (handshake.identity === "BLOCKED") {
-    return reject(401, "Not authorized");
+  if (token === "valid-secret") {
+    // Determine which OCPP protocol to use
+    // and grant the connection
+    ctx.accept({ protocol: "ocpp1.6" });
+  } else {
+    // Reject unauthorized connections
+    ctx.reject(401, "Invalid token");
   }
-
-  accept({ session: { authorized: true } });
 });
 
 // Handle new client connections

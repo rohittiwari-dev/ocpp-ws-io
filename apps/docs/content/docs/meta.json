@@ -18,7 +18,8 @@
     "type-generation",
     "api-reference",
     "---Ecosystem---",
-    "voltlog-io"
+    "voltlog-io",
+    "cli"
   ],
   "title": "Documentation",
   "icon": "Pin"

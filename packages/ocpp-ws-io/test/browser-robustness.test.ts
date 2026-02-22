@@ -57,7 +57,7 @@ describe("Browser Phase 3 — Reconnect State", () => {
 
   beforeEach(async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
   });
@@ -120,7 +120,7 @@ describe("Browser Phase 3 — disconnect vs close Events", () => {
 
   beforeEach(async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
   });
@@ -206,7 +206,7 @@ describe("Browser Phase 3 — Close Code Validation", () => {
 
   beforeEach(async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
   });
@@ -249,7 +249,7 @@ describe("Browser Phase 3 — Outbound Buffering", () => {
 
   beforeEach(async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
   });
@@ -328,7 +328,7 @@ describe("Browser Phase 3 — Outbound Buffering", () => {
 
     // Restart server for reconnect to succeed
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     server.on("client", (sc) => {
       sc.on("badMessage", (data) => {
         receivedMessages.push(data.message);
@@ -351,7 +351,7 @@ describe("Browser Phase 3 — Pending Call Rejection", () => {
 
   beforeEach(async () => {
     server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((accept) => accept({ protocol: "ocpp1.6" }));
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const httpServer = await server.listen(0);
     port = getPort(httpServer);
   });

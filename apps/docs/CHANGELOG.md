@@ -1,5 +1,12 @@
 # docs
 
+## 2.1.2
+
+### Patch Changes
+
+- **CLI Documentation**: Added comprehensive documentation for the CLI tool, covering Project Setup, Simulation, Monitoring, and Development workflows.
+- **Performance**: General documentation site performance improvements.
+
 ## 2.0.2
 
 ### Patch Changes

@@ -12,15 +12,22 @@ describe("Auth and Middleware Utilities", () => {
   const mockSignal = new AbortController().signal;
 
   it("should accept connection if the first callback accepts", async () => {
-    const cb1 = vi.fn((accept) => accept({ protocol: "ocpp1.6" }));
+    const cb1 = vi.fn((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const cb2 = vi.fn(); // Should not be reached
 
     const combined = combineAuth(cb1, cb2);
 
     const acceptSpy = vi.fn();
     const rejectSpy = vi.fn();
+    const mockCtx = {
+      handshake: mockHandshake,
+      signal: mockSignal,
+      accept: acceptSpy,
+      reject: rejectSpy,
+      state: {},
+    } as any;
 
-    await combined(acceptSpy, rejectSpy, mockHandshake, mockSignal);
+    await combined(mockCtx);
 
     expect(cb1).toHaveBeenCalledTimes(1);
     expect(cb2).not.toHaveBeenCalled();
@@ -31,14 +38,21 @@ describe("Auth and Middleware Utilities", () => {
   it("should sequentially fall through to the second callback if the first neither accepts nor rejects", async () => {
     // cb1 does nothing (maybe standard validation passed but no explicit accept)
     const cb1 = vi.fn(async () => {});
-    const cb2 = vi.fn((accept) => accept({ protocol: "ocpp2.0.1" }));
+    const cb2 = vi.fn((ctx) => ctx.accept({ protocol: "ocpp2.0.1" }));
 
     const combined = combineAuth(cb1, cb2);
 
     const acceptSpy = vi.fn();
     const rejectSpy = vi.fn();
+    const mockCtx = {
+      handshake: mockHandshake,
+      signal: mockSignal,
+      accept: acceptSpy,
+      reject: rejectSpy,
+      state: {},
+    } as any;
 
-    await combined(acceptSpy, rejectSpy, mockHandshake, mockSignal);
+    await combined(mockCtx);
 
     expect(cb1).toHaveBeenCalledTimes(1);
     expect(cb2).toHaveBeenCalledTimes(1);
@@ -47,15 +61,22 @@ describe("Auth and Middleware Utilities", () => {
   });
 
   it("should instantly reject if any callback rejects, skipping subsequent callbacks", async () => {
-    const cb1 = vi.fn((_, reject) => reject(403, "Forbidden via CB1"));
-    const cb2 = vi.fn((accept) => accept()); // Should not be reached
+    const cb1 = vi.fn((ctx) => ctx.reject(403, "Forbidden via CB1"));
+    const cb2 = vi.fn((ctx) => ctx.accept()); // Should not be reached
 
     const combined = combineAuth(cb1, cb2);
 
     const acceptSpy = vi.fn();
     const rejectSpy = vi.fn();
+    const mockCtx = {
+      handshake: mockHandshake,
+      signal: mockSignal,
+      accept: acceptSpy,
+      reject: rejectSpy,
+      state: {},
+    } as any;
 
-    await combined(acceptSpy, rejectSpy, mockHandshake, mockSignal);
+    await combined(mockCtx);
 
     expect(cb1).toHaveBeenCalledTimes(1);
     expect(cb2).not.toHaveBeenCalled();
@@ -71,8 +92,15 @@ describe("Auth and Middleware Utilities", () => {
 
     const acceptSpy = vi.fn();
     const rejectSpy = vi.fn();
+    const mockCtx = {
+      handshake: mockHandshake,
+      signal: mockSignal,
+      accept: acceptSpy,
+      reject: rejectSpy,
+      state: {},
+    } as any;
 
-    await combined(acceptSpy, rejectSpy, mockHandshake, mockSignal);
+    await combined(mockCtx);
 
     expect(cb1).toHaveBeenCalledTimes(1);
     expect(cb2).toHaveBeenCalledTimes(1);
@@ -93,8 +121,15 @@ describe("Auth and Middleware Utilities", () => {
 
     const acceptSpy = vi.fn();
     const rejectSpy = vi.fn();
+    const mockCtx = {
+      handshake: mockHandshake,
+      signal: mockSignal,
+      accept: acceptSpy,
+      reject: rejectSpy,
+      state: {},
+    } as any;
 
-    await combined(acceptSpy, rejectSpy, mockHandshake, mockSignal);
+    await combined(mockCtx);
 
     expect(cb1).toHaveBeenCalledTimes(1);
     expect(cb2).not.toHaveBeenCalled();
@@ -107,12 +142,12 @@ describe("Auth and Middleware Utilities", () => {
 
   describe("defineAuth and defineMiddleware", () => {
     it("should natively passthrough auth functions for IDE typings", () => {
-      const cb = defineAuth((accept, reject) => accept());
+      const cb = defineAuth((ctx) => ctx.accept());
       expect(typeof cb).toBe("function");
     });
 
     it("should natively passthrough middleware functions for IDE typings", () => {
-      const mw = defineMiddleware(async (ctx, next) => next());
+      const mw = defineMiddleware(async (ctx) => ctx.next());
       expect(typeof mw).toBe("function");
     });
 

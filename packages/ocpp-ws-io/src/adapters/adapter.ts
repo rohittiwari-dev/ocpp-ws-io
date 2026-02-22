@@ -20,6 +20,14 @@ export class InMemoryAdapter implements EventAdapterInterface {
     }
   }
 
+  async publishBatch(
+    messages: { channel: string; data: unknown }[],
+  ): Promise<void> {
+    for (const msg of messages) {
+      await this.publish(msg.channel, msg.data);
+    }
+  }
+
   async subscribe(
     channel: string,
     handler: (data: unknown) => void,
@@ -56,7 +64,32 @@ export class InMemoryAdapter implements EventAdapterInterface {
     return this._presence.get(identity) || null;
   }
 
+  async getPresenceBatch(identities: string[]): Promise<(string | null)[]> {
+    return identities.map((id) => this._presence.get(id) || null);
+  }
+
   async removePresence(identity: string): Promise<void> {
     this._presence.delete(identity);
   }
+}
+
+/**
+ * Helper function to create a custom EventAdapter without needing to define a rigid Class.
+ * Provides full TypeScript inference for the `EventAdapterInterface`.
+ *
+ * @example
+ * ```typescript
+ * const myAdapter = defineAdapter({
+ *   publish: async (channel, data) => { ... },
+ *   subscribe: async (channel, handler) => { ... },
+ *   unsubscribe: async (channel) => { ... },
+ *   disconnect: async () => { ... }
+ * });
+ * server.setAdapter(myAdapter);
+ * ```
+ */
+export function defineAdapter(
+  adapter: EventAdapterInterface,
+): EventAdapterInterface {
+  return adapter;
 }

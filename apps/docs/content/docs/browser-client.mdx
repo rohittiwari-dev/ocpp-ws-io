@@ -86,6 +86,9 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 | `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls                |
 | `maxBadMessages`            | `number`                 | `Infinity` | Close after N consecutive bad messages       |
 | `respondWithDetailedErrors` | `boolean`                | `false`    | Include error details in RPC error responses |
+| `pingIntervalMs`            | `number`                 | `30000`    | Includes ±25% randomized jitter              |
+| `strictMode`                | `boolean \| string[]`    | `false`    | Enable/restrict schema validation            |
+| `strictModeMethods`         | `string[]`               | —          | Restrict validation to specific methods      |
 
 ---
 
@@ -336,19 +339,24 @@ client.on("close", ({ code, reason }) => {
 });
 ```
 
-### Toggle Reconnection at Runtime
+### Reconfigurable Options
 
-```typescript
-// Disable reconnection
-client.reconfigure({ reconnect: false });
+Unlike the constructor which creates a new connection, `reconfigure()` allows you to change the behavior of the existing client instance. Some options take effect immediately, while others only apply on the next connection attempt.
 
-// Re-enable with different settings
-client.reconfigure({
-  reconnect: true,
-  maxReconnects: 5,
-  backoffMin: 2000,
-});
-```
+| Option                      | Effect on Reconfigure                                    |
+| :-------------------------- | :------------------------------------------------------- |
+| `identity`                  | Applies on next `connect()` or reconnect                 |
+| `endpoint`                  | Applies on next `connect()` or reconnect                 |
+| `protocols`                 | Applies on next `connect()` or reconnect                 |
+| `query`                     | Applies on next `connect()` or reconnect                 |
+| `reconnect`                 | **Immediate** — Cancels pending reconnects if `false`    |
+| `maxReconnects`             | **Immediate** — Evaluated on next disconnect             |
+| `backoffMin`                | **Immediate** — Used for next reconnect calculation      |
+| `backoffMax`                | **Immediate** — Used for next reconnect calculation      |
+| `callTimeoutMs`             | **Immediate** — Applies to all future `.call()`s         |
+| `callConcurrency`           | **Immediate** — Dynamically resizes the processing queue |
+| `maxBadMessages`            | **Immediate** — Applies to future malformed messages     |
+| `respondWithDetailedErrors` | **Immediate** — Applies to future thrown RPC errors      |
 
 ---
 

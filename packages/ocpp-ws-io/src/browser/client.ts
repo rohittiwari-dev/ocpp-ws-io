@@ -12,7 +12,6 @@
  * - Bad message handling
  * - NOREPLY support
  */
-import { createId } from "@paralleldrive/cuid2";
 import { initLogger } from "../init-logger.js";
 import { type MiddlewareFunction, MiddlewareStack } from "../middleware.js";
 import type { MiddlewareContext } from "../types.js";
@@ -494,7 +493,7 @@ export class BrowserOCPPClient<
     params: unknown,
     options: CallOptions,
   ): Promise<unknown> {
-    const msgId = createId();
+    const msgId = this._generateMessageId();
     const timeoutMs = options.timeoutMs ?? this._options.callTimeoutMs;
 
     const ctx: MiddlewareContext = {
@@ -987,5 +986,24 @@ export class BrowserOCPPClient<
   private _cleanup(): void {
     this._closePromise = null;
     this._ws = null;
+  }
+
+  // ─── Internal: ID Generation ─────────────────────────────────
+
+  private _generateMessageId(): string {
+    // 1. Try native crypto.randomUUID (Fastest, secure, requires HTTPS/localhost)
+    if (
+      typeof crypto !== "undefined" &&
+      typeof crypto.randomUUID === "function"
+    ) {
+      return crypto.randomUUID();
+    }
+
+    // 2. Fallback to Math.random() for older browsers or insecure HTTP contexts
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
   }
 }
