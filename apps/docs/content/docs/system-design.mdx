@@ -104,6 +104,30 @@ To handle unstable networks (4G/LTE), the server keeps session data in memory ev
 1.  **Sticky Sessions**: If a client reconnects with the same `identity`, their `session` object is restored.
 2.  **Garbage Collection**: A background job removes sessions that have been inactive for > 2 hours (configurable).
 3.  **TCP Keep-Alive**: Enabled by default to keep connections alive through load balancers.
+4.  **Ping Jitter**: Native 25% randomized jitter prevents "Thundering Herd" CPU freezes when thousands of stations reconnect simultaneously.
+
+### Rate Limiting (Noisy Neighbor Protection)
+
+To prevent firmware loops from overwhelming the CPU parsing engines (DDoS), `ocpp-ws-io` includes an advanced Token Bucket rate limiter directly at the socket layer.
+
+- Use global rate limits to bound maximum throughput per connected station.
+- Use method-specific rules to aggressively drop rapid-fire `MeterValues` while allowing `StopTransaction` through.
+- Define custom `onLimitExceeded` logic (e.g., dropping the payload or forcibly disconnecting the client).
+
+```typescript
+const server = new OCPPServer({
+  protocols: ["ocpp1.6"],
+  rateLimit: {
+    limit: 100, // 100 total messages...
+    windowMs: 60000, // ...per 60 seconds.
+    onLimitExceeded: "disconnect", // "ignore" | "disconnect" | Custom Function
+    methods: {
+      MeterValues: { limit: 10, windowMs: 60000 },
+      Heartbeat: { limit: 2, windowMs: 60000 },
+    },
+  },
+});
+```
 
 ---
 
@@ -239,14 +263,16 @@ flowchart TD
 
 1.  **Protocol Layer**: Checks if the message is a valid OCPP array `[MessageType, MessageId, ...]`.
 2.  **Schema Layer**:
-    - If `strictMode: true` is enabled, the library validates the payload against the official OCPP JSON schemas (using `ajv` or similar validators provided in `standardValidators`).
+    - If `strictMode: true` is enabled, the library validates the payload against the official OCPP JSON schemas.
+    - To save CPU processing overhead on trusted hardware configurations, developers can use `strictModeMethods: ["BootNotification"]` to ONLY validate security-critical pathways while instantly bypassing heavy schemas for high-traffic events like `Heartbeat`.
     - Invalid payloads are rejected immediately with a `FormatViolation` or `PropertyConstraintViolation`.
 3.  **App Layer**: Your code checks business rules (e.g., "Is this station authorized?").
 
 ```typescript
-// Enabling Strict Schema Validation
+// Enabling Strict Schema Validation selectively for maximum performance
 const server = new OCPPServer({
-  strictMode: true, // Enforces OCPP schema compliance
-  strictModeValidators: standardValidators, // Built-in validators
+  strictMode: true,
+  strictModeMethods: ["BootNotification", "Authorize", "StartTransaction"],
+  strictModeValidators: standardValidators,
 });
 ```

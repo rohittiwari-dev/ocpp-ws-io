@@ -132,12 +132,30 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   /**
    * Returns current node observability statistics
-   * (e.g. connected socket count and tracked memory sessions)
+   * (e.g. connected socket count, tracked memory sessions, and process CPU/Memory usage).
+   * Fully compatible with Loki/Prometheus node metric ingestion.
    */
-  stats(): { connectedClients: number; activeSessions: number } {
+  stats(): import("./types.js").OCPPServerStats {
+    let bufferedAmount = 0;
+    if (this._wss) {
+      for (const ws of this._wss.clients) {
+        bufferedAmount += ws.bufferedAmount;
+      }
+    }
+
     return {
       connectedClients: this._clients.size,
       activeSessions: this._sessions.size,
+      uptimeSeconds: process.uptime(),
+      pid: process.pid,
+      memoryUsage: process.memoryUsage(),
+      cpuUsage: process.cpuUsage(),
+      webSockets: this._wss
+        ? {
+            total: this._wss.clients.size,
+            bufferedAmount,
+          }
+        : undefined,
     };
   }
   /**

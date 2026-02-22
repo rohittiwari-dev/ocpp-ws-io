@@ -58,6 +58,32 @@ The `.route()` method supports exact string matching, Express-style parameters, 
 - **Wildcards**: `server.route("/public/*")`
 - **RegEx**: `server.route(/^\/legacy\/v[1-2]\/.*$/)`
 
+### Direct Message Handling (`router.handle`)
+
+Instead of manually listening for the `"client"` connection event and then attaching handlers to the client, you can bind message handlers **directly to the router**.
+
+When a charging station connects to this route, the router will automatically bind these handlers to the underlying `OCPPClient`.
+
+```typescript
+const v2Router = server.route("/api/v2/chargers/*");
+
+// Directly handle BootNotifications for ANY station connecting to /api/v2
+v2Router.handle("ocpp2.0.1", "BootNotification", async (ctx) => {
+  console.log(`Booting station: ${ctx.client.identity}`);
+
+  return {
+    currentTime: new Date().toISOString(),
+    interval: 300,
+    status: "Accepted",
+  };
+});
+
+// Directly handle incoming Heartbeats
+v2Router.handle("Heartbeat", () => ({
+  currentTime: new Date().toISOString(),
+}));
+```
+
 ---
 
 ## Router-level Middleware
@@ -113,6 +139,28 @@ const modernRouter = server
     }
   })
   .route("/api/v2/*");
+```
+
+---
+
+## Path-Specific CORS
+
+You can also restrict WebSocket connections based on the Origin header or the client's IP address directly on the router. This allows you to expose public endpoints while tightly locking down administrative or internal endpoints.
+
+```typescript title="cors-routing.ts"
+// 1. Lock down the Admin router to internal networks
+const adminRouter = server
+  .cors({
+    allowedIPs: ["10.0.0.0/8", "192.168.1.50"],
+  })
+  .route("/api/admin/*");
+
+// 2. Lock down a dashboard WebSocket to a specific web domain
+const dashboardRouter = server
+  .cors({
+    allowedOrigins: ["https://dashboard.example.com"],
+  })
+  .route("/api/dashboard");
 ```
 
 ---

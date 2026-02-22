@@ -86,6 +86,9 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 | `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls                |
 | `maxBadMessages`            | `number`                 | `Infinity` | Close after N consecutive bad messages       |
 | `respondWithDetailedErrors` | `boolean`                | `false`    | Include error details in RPC error responses |
+| `pingIntervalMs`            | `number`                 | `30000`    | Includes ±25% randomized jitter              |
+| `strictMode`                | `boolean \| string[]`    | `false`    | Enable/restrict schema validation            |
+| `strictModeMethods`         | `string[]`               | —          | Restrict validation to specific methods      |
 
 ---
 

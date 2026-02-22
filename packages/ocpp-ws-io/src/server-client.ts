@@ -166,7 +166,22 @@ export class OCPPServerClient extends OCPPClient {
       });
       this._ws?.terminate();
     } else if (typeof action === "function") {
-      action(this, rawData);
+      try {
+        const res = action(this, rawData);
+        if (res instanceof Promise) {
+          res.catch((err) => {
+            this._logger?.error?.("Error in custom onLimitExceeded handler", {
+              identity: this.identity,
+              error: err,
+            });
+          });
+        }
+      } catch (err) {
+        this._logger?.error?.("Error in custom onLimitExceeded handler", {
+          identity: this.identity,
+          error: err,
+        });
+      }
     } else {
       this._logger?.debug?.("Rate limit exceeded — ignoring message", {
         identity: this.identity,

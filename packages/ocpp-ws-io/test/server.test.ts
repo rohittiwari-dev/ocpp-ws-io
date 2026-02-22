@@ -193,6 +193,14 @@ describe("OCPPServer", () => {
     const stats1 = server.stats();
     expect(stats1.connectedClients).toBe(0);
     expect(stats1.activeSessions).toBe(0);
+    expect(stats1.uptimeSeconds).toBeTypeOf("number");
+    expect(stats1.pid).toBeTypeOf("number");
+    expect(stats1.memoryUsage).toBeDefined();
+    expect(stats1.memoryUsage.heapUsed).toBeTypeOf("number");
+    expect(stats1.cpuUsage).toBeDefined();
+    expect(stats1.webSockets).toBeDefined();
+    expect(stats1.webSockets?.total).toBe(0);
+    expect(stats1.webSockets?.bufferedAmount).toBe(0);
 
     const client = new OCPPClient({
       identity: "CS_STATS",
@@ -207,6 +215,8 @@ describe("OCPPServer", () => {
     const stats2 = server.stats();
     expect(stats2.connectedClients).toBe(1);
     expect(stats2.activeSessions).toBe(1);
+    expect(stats2.uptimeSeconds).toBeGreaterThan(0);
+    expect(stats2.webSockets?.total).toBe(1);
 
     await client.close();
   });

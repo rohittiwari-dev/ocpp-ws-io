@@ -9,12 +9,12 @@ import type {
   AuthCallback,
   CORSOptions,
   ConnectionMiddleware,
-  HandlerContext,
   OCPPProtocol,
   RouterConfig,
+  RouterHandlerContext,
+  RouterWildcardHandler,
   ServerEvents,
   TypedEventEmitter,
-  WildcardHandler,
 } from "./types.js";
 
 /**
@@ -156,7 +156,7 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
     version: V,
     method: M,
     handler: (
-      context: HandlerContext<OCPPRequestType<V, M>>,
+      context: RouterHandlerContext<OCPPRequestType<V, M>>,
     ) => OCPPResponseType<V, M> | Promise<OCPPResponseType<V, M>>,
   ): this;
 
@@ -167,7 +167,7 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
   handle<S extends string>(
     version: S extends OCPPProtocol ? never : S,
     method: string,
-    handler: (context: HandlerContext<Record<string, any>>) => any,
+    handler: (context: RouterHandlerContext<Record<string, any>>) => any,
   ): this;
 
   /**
@@ -176,7 +176,7 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
   handle<M extends AllMethodNames<OCPPProtocol>>(
     method: M,
     handler: (
-      context: HandlerContext<OCPPRequestType<OCPPProtocol, M>>,
+      context: RouterHandlerContext<OCPPRequestType<OCPPProtocol, M>>,
     ) =>
       | OCPPResponseType<OCPPProtocol, M>
       | Promise<OCPPResponseType<OCPPProtocol, M>>,
@@ -186,17 +186,37 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handle(
     method: string,
-    handler: (context: HandlerContext<Record<string, any>>) => any,
+    handler: (context: RouterHandlerContext<Record<string, any>>) => any,
   ): this;
 
   /** Binds a wildcard handler to all clients that match this route. */
-  handle(handler: WildcardHandler): this;
+  handle(handler: RouterWildcardHandler): this;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handle(...args: any[]): this {
     this.on("client", (client: OCPPServerClient) => {
+      const originalHandler = args[args.length - 1];
+      const wrappedArgs = [...args];
+
+      if (typeof originalHandler === "function") {
+        wrappedArgs[wrappedArgs.length - 1] = (...handlerArgs: any[]) => {
+          const contextIndex = handlerArgs.length - 1;
+          const context = handlerArgs[contextIndex];
+
+          if (context && typeof context === "object") {
+            Object.defineProperty(context, "client", {
+              value: client,
+              enumerable: true,
+              configurable: true,
+            });
+          }
+
+          return originalHandler(...handlerArgs);
+        };
+      }
+
       // @ts-expect-error - forward arguments to client
-      client.handle(...args);
+      client.handle(...wrappedArgs);
     });
     return this;
   }

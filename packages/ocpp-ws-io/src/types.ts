@@ -173,6 +173,16 @@ export type WildcardHandler = (
   context: HandlerContext,
 ) => unknown | Promise<unknown>;
 
+export interface RouterHandlerContext<T = unknown> extends HandlerContext<T> {
+  /** The specific server client that issued the message. */
+  client: import("./server-client.js").OCPPServerClient;
+}
+
+export type RouterWildcardHandler = (
+  method: string,
+  context: RouterHandlerContext,
+) => unknown | Promise<unknown>;
+
 // ─── Call Options ────────────────────────────────────────────────
 
 export interface CallOptions {
@@ -407,7 +417,7 @@ export interface RateLimitOptions {
     | ((
         client: import("./server-client.js").OCPPServerClient,
         rawData: unknown,
-      ) => void);
+      ) => void | Promise<void>);
   /**
    * Specific limits applied purely to individual methods (e.g. Heartbeat, BootNotification).
    * Note: The method must be parsed from the raw JSON payload to apply this.
@@ -493,6 +503,30 @@ export interface ServerOptions {
    * - `LoggingConfig` → custom configuration
    */
   logging?: LoggingConfig | false;
+}
+
+// ─── Observability ─────────────────────────────────────────────────
+
+export interface OCPPServerStats {
+  /** Number of currently connected WebSockets */
+  connectedClients: number;
+  /** Number of active memory sessions */
+  activeSessions: number;
+  /** Process uptime in seconds */
+  uptimeSeconds: number;
+  /** Process Memory Usage (bytes) */
+  memoryUsage: NodeJS.MemoryUsage;
+  /** Process CPU Time (microseconds) */
+  cpuUsage: NodeJS.CpuUsage;
+  /** Process ID */
+  pid: number;
+  /** Low-level WebSocket Server metrics */
+  webSockets?: {
+    /** Total active clients managed by the underlying ws server */
+    total: number;
+    /** Current messages waiting to be flushed to network (bytes) */
+    bufferedAmount: number;
+  };
 }
 
 // ─── Listen Options ──────────────────────────────────────────────
