@@ -1,6 +1,6 @@
 {
   "name": "ocpp-ws-io-monorepo",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "private": true,
   "scripts": {
     "build": "turbo run build",
