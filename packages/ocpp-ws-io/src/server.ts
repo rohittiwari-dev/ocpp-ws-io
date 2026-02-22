@@ -79,7 +79,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     if (options.strictMode) {
       if (!options.strictModeValidators && !options.protocols?.length) {
         throw new Error(
-          "strictMode requires either strictModeValidators or protocols to be specified"
+          "strictMode requires either strictModeValidators or protocols to be specified",
         );
       }
     }
@@ -260,7 +260,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * Registers a top-level auth handler, returning a router to attach `.on()` or `.use()`.
    */
   auth<TSession = Record<string, unknown>>(
-    callback: AuthCallback<TSession>
+    callback: AuthCallback<TSession>,
   ): OCPPRouter {
     const router = new OCPPRouter();
     router.auth(callback);
@@ -273,7 +273,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   async listen(
     port = 0,
     host?: string,
-    options?: ListenOptions
+    options?: ListenOptions,
   ): Promise<Server> {
     let httpServer: Server;
 
@@ -317,7 +317,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     const upgradeHandler = (
       req: IncomingMessage,
       socket: Duplex,
-      head: Buffer
+      head: Buffer,
     ) => {
       this._handleUpgrade(req, socket, head).catch((err) => {
         // Ensure socket is destroyed on error to prevent leaks
@@ -346,7 +346,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           httpServer.close();
           this._httpServers.delete(httpServer);
         },
-        { once: true }
+        { once: true },
       );
     }
 
@@ -374,7 +374,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   get handleUpgrade(): (
     req: IncomingMessage,
     socket: Duplex,
-    head: Buffer
+    head: Buffer,
   ) => Promise<void> {
     return (req, socket, head) => {
       return this._handleUpgrade(req, socket, head).catch((err) => {
@@ -408,7 +408,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private async _handleUpgrade(
     req: IncomingMessage,
     socket: Duplex,
-    head: Buffer
+    head: Buffer,
   ): Promise<void> {
     // ── Step 0: Server state guard ──
     if (this._state !== "OPEN") {
@@ -444,7 +444,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     // ── Step 2: Parse URL & Execute Router ──
     const url = new URL(
       req.url ?? "/",
-      `http://${req.headers.host ?? "localhost"}`
+      `http://${req.headers.host ?? "localhost"}`,
     );
 
     let matchedHandler: AuthCallback | undefined;
@@ -491,7 +491,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           if (router._routeConfig) {
             matchedRouterConfig = Object.assign(
               matchedRouterConfig || {},
-              router._routeConfig
+              router._routeConfig,
             );
           }
         }
@@ -656,7 +656,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
                 const rejectAuth = (
                   code = 401,
-                  message = "Unauthorized"
+                  message = "Unauthorized",
                 ): never => {
                   if (!settled) {
                     settled = true;
@@ -679,7 +679,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
                       reject(ac.signal.reason);
                     }
                   },
-                  { once: true }
+                  { once: true },
                 );
 
                 this._logger?.debug?.("Executing auth callback", {
@@ -696,7 +696,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
                 };
 
                 matchedHandler!(authCtx);
-              }
+              },
             );
           }
         });
@@ -860,7 +860,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   private _updateSessionActivity(
     identity: string,
-    data: Record<string, unknown>
+    data: Record<string, unknown>,
   ) {
     this._sessions.set(identity, {
       data,
@@ -884,7 +884,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
     // Close all clients gracefully
     const closePromises = Array.from(this._clients).map((client) =>
-      client.close(options).catch(() => {})
+      client.close(options).catch(() => {}),
     );
     await Promise.allSettled(closePromises);
 
@@ -905,7 +905,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       (server) =>
         new Promise<void>((resolve) => {
           server.close(() => resolve());
-        })
+        }),
     );
     await Promise.allSettled(serverClosePromises);
     this._httpServers.clear();
@@ -947,7 +947,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     version: V,
     method: M,
     params: OCPPRequestType<V, M>,
-    options?: CallOptions
+    options?: CallOptions,
   ): Promise<OCPPResponseType<V, M> | undefined>;
 
   // 2. Global overload (infers method from any protocol)
@@ -955,7 +955,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     identity: string,
     method: M,
     params: OCPPRequestType<any, M>,
-    options?: CallOptions
+    options?: CallOptions,
   ): Promise<OCPPResponseType<any, M> | undefined>;
 
   // 3. Custom/Loose overload
@@ -964,7 +964,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     identity: string,
     method: string,
     params: Record<string, any>,
-    options?: CallOptions
+    options?: CallOptions,
   ): Promise<any | undefined>;
 
   async sendToClient(...args: any[]): Promise<any> {
@@ -1035,7 +1035,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     version: V,
     method: M,
     params: OCPPRequestType<V, M>,
-    options?: CallOptions
+    options?: CallOptions,
   ): Promise<OCPPResponseType<V, M> | undefined>;
 
   // 2. Global overload
@@ -1043,7 +1043,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     identity: string,
     method: M,
     params: OCPPRequestType<any, M>,
-    options?: CallOptions
+    options?: CallOptions,
   ): Promise<OCPPResponseType<any, M> | undefined>;
 
   // 3. Custom/Loose overload
@@ -1052,7 +1052,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     identity: string,
     method: string,
     params: Record<string, any>,
-    options?: CallOptions
+    options?: CallOptions,
   ): Promise<any | undefined>;
 
   async safeSendToClient(...args: any[]): Promise<any> {
@@ -1073,8 +1073,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             typeof args[2] === "string"
               ? args[2] // versioned: id, ver, method, params, options
               : args.length >= 3 && typeof args[1] === "string"
-              ? args[1] // global: id, method, params, options
-              : "unknown",
+                ? args[1] // global: id, method, params, options
+                : "unknown",
           error,
         });
       }
@@ -1089,7 +1089,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
     // 1. Subscribe to Broadcast
     await this._adapter.subscribe("ocpp:broadcast", (msg: unknown) =>
-      this._onBroadcast(msg)
+      this._onBroadcast(msg),
     );
 
     // 2. Subscribe to Unicast (My Node)
@@ -1097,7 +1097,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       `ocpp:node:${this._nodeId}`,
       (msg: unknown) => {
         this._onUnicast(msg);
-      }
+      },
     );
   }
 
@@ -1175,10 +1175,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   async broadcast<V extends AllMethodNames<any>>(
     method: V,
-    params: OCPPRequestType<any, V>
+    params: OCPPRequestType<any, V>,
   ): Promise<void> {
     const localPromises = Array.from(this._clients).map((client) =>
-      client.call(method as any, params as any).catch(() => {})
+      client.call(method as any, params as any).catch(() => {}),
     );
 
     const remotePromise = this._adapter
@@ -1206,7 +1206,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     identities: string[],
     method: V,
     params: OCPPRequestType<any, V>,
-    options?: CallOptions
+    options?: CallOptions,
   ): Promise<void> {
     const localIdentities = new Set<string>();
     const localPromises: Promise<any>[] = [];
@@ -1217,14 +1217,14 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       if (client) {
         localIdentities.add(identity);
         localPromises.push(
-          client.call(method as any, params as any, options).catch(() => {})
+          client.call(method as any, params as any, options).catch(() => {}),
         );
       }
     }
 
     // 2. Resolve remote clients
     const remoteIdentities = identities.filter(
-      (id) => !localIdentities.has(id)
+      (id) => !localIdentities.has(id),
     );
 
     if (remoteIdentities.length > 0 && this._adapter) {
@@ -1234,7 +1234,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         presences = await this._adapter.getPresenceBatch(remoteIdentities);
       } else if (this._adapter.getPresence) {
         presences = await Promise.all(
-          remoteIdentities.map((id) => this._adapter!.getPresence!(id))
+          remoteIdentities.map((id) => this._adapter!.getPresence!(id)),
         );
       }
 
@@ -1264,8 +1264,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         } else {
           await Promise.all(
             batchMessages.map((bm) =>
-              this._adapter!.publish(bm.channel, bm.data)
-            )
+              this._adapter!.publish(bm.channel, bm.data),
+            ),
           );
         }
       }
