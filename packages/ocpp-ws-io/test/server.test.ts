@@ -183,6 +183,33 @@ describe("OCPPServer", () => {
     await server.close({ force: true });
     expect(server.clients.size).toBe(0);
   });
+
+  it("should expose server stats", async () => {
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
+    const httpServer = await server.listen(0);
+    port = getPort(httpServer);
+
+    const stats1 = server.stats();
+    expect(stats1.connectedClients).toBe(0);
+    expect(stats1.activeSessions).toBe(0);
+
+    const client = new OCPPClient({
+      identity: "CS_STATS",
+      endpoint: `ws://localhost:${port}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 100));
+
+    const stats2 = server.stats();
+    expect(stats2.connectedClients).toBe(1);
+    expect(stats2.activeSessions).toBe(1);
+
+    await client.close();
+  });
 });
 
 describe("OCPPServerClient", () => {
@@ -270,6 +297,38 @@ describe("OCPPServerClient", () => {
     expect(typeof sc.session).toBe("object");
 
     await client.close({ force: true });
+  });
+
+  it("should support forceful close() from server side", async () => {
+    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
+    const httpServer = await server.listen(0);
+    port = getPort(httpServer);
+
+    const clientReceived = new Promise<OCPPServerClient>((resolve) => {
+      server.on("client", (sc) => resolve(sc as OCPPServerClient));
+    });
+
+    const client = new OCPPClient({
+      identity: "CS_SERVER_CLOSE",
+      endpoint: `ws://localhost:${port}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+
+    await client.connect();
+    const sc = await clientReceived;
+
+    const disconnectSpy = vi.fn();
+    client.on("close", disconnectSpy);
+
+    await sc.close({ code: 4000, reason: "Kicked" });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(client.state).toBe(OCPPClient.CLOSED);
+    expect(disconnectSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 4000, reason: "Kicked" }),
+    );
   });
 });
 
@@ -505,7 +564,10 @@ describe("OCPPServer - Robustness & Clustering", () => {
     // but currently it's hardcoded private.
     // However, we can control the time advance.
 
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    server = new OCPPServer({
+      protocols: ["ocpp1.6"],
+      sessionTtlMs: 2 * 60 * 60 * 1000,
+    });
     server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
 
     const httpServer = await server.listen(0);

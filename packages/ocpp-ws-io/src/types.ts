@@ -437,6 +437,11 @@ export interface ServerOptions {
   /** Include error details in responses — inherited (default: false) */
   respondWithDetailedErrors?: boolean;
   /**
+   * Session inactivity timeout in milliseconds before garbage collection.
+   * (default: 7200000 / 2 hours)
+   */
+  sessionTtlMs?: number;
+  /**
    * Maximum time (ms) to wait for the auth callback to resolve during
    * a WebSocket upgrade handshake. If the callback does not settle within
    * this window, the socket is destroyed and an `upgradeAborted` event

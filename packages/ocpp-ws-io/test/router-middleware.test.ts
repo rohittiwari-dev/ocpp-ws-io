@@ -166,4 +166,36 @@ describe("OCPPRouter - Middleware & Multiplexing", () => {
     expect(finalState.initial).toBe("hello");
     expect(finalState.injectedData).toBe("world");
   });
+
+  it("should support defining handlers directly on the router via .handle()", async () => {
+    server = new OCPPServer({ logging: false });
+    httpServer = await server.listen(0);
+    const port = (httpServer.address() as any).port;
+
+    server
+      .route("/direct/:id/:identity")
+      .handle("BootNotification", async (ctx) => {
+        return {
+          currentTime: new Date().toISOString(),
+          interval: 300,
+          status: "Accepted",
+        };
+      });
+
+    client1 = new OCPPClient({
+      identity: "CP-1",
+      endpoint: `ws://localhost:${port}/direct/123`,
+      protocols: ["ocpp1.6"],
+    });
+
+    await client1.connect();
+
+    const response = await client1.call("ocpp1.6", "BootNotification", {
+      chargePointVendor: "VendorX",
+      chargePointModel: "ModelY",
+    });
+
+    expect(response.status).toBe("Accepted");
+    expect((response as any).interval).toBe(300);
+  });
 });

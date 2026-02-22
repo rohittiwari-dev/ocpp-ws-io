@@ -1,11 +1,20 @@
 import { EventEmitter } from "node:events";
+import type { OCPPServerClient } from "./server-client.js";
+import type {
+  AllMethodNames,
+  OCPPRequestType,
+  OCPPResponseType,
+} from "./generated/index.js";
 import type {
   AuthCallback,
-  ConnectionMiddleware,
   CORSOptions,
+  ConnectionMiddleware,
+  HandlerContext,
+  OCPPProtocol,
   RouterConfig,
   ServerEvents,
   TypedEventEmitter,
+  WildcardHandler,
 } from "./types.js";
 
 /**
@@ -137,6 +146,58 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
     callback: AuthCallback<TSession>,
   ): this {
     this.authCallback = callback as AuthCallback<unknown>;
+    return this;
+  }
+
+  /**
+   * Binds a version-specific OCPP message handler directly to all clients that match this route.
+   */
+  handle<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+    version: V,
+    method: M,
+    handler: (
+      context: HandlerContext<OCPPRequestType<V, M>>,
+    ) => OCPPResponseType<V, M> | Promise<OCPPResponseType<V, M>>,
+  ): this;
+
+  /**
+   * Binds a custom/extension message handler directly to all clients that match this route.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handle<S extends string>(
+    version: S extends OCPPProtocol ? never : S,
+    method: string,
+    handler: (context: HandlerContext<Record<string, any>>) => any,
+  ): this;
+
+  /**
+   * Binds a message handler directly to all clients that match this route using the default protocol.
+   */
+  handle<M extends AllMethodNames<OCPPProtocol>>(
+    method: M,
+    handler: (
+      context: HandlerContext<OCPPRequestType<OCPPProtocol, M>>,
+    ) =>
+      | OCPPResponseType<OCPPProtocol, M>
+      | Promise<OCPPResponseType<OCPPProtocol, M>>,
+  ): this;
+
+  /** Binds a custom/extension method not in the typed map. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handle(
+    method: string,
+    handler: (context: HandlerContext<Record<string, any>>) => any,
+  ): this;
+
+  /** Binds a wildcard handler to all clients that match this route. */
+  handle(handler: WildcardHandler): this;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handle(...args: any[]): this {
+    this.on("client", (client: OCPPServerClient) => {
+      // @ts-expect-error - forward arguments to client
+      client.handle(...args);
+    });
     return this;
   }
 }

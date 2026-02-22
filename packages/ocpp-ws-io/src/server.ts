@@ -9,9 +9,9 @@ import type { Duplex } from "node:stream";
 import type { TLSSocket } from "node:tls";
 import { createId } from "@paralleldrive/cuid2";
 import { WebSocketServer } from "ws";
+import { checkCORS } from "./cors.js";
 import { initLogger } from "./init-logger.js";
 import { executeMiddlewareChain, OCPPRouter } from "./router.js";
-import { checkCORS } from "./cors.js";
 import { OCPPServerClient } from "./server-client.js";
 
 import {
@@ -21,8 +21,8 @@ import {
   type CallOptions,
   type ClientOptions,
   type CloseOptions,
-  type ConnectionMiddleware,
   type CORSOptions,
+  type ConnectionMiddleware,
   type EventAdapterInterface,
   type HandshakeInfo,
   type ListenOptions,
@@ -70,8 +70,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     { data: Record<string, any>; lastActive: number }
   >();
   private _gcInterval: NodeJS.Timeout | null = null;
-  // Default session timeout: 2 hours
-  private readonly _sessionTimeoutMs = 2 * 60 * 60 * 1000;
+  private readonly _sessionTimeoutMs: number;
 
   constructor(options: ServerOptions = {}) {
     super();
@@ -93,8 +92,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       maxBadMessages: Infinity,
       respondWithDetailedErrors: false,
       handshakeTimeoutMs: 30000,
+      sessionTtlMs: 2 * 60 * 60 * 1000,
       ...options,
     };
+
+    this._sessionTimeoutMs = this._options.sessionTtlMs!;
 
     // Initialize WebSocketServer immediately (ws best practice: noServer mode)
     this._wss = new WebSocketServer({ noServer: true });
@@ -125,6 +127,17 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   get state(): "OPEN" | "CLOSING" | "CLOSED" {
     return this._state;
+  }
+
+  /**
+   * Returns current node observability statistics
+   * (e.g. connected socket count and tracked memory sessions)
+   */
+  stats(): { connectedClients: number; activeSessions: number } {
+    return {
+      connectedClients: this._clients.size,
+      activeSessions: this._sessions.size,
+    };
   }
 
   /**
@@ -1017,8 +1030,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             typeof args[2] === "string"
               ? args[2] // versioned: id, ver, method, params, options
               : args.length >= 3 && typeof args[1] === "string"
-              ? args[1] // global: id, method, params, options
-              : "unknown",
+                ? args[1] // global: id, method, params, options
+                : "unknown",
           error,
         });
       }

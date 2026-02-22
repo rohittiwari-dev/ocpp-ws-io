@@ -63,4 +63,18 @@ export class OCPPServerClient extends OCPPClient {
       "Cannot connect from server client — connection is managed by the server",
     );
   }
+
+  /**
+   * Forcibly disconnects this charging station from the server.
+   * Useful for authentication revocation, administrative kicks, or clearing hung connections.
+   * By default, waits for pending calls to finish before closing (awaitPending: true).
+   *
+   * @example
+   * await client.close({ code: 1000, reason: "Admin revocation" });
+   */
+  override close(
+    options: import("./types.js").CloseOptions = {},
+  ): Promise<{ code: number; reason: string }> {
+    return super.close(options);
+  }
 }

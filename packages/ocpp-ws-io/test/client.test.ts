@@ -1033,4 +1033,43 @@ describe("OCPPClient - Version-Aware Call", () => {
       }),
     );
   });
+
+  it("should emit strictValidationFailure on outbound validation error", () => {
+    const client = new OCPPClient({
+      identity: "CS_OUT_ERR",
+      endpoint: "ws://localhost:9999",
+      protocols: ["ocpp1.6"],
+      strictMode: true,
+      reconnect: false,
+    });
+
+    // Inject a mock validator that throws
+    const mockValidator = {
+      subprotocol: "ocpp1.6",
+      validate: vi.fn().mockImplementation(() => {
+        throw new Error("Outbound validation failed");
+      }),
+    };
+    (client as any)._validators = [mockValidator];
+    (client as any)._protocol = "ocpp1.6";
+
+    const emitSpy = vi.spyOn(client, "emit");
+
+    // Trigger validation logic via private method
+    expect(() => {
+      (client as any)._validateOutbound(
+        "BootNotification",
+        { status: "InvalidStatus" },
+        "conf",
+      );
+    }).toThrow("Outbound validation failed");
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      "strictValidationFailure",
+      expect.objectContaining({
+        error: expect.any(Error),
+        message: { status: "InvalidStatus" },
+      }),
+    );
+  });
 });
