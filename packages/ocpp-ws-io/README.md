@@ -197,7 +197,6 @@ const client = new OCPPClient({
 
 You can bring your own logger (Pino, Winston, etc.) by implementing `LoggerLike`:
 
-````typescript
 ```typescript
 import pino from "pino";
 
@@ -206,7 +205,7 @@ const client = new OCPPClient({
     handler: pino(), // Use existing logger instance
   },
 });
-````
+```
 
 ## 🛡️ Safety & Reliability
 
@@ -214,7 +213,7 @@ const client = new OCPPClient({
 
 Perform RPC calls without `try/catch` blocks. Returns the response data on success, or `undefined` on failure while automatically logging the error. You can also pass per-call config options like timeouts.
 
-````typescript
+```typescript
 const result = await client.safeCall(
   "ocpp1.6",
   "Heartbeat",
@@ -228,6 +227,7 @@ if (result) {
   // Checked for undefined
   console.log("Heartbeat accepted:", result.currentTime);
 }
+```
 
 ### Unicast Routing (`sendToClient` / `safeSendToClient`) [Server]
 
@@ -236,7 +236,9 @@ Send a message to a specific client ID, even if they are connected to a differen
 You have two options depending on your error-handling preference:
 
 #### 1. Standard approach (`sendToClient`)
+
 Throws an error if the client responds with a `CALLERROR` or if the timeout is reached.
+
 ```typescript
 try {
   const result = await server.sendToClient(
@@ -250,7 +252,7 @@ try {
 } catch (error) {
   console.error("Failed to get configuration:", error);
 }
-````
+```
 
 #### 2. Safe approach (`safeSendToClient`)
 

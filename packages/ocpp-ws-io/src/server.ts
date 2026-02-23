@@ -387,6 +387,75 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     httpServer.on("upgrade", upgradeHandler);
     this._httpServers.add(httpServer);
 
+    // D3: Health/Metrics HTTP endpoint
+    if (this._options.healthEndpoint) {
+      httpServer.on("request", (req, res) => {
+        const url = req.url ?? "";
+
+        if (url === "/health") {
+          const s = this.stats();
+          const body = JSON.stringify({
+            status: this._state === "OPEN" ? "ok" : "degraded",
+            state: this._state,
+            connectedClients: s.connectedClients,
+            activeSessions: s.activeSessions,
+            uptimeSeconds: Math.round(s.uptimeSeconds),
+            pid: s.pid,
+          });
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache",
+          });
+          res.end(body);
+          return;
+        }
+
+        if (url === "/metrics") {
+          const s = this.stats();
+          const lines = [
+            "# HELP ocpp_connected_clients Number of currently connected OCPP clients",
+            "# TYPE ocpp_connected_clients gauge",
+            `ocpp_connected_clients ${s.connectedClients}`,
+            "",
+            "# HELP ocpp_active_sessions Number of active in-memory sessions",
+            "# TYPE ocpp_active_sessions gauge",
+            `ocpp_active_sessions ${s.activeSessions}`,
+            "",
+            "# HELP ocpp_uptime_seconds Process uptime in seconds",
+            "# TYPE ocpp_uptime_seconds gauge",
+            `ocpp_uptime_seconds ${Math.round(s.uptimeSeconds)}`,
+            "",
+            "# HELP ocpp_memory_rss_bytes Resident set size in bytes",
+            "# TYPE ocpp_memory_rss_bytes gauge",
+            `ocpp_memory_rss_bytes ${s.memoryUsage.rss}`,
+            "",
+            "# HELP ocpp_memory_heap_used_bytes V8 heap used in bytes",
+            "# TYPE ocpp_memory_heap_used_bytes gauge",
+            `ocpp_memory_heap_used_bytes ${s.memoryUsage.heapUsed}`,
+            "",
+            "# HELP ocpp_memory_heap_total_bytes V8 heap total in bytes",
+            "# TYPE ocpp_memory_heap_total_bytes gauge",
+            `ocpp_memory_heap_total_bytes ${s.memoryUsage.heapTotal}`,
+            "",
+            "# HELP ocpp_ws_buffered_bytes Total buffered WebSocket bytes",
+            "# TYPE ocpp_ws_buffered_bytes gauge",
+            `ocpp_ws_buffered_bytes ${s.webSockets?.bufferedAmount ?? 0}`,
+            "",
+          ];
+          res.writeHead(200, {
+            "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
+            "Cache-Control": "no-cache",
+          });
+          res.end(lines.join("\n"));
+          return;
+        }
+
+        // Non-OCPP request — 404
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Not Found");
+      });
+    }
+
     // Handle abort signal
     if (options?.signal) {
       const ac = new AbortController();

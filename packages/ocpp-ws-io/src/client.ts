@@ -786,7 +786,7 @@ export class OCPPClient<
     params: unknown,
     options: CallOptions,
   ): Promise<unknown> {
-    const msgId = createId();
+    const msgId = options.idempotencyKey ?? createId();
     const timeoutMs = options.timeoutMs ?? this._options.callTimeoutMs;
 
     const ctx: MiddlewareContext = {

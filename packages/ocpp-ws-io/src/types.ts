@@ -199,6 +199,13 @@ export interface CallOptions {
   retryDelayMs?: number;
   /** Max delay cap in ms to prevent unbounded backoff (default: 30000) */
   retryMaxDelayMs?: number;
+  /**
+   * Idempotency key for deduplication. If provided, this value is used
+   * as the OCPP messageId instead of generating a new random one.
+   * Consumers can use the same key to guarantee exactly-once semantics
+   * when retrying calls across reconnections.
+   */
+  idempotencyKey?: string;
 }
 
 // ─── Close Options ───────────────────────────────────────────────
@@ -538,6 +545,13 @@ export interface ServerOptions {
    * (default: 50000)
    */
   maxSessions?: number;
+  /**
+   * Enable the built-in HTTP health/metrics endpoint.
+   * When enabled, non-upgrade HTTP requests to `/health` return a JSON health check,
+   * and requests to `/metrics` return Prometheus-compatible text metrics.
+   * (default: false)
+   */
+  healthEndpoint?: boolean;
 }
 
 // ─── Observability ─────────────────────────────────────────────────
