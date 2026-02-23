@@ -129,18 +129,19 @@ describe("OCPPServer - Express-like Routing", () => {
     expect(authSpy).not.toHaveBeenCalled();
   });
 
-  it("should match first registered route if multiple match (order matters)", async () => {
+  it("should match most specific route by specificity (static segments beat params)", async () => {
     server = new OCPPServer();
 
     const spy1 = vi.fn((ctx) => ctx.accept());
     const spy2 = vi.fn((ctx) => ctx.accept());
 
     server.route("/api/:tenant/:identity").auth(spy1);
-    server.route("/api/fallback/:identity").auth(spy2); // This one is more specific but registered second
+    server.route("/api/fallback/:identity").auth(spy2); // More specific — static "fallback" wins over :tenant
 
     httpServer = await server.listen(0);
 
-    // This URL actually matches `/api/:tenant/:identity` where tenant="fallback"
+    // This URL matches both routes, but `/api/fallback/:identity` is more specific
+    // because "fallback" is a static segment (static > param in trie priority)
     const ws = new WebSocket(
       `ws://localhost:${getPort()}/api/fallback/CP-MULTI`,
     );
@@ -152,11 +153,11 @@ describe("OCPPServer - Express-like Routing", () => {
       });
     });
 
-    expect(spy1).toHaveBeenCalledTimes(1);
-    const handshake = spy1.mock.calls[0][0]
+    // spy2's route is more specific (static "fallback"), so it provides the auth handler
+    expect(spy2).toHaveBeenCalledTimes(1);
+    const handshake = spy2.mock.calls[0][0]
       .handshake as unknown as HandshakeInfo;
     expect(handshake.params).toEqual({
-      tenant: "fallback",
       identity: "CP-MULTI",
     });
   });
