@@ -653,6 +653,13 @@ export interface EventAdapterInterface {
   getPresence?(identity: string): Promise<string | null>;
   getPresenceBatch?(identities: string[]): Promise<(string | null)[]>;
   removePresence?(identity: string): Promise<void>;
+  /**
+   * Batch set multiple presence entries in a single pipeline.
+   * Reduces N network round-trips to 1 for bulk presence updates.
+   */
+  setPresenceBatch?(
+    entries: { identity: string; nodeId: string; ttl?: number }[],
+  ): Promise<void>;
 
   // Observability Pipeline (Optional)
   metrics?(): Promise<Record<string, unknown>>;

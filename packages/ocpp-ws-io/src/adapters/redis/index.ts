@@ -16,6 +16,16 @@ export interface RedisAdapterOptions {
   prefix?: string;
   /** StreamMaxLen for trimming (default: 1000) */
   streamMaxLen?: number;
+  /**
+   * TTL in seconds for ephemeral stream keys (default: 300).
+   * Prevents abandoned channel keys from leaking memory in Redis.
+   */
+  streamTtlSeconds?: number;
+  /**
+   * Presence TTL in seconds (default: 300).
+   * Used for batch presence heartbeat pipeline.
+   */
+  presenceTtlSeconds?: number;
 }
 
 /**
@@ -28,29 +38,73 @@ export class RedisAdapter implements EventAdapterInterface {
   private _driver: RedisPubSubDriver;
   private _prefix: string;
   private _streamMaxLen: number;
+  private _streamTtlSeconds: number;
+  private _presenceTtlSeconds: number;
   private _handlers = new Map<string, Set<(data: unknown) => void>>();
   private _streamOffsets = new Map<string, string>(); // streamKey -> lastId
   private _streams = new Set<string>(); // Active streams to poll
   private _polling = false;
   private _closed = false;
 
+  // C4: Per-stream sequence counter for message ordering
+  private _sequenceCounters = new Map<string, number>();
+
+  // C3: Rehydration callbacks
+  private _unsubError?: () => void;
+  private _unsubReconnect?: () => void;
+
+  // Stored presence entries for rehydration on reconnect
+  private _presenceCache = new Map<string, { nodeId: string; ttl: number }>();
+
   constructor(options: RedisAdapterOptions) {
     this._prefix = options.prefix ?? "ocpp-ws-io:";
     this._streamMaxLen = options.streamMaxLen ?? 1000;
+    this._streamTtlSeconds = options.streamTtlSeconds ?? 300;
+    this._presenceTtlSeconds = options.presenceTtlSeconds ?? 300;
     this._driver = createDriver(
       options.pubClient,
       options.subClient,
       options.blockingClient,
     );
+
+    // C3: Redis Failure Rehydration — listen for errors and re-sync on reconnect
+    if (this._driver.onError) {
+      this._unsubError = this._driver.onError((err) => {
+        // Log for observability — consumers can attach their own logger
+        console.error("[RedisAdapter] Redis error:", err.message);
+      });
+    }
+    if (this._driver.onReconnect) {
+      this._unsubReconnect = this._driver.onReconnect(() => {
+        this._rehydratePresence().catch(() => {});
+      });
+    }
   }
 
   async publish(channel: string, data: unknown): Promise<void> {
     const prefixedChannel = this._prefix + channel;
+
+    // C4: Attach sequence ID to unicast messages for ordering
+    const payload = data as Record<string, unknown> | null;
+    if (
+      payload &&
+      typeof payload === "object" &&
+      channel.startsWith("ocpp:node:")
+    ) {
+      const seq = (this._sequenceCounters.get(channel) ?? 0) + 1;
+      this._sequenceCounters.set(channel, seq);
+      (payload as Record<string, unknown>).__seq = seq;
+    }
+
     const message = JSON.stringify(data);
 
     // Unicast (Node-to-Node) -> Use Streams
     if (channel.startsWith("ocpp:node:")) {
       await this._driver.xadd(prefixedChannel, { message }, this._streamMaxLen);
+      // C2: Set TTL lease on ephemeral stream key to prevent memory leaks
+      await this._driver
+        .expire(prefixedChannel, this._streamTtlSeconds)
+        .catch(() => {});
     } else {
       // Broadcast -> Use Pub/Sub
       await this._driver.publish(prefixedChannel, message);
@@ -138,6 +192,10 @@ export class RedisAdapter implements EventAdapterInterface {
     this._closed = true;
     this._handlers.clear();
     this._streams.clear();
+    this._presenceCache.clear();
+    this._sequenceCounters.clear();
+    if (this._unsubError) this._unsubError();
+    if (this._unsubReconnect) this._unsubReconnect();
     await this._driver.disconnect();
   }
 
@@ -219,6 +277,8 @@ export class RedisAdapter implements EventAdapterInterface {
     ttl: number,
   ): Promise<void> {
     const key = `${this._prefix}presence:${identity}`;
+    // Cache for rehydration on reconnect (C3)
+    this._presenceCache.set(identity, { nodeId, ttl });
     await this._driver.set(key, nodeId, ttl);
   }
 
@@ -266,5 +326,47 @@ export class RedisAdapter implements EventAdapterInterface {
       activeStreams: this._streams.size,
       streamDetails,
     };
+  }
+
+  // ─── C1: Batch Presence Pipeline ────────────────────────────────────
+
+  /**
+   * Set multiple presence entries in a single Redis pipeline.
+   * Reduces N network round-trips to 1 for bulk presence updates.
+   */
+  async setPresenceBatch(
+    entries: { identity: string; nodeId: string; ttl?: number }[],
+  ): Promise<void> {
+    if (entries.length === 0) return;
+
+    const batchEntries = entries.map(({ identity, nodeId, ttl }) => {
+      const key = `${this._prefix}presence:${identity}`;
+      const ttlSeconds = ttl ?? this._presenceTtlSeconds;
+      // Cache for rehydration
+      this._presenceCache.set(identity, { nodeId, ttl: ttlSeconds });
+      return { key, value: nodeId, ttlSeconds };
+    });
+
+    await this._driver.setPresenceBatch(batchEntries);
+  }
+
+  // ─── C3: Redis Failure Rehydration ──────────────────────────────────
+
+  /**
+   * Re-syncs all cached presence entries to Redis after a reconnection.
+   * Called automatically when the Redis client reconnects.
+   */
+  private async _rehydratePresence(): Promise<void> {
+    if (this._presenceCache.size === 0) return;
+
+    const entries = Array.from(this._presenceCache.entries()).map(
+      ([identity, { nodeId, ttl }]) => ({
+        key: `${this._prefix}presence:${identity}`,
+        value: nodeId,
+        ttlSeconds: ttl,
+      }),
+    );
+
+    await this._driver.setPresenceBatch(entries);
   }
 }

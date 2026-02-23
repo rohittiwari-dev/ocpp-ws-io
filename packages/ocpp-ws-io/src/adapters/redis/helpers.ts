@@ -44,6 +44,31 @@ export interface RedisPubSubDriver {
   mget(keys: string[]): Promise<(string | null)[]>;
   del(key: string): Promise<void>;
 
+  /**
+   * Batch set multiple presence keys with TTL in a single pipeline.
+   * Falls back to sequential sets if pipelining is unavailable.
+   */
+  setPresenceBatch(
+    entries: { key: string; value: string; ttlSeconds: number }[],
+  ): Promise<void>;
+
+  /**
+   * Set a TTL on an existing key (for ephemeral stream channel leases).
+   */
+  expire(key: string, ttlSeconds: number): Promise<void>;
+
+  /**
+   * Subscribe to connection error events for rehydration.
+   * Returns an unsubscribe function.
+   */
+  onError?(handler: (err: Error) => void): () => void;
+
+  /**
+   * Subscribe to reconnection events.
+   * Returns an unsubscribe function.
+   */
+  onReconnect?(handler: () => void): () => void;
+
   // Streams
   xadd(
     stream: string,
@@ -207,6 +232,31 @@ export class IoRedisDriver implements RedisPubSubDriver {
     };
     await Promise.all([close(this.pub), close(this.sub)]);
   }
+
+  async setPresenceBatch(
+    entries: { key: string; value: string; ttlSeconds: number }[],
+  ): Promise<void> {
+    if (entries.length === 0) return;
+    const pipeline = this.pub.pipeline();
+    for (const { key, value, ttlSeconds } of entries) {
+      pipeline.set(key, value, "EX", ttlSeconds);
+    }
+    await pipeline.exec();
+  }
+
+  async expire(key: string, ttlSeconds: number): Promise<void> {
+    await this.pub.expire(key, ttlSeconds);
+  }
+
+  onError(handler: (err: Error) => void): () => void {
+    this.pub.on("error", handler);
+    return () => this.pub.removeListener("error", handler);
+  }
+
+  onReconnect(handler: () => void): () => void {
+    this.pub.on("connect", handler);
+    return () => this.pub.removeListener("connect", handler);
+  }
 }
 
 export class NodeRedisDriver implements RedisPubSubDriver {
@@ -339,6 +389,31 @@ export class NodeRedisDriver implements RedisPubSubDriver {
 
   async disconnect(): Promise<void> {
     await Promise.all([this.pub.disconnect(), this.sub.disconnect()]);
+  }
+
+  async setPresenceBatch(
+    entries: { key: string; value: string; ttlSeconds: number }[],
+  ): Promise<void> {
+    if (entries.length === 0) return;
+    const multi = this.pub.multi();
+    for (const { key, value, ttlSeconds } of entries) {
+      multi.set(key, value, { EX: ttlSeconds });
+    }
+    await multi.exec();
+  }
+
+  async expire(key: string, ttlSeconds: number): Promise<void> {
+    await this.pub.expire(key, ttlSeconds);
+  }
+
+  onError(handler: (err: Error) => void): () => void {
+    this.pub.on("error", handler);
+    return () => this.pub.removeListener("error", handler);
+  }
+
+  onReconnect(handler: () => void): () => void {
+    this.pub.on("connect", handler);
+    return () => this.pub.removeListener("connect", handler);
   }
 }
 
