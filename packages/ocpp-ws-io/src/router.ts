@@ -155,6 +155,8 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   /**
    * Binds a version-specific OCPP message handler directly to all clients that match this route.
+   *
+   * @throws {Error} AT RUNTIME when a client connects, if a handler for this version and method is already registered for that client.
    */
   handle<V extends OCPPProtocol, M extends AllMethodNames<V>>(
     version: V,
@@ -166,6 +168,8 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   /**
    * Binds a custom/extension message handler directly to all clients that match this route.
+   *
+   * @throws {Error} AT RUNTIME when a client connects, if a handler for this protocol and method is already registered for that client.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handle<S extends string>(
@@ -176,6 +180,8 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   /**
    * Binds a message handler directly to all clients that match this route using the default protocol.
+   *
+   * @throws {Error} AT RUNTIME when a client connects, if a handler for this method is already registered for that client.
    */
   handle<M extends AllMethodNames<OCPPProtocol>>(
     method: M,
@@ -186,14 +192,22 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
       | Promise<OCPPResponseType<OCPPProtocol, M>>,
   ): this;
 
-  /** Binds a custom/extension method not in the typed map. */
+  /**
+   * Binds a custom/extension method not in the typed map.
+   *
+   * @throws {Error} AT RUNTIME when a client connects, if a handler for this method is already registered for that client.
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handle(
     method: string,
     handler: (context: RouterHandlerContext<Record<string, any>>) => any,
   ): this;
 
-  /** Binds a wildcard handler to all clients that match this route. */
+  /**
+   * Binds a wildcard handler to all clients that match this route.
+   *
+   * @throws {Error} AT RUNTIME when a client connects, if a wildcard handler is already registered for that client.
+   */
   handle(handler: RouterWildcardHandler): this;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -128,10 +128,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   get log() {
     return (this._logger || NOOP_LOGGER) as LoggerLikeNotOptional;
   }
+  /**
+   * Returns a readonly set of all currently connected OCPPServerClient instances.
+   */
   get clients(): ReadonlySet<OCPPServerClient> {
     return this._clients;
   }
 
+  /**
+   * Returns the current server state (OPEN, CLOSING, CLOSED).
+   */
   get state(): "OPEN" | "CLOSING" | "CLOSED" {
     return this._state;
   }

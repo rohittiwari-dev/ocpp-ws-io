@@ -219,33 +219,63 @@ export class OCPPClient<
   }
 
   // ─── Getters ─────────────────────────────────────────────────
+  /**
+   * Returns the underlying logger instance wrapper.
+   */
   get log() {
     return (this._logger || NOOP_LOGGER) as LoggerLikeNotOptional;
   }
+
+  /**
+   * The unique client identity (Charge Point ID or Central System ID).
+   */
   public get identity(): string {
     return this._options.identity;
   }
 
+  /**
+   * The connection endpoint URL.
+   */
   public get endpoint(): string {
     return this._options.endpoint;
   }
 
+  /**
+   * The current configuration options for this client.
+   */
   public get options(): Readonly<ClientOptions> {
     return this._options;
   }
 
+  /**
+   * The negotiated OCPP protocol version, available after connection.
+   */
   get protocol(): string | undefined {
     return this._protocol;
   }
+
+  /**
+   * The current WebSocket connection state.
+   */
   get state(): ConnectionState {
     return this._state;
   }
+
+  /**
+   * The configured security profile.
+   */
   get securityProfile(): SecurityProfile {
     return this._options.securityProfile ?? SecurityProfile.NONE;
   }
 
   // ─── Connect ─────────────────────────────────────────────────
 
+  /**
+   * Connect to the OCPP endpoint via WebSocket.
+   * Throws an error if the connection attempt fails, or if already connected/connecting.
+   *
+   * @returns A promise that resolves to an object containing the HTTP response from the upgrade request.
+   */
   async connect(): Promise<{ response: import("node:http").IncomingMessage }> {
     if (this._state !== CLOSED) {
       throw new Error(`Cannot connect: client is in state ${this._state}`);
@@ -350,6 +380,13 @@ export class OCPPClient<
 
   // ─── Close ───────────────────────────────────────────────────
 
+  /**
+   * Close the WebSocket connection.
+   * By default, it awaits any pending calls to finish before closing.
+   *
+   * @param options Configuration for closing the connection (code, reason, awaiting pending calls, force close).
+   * @returns A promise that resolves when the connection is fully closed.
+   */
   async close(
     options: CloseOptions = {},
   ): Promise<{ code: number; reason: string }> {
@@ -439,6 +476,8 @@ export class OCPPClient<
   /**
    * Register a version-specific handler — `handle("ocpp1.6", "BootNotification", handler)`.
    * This handler is only invoked when the active protocol matches the given version.
+   *
+   * @throws {Error} If a handler for this version and method is already registered on this client instance.
    */
   handle<V extends OCPPProtocol, M extends AllMethodNames<V>>(
     version: V,
@@ -453,6 +492,8 @@ export class OCPPClient<
    * `handle("my-protocol", "my-method", handler)`
    *
    * Note: This overload matches only if the protocol is NOT a known strict protocol of standard OCPP versions.
+   *
+   * @throws {Error} If a handler for this protocol and method is already registered on this client instance.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handle<S extends string>(
@@ -464,6 +505,8 @@ export class OCPPClient<
   /**
    * Register a handler for the client's default protocol — `handle("BootNotification", handler)`.
    * Uses the default protocol type parameter `P`.
+   *
+   * @throws {Error} If a handler for this method is already registered on this client instance.
    */
   handle<M extends AllMethodNames<P>>(
     method: M,
@@ -472,14 +515,22 @@ export class OCPPClient<
     ) => OCPPResponseType<P, M> | Promise<OCPPResponseType<P, M>>,
   ): void;
 
-  /** Register a handler for a custom/extension method not in the typed OCPP method maps. */
+  /**
+   * Register a handler for a custom/extension method not in the typed OCPP method maps.
+   *
+   * @throws {Error} If a handler for this method is already registered on this client instance.
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handle(
     method: string,
     handler: (context: HandlerContext<Record<string, any>>) => any,
   ): void;
 
-  /** Register a wildcard handler for all unhandled methods. */
+  /**
+   * Register a wildcard handler for all unhandled methods.
+   *
+   * @throws {Error} If a wildcard handler is already registered on this client instance.
+   */
   handle(handler: WildcardHandler): void;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -521,7 +572,14 @@ export class OCPPClient<
     }
   }
 
+  /**
+   * Remove a registered handler for a specific method on the default protocol.
+   * @param method The method to remove the handler for.
+   */
   removeHandler(method?: string): void;
+  /**
+   * Remove a registered handler for a specific version and method.
+   */
   removeHandler(version: OCPPProtocol, method: string): void;
   removeHandler(versionOrMethod?: string, method?: string): void {
     if (versionOrMethod && method) {
@@ -536,6 +594,9 @@ export class OCPPClient<
     }
   }
 
+  /**
+   * Remove all registered handlers for this client, including the wildcard handler.
+   */
   removeAllHandlers(): void {
     this._handlers.clear();
     this._wildcardHandler = null;
