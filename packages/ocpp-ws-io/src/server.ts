@@ -1003,7 +1003,36 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       this._gcInterval = null;
     }
 
-    // Close all clients gracefully
+    // ── Graceful shutdown drain ──
+    // When not force-closing, wait for each client's ws.bufferedAmount to
+    // reach 0 (max 5s) before closing. Prevents in-flight financial messages
+    // from being lost during rolling deployments.
+    if (!options.force) {
+      const drainTimeout = 5000;
+      const drainPromises = Array.from(this._clients).map(async (client) => {
+        // @ts-expect-error — accessing private _ws field for drain check
+        const ws = client._ws;
+        if (ws && ws.bufferedAmount > 0) {
+          this._logger?.debug?.("Waiting for client buffer to drain", {
+            identity: client.identity,
+            bufferedAmount: ws.bufferedAmount,
+          });
+          await new Promise<void>((resolve) => {
+            let elapsed = 0;
+            const check = setInterval(() => {
+              elapsed += 50;
+              if (!ws || ws.bufferedAmount === 0 || elapsed >= drainTimeout) {
+                clearInterval(check);
+                resolve();
+              }
+            }, 50);
+          });
+        }
+      });
+      await Promise.allSettled(drainPromises);
+    }
+
+    // Close all clients
     const closePromises = Array.from(this._clients).map((client) =>
       client.close(options).catch(() => {}),
     );

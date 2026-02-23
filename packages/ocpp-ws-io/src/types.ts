@@ -190,6 +190,15 @@ export interface CallOptions {
   timeoutMs?: number;
   /** Abort signal */
   signal?: AbortSignal;
+  /**
+   * Max retry attempts on TimeoutError (default: 0 = no retry).
+   * Uses Full Jitter exponential backoff between retries.
+   */
+  retries?: number;
+  /** Base delay in ms for exponential backoff between retries (default: 1000) */
+  retryDelayMs?: number;
+  /** Max delay cap in ms to prevent unbounded backoff (default: 30000) */
+  retryMaxDelayMs?: number;
 }
 
 // ─── Close Options ───────────────────────────────────────────────
@@ -395,6 +404,16 @@ export interface ClientOptions {
   logging?: LoggingConfig | false;
   /** Rate Limiting configuration (Token Bucket) */
   rateLimit?: RateLimitOptions;
+  /**
+   * If true, calls made while disconnected are queued in-memory
+   * and flushed automatically on reconnect. (default: false)
+   */
+  offlineQueue?: boolean;
+  /**
+   * Maximum number of messages to queue while offline.
+   * Oldest messages are dropped when exceeded. (default: 100)
+   */
+  offlineQueueMaxSize?: number;
 }
 
 // ─── Rate Limit Options ──────────────────────────────────────────
