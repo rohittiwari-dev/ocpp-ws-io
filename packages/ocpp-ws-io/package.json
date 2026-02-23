@@ -1,6 +1,6 @@
 {
   "name": "ocpp-ws-io",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Type-safe OCPP WebSocket RPC client & server with pub/sub, session management, and clustering support",
   "repository": {
     "type": "git",
