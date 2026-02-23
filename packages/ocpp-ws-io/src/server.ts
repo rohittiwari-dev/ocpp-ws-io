@@ -11,6 +11,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { WebSocketServer } from "ws";
 import { checkCORS } from "./cors.js";
 import { initLogger } from "./init-logger.js";
+import { LRUMap } from "./lru-map.js";
 import { RadixTrie } from "./radix-trie.js";
 import { executeMiddlewareChain, OCPPRouter } from "./router.js";
 import { OCPPServerClient } from "./server-client.js";
@@ -70,12 +71,18 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _logger: LoggerLike | null = null;
   private _globalCORS?: CORSOptions;
 
+  // Connection-level rate limiting (per-IP token bucket)
+  private _connectionBuckets = new Map<
+    string,
+    { tokens: number; lastRefill: number }
+  >();
+
   // Robustness & Clustering
   private readonly _nodeId = createId();
-  private _sessions = new Map<
+  private _sessions: LRUMap<
     string,
     { data: Record<string, any>; lastActive: number }
-  >();
+  >;
   private _gcInterval: NodeJS.Timeout | null = null;
   private readonly _sessionTimeoutMs: number;
 
@@ -104,6 +111,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     };
 
     this._sessionTimeoutMs = this._options.sessionTtlMs!;
+
+    // Initialize bounded LRU session cache
+    const maxSessions = this._options.maxSessions ?? 50_000;
+    this._sessions = new LRUMap(maxSessions);
 
     // Initialize WebSocketServer immediately (ws best practice: noServer mode)
     this._wss = new WebSocketServer({ noServer: true });
@@ -376,6 +387,75 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     httpServer.on("upgrade", upgradeHandler);
     this._httpServers.add(httpServer);
 
+    // D3: Health/Metrics HTTP endpoint
+    if (this._options.healthEndpoint) {
+      httpServer.on("request", (req, res) => {
+        const url = req.url ?? "";
+
+        if (url === "/health") {
+          const s = this.stats();
+          const body = JSON.stringify({
+            status: this._state === "OPEN" ? "ok" : "degraded",
+            state: this._state,
+            connectedClients: s.connectedClients,
+            activeSessions: s.activeSessions,
+            uptimeSeconds: Math.round(s.uptimeSeconds),
+            pid: s.pid,
+          });
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache",
+          });
+          res.end(body);
+          return;
+        }
+
+        if (url === "/metrics") {
+          const s = this.stats();
+          const lines = [
+            "# HELP ocpp_connected_clients Number of currently connected OCPP clients",
+            "# TYPE ocpp_connected_clients gauge",
+            `ocpp_connected_clients ${s.connectedClients}`,
+            "",
+            "# HELP ocpp_active_sessions Number of active in-memory sessions",
+            "# TYPE ocpp_active_sessions gauge",
+            `ocpp_active_sessions ${s.activeSessions}`,
+            "",
+            "# HELP ocpp_uptime_seconds Process uptime in seconds",
+            "# TYPE ocpp_uptime_seconds gauge",
+            `ocpp_uptime_seconds ${Math.round(s.uptimeSeconds)}`,
+            "",
+            "# HELP ocpp_memory_rss_bytes Resident set size in bytes",
+            "# TYPE ocpp_memory_rss_bytes gauge",
+            `ocpp_memory_rss_bytes ${s.memoryUsage.rss}`,
+            "",
+            "# HELP ocpp_memory_heap_used_bytes V8 heap used in bytes",
+            "# TYPE ocpp_memory_heap_used_bytes gauge",
+            `ocpp_memory_heap_used_bytes ${s.memoryUsage.heapUsed}`,
+            "",
+            "# HELP ocpp_memory_heap_total_bytes V8 heap total in bytes",
+            "# TYPE ocpp_memory_heap_total_bytes gauge",
+            `ocpp_memory_heap_total_bytes ${s.memoryUsage.heapTotal}`,
+            "",
+            "# HELP ocpp_ws_buffered_bytes Total buffered WebSocket bytes",
+            "# TYPE ocpp_ws_buffered_bytes gauge",
+            `ocpp_ws_buffered_bytes ${s.webSockets?.bufferedAmount ?? 0}`,
+            "",
+          ];
+          res.writeHead(200, {
+            "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
+            "Cache-Control": "no-cache",
+          });
+          res.end(lines.join("\n"));
+          return;
+        }
+
+        // Non-OCPP request — 404
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Not Found");
+      });
+    }
+
     // Handle abort signal
     if (options?.signal) {
       const ac = new AbortController();
@@ -456,6 +536,32 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     if (this._state !== "OPEN") {
       abortHandshake(socket, 503, "Server is shutting down");
       return;
+    }
+
+    // ── Step 0.5: Connection-level per-IP rate limit ──
+    const connRateLimit = this._options.connectionRateLimit;
+    if (connRateLimit) {
+      const ip = req.socket.remoteAddress ?? "unknown";
+      const now = Date.now();
+      let bucket = this._connectionBuckets.get(ip);
+      if (!bucket) {
+        bucket = { tokens: connRateLimit.limit, lastRefill: now };
+        this._connectionBuckets.set(ip, bucket);
+      } else {
+        const elapsed = now - bucket.lastRefill;
+        const refillRate = connRateLimit.limit / connRateLimit.windowMs;
+        bucket.tokens = Math.min(
+          connRateLimit.limit,
+          bucket.tokens + elapsed * refillRate,
+        );
+        bucket.lastRefill = now;
+      }
+      if (bucket.tokens < 1) {
+        this._logger?.warn?.("Connection rate limit exceeded", { ip });
+        abortHandshake(socket, 429, "Too Many Requests");
+        return;
+      }
+      bucket.tokens -= 1;
     }
 
     // ── Step 1: Socket readyState & upgrade header validation ──
@@ -866,6 +972,29 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       });
 
       this._updateSessionActivity(identity, client.session);
+
+      // ── Duplicate Identity Eviction ──
+      // If a client with the same identity is already connected (e.g. 4G reconnect
+      // racing the old TCP FIN), evict the stale socket to prevent phantom broadcasts
+      // and memory leaks from zombie connections.
+      const existingClient = this._clientsByIdentity.get(identity);
+      if (existingClient && existingClient !== client) {
+        this._logger?.warn?.("Evicting stale connection for identity", {
+          identity,
+          reason: "Duplicate identity replaced by new connection",
+        });
+        // Fire-and-forget force close — don't await, don't block the new connection
+        existingClient
+          .close({
+            code: 4000,
+            reason: "Evicted by new connection",
+            force: true,
+          })
+          .catch(() => {});
+        // Immediately remove from tracking to prevent race
+        this._clients.delete(existingClient);
+      }
+
       this._clients.add(client);
       this._clientsByIdentity.set(identity, client);
 
@@ -943,7 +1072,36 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       this._gcInterval = null;
     }
 
-    // Close all clients gracefully
+    // ── Graceful shutdown drain ──
+    // When not force-closing, wait for each client's ws.bufferedAmount to
+    // reach 0 (max 5s) before closing. Prevents in-flight financial messages
+    // from being lost during rolling deployments.
+    if (!options.force) {
+      const drainTimeout = 5000;
+      const drainPromises = Array.from(this._clients).map(async (client) => {
+        // @ts-expect-error — accessing private _ws field for drain check
+        const ws = client._ws;
+        if (ws && ws.bufferedAmount > 0) {
+          this._logger?.debug?.("Waiting for client buffer to drain", {
+            identity: client.identity,
+            bufferedAmount: ws.bufferedAmount,
+          });
+          await new Promise<void>((resolve) => {
+            let elapsed = 0;
+            const check = setInterval(() => {
+              elapsed += 50;
+              if (!ws || ws.bufferedAmount === 0 || elapsed >= drainTimeout) {
+                clearInterval(check);
+                resolve();
+              }
+            }, 50);
+          });
+        }
+      });
+      await Promise.allSettled(drainPromises);
+    }
+
+    // Close all clients
     const closePromises = Array.from(this._clients).map((client) =>
       client.close(options).catch(() => {}),
     );

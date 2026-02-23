@@ -116,6 +116,13 @@ export class OCPPClient<
   private _badMessageCount = 0;
   private _lastActivity = 0;
   private _outboundBuffer: string[] = [];
+  private _offlineQueue: Array<{
+    method: string;
+    params: unknown;
+    options: CallOptions;
+    resolve: (value: unknown) => void;
+    reject: (reason: unknown) => void;
+  }> = [];
   private _middleware: MiddlewareStack<MiddlewareContext>;
   private _validators: Validator[] = [];
   private _strictProtocols: string[] | null = null;
@@ -318,6 +325,9 @@ export class OCPPClient<
         this._attachWebsocket(ws);
         this._startPing();
 
+        // Flush offline queue (atomic drain to prevent re-entry)
+        this._flushOfflineQueue();
+
         // Flush outbound buffer (messages queued during CONNECTING)
         if (this._outboundBuffer.length > 0) {
           const buffer = this._outboundBuffer;
@@ -484,7 +494,10 @@ export class OCPPClient<
     method: M,
     handler: (
       context: HandlerContext<OCPPRequestType<V, M>>,
-    ) => OCPPResponseType<V, M> | Promise<OCPPResponseType<V, M>>,
+    ) =>
+      | OCPPResponseType<V, M>
+      | Promise<OCPPResponseType<V, M>>
+      | typeof NOREPLY,
   ): void;
 
   /**
@@ -512,7 +525,10 @@ export class OCPPClient<
     method: M,
     handler: (
       context: HandlerContext<OCPPRequestType<P, M>>,
-    ) => OCPPResponseType<P, M> | Promise<OCPPResponseType<P, M>>,
+    ) =>
+      | OCPPResponseType<P, M>
+      | Promise<OCPPResponseType<P, M>>
+      | typeof NOREPLY,
   ): void;
 
   /**
@@ -676,7 +692,37 @@ export class OCPPClient<
     }
 
     if (this._state !== OPEN) {
+      // ── Offline Queue ──
+      if (
+        this._options.offlineQueue &&
+        (this._state === CLOSED || this._state === CONNECTING)
+      ) {
+        return new Promise((resolve, reject) => {
+          const maxSize = this._options.offlineQueueMaxSize ?? 100;
+          if (this._offlineQueue.length >= maxSize) {
+            this._offlineQueue.shift(); // Drop oldest
+            this._logger?.warn?.(
+              "Offline queue full — dropping oldest message",
+              {
+                method,
+                queueSize: this._offlineQueue.length,
+              },
+            );
+          }
+          this._offlineQueue.push({ method, params, options, resolve, reject });
+          this._logger?.debug?.("Call queued offline", {
+            method,
+            queueSize: this._offlineQueue.length,
+          });
+        });
+      }
       throw new Error(`Cannot call: client is in state ${this._state}`);
+    }
+
+    // ── Retry wrapper with Full Jitter ──
+    const maxRetries = options.retries ?? 0;
+    if (maxRetries > 0) {
+      return this._callWithRetry(method, params, options, maxRetries);
     }
 
     return this._callQueue.push(() => this._sendCall(method, params, options));
@@ -746,7 +792,7 @@ export class OCPPClient<
     params: unknown,
     options: CallOptions,
   ): Promise<unknown> {
-    const msgId = createId();
+    const msgId = options.idempotencyKey ?? createId();
     const timeoutMs = options.timeoutMs ?? this._options.callTimeoutMs;
 
     const ctx: MiddlewareContext = {
@@ -813,7 +859,7 @@ export class OCPPClient<
         });
 
         if (this._ws?.readyState === WebSocket.OPEN) {
-          this._ws.send(messageStr, (err) => {
+          this._safeSend(this._ws, messageStr, (err) => {
             if (err) {
               // Failed to send
               clearTimeout(timeoutHandle);
@@ -1273,6 +1319,118 @@ export class OCPPClient<
         }
       }
     }, delayMs);
+  }
+
+  // ─── Internal: Offline Queue ──────────────────────────────────
+
+  /**
+   * Atomically drains the offline queue and sends each message via _sendCall.
+   * Uses splice(0) to prevent re-entry bugs (double billing) if the connection
+   * drops again mid-flush — the queue is empty before any sends begin.
+   */
+  private _flushOfflineQueue(): void {
+    if (this._offlineQueue.length === 0) return;
+
+    // Atomic snapshot — clears queue before sending to prevent re-entry
+    const snapshot = this._offlineQueue.splice(0, this._offlineQueue.length);
+    this._logger?.info?.("Flushing offline queue", { count: snapshot.length });
+
+    for (const entry of snapshot) {
+      this._callQueue
+        .push(() => this._sendCall(entry.method, entry.params, entry.options))
+        .then(entry.resolve)
+        .catch(entry.reject);
+    }
+  }
+
+  // ─── Internal: Call Retry with Full Jitter ───────────────────
+
+  /**
+   * Retry wrapper using Full Jitter exponential backoff.
+   * delay = random(0, min(retryMaxDelayMs, retryDelayMs * 2^attempt))
+   * Only retries on TimeoutError — all other errors propagate immediately.
+   */
+  private async _callWithRetry(
+    method: string,
+    params: unknown,
+    options: CallOptions,
+    maxRetries: number,
+  ): Promise<unknown> {
+    const baseDelay = options.retryDelayMs ?? 1000;
+    const maxDelay = options.retryMaxDelayMs ?? 30000;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await this._callQueue.push(() =>
+          this._sendCall(method, params, options),
+        );
+      } catch (err) {
+        if (attempt === maxRetries || !(err instanceof TimeoutError)) {
+          throw err;
+        }
+        // Full Jitter: random(0, min(maxDelay, baseDelay * 2^attempt))
+        const expDelay = Math.min(maxDelay, baseDelay * 2 ** attempt);
+        const jitteredDelay = Math.random() * expDelay;
+        this._logger?.warn?.("Call retry", {
+          method,
+          attempt: attempt + 1,
+          maxRetries,
+          delayMs: Math.round(jitteredDelay),
+        });
+        await new Promise((r) => setTimeout(r, jitteredDelay));
+      }
+    }
+    // Should be unreachable, but satisfy TypeScript
+    throw new Error("Retry exhausted");
+  }
+
+  // ─── Internal: Backpressure-Aware Send ───────────────────────
+
+  /** Maximum bytes allowed in the ws send buffer before applying backpressure (512KB) */
+  private static readonly _BACKPRESSURE_THRESHOLD = 512 * 1024;
+
+  /**
+   * Wraps ws.send() with backpressure protection.
+   * If bufferedAmount exceeds the threshold, waits for the buffer to drain
+   * before sending. Prevents OOM on slow 2G/3G charger connections.
+   */
+  private _safeSend(
+    ws: WebSocket | null,
+    data: string,
+    cb?: (err?: Error) => void,
+  ): void {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      cb?.(new Error("WebSocket is not open"));
+      return;
+    }
+
+    if (ws.bufferedAmount > OCPPClient._BACKPRESSURE_THRESHOLD) {
+      this._logger?.warn?.("Backpressure — pausing send", {
+        bufferedAmount: ws.bufferedAmount,
+        threshold: OCPPClient._BACKPRESSURE_THRESHOLD,
+      });
+      this.emit("backpressure" as any, { bufferedAmount: ws.bufferedAmount });
+
+      // Poll until buffer drains below threshold (check every 50ms, timeout 10s)
+      let waited = 0;
+      const drainCheck = setInterval(() => {
+        waited += 50;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          clearInterval(drainCheck);
+          cb?.(new Error("WebSocket closed during backpressure wait"));
+          return;
+        }
+        if (
+          ws.bufferedAmount <= OCPPClient._BACKPRESSURE_THRESHOLD ||
+          waited >= 10000
+        ) {
+          clearInterval(drainCheck);
+          ws.send(data, cb);
+        }
+      }, 50);
+    } else {
+      ws.send(data, cb);
+    }
   }
 
   // ─── Internal: Ping/Pong ─────────────────────────────────────

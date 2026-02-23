@@ -71,6 +71,14 @@ export class InMemoryAdapter implements EventAdapterInterface {
   async removePresence(identity: string): Promise<void> {
     this._presence.delete(identity);
   }
+
+  async setPresenceBatch(
+    entries: { identity: string; nodeId: string; ttl?: number }[],
+  ): Promise<void> {
+    for (const { identity, nodeId } of entries) {
+      this._presence.set(identity, nodeId);
+    }
+  }
 }
 
 /**

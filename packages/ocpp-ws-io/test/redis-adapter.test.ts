@@ -7,6 +7,7 @@ const createMockRedis = () => ({
   subscribe: vi.fn().mockResolvedValue(undefined),
   unsubscribe: vi.fn().mockResolvedValue(undefined),
   on: vi.fn(),
+  removeListener: vi.fn(),
   disconnect: vi.fn().mockResolvedValue(undefined),
   quit: vi.fn().mockResolvedValue(undefined),
 });
@@ -107,6 +108,7 @@ describe("RedisAdapter", () => {
       subscribe: vi.fn(),
       unsubscribe: vi.fn(),
       on: vi.fn(),
+      removeListener: vi.fn(),
       disconnect: vi.fn().mockResolvedValue(undefined),
       // no quit
     });
@@ -180,6 +182,8 @@ describe("RedisAdapter (Node Redis v4)", () => {
     subscribe: vi.fn().mockResolvedValue(undefined),
     unsubscribe: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(),
+    removeListener: vi.fn(),
     // Node Redis doesn't use 'on' for messages
   });
 

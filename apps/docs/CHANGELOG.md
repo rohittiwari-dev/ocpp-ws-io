@@ -1,5 +1,15 @@
 # docs
 
+## 2.1.4
+
+### Minor Changes
+
+- **Comparisons Page**: Added a comprehensive architectural comparison page detailing how `ocpp-ws-io` stacks up against `@voltbras/ts-ocpp`, `ocpp-eliftech`, and generic RPC WebSocket wrappers, including cloud cost and horizontal scalability analysis.
+- **Enterprise Features Documentation**: Extensive documentation updates across `system-design.mdx`, `clustering.mdx`, and `api-reference.mdx`.
+- **Idempotency Keys**: Documented the single source of truth delivery architecture using `idempotencyKey` inside `CallOptions`.
+- **Redis Eager Rehydration**: Detailed the new eager reconnect synchronization mechanism natively built into the `RedisAdapter`.
+- **Health Observability**: Added documentation for the new `healthEndpoint` configuration that exposes `/health` and Prometheus `/metrics` instantly on the native node server.
+
 ## 1.0.0
 
 ### Patch Changes

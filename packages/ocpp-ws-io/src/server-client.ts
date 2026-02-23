@@ -40,6 +40,11 @@ export class OCPPServerClient extends OCPPClient {
     // We do NOT call super._attachWebsocket because we want to intercept messages
     // for Server-only features like Rate Limiting.
     this._attachServerWebsocket(context.ws);
+
+    // Activate ping/pong dead-peer detection — without this, 4G NAT teardowns
+    // leave zombie connections open indefinitely. Now detected within ~40s.
+    // @ts-expect-error — _startPing is private in base class OCPPClient
+    this._startPing();
   }
 
   // ─── Rate Limiting State ──────────────────────────────────────────

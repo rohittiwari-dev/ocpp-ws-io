@@ -43,6 +43,7 @@ export {
   defineMiddleware,
   defineRpcMiddleware,
 } from "./helpers/index.js";
+export { LRUMap } from "./lru-map.js";
 export * from "./middleware.js";
 export { createRouter, OCPPRouter } from "./router.js";
 export { OCPPServer } from "./server.js";

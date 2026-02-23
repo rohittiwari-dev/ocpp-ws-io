@@ -67,10 +67,11 @@ Make an RPC call. Throws a `TimeoutError` or protocol-level Error if the request
 - `protocol`: Optional. e.g., "ocpp1.6". If omitted, generic type inference is used.
 - `method`: The OCPP method name (e.g., "BootNotification").
 - `params`: The request payload.
-- `options`: `{ timeoutMs?: number }`
+- `options`: `{ timeoutMs?: number, retries?: number, idempotencyKey?: string }`
 
 ```typescript
-const result = await client.call("ocpp1.6", "BootNotification", { ... });
+// With manual idempotency key to prevent double execution on reconnections
+const result = await client.call("ocpp1.6", "BootNotification", { ... }, { idempotencyKey: "unique-boot-123" });
 ```
 
 #### `safeCall(protocol?, method, params, options?)`
@@ -159,6 +160,7 @@ const server = new OCPPServer(options?: ServerOptions);
 | `logging`            | `LoggingConfig`    | `{}`      | Configuration for structured logging. |
 | `sessionTtlMs`       | `number`           | `7200000` | Garbage collection inactivity timeout |
 | `rateLimit`          | `RateLimitOptions` | —         | Token bucket socket & method limiter  |
+| `healthEndpoint`     | `boolean`          | `false`   | Expose HTTP `/health` and `/metrics`  |
 
 #### RateLimitOptions
 

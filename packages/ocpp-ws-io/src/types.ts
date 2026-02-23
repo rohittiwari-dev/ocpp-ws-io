@@ -190,6 +190,22 @@ export interface CallOptions {
   timeoutMs?: number;
   /** Abort signal */
   signal?: AbortSignal;
+  /**
+   * Max retry attempts on TimeoutError (default: 0 = no retry).
+   * Uses Full Jitter exponential backoff between retries.
+   */
+  retries?: number;
+  /** Base delay in ms for exponential backoff between retries (default: 1000) */
+  retryDelayMs?: number;
+  /** Max delay cap in ms to prevent unbounded backoff (default: 30000) */
+  retryMaxDelayMs?: number;
+  /**
+   * Idempotency key for deduplication. If provided, this value is used
+   * as the OCPP messageId instead of generating a new random one.
+   * Consumers can use the same key to guarantee exactly-once semantics
+   * when retrying calls across reconnections.
+   */
+  idempotencyKey?: string;
 }
 
 // ─── Close Options ───────────────────────────────────────────────
@@ -395,6 +411,16 @@ export interface ClientOptions {
   logging?: LoggingConfig | false;
   /** Rate Limiting configuration (Token Bucket) */
   rateLimit?: RateLimitOptions;
+  /**
+   * If true, calls made while disconnected are queued in-memory
+   * and flushed automatically on reconnect. (default: false)
+   */
+  offlineQueue?: boolean;
+  /**
+   * Maximum number of messages to queue while offline.
+   * Oldest messages are dropped when exceeded. (default: 100)
+   */
+  offlineQueueMaxSize?: number;
 }
 
 // ─── Rate Limit Options ──────────────────────────────────────────
@@ -503,6 +529,29 @@ export interface ServerOptions {
    * - `LoggingConfig` → custom configuration
    */
   logging?: LoggingConfig | false;
+  /**
+   * Connection-level rate limiting (per-IP) applied at the HTTP upgrade boundary,
+   * before any auth, TLS or JSON parsing occurs — blocks DDoS connection floods in ~1µs.
+   * - `limit`: Max upgrade requests per IP within `windowMs` (default: 20)
+   * - `windowMs`: Sliding window in ms (default: 10000)
+   */
+  connectionRateLimit?: {
+    limit: number;
+    windowMs: number;
+  };
+  /**
+   * Maximum number of inactive sessions to retain in the bounded LRU cache.
+   * Prevents OOM under DDoS or reconnection storms with transient identities.
+   * (default: 50000)
+   */
+  maxSessions?: number;
+  /**
+   * Enable the built-in HTTP health/metrics endpoint.
+   * When enabled, non-upgrade HTTP requests to `/health` return a JSON health check,
+   * and requests to `/metrics` return Prometheus-compatible text metrics.
+   * (default: false)
+   */
+  healthEndpoint?: boolean;
 }
 
 // ─── Observability ─────────────────────────────────────────────────
@@ -618,6 +667,13 @@ export interface EventAdapterInterface {
   getPresence?(identity: string): Promise<string | null>;
   getPresenceBatch?(identities: string[]): Promise<(string | null)[]>;
   removePresence?(identity: string): Promise<void>;
+  /**
+   * Batch set multiple presence entries in a single pipeline.
+   * Reduces N network round-trips to 1 for bulk presence updates.
+   */
+  setPresenceBatch?(
+    entries: { identity: string; nodeId: string; ttl?: number }[],
+  ): Promise<void>;
 
   // Observability Pipeline (Optional)
   metrics?(): Promise<Record<string, unknown>>;

@@ -233,6 +233,26 @@ client.safeCall("ocpp1.6", "Reset", { type: "Hard" }).then((res) => {
 // Code continues executing instantly...
 ```
 
+#### Idempotency Keys (Single Source of Truth Delivery)
+
+When retrying an outbound call after a network timeout, you risk the station executing the command twice (e.g., performing a double `Reset` or `RemoteStartTransaction`).
+
+To solve this, `client.call()` and `server.sendToClient()` accept an **`idempotencyKey`**. When provided, `ocpp-ws-io` overrides the dynamically generated message ID with your deterministic key. This ensures exactly-once execution semantics even across violent reconnections.
+
+```typescript
+await server.sendToClient(
+  "CP-001",
+  "ocpp1.6",
+  "UnlockConnector",
+  {
+    connectorId: 1,
+  },
+  {
+    idempotencyKey: "unlock-txn-9981", // Guarantees identical MessageId on retries
+  },
+);
+```
+
 ---
 
 ## 6. Data Validation Flow
