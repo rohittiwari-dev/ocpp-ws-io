@@ -11,6 +11,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { WebSocketServer } from "ws";
 import { checkCORS } from "./cors.js";
 import { initLogger } from "./init-logger.js";
+import { LRUMap } from "./lru-map.js";
 import { RadixTrie } from "./radix-trie.js";
 import { executeMiddlewareChain, OCPPRouter } from "./router.js";
 import { OCPPServerClient } from "./server-client.js";
@@ -70,12 +71,18 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _logger: LoggerLike | null = null;
   private _globalCORS?: CORSOptions;
 
+  // Connection-level rate limiting (per-IP token bucket)
+  private _connectionBuckets = new Map<
+    string,
+    { tokens: number; lastRefill: number }
+  >();
+
   // Robustness & Clustering
   private readonly _nodeId = createId();
-  private _sessions = new Map<
+  private _sessions: LRUMap<
     string,
     { data: Record<string, any>; lastActive: number }
-  >();
+  >;
   private _gcInterval: NodeJS.Timeout | null = null;
   private readonly _sessionTimeoutMs: number;
 
@@ -104,6 +111,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     };
 
     this._sessionTimeoutMs = this._options.sessionTtlMs!;
+
+    // Initialize bounded LRU session cache
+    const maxSessions = this._options.maxSessions ?? 50_000;
+    this._sessions = new LRUMap(maxSessions);
 
     // Initialize WebSocketServer immediately (ws best practice: noServer mode)
     this._wss = new WebSocketServer({ noServer: true });
@@ -456,6 +467,32 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     if (this._state !== "OPEN") {
       abortHandshake(socket, 503, "Server is shutting down");
       return;
+    }
+
+    // ── Step 0.5: Connection-level per-IP rate limit ──
+    const connRateLimit = this._options.connectionRateLimit;
+    if (connRateLimit) {
+      const ip = req.socket.remoteAddress ?? "unknown";
+      const now = Date.now();
+      let bucket = this._connectionBuckets.get(ip);
+      if (!bucket) {
+        bucket = { tokens: connRateLimit.limit, lastRefill: now };
+        this._connectionBuckets.set(ip, bucket);
+      } else {
+        const elapsed = now - bucket.lastRefill;
+        const refillRate = connRateLimit.limit / connRateLimit.windowMs;
+        bucket.tokens = Math.min(
+          connRateLimit.limit,
+          bucket.tokens + elapsed * refillRate,
+        );
+        bucket.lastRefill = now;
+      }
+      if (bucket.tokens < 1) {
+        this._logger?.warn?.("Connection rate limit exceeded", { ip });
+        abortHandshake(socket, 429, "Too Many Requests");
+        return;
+      }
+      bucket.tokens -= 1;
     }
 
     // ── Step 1: Socket readyState & upgrade header validation ──
@@ -866,6 +903,29 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       });
 
       this._updateSessionActivity(identity, client.session);
+
+      // ── Duplicate Identity Eviction ──
+      // If a client with the same identity is already connected (e.g. 4G reconnect
+      // racing the old TCP FIN), evict the stale socket to prevent phantom broadcasts
+      // and memory leaks from zombie connections.
+      const existingClient = this._clientsByIdentity.get(identity);
+      if (existingClient && existingClient !== client) {
+        this._logger?.warn?.("Evicting stale connection for identity", {
+          identity,
+          reason: "Duplicate identity replaced by new connection",
+        });
+        // Fire-and-forget force close — don't await, don't block the new connection
+        existingClient
+          .close({
+            code: 4000,
+            reason: "Evicted by new connection",
+            force: true,
+          })
+          .catch(() => {});
+        // Immediately remove from tracking to prevent race
+        this._clients.delete(existingClient);
+      }
+
       this._clients.add(client);
       this._clientsByIdentity.set(identity, client);
 

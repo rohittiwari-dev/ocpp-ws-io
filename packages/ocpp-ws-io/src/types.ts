@@ -503,6 +503,22 @@ export interface ServerOptions {
    * - `LoggingConfig` → custom configuration
    */
   logging?: LoggingConfig | false;
+  /**
+   * Connection-level rate limiting (per-IP) applied at the HTTP upgrade boundary,
+   * before any auth, TLS or JSON parsing occurs — blocks DDoS connection floods in ~1µs.
+   * - `limit`: Max upgrade requests per IP within `windowMs` (default: 20)
+   * - `windowMs`: Sliding window in ms (default: 10000)
+   */
+  connectionRateLimit?: {
+    limit: number;
+    windowMs: number;
+  };
+  /**
+   * Maximum number of inactive sessions to retain in the bounded LRU cache.
+   * Prevents OOM under DDoS or reconnection storms with transient identities.
+   * (default: 50000)
+   */
+  maxSessions?: number;
 }
 
 // ─── Observability ─────────────────────────────────────────────────
