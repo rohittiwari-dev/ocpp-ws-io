@@ -494,7 +494,10 @@ export class OCPPClient<
     method: M,
     handler: (
       context: HandlerContext<OCPPRequestType<V, M>>,
-    ) => OCPPResponseType<V, M> | Promise<OCPPResponseType<V, M>>,
+    ) =>
+      | OCPPResponseType<V, M>
+      | Promise<OCPPResponseType<V, M>>
+      | typeof NOREPLY,
   ): void;
 
   /**
@@ -522,7 +525,10 @@ export class OCPPClient<
     method: M,
     handler: (
       context: HandlerContext<OCPPRequestType<P, M>>,
-    ) => OCPPResponseType<P, M> | Promise<OCPPResponseType<P, M>>,
+    ) =>
+      | OCPPResponseType<P, M>
+      | Promise<OCPPResponseType<P, M>>
+      | typeof NOREPLY,
   ): void;
 
   /**

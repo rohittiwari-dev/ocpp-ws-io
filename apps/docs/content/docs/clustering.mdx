@@ -71,9 +71,11 @@ When you use `server.safeSendToClient()`, the adapter:
 await server.safeSendToClient("CP001", "ocpp1.6", "Reset", { type: "Hard" });
 ```
 
-### Reliability
+### Reliability & Rehydration
 
 Unlike standard Pub/Sub, **Redis Streams persist messages**. If a node crashes and restarts with the same ID, it will resume processing its stream, ensuring no pending commands are lost.
+
+Furthermore, if the Redis connection itself experiences a temporary blackout, the `RedisAdapter` automatically initiates an **eager rehydration pipeline** upon reconnection. It instantly re-registers all currently connected WebSockets into the global presence registry, preventing out-of-sync routing states without waiting for the next station heartbeat.
 
 ### Configuration Options
 
