@@ -54,7 +54,12 @@ export async function executeMiddlewareChain(
   await dispatch(0);
 }
 
-interface CompiledPattern {
+/**
+ * Compiled regex pattern for RegExp-based route fallback.
+ * Only used when a user registers a RegExp pattern (not string patterns).
+ * @internal
+ */
+export interface CompiledRegexPattern {
   regex: RegExp;
   paramNames: string[];
 }
@@ -62,14 +67,28 @@ interface CompiledPattern {
 /**
  * OCPPRouter — An Express-like Connection dispatcher.
  * Isolated handler for a specific set of matching URL route patterns.
+ *
+ * String patterns are matched via radix trie (O(k) lookup, managed by OCPPServer).
+ * RegExp patterns fall back to linear matching.
  */
 export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<ServerEvents>) {
+  /** Raw registered patterns (strings and/or RegExp) for reference. */
   public patterns: Array<string | RegExp>;
-  public compiledPatterns: CompiledPattern[] = [];
+  /** Connection middlewares attached to this router. */
   public middlewares: ConnectionMiddleware[];
+  /** Auth callback for this route endpoint. */
   public authCallback: AuthCallback<unknown> | null = null;
+  /** Route-level CORS options. */
   public _routeCORS?: CORSOptions;
+  /** Route-level config overrides. */
   public _routeConfig?: RouterConfig;
+
+  /**
+   * Compiled RegExp patterns for fallback linear matching.
+   * Only populated when RegExp patterns are registered.
+   * @internal
+   */
+  public _regexPatterns: CompiledRegexPattern[] = [];
 
   constructor(
     patterns?: Array<string | RegExp>,
@@ -85,32 +104,17 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   /**
    * Appends URL paths or regular expressions to this router's match condition.
+   * String patterns are stored for trie insertion by OCPPServer.
+   * RegExp patterns are compiled for linear fallback matching.
    */
   route(...patterns: Array<string | RegExp>): this {
     this.patterns.push(...patterns);
     for (const p of patterns) {
-      if (typeof p === "string") {
-        const paramNames: string[] = [];
-
-        // 1. Escape regex control characters (except colons and asterisks)
-        let regexStr = p.replace(/[-[\]{}()+?.,\\^$|#\s]/g, "\\$&");
-
-        // 2. Translate Express-style wildcards
-        regexStr = regexStr.replace(/\*/g, ".*");
-
-        // 3. Extract named parameters
-        regexStr = regexStr.replace(/:([a-zA-Z0-9_]+)/g, (_, key) => {
-          paramNames.push(key);
-          return "([^/]+)";
-        });
-
-        this.compiledPatterns.push({
-          regex: new RegExp(`^${regexStr}$`),
-          paramNames,
-        });
-      } else {
-        this.compiledPatterns.push({ regex: p, paramNames: [] });
+      if (typeof p !== "string") {
+        // RegExp — compile for fallback linear matching
+        this._regexPatterns.push({ regex: p, paramNames: [] });
       }
+      // String patterns are handled by the RadixTrie in OCPPServer
     }
     return this;
   }
@@ -151,6 +155,8 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   /**
    * Binds a version-specific OCPP message handler directly to all clients that match this route.
+   *
+   * @throws {Error} AT RUNTIME when a client connects, if a handler for this version and method is already registered for that client.
    */
   handle<V extends OCPPProtocol, M extends AllMethodNames<V>>(
     version: V,
@@ -162,6 +168,8 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   /**
    * Binds a custom/extension message handler directly to all clients that match this route.
+   *
+   * @throws {Error} AT RUNTIME when a client connects, if a handler for this protocol and method is already registered for that client.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handle<S extends string>(
@@ -172,6 +180,8 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   /**
    * Binds a message handler directly to all clients that match this route using the default protocol.
+   *
+   * @throws {Error} AT RUNTIME when a client connects, if a handler for this method is already registered for that client.
    */
   handle<M extends AllMethodNames<OCPPProtocol>>(
     method: M,
@@ -182,14 +192,22 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
       | Promise<OCPPResponseType<OCPPProtocol, M>>,
   ): this;
 
-  /** Binds a custom/extension method not in the typed map. */
+  /**
+   * Binds a custom/extension method not in the typed map.
+   *
+   * @throws {Error} AT RUNTIME when a client connects, if a handler for this method is already registered for that client.
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handle(
     method: string,
     handler: (context: RouterHandlerContext<Record<string, any>>) => any,
   ): this;
 
-  /** Binds a wildcard handler to all clients that match this route. */
+  /**
+   * Binds a wildcard handler to all clients that match this route.
+   *
+   * @throws {Error} AT RUNTIME when a client connects, if a wildcard handler is already registered for that client.
+   */
   handle(handler: RouterWildcardHandler): this;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -11,6 +11,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { WebSocketServer } from "ws";
 import { checkCORS } from "./cors.js";
 import { initLogger } from "./init-logger.js";
+import { RadixTrie } from "./radix-trie.js";
 import { executeMiddlewareChain, OCPPRouter } from "./router.js";
 import { OCPPServerClient } from "./server-client.js";
 
@@ -53,7 +54,12 @@ import {
  */
 export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<ServerEvents>) {
   private _options: ServerOptions;
-  private _routers: OCPPRouter[] = [];
+  /** Radix trie for O(k) route matching (string patterns). */
+  private _trie = new RadixTrie();
+  /** Global middleware routers (server.use() with no patterns — catch-all). */
+  private _globalMiddlewareRouters: OCPPRouter[] = [];
+  /** Routers with RegExp patterns (fallback linear scan). */
+  private _regexRouters: OCPPRouter[] = [];
   private _clients = new Set<OCPPServerClient>();
   private _clientsByIdentity = new Map<string, OCPPServerClient>();
   private _httpServers = new Set<Server>();
@@ -122,10 +128,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   get log() {
     return (this._logger || NOOP_LOGGER) as LoggerLikeNotOptional;
   }
+  /**
+   * Returns a readonly set of all currently connected OCPPServerClient instances.
+   */
   get clients(): ReadonlySet<OCPPServerClient> {
     return this._clients;
   }
 
+  /**
+   * Returns the current server state (OPEN, CLOSING, CLOSED).
+   */
   get state(): "OPEN" | "CLOSING" | "CLOSED" {
     return this._state;
   }
@@ -232,7 +244,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   route(...patterns: Array<string | RegExp>): OCPPRouter {
     const router = new OCPPRouter();
     router.route(...patterns);
-    this._routers.push(router);
+    this._registerRouter(router);
     return router;
   }
 
@@ -241,7 +253,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * This is useful for separating route definitions across different files.
    */
   attachRouters(...routers: OCPPRouter[]): this {
-    this._routers.push(...routers);
+    for (const router of routers) {
+      this._registerRouter(router);
+    }
     return this;
   }
 
@@ -252,7 +266,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   use(...middlewares: ConnectionMiddleware[]): OCPPRouter {
     const router = new OCPPRouter();
     router.use(...middlewares);
-    this._routers.push(router);
+    this._registerRouter(router);
     return router;
   }
 
@@ -264,8 +278,36 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   ): OCPPRouter {
     const router = new OCPPRouter();
     router.auth(callback);
-    this._routers.push(router);
+    this._registerRouter(router);
     return router;
+  }
+
+  /**
+   * Routes a router into the appropriate internal structure:
+   * - String patterns → radix trie (O(k) lookup)
+   * - RegExp patterns → linear fallback array
+   * - No patterns → global middleware (catch-all)
+   * @internal
+   */
+  private _registerRouter(router: OCPPRouter): void {
+    const stringPatterns = router.patterns.filter(
+      (p): p is string => typeof p === "string",
+    );
+    const hasRegex = router._regexPatterns.length > 0;
+
+    if (stringPatterns.length === 0 && !hasRegex) {
+      // No patterns at all → global catch-all middleware
+      this._globalMiddlewareRouters.push(router);
+    } else {
+      // Insert string patterns into the trie
+      for (const pattern of stringPatterns) {
+        this._trie.insert(pattern, router);
+      }
+      // RegExp patterns go to fallback array
+      if (hasRegex) {
+        this._regexRouters.push(router);
+      }
+    }
   }
 
   // ─── Listen ──────────────────────────────────────────────────
@@ -454,54 +496,73 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     const pathname = url.pathname;
 
     let hasTerminalRoute = false;
-    let hasPatternRouters = false;
+    const hasPatternRouters =
+      this._trie.size > 0 || this._regexRouters.length > 0;
     let matchedRouterConfig: import("./types.js").RouterConfig | undefined;
 
-    // 1. Additive Matching: Collect ALL middlewares from ALL matching routers
-    for (const router of this._routers) {
-      let matched = false;
-      if (router.compiledPatterns.length === 0) {
-        // Global middleware (server.use) matches everything
-        matched = true;
-      } else {
-        hasPatternRouters = true;
-        for (const compiled of router.compiledPatterns) {
-          const match = compiled.regex.exec(pathname);
-          if (match) {
-            matched = true;
-            if (compiled.paramNames.length > 0) {
-              compiled.paramNames.forEach((name, i) => {
-                params[name] = decodeURIComponent(match[i + 1] ?? "");
-              });
-            } else if (match.groups) {
-              for (const [key, val] of Object.entries(match.groups)) {
-                params[key] = decodeURIComponent(val ?? "");
-              }
-            }
-            break; // Stop checking patterns within this single router
-          }
+    // ── Freeze trie on first match for V8 JIT optimization ──
+    if (!this._trie.frozen && this._trie.size > 0) {
+      this._trie.freeze();
+    }
+
+    // 1. Global middleware routers — always match (catch-all)
+    for (const router of this._globalMiddlewareRouters) {
+      matchedRouters.push(router);
+      if (router.middlewares.length > 0) {
+        matchedMiddlewares.push(...router.middlewares);
+      }
+      if (router.authCallback && !matchedHandler) {
+        matchedHandler = router.authCallback as AuthCallback | undefined;
+      }
+    }
+
+    // 2. Radix Trie lookup — O(k) where k = path segments
+    const trieResult = this._trie.match(pathname);
+    if (trieResult) {
+      Object.assign(params, trieResult.params);
+      for (const router of trieResult.routers) {
+        matchedRouters.push(router);
+        hasTerminalRoute = true;
+        if (router._routeConfig) {
+          matchedRouterConfig = Object.assign(
+            matchedRouterConfig || {},
+            router._routeConfig,
+          );
+        }
+        if (router.middlewares.length > 0) {
+          matchedMiddlewares.push(...router.middlewares);
+        }
+        if (router.authCallback && !matchedHandler) {
+          matchedHandler = router.authCallback as AuthCallback | undefined;
         }
       }
+    }
 
-      if (matched) {
-        matchedRouters.push(router);
-        if (router.compiledPatterns.length > 0) {
+    // 3. RegExp fallback — linear scan only for routers with RegExp patterns
+    for (const router of this._regexRouters) {
+      for (const compiled of router._regexPatterns) {
+        const match = compiled.regex.exec(pathname);
+        if (match) {
+          matchedRouters.push(router);
           hasTerminalRoute = true;
-          // Use the config of the most specific router
+          if (match.groups) {
+            for (const [key, val] of Object.entries(match.groups)) {
+              params[key] = decodeURIComponent(val ?? "");
+            }
+          }
           if (router._routeConfig) {
             matchedRouterConfig = Object.assign(
               matchedRouterConfig || {},
               router._routeConfig,
             );
           }
-        }
-        // Accumulate middlewares
-        if (router.middlewares.length > 0) {
-          matchedMiddlewares.push(...router.middlewares);
-        }
-        // First matched explicit handler wins (respects route registration order)
-        if (router.authCallback && !matchedHandler) {
-          matchedHandler = router.authCallback as AuthCallback | undefined;
+          if (router.middlewares.length > 0) {
+            matchedMiddlewares.push(...router.middlewares);
+          }
+          if (router.authCallback && !matchedHandler) {
+            matchedHandler = router.authCallback as AuthCallback | undefined;
+          }
+          break; // Stop checking patterns within this single router
         }
       }
     }
