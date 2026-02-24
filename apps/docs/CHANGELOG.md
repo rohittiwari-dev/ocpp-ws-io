@@ -1,5 +1,16 @@
 # docs
 
+## 2.1.5
+
+### Minor Changes
+
+- **Security Page — Payload Size Limit**: New section documenting `maxPayloadBytes` — when to use it, the 64 KB default, and why to avoid raising it unnecessarily.
+- **Security Page — TLS Certificate Hot-Reload**: New section documenting `server.updateTLS()` with a Certbot post-deploy example and guidance on when not to use it (reverse proxy setups).
+- **Security Page — Security Event Monitoring**: New section documenting the `securityEvent` event with full event type table (`AUTH_FAILED`, `CONNECTION_RATE_LIMIT`, `UPGRADE_ABORTED`) and SIEM integration examples for Datadog and PagerDuty.
+- **API Reference — `maxPayloadBytes`**: Added `maxPayloadBytes` to the `ServerOptions` table with description and default value.
+- **API Reference — `updateTLS()`**: Added `updateTLS(options)` method entry with code example and link to the Security page.
+- **API Reference — `on("securityEvent")`**: Added `securityEvent` handler entry with example and link to the Security page.
+
 ## 2.1.4
 
 ### Minor Changes

@@ -8,11 +8,21 @@ import {
 } from "./validator.js";
 
 /**
- * Pre-built validators for all supported OCPP protocol versions.
- * These are automatically registered when strict mode is enabled.
+ * E2: Lazily-initialized validators for all supported OCPP protocol versions.
+ * Schemas are only loaded and registered when strict mode is first activated,
+ * reducing startup time for non-strict servers to near-zero.
+ *
+ * E5: Uses the global validator registry via createValidator(), so multiple
+ * calls to this function return the same cached instances.
  */
-export const standardValidators: Validator[] = [
-  createValidator("ocpp1.6", ocpp16 as ValidatorSchema[]),
-  createValidator("ocpp2.0.1", ocpp201 as ValidatorSchema[]),
-  createValidator("ocpp2.1", ocpp21 as ValidatorSchema[]),
-];
+let _cached: Validator[] | null = null;
+
+export function getStandardValidators(): Validator[] {
+  if (_cached) return _cached;
+  _cached = [
+    createValidator("ocpp1.6", ocpp16 as ValidatorSchema[]),
+    createValidator("ocpp2.0.1", ocpp201 as ValidatorSchema[]),
+    createValidator("ocpp2.1", ocpp21 as ValidatorSchema[]),
+  ];
+  return _cached;
+}

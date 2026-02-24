@@ -113,8 +113,8 @@ export class OCPPServerClient extends OCPPClient {
 
         if (limits.methods) {
           try {
-            const str = data.toString();
-            pData = JSON.parse(str);
+            // Zero-copy — JSON.parse accepts Buffer directly (Node 18+)
+            pData = JSON.parse(data as unknown as string);
             if (Array.isArray(pData) && pData[0] === 2) {
               method = pData[2];
             }
