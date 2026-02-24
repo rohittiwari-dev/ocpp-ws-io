@@ -417,3 +417,7 @@ export class CustomAdapter implements EventAdapterInterface {
   async metrics?(): Promise<Record<string, unknown>>;
 }
 ```
+
+## 🙏 Inspiration & Thanks
+
+A massive thanks to [Mikuso](https://github.com/mikuso) for their fantastic work on [ocpp-rpc](https://github.com/mikuso/ocpp-rpc), which provided the brilliant early foundation for bridging OCPP-J JSON schemas in JavaScript. While building `ocpp-ws-io`, I wanted to expand on those great ideas by introducing strict, native end-to-end TypeScript support, allowing the community to build even safer CSMS platforms.
