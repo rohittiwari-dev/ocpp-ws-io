@@ -136,3 +136,94 @@ server.auth((ctx) => {
   ctx.accept();
 });
 ```
+
+## Payload Size Limit
+
+By default, the server rejects any WebSocket frame larger than **64KB** before
+it is JSON-parsed. This prevents a malicious client from sending a multi-gigabyte
+payload that would exhaust Node.js heap memory (OOM).
+
+You can tune the limit with `maxPayloadBytes`:
+
+```typescript
+const server = new OCPPServer({
+  maxPayloadBytes: 131072, // 128 KB
+});
+```
+
+<Callout type="info">
+  64 KB is well above the maximum size of any valid OCPP message. Only raise
+  this limit if you have a documented need for larger payloads.
+</Callout>
+
+## TLS Certificate Hot-Reload
+
+When running Node.js as a direct TLS edge server (Security Profile 2 or 3),
+certificates must be rotated before they expire — typically every 90 days with
+Let's Encrypt. Restarting the process drops all connected charging stations.
+
+Use `server.updateTLS()` to swap certificates without disconnecting anyone:
+
+```typescript
+import fs from "fs";
+
+// Called from your cert-renewal hook (e.g. Certbot post-deploy script)
+server.updateTLS({
+  cert: fs.readFileSync("./certs/server.crt"),
+  key: fs.readFileSync("./certs/server.key"),
+});
+```
+
+<Callout type="info">
+  Not needed if you terminate TLS at a reverse proxy (Nginx, AWS ALB, Traefik,
+  etc.). In that case just reload the proxy — Node.js never sees the TLS layer.
+</Callout>
+
+## Security Event Monitoring
+
+The server emits a `securityEvent` for every security-relevant action. Hook
+into this for SIEM integration, alerting, or audit logging — no log parsing
+required.
+
+```typescript
+server.on("securityEvent", (event) => {
+  // event.type    — "AUTH_FAILED" | "CONNECTION_RATE_LIMIT" | "UPGRADE_ABORTED"
+  // event.identity — station ID (if known at the time)
+  // event.ip       — remote IP address
+  // event.timestamp — ISO 8601 string
+  // event.details  — event-specific metadata
+  console.log(event);
+});
+```
+
+### Event types
+
+| Type                    | When it fires                                                          |
+| :---------------------- | :--------------------------------------------------------------------- |
+| `AUTH_FAILED`           | Auth callback rejected the connection (wrong password, bad cert)       |
+| `CONNECTION_RATE_LIMIT` | A single IP exceeded the connection rate limit (`connectionRateLimit`) |
+| `UPGRADE_ABORTED`       | Handshake timed out or was aborted before auth completed               |
+
+### SIEM integration examples
+
+**Datadog:**
+
+```typescript
+server.on("securityEvent", (event) => {
+  datadogMetrics.increment("ocpp.security_event", 1, [`type:${event.type}`]);
+});
+```
+
+**PagerDuty (alert on brute-force):**
+
+```typescript
+const failures = new Map<string, number>();
+
+server.on("securityEvent", (event) => {
+  if (event.type !== "AUTH_FAILED") return;
+  const count = (failures.get(event.ip!) ?? 0) + 1;
+  failures.set(event.ip!, count);
+  if (count >= 10)
+    pagerduty.createIncident({ title: `Brute-force from ${event.ip}` });
+});
+```
