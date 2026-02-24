@@ -4,7 +4,7 @@
 
 **Type-safe OCPP WebSocket RPC client & server for Node.js**
 
-Built with TypeScript from the ground up — supports OCPP 1.6, 2.0.1, and 2.1 with full JSON schema validation, all security profiles, and Redis-based clustering.
+Built with TypeScript from the ground up — supports OCPP 1.6, 2.0.1, and 2.1 with full JSON schema validation, all security profiles, Redis-based clustering, and blazing fast structured logging powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io).
 
 [![npm version](https://img.shields.io/npm/v/ocpp-ws-io.svg?style=flat-square&color=cb3837)](https://www.npmjs.com/package/ocpp-ws-io)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
@@ -25,12 +25,15 @@ Building an OCPP-compliant charging station management system (CSMS) or charge p
 - 🎯 **End-to-end type safety** — Auto-generated TypeScript types for all OCPP 1.6, 2.0.1, and 2.1 methods
 - 🔒 **Security Profiles 0–3** — Plain WS, Basic Auth, TLS + Basic Auth, Mutual TLS
 - 📐 **Schema Validation** — Optional strict mode with built-in JSON schema validation
-- 🔁 **Auto-Reconnect** — Exponential backoff with configurable limits
+- 🚦 **DDoS Protection** — Socket-layer Token Bucket Rate Limiting per station and method
+- 🔁 **Auto-Reconnect & Rehydration** — Exponential backoff with Eager Redis state-synchronization
 - 🧩 **Framework Agnostic** — Standalone, Express, Fastify, NestJS, or custom `handleUpgrade`
-- 📡 **Clustering** — Redis adapter for multi-instance deployments (`ioredis` & `node-redis`)
-- 🪵 **Logging** — Built-in structured logging via [voltlog-io](https://www.npmjs.com/package/voltlog-io)
+- 📡 **Clustering** — Redis adapter for multi-instance deployments featuring Zero-Message-Loss streams
+- 📊 **Prometheus Ready** — Turnkey `/health` and `/metrics` observability endpoints
+- 🪵 **Logging** — Blazing fast, built-in structured logging powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io)
 - 🌐 **Browser Client** — Zero-dependency browser WebSocket client via `ocpp-ws-io/browser`
-- 🔀 **Version-Aware Handlers** — Register handlers per OCPP version with typed params
+- 🔀 **Express-style Routing** — Dynamically scope auth and middleware across `OCPPRouter` URL paths
+- 🔑 **Idempotency Keys** — Single Source of Truth message tracking guaranteeing exactly-once delivery on retries
 
 ## Quick Start
 

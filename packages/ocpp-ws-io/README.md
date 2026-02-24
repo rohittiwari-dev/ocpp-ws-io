@@ -2,7 +2,7 @@
 
 > **Type-safe OCPP WebSocket RPC client & server for Node.js.**
 >
-> built with TypeScript — supports OCPP 1.6, 2.0.1, and 2.1 with full JSON schema validation, all security profiles, and clustering support.
+> built with TypeScript — supports OCPP 1.6, 2.0.1, and 2.1 with full JSON schema validation, all security profiles, clustering support, and blazing fast structured logging powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io).
 
 [![npm version](https://img.shields.io/npm/v/ocpp-ws-io.svg)](https://www.npmjs.com/package/ocpp-ws-io)
 [![License](https://img.shields.io/npm/l/ocpp-ws-io.svg)](https://github.com/rohittiwari-dev/ocpp-ws-io/blob/main/LICENSE)
@@ -102,6 +102,13 @@ await server.listen(3000);
 | `strictMode`        | `boolean \| string[]` | `false`    | Enable/restrict schema validation       |
 | `strictModeMethods` | `string[]`            | —          | Restrict validation to specific methods |
 
+**Call Options**
+When invoking `client.call()` you can safely decouple dynamically generated message IDs and pass your own deterministic keys:
+
+```typescript
+await client.call("ocpp1.6", "BootNotification", { ... }, { idempotencyKey: "unique-boot-123" });
+```
+
 ### `OCPPServer` Options
 
 | Option               | Type               | Default   | Description                                |
@@ -113,6 +120,7 @@ await server.listen(3000);
 | `logging`            | `LoggingConfig`    | `true`    | Configure built-in logging                 |
 | `sessionTtlMs`       | `number`           | `7200000` | Garbage collection inactivity timeout (ms) |
 | `rateLimit`          | `RateLimitOptions` | —         | Token bucket socket & method rate-limiter  |
+| `healthEndpoint`     | `boolean`          | `false`   | Expose HTTP `/health` and `/metrics` APIs  |
 
 ## 🛠️ Advanced Server Configuration
 
@@ -151,9 +159,21 @@ Executes before the WebSocket connection is officially accepted.
 
 Executes after the connection is accepted and messages start flowing. 4. **Message Middleware (`client.use` / `server.use`)**: Intercepts every outgoing/incoming message for logging, schema validation, or metric tracking. 5. **Message Handlers (`client.handle` / `server.handle`)**: The **final piece of business logic** where the system reacts to a specific OCPP action (e.g., `BootNotification`).
 
+### NOREPLY Suppression
+
+Return `NOREPLY` directly from any message handler to safely suppress the automatic outbound `CALLRESULT` without violating strict internal tracking specifications.
+
+```typescript
+import { NOREPLY } from "ocpp-ws-io";
+
+client.handle("StatusNotification", ({ params }) => {
+  return NOREPLY;
+});
+```
+
 ## 📝 Logging
 
-ocpp-ws-io comes with **built-in structured logging** via [voltlog-io](https://www.npmjs.com/package/voltlog-io).
+`ocpp-ws-io` comes with blazing fast, **built-in structured JSON logging** powered by our custom-built logger, [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io). It is finely tuned specifically for high-throughput WebSocket environments.
 
 ### Default Behavior
 
