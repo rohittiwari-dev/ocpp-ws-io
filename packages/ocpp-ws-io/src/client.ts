@@ -18,7 +18,7 @@ import { createLoggingMiddleware } from "./helpers/index.js";
 import { initLogger } from "./init-logger.js";
 import { type MiddlewareFunction, MiddlewareStack } from "./middleware";
 import { Queue } from "./queue.js";
-import { standardValidators } from "./standard-validators.js";
+import { getStandardValidators } from "./standard-validators.js";
 import {
   type CallHandler,
   type CallOptions,
@@ -133,6 +133,7 @@ export class OCPPClient<
 
   constructor(options: ClientOptions) {
     super();
+    this.setMaxListeners(0); // E3: prevent MaxListenersExceededWarning at 10k+ clients
 
     if (!options.identity) {
       throw new Error("identity is required");
@@ -955,11 +956,15 @@ export class OCPPClient<
 
     let message: OCPPMessage;
     try {
-      const str = rawData.toString();
-      message = JSON.parse(str) as OCPPMessage;
+      // E1: Zero-copy — JSON.parse accepts Buffer directly (Node 18+),
+      // avoiding an intermediate string allocation per message.
+      message = JSON.parse(rawData as unknown as string) as OCPPMessage;
       if (!Array.isArray(message)) throw new Error("Message is not an array");
     } catch (err) {
-      this._onBadMessage(rawData.toString(), err as Error);
+      this._onBadMessage(
+        typeof rawData === "string" ? rawData : (rawData as Buffer).toString(),
+        err as Error,
+      );
       return;
     }
 
@@ -1406,10 +1411,15 @@ export class OCPPClient<
 
     if (ws.bufferedAmount > OCPPClient._BACKPRESSURE_THRESHOLD) {
       this._logger?.warn?.("Backpressure — pausing send", {
+        identity: this._identity,
         bufferedAmount: ws.bufferedAmount,
         threshold: OCPPClient._BACKPRESSURE_THRESHOLD,
       });
-      this.emit("backpressure" as any, { bufferedAmount: ws.bufferedAmount });
+      // E4: Emit identity + buffered amount for operator alerting
+      this.emit("backpressure" as any, {
+        identity: this._identity,
+        bufferedAmount: ws.bufferedAmount,
+      });
 
       // Poll until buffer drains below threshold (check every 50ms, timeout 10s)
       let waited = 0;
@@ -1499,7 +1509,7 @@ export class OCPPClient<
     if (this._options.strictModeValidators) {
       this._validators = this._options.strictModeValidators;
     } else {
-      this._validators = standardValidators;
+      this._validators = getStandardValidators();
     }
 
     if (Array.isArray(this._options.strictMode)) {

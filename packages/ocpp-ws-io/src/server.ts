@@ -88,6 +88,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   constructor(options: ServerOptions = {}) {
     super();
+    this.setMaxListeners(0); // E3: prevent MaxListenersExceededWarning at 10k+ clients
 
     if (options.strictMode) {
       if (!options.strictModeValidators && !options.protocols?.length) {
