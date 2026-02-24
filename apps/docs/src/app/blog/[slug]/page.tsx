@@ -23,6 +23,9 @@ export async function generateMetadata({
     title: page.title,
     description: page.description,
     keywords: page.tags,
+    alternates: {
+      canonical: `https://ocpp-ws-io.rohittiwari.me${page.url}`,
+    },
     openGraph: {
       title: page.title,
       description: page.description,

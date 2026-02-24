@@ -42,8 +42,21 @@ export default function HomePage() {
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 3);
 
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    url: "https://ocpp-ws-io.rohittiwari.me",
+    name: "OCPP WS IO",
+    description: "Type-safe OCPP WebSocket RPC client & server for Node.js",
+  };
+
   return (
     <div className="flex flex-col min-h-screen max-w-7xl mx-auto">
+      <script
+        type="application/ld+json"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: safe as we control the content
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <Hero />
       <VideoDemo />
       <CodeShowcase />

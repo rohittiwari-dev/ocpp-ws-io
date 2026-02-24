@@ -17,6 +17,9 @@ const outfit = Outfit({
 
 export const metadata = {
   metadataBase: new URL("https://ocpp-ws-io.rohittiwari.me"),
+  alternates: {
+    canonical: "./",
+  },
   title: {
     template: "%s | OCPP WS IO",
     default: "OCPP WS IO",
@@ -34,6 +37,12 @@ export const metadata = {
     "EV Charging",
     "CSMS",
     "Charging Station",
+    "Charge Point",
+    "EVSE",
+    "OCPP Library",
+    "OCPP Framework",
+    "OCPP Server",
+    "OCPP Client",
   ],
   authors: [{ name: "Rohit Tiwari", url: "https://rohittiwari.me" }],
   creator: "Rohit Tiwari",
