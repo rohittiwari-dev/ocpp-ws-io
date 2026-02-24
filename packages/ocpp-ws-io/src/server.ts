@@ -88,7 +88,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   constructor(options: ServerOptions = {}) {
     super();
-    this.setMaxListeners(0); // E3: prevent MaxListenersExceededWarning at 10k+ clients
+    this.setMaxListeners(0);
 
     if (options.strictMode) {
       if (!options.strictModeValidators && !options.protocols?.length) {
@@ -118,7 +118,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     this._sessions = new LRUMap(maxSessions);
 
     // Initialize WebSocketServer immediately (ws best practice: noServer mode)
-    this._wss = new WebSocketServer({ noServer: true });
+    // Apply maxPayloadBytes to reject oversized frames at the transport layer
+    this._wss = new WebSocketServer({
+      noServer: true,
+      maxPayload: this._options.maxPayloadBytes ?? 65536,
+    });
 
     // Start Session Garbage Collector
     this._gcInterval = setInterval(() => {
@@ -388,7 +392,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     httpServer.on("upgrade", upgradeHandler);
     this._httpServers.add(httpServer);
 
-    // D3: Health/Metrics HTTP endpoint
+    // Health/Metrics HTTP endpoint
     if (this._options.healthEndpoint) {
       httpServer.on("request", (req, res) => {
         const url = req.url ?? "";
@@ -492,6 +496,64 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     return httpServer;
   }
 
+  /**
+   * Hot-reloads the TLS certificate on all active HTTPS servers without
+   * dropping any existing WebSocket connections.
+   *
+   * **When to use:** Call this whenever your TLS certificate is renewed —
+   * for example, after a Let's Encrypt auto-renewal (every ~90 days).
+   * Without this, you would need to restart the Node.js process to pick up
+   * the new certificate, disconnecting all connected charging stations.
+   *
+   * **How to use:**
+   * ```ts
+   * server.updateTLS({ cert: newCert, key: newKey });
+   * ```
+   *
+   * **Optional:** Only relevant if you are terminating TLS directly in Node.js
+   * (i.e. `SecurityProfile.TLS_BASIC_AUTH` or `TLS_CLIENT_CERT`). If you are
+   * running behind a reverse proxy (Nginx, AWS ALB, etc.) that handles TLS,
+   * you do not need this method — just rotate the cert on the proxy.
+   *
+   * @throws If the server is not using a TLS Security Profile.
+   */
+  updateTLS(tlsOpts: import("./types.js").TLSOptions): void {
+    const profile = this._options.securityProfile ?? SecurityProfile.NONE;
+    if (
+      profile !== SecurityProfile.TLS_BASIC_AUTH &&
+      profile !== SecurityProfile.TLS_CLIENT_CERT
+    ) {
+      throw new Error(
+        "updateTLS() requires a TLS Security Profile (TLS_BASIC_AUTH or TLS_CLIENT_CERT)",
+      );
+    }
+
+    // Persist so future listen() calls pick up the new certs
+    this._options.tls = { ...this._options.tls, ...tlsOpts };
+
+    // Build options object (Node's setSecureContext accepts SecureContextOptions)
+    const httpsOptions: Record<string, unknown> = {};
+    if (tlsOpts.cert) httpsOptions.cert = tlsOpts.cert;
+    if (tlsOpts.key) httpsOptions.key = tlsOpts.key;
+    if (tlsOpts.ca) httpsOptions.ca = tlsOpts.ca;
+    if (tlsOpts.passphrase) httpsOptions.passphrase = tlsOpts.passphrase;
+
+    let updated = 0;
+    for (const srv of this._httpServers) {
+      if (
+        "setSecureContext" in srv &&
+        typeof (srv as any).setSecureContext === "function"
+      ) {
+        (srv as any).setSecureContext(httpsOptions);
+        updated++;
+      }
+    }
+
+    this._logger?.info?.(
+      `TLS context hot-reloaded across ${updated} active server(s)`,
+    );
+  }
+
   // ─── Handle Upgrade ──────────────────────────────────────────
 
   get handleUpgrade(): (
@@ -533,13 +595,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     socket: Duplex,
     head: Buffer,
   ): Promise<void> {
-    // ── Step 0: Server state guard ──
+    // Server state guard
     if (this._state !== "OPEN") {
       abortHandshake(socket, 503, "Server is shutting down");
       return;
     }
 
-    // ── Step 0.5: Connection-level per-IP rate limit ──
+    // Connection-level per-IP rate limit
     const connRateLimit = this._options.connectionRateLimit;
     if (connRateLimit) {
       const ip = req.socket.remoteAddress ?? "unknown";
@@ -559,13 +621,20 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
       if (bucket.tokens < 1) {
         this._logger?.warn?.("Connection rate limit exceeded", { ip });
+        // Emit security event for connection-level rate limiting
+        this.emit("securityEvent", {
+          type: "CONNECTION_RATE_LIMIT",
+          ip,
+          timestamp: new Date().toISOString(),
+          details: { tokensRemaining: bucket.tokens },
+        });
         abortHandshake(socket, 429, "Too Many Requests");
         return;
       }
       bucket.tokens -= 1;
     }
 
-    // ── Step 1: Socket readyState & upgrade header validation ──
+    // Socket readyState & upgrade header validation
     if ((socket as import("node:net").Socket).readyState !== "open") {
       this._logger?.debug?.("Socket not open at upgrade start");
       if (!socket.destroyed) socket.destroy();
@@ -577,7 +646,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return;
     }
 
-    // ── Step 1.5: Global CORS gate ──
+    // Global CORS gate
     if (this._globalCORS) {
       const { allowed, reason } = checkCORS(req, this._globalCORS);
       if (!allowed) {
@@ -590,7 +659,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
     }
 
-    // ── Step 2: Parse URL & Execute Router ──
+    // Parse URL & execute router
     const url = new URL(
       req.url ?? "/",
       `http://${req.headers.host ?? "localhost"}`,
@@ -688,7 +757,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return;
     }
 
-    // ── Step 2.5: Route-level CORS gate ──
+    // Route-level CORS gate
     for (const router of matchedRouters) {
       if (router._routeCORS) {
         const { allowed, reason } = checkCORS(req, router._routeCORS);
@@ -703,12 +772,12 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
     }
 
-    // ── Step 3: TCP Keep-Alive ──
+    // TCP Keep-Alive
     if ("setKeepAlive" in socket) {
       (socket as import("node:net").Socket).setKeepAlive(true);
     }
 
-    // ── Step 4: Parse & negotiate subprotocols ──
+    // Parse & negotiate subprotocols
     let protocols = new Set<string>();
     const protocolHeader = req.headers["sec-websocket-protocol"];
     if (protocolHeader) {
@@ -736,10 +805,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
     }
 
-    // ── Step 5: Parse Basic Auth (modular) ──
+    // Parse Basic Auth (modular)
     const password = parseBasicAuth(req.headers.authorization ?? "", identity);
 
-    // ── Step 6: Client certificate (Profile 3 — mTLS) ──
+    // Client certificate (Profile 3 — mTLS)
     let clientCertificate:
       | ReturnType<TLSSocket["getPeerCertificate"]>
       | undefined;
@@ -751,7 +820,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       clientCertificate = (socket as TLSSocket).getPeerCertificate();
     }
 
-    // ── Step 7: Build HandshakeInfo ──
+    // Build HandshakeInfo
     const handshake: HandshakeInfo = {
       identity,
       remoteAddress: req.socket.remoteAddress ?? "",
@@ -766,7 +835,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       securityProfile: profile,
     };
 
-    // ── Step 8: Auth callback with AbortController + timeout ──
+    // Auth callback with AbortController + timeout
     let ctx: import("./types.js").ConnectionContext | undefined;
     let acceptOptions: import("./types.js").AuthAccept | undefined;
 
@@ -884,6 +953,14 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         if (ac.signal.aborted) {
           const reason = err instanceof Error ? err.message : "Unknown abort";
           this._logger?.warn?.("Handshake aborted", { identity, reason });
+          // Emit security event for upgrade aborts
+          this.emit("securityEvent", {
+            type: "UPGRADE_ABORTED",
+            identity,
+            ip: req.socket.remoteAddress,
+            timestamp: new Date().toISOString(),
+            details: { reason },
+          });
           this.emit("upgradeAborted", {
             identity,
             reason,
@@ -901,6 +978,14 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           typeof errObj?.message === "string" ? errObj.message : "Unauthorized";
 
         this._logger?.warn?.("Auth rejected", { identity, code });
+        // Emit security event for auth failures
+        this.emit("securityEvent", {
+          type: "AUTH_FAILED",
+          identity,
+          ip: req.socket.remoteAddress,
+          timestamp: new Date().toISOString(),
+          details: { code, message },
+        });
         abortHandshake(socket, code, message);
         return;
       } finally {
@@ -919,7 +1004,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return;
     }
 
-    // ── Step 9: Socket readyState check before upgrade ──
+    // Socket readyState check before upgrade
     if ((socket as import("node:net").Socket).readyState !== "open") {
       this._logger?.debug?.("Socket closed before upgrade completion", {
         identity,
@@ -930,10 +1015,14 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
     // Ensure _wss is available (should always be after constructor init)
     if (!this._wss) {
-      this._wss = new WebSocketServer({ noServer: true });
+      // Reapply maxPayload on re-init
+      this._wss = new WebSocketServer({
+        noServer: true,
+        maxPayload: this._options.maxPayloadBytes ?? 65536,
+      });
     }
 
-    // ── Step 10: Complete WebSocket upgrade & create client ──
+    // Complete WebSocket upgrade & create client
     this._wss.handleUpgrade(req, socket, head, (ws) => {
       const clientOptions: ClientOptions = {
         identity,

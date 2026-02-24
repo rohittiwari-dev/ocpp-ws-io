@@ -46,10 +46,10 @@ export class RedisAdapter implements EventAdapterInterface {
   private _polling = false;
   private _closed = false;
 
-  // C4: Per-stream sequence counter for message ordering
+  // Per-stream sequence counter for message ordering
   private _sequenceCounters = new Map<string, number>();
 
-  // C3: Rehydration callbacks
+  // Rehydration callbacks
   private _unsubError?: () => void;
   private _unsubReconnect?: () => void;
 
@@ -67,7 +67,7 @@ export class RedisAdapter implements EventAdapterInterface {
       options.blockingClient,
     );
 
-    // C3: Redis Failure Rehydration — listen for errors and re-sync on reconnect
+    // Redis Failure Rehydration — listen for errors and re-sync on reconnect
     if (this._driver.onError) {
       this._unsubError = this._driver.onError((err) => {
         // Log for observability — consumers can attach their own logger
@@ -84,7 +84,7 @@ export class RedisAdapter implements EventAdapterInterface {
   async publish(channel: string, data: unknown): Promise<void> {
     const prefixedChannel = this._prefix + channel;
 
-    // C4: Attach sequence ID to unicast messages for ordering
+    // Attach sequence ID to unicast messages for ordering
     const payload = data as Record<string, unknown> | null;
     if (
       payload &&
@@ -101,7 +101,7 @@ export class RedisAdapter implements EventAdapterInterface {
     // Unicast (Node-to-Node) -> Use Streams
     if (channel.startsWith("ocpp:node:")) {
       await this._driver.xadd(prefixedChannel, { message }, this._streamMaxLen);
-      // C2: Set TTL lease on ephemeral stream key to prevent memory leaks
+      // Set TTL lease on ephemeral stream key to prevent memory leaks
       await this._driver
         .expire(prefixedChannel, this._streamTtlSeconds)
         .catch(() => {});

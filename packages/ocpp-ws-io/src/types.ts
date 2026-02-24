@@ -552,6 +552,13 @@ export interface ServerOptions {
    * (default: false)
    */
   healthEndpoint?: boolean;
+  /**
+   * I1: Maximum WebSocket payload size in bytes. Messages exceeding this limit
+   * are rejected at the transport layer before JSON parsing, preventing OOM
+   * from oversized or malicious payloads.
+   * (default: 65536 / 64KB — sufficient for any standard OCPP message)
+   */
+  maxPayloadBytes?: number;
 }
 
 // ─── Observability ─────────────────────────────────────────────────
@@ -630,6 +637,28 @@ export interface ClientEvents {
 
 import type { OCPPServerClient } from "./server-client.js";
 
+/**
+ * I3: Structured security event for SIEM integration.
+ * Emitted by the server for audit-relevant actions.
+ */
+export interface SecurityEvent {
+  /** Event type identifier */
+  type:
+    | "AUTH_FAILED"
+    | "RATE_LIMIT_EXCEEDED"
+    | "UPGRADE_ABORTED"
+    | "CONNECTION_RATE_LIMIT"
+    | "INVALID_PAYLOAD";
+  /** Station identity (if known) */
+  identity?: string;
+  /** Remote IP address */
+  ip?: string;
+  /** ISO 8601 timestamp */
+  timestamp: string;
+  /** Event-specific details */
+  details?: Record<string, unknown>;
+}
+
 export interface ServerEvents {
   client: [OCPPServerClient];
   error: [Error];
@@ -644,6 +673,8 @@ export interface ServerEvents {
   ];
   closing: [];
   close: [];
+  /** I3: Structured security event for SIEM/audit pipelines */
+  securityEvent: [SecurityEvent];
   // Native WebSocketServer events
   connection: [
     socket: import("ws").WebSocket,

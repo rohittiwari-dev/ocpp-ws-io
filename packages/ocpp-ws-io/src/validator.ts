@@ -88,7 +88,7 @@ export class Validator {
     });
     addFormats(this._ajv);
 
-    // E2: Register schemas without compiling them.
+    // Register schemas without compiling them.
     // AJV's addSchema() stores schemas as-is; compilation (the expensive part)
     // happens lazily when getSchema() is first called for a given $id.
     for (const schema of schemas) {

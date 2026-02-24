@@ -133,7 +133,7 @@ export class OCPPClient<
 
   constructor(options: ClientOptions) {
     super();
-    this.setMaxListeners(0); // E3: prevent MaxListenersExceededWarning at 10k+ clients
+    this.setMaxListeners(0);
 
     if (!options.identity) {
       throw new Error("identity is required");
@@ -956,7 +956,7 @@ export class OCPPClient<
 
     let message: OCPPMessage;
     try {
-      // E1: Zero-copy — JSON.parse accepts Buffer directly (Node 18+),
+      // Zero-copy — JSON.parse accepts Buffer directly (Node 18+),
       // avoiding an intermediate string allocation per message.
       message = JSON.parse(rawData as unknown as string) as OCPPMessage;
       if (!Array.isArray(message)) throw new Error("Message is not an array");
@@ -1415,7 +1415,7 @@ export class OCPPClient<
         bufferedAmount: ws.bufferedAmount,
         threshold: OCPPClient._BACKPRESSURE_THRESHOLD,
       });
-      // E4: Emit identity + buffered amount for operator alerting
+      // Emit identity + buffered amount for operator alerting
       this.emit("backpressure" as any, {
         identity: this._identity,
         bufferedAmount: ws.bufferedAmount,
