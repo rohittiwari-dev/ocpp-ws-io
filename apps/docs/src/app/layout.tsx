@@ -22,9 +22,10 @@ export const metadata = {
   },
   title: {
     template: "%s | OCPP WS IO",
-    default: "OCPP WS IO",
+    default: "OCPP WS IO — Type-Safe OCPP WebSocket Library for Node.js",
   },
-  description: "Type-safe OCPP WebSocket RPC client & server for Node.js",
+  description:
+    "Build scalable CSMS and Charging Stations with ocpp-ws-io. Type-safe OCPP WebSocket library for Node.js — supports OCPP 1.6, 2.0.1, 2.1, strict validation, Redis clustering, and a browser client.",
   keywords: [
     "OCPP",
     "OCPP 1.6",
@@ -57,7 +58,8 @@ export const metadata = {
     url: "https://ocpp-ws-io.rohittiwari.me",
     siteName: "OCPP WS IO",
     title: "OCPP WS IO",
-    description: "Type-safe OCPP WebSocket RPC client & server for Node.js",
+    description:
+      "Build scalable CSMS and Charging Stations with ocpp-ws-io. Type-safe OCPP WebSocket library for Node.js — supports OCPP 1.6, 2.0.1, 2.1, strict validation, Redis clustering, and a browser client.",
     images: [
       {
         url: "/og.png",
@@ -83,7 +85,8 @@ export default function Layout({ children }: { children: ReactNode }) {
     name: "ocpp-ws-io",
     operatingSystem: "Independent",
     applicationCategory: "DeveloperApplication",
-    description: "Type-safe OCPP WebSocket RPC client & server for Node.js",
+    description:
+      "Build scalable CSMS and Charging Stations with ocpp-ws-io. Type-safe OCPP WebSocket library for Node.js — supports OCPP 1.6, 2.0.1, 2.1, strict validation, Redis clustering, and a browser client.",
     aggregateRating: {
       "@type": "AggregateRating",
       ratingValue: "5",
