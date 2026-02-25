@@ -63,7 +63,7 @@ server.auth((ctx) => {
 });
 
 // Handle new client connections
-server.on("client", (client) => {
+server.on("client", async (client) => {
   console.log(`${client.identity} connected (protocol: ${client.protocol})`);
 
   // Version-aware handlers — params typed per OCPP version

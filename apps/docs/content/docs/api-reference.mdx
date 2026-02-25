@@ -285,7 +285,7 @@ if (result !== undefined) {
 
 #### `broadcastBatch(identities, method, params, options?)`
 
-Broadcast an identical RPC call to thousands of stations concurrently. For clustered architectures, unicast commands are grouped and dispatched in mass pipeline batches via the adapter's Native streams to drastically avoid Host TCP round-trip delays.
+Broadcast an identical RPC call to many stations concurrently. For clustered architectures, unicast commands are grouped and dispatched in pipeline batches via the adapter's streams, reducing per-message TCP round-trip overhead.
 
 ```typescript
 const targets = ["CP-001", "CP-002", "CP-003", ...thousands];
@@ -434,7 +434,7 @@ client.sendRaw(JSON.stringify([2, "uuid", "Heartbeat", {}]));
 
 #### `logger`
 
-A fully initialized `logger` specific to the browser console. Works seamlessly with browser contexts.
+A fully initialized `logger` specific to the browser console. Works with browser contexts.
 
 ```typescript
 client.logger.info("Retrying connection...");
@@ -444,7 +444,7 @@ client.logger.info("Retrying connection...");
 
 #### `logger`
 
-A fully initialized `logger` specific to the browser console. Works seamlessly with browser contexts.
+A fully initialized `logger` specific to the browser console. Works with browser contexts.
 
 ```typescript
 client.logger.info("Retrying connection...");

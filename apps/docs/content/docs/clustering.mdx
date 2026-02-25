@@ -5,14 +5,14 @@ description: Scale your OCPP server with Redis Streams and Pub/Sub.
 
 # Clustering
 
-`ocpp-ws-io` includes a powerful Redis adapter that allows you to scale your WebSocket server across multiple nodes (e.g., in Kubernetes or behind a load balancer).
+`ocpp-ws-io` includes a Redis adapter that allows you to scale your WebSocket server across multiple nodes (e.g., in Kubernetes or behind a load balancer).
 
 ## Architecture
 
 The adapter uses a hybrid approach for maximum performance and reliability:
 
 1.  **Broadcast (Pub/Sub)**: For messages that must reach _all_ nodes (e.g., broad system events).
-2.  **Unicast (Streams)**: For point-to-point routing (e.g., sending a command to a specific Charge Point). This uses Redis Streams to ensure **zero message loss** if a node temporarily restarts.
+2.  **Unicast (Streams)**: For point-to-point routing (e.g., sending a command to a specific Charge Point). This uses Redis Streams so that if a node restarts with the same consumer group, it can resume processing pending messages. Note: messages may be lost if the stream is trimmed (via `streamMaxLen`) before consumption.
 3.  **Presence**: Automatically tracks which node a Charge Point is connected to.
 
 ## Installation
@@ -102,7 +102,7 @@ console.log(telemetry.redisConsumerLag.pendingMessages); // "142"
 
 #### Pipeline Batching (`publishBatch`)
 
-When dispatching massive multi-node Unicast events (like a worldwide `ClearCache`), `ocpp-ws-io` groups all messages per-node and fires them off using a single `Redis.pipeline()`. This completely eliminates Redis socket saturation and TCP round-trip delays, boosting outbound throughput by nearly 900%.
+When dispatching multi-node Unicast events (like a fleet-wide `ClearCache`), `ocpp-ws-io` groups all messages per target node and dispatches them using a single `Redis.pipeline()`. This collapses N individual Redis round-trips into one pipeline call per node, reducing latency under bulk dispatch.
 
 This is automatically utilized when you call `server.broadcastBatch()`.
 

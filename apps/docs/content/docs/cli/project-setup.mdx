@@ -7,7 +7,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## `ocpp init`
 
-Scaffolds a new production-ready ocpp-ws-io project with best practices.
+Scaffolds a new ocpp-ws-io project with sensible defaults and best practices.
 
 ### Usage
 
@@ -17,8 +17,8 @@ npx ocpp-ws-cli init <directory>
 
 ### Arguments
 
-| Argument | Description |
-| :--- | :--- |
+| Argument    | Description                                 |
+| :---------- | :------------------------------------------ |
 | `directory` | The directory to create the new project in. |
 
 ### What it does
@@ -42,10 +42,10 @@ ocpp generate [options]
 
 ### Options
 
-| Option | Alias | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--schemas` | `-s` | - | Directory containing your custom JSON schema files. |
-| `--out` | `-o` | - | Output directory for the generated `.d.ts` files. |
+| Option      | Alias | Default | Description                                         |
+| :---------- | :---- | :------ | :-------------------------------------------------- |
+| `--schemas` | `-s`  | -       | Directory containing your custom JSON schema files. |
+| `--out`     | `-o`  | -       | Output directory for the generated `.d.ts` files.   |
 
 ### Example
 
@@ -67,10 +67,10 @@ ocpp sdk [options]
 
 ### Options
 
-| Option | Alias | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--schemas` | `-s` | `./schemas` | Directory containing JSON schemas. |
-| `--out` | `-o` | `./src/generated/sdk.ts` | Output path for the generated TypeScript SDK file. |
+| Option      | Alias | Default                  | Description                                        |
+| :---------- | :---- | :----------------------- | :------------------------------------------------- |
+| `--schemas` | `-s`  | `./schemas`              | Directory containing JSON schemas.                 |
+| `--out`     | `-o`  | `./src/generated/sdk.ts` | Output path for the generated TypeScript SDK file. |
 
 ### Example
 
@@ -92,24 +92,28 @@ ocpp certs [options]
 
 ### Options
 
-| Option | Alias | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--type` | `-t` | `server` | Type of certificate to generate: `ca`, `server`, or `client`. |
-| `--identity` | `-i` | - | Common Name (CN) for the certificate (e.g., `CP-001`, `localhost`). |
-| `--out` | `-o` | `./certs` | Output directory for generated certificates and keys. |
+| Option       | Alias | Default   | Description                                                         |
+| :----------- | :---- | :-------- | :------------------------------------------------------------------ |
+| `--type`     | `-t`  | `server`  | Type of certificate to generate: `ca`, `server`, or `client`.       |
+| `--identity` | `-i`  | -         | Common Name (CN) for the certificate (e.g., `CP-001`, `localhost`). |
+| `--out`      | `-o`  | `./certs` | Output directory for generated certificates and keys.               |
 
 ### Workflow Example
 
 1.  **Generate a Root CA:**
+
     ```bash
     ocpp certs --type ca
     ```
+
     This creates `ca.key` and `ca.crt`.
 
 2.  **Generate a Server Certificate (signed by CA):**
+
     ```bash
     ocpp certs --type server --identity localhost
     ```
+
     This creates `server.key` and `server.crt`.
 
 3.  **Generate a Client Certificate (for a Charge Point):**

@@ -35,10 +35,10 @@ export function Hero() {
           </h1>
 
           <p className="max-w-xl text-lg text-fd-muted-foreground mb-8 leading-relaxed">
-            The type-safe, production-ready OCPP WebSocket RPC library for
-            Node.js and the browser. Build EV charging infrastructure with full
-            security profiles, schema validation, Redis clustering, and
-            auto-generated TypeScript types.
+            The type-safe OCPP WebSocket RPC library for Node.js and the
+            browser. Build EV charging infrastructure with full security
+            profiles, schema validation, Redis clustering, and auto-generated
+            TypeScript types.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 mb-8">

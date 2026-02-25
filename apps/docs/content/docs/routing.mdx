@@ -227,7 +227,7 @@ Because `ocpp-ws-io` evaluates routes **in the order they are defined**, ensure 
 
 ## Execution Scope (Additive Pipelines)
 
-A powerful concept in `ocpp-ws-io` is its **additive execution pipeline**. When a connection arrives, the server collects **all matching middlewares** across your global scopes and route-specific scopes, executing them sequentially in the order they were registered.
+A key design decision in `ocpp-ws-io` is its **additive execution pipeline**. When a connection arrives, the server collects **all matching middlewares** across your global scopes and route-specific scopes, executing them sequentially in the order they were registered.
 
 ### Route-level Scoping
 

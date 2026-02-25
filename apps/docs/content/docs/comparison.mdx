@@ -1,121 +1,135 @@
 ---
 title: Comparison
-description: "How ocpp-ws-io compares with industry Node.js OCLC alternatives."
+description: "How ocpp-ws-io approaches common OCPP challenges differently from other Node.js libraries."
 ---
+
+import { Callout } from "fumadocs-ui/components/callout";
 
 # Comparison with Alternatives
 
-Building an enterprise-capable OCPP Central System or Station client involves navigating multiple architectural trade-offs: memory management, connection tracking, horizontal clustering, and protocol compliance.
+Building a scalable OCPP Central System or Station client involves navigating multiple architectural trade-offs: memory management, connection tracking, horizontal clustering, and protocol compliance.
 
-`ocpp-ws-io` isn't the only framework out there. We’ve built it to address limitations we’ve experienced in production with established Open Source libraries. Here’s an honest comparison with industry alternatives.
+`ocpp-ws-io` isn't the only option. Here's how it differs from other popular Node.js OCPP libraries.
+
+<Callout type="warn">
+  **A note on honesty**: `ocpp-ws-io` is a newer library with a smaller user
+  base compared to the alternatives listed below. It has been tested primarily
+  in controlled environments and small-scale deployments — not yet at the scale
+  of libraries with years of community adoption. We've built it to scratch our
+  own itch: solving specific architectural gaps (clustering, routing,
+  observability) that we repeatedly ran into. OCPP 2.1 types are auto-generated
+  from the [official OCA
+  schemas](https://openchargealliance.org/protocols/open-charge-point-protocol/#OCPP2.1)
+  and are type-safe, but have not been tested against real OCPP 2.1 hardware.
+  The comparisons below are based on our reading of each library's public source
+  code and documentation. If anything is inaccurate, [please open an
+  issue](https://github.com/rohittiwari-dev/ocpp-ts-rpc/issues).
+</Callout>
 
 ---
 
 ## 1. `@voltbras/ts-ocpp`
 
-`@voltbras/ts-ocpp` is a highly popular, strongly typed, TypeScript-first OCPP library.
+`@voltbras/ts-ocpp` is a popular, strongly typed, TypeScript-first OCPP library.
 
 **Where they excel:**
 
 - Excellent out-of-the-box TypeScript types.
-- Strict and simple class-based OOP API design.
-- Great community support and mature adoption cycle.
+- Simple class-based OOP API design.
+- Larger community and more mature adoption.
 
-**Where `ocpp-ws-io` shines in comparison:**
+**What `ocpp-ws-io` addresses differently:**
 
-- **Clustering**: `ts-ocpp` stores connections deeply within memory class instances. When horizontally scaling across multiple Kubernetes pods or load balancer nodes, you must manually invent a message brokering mechanism. `ocpp-ws-io` offers an abstracted `RedisAdapter` (Stream + Pub/Sub) out-of-the-box, ensuring Zero Message Loss on restart and instant Unicast routing.
-- **DDoS/Noisy Neighbor Protection**: `ocpp-ws-io` incorporates socket-level Token Bucket Rate Limiters to immediately drop aggressive `MeterValues` while allowing `StopTransaction` to slip through.
-- **Express-style Routing**: `ts-ocpp` puts all station logic inside big class switches. `ocpp-ws-io` allows you to split endpoints by URI using Node/Express-style routers (`OCPPRouter`), attaching distinct authentication, protocol rules, and localized middlewares per route.
+- **Clustering**: `ts-ocpp` stores connections in memory class instances. When scaling across multiple pods or load balancer nodes, you need to build your own message brokering. `ocpp-ws-io` provides a `RedisAdapter` (Stream + Pub/Sub) for unicast routing across nodes.
+- **Rate Limiting**: `ocpp-ws-io` includes socket-level token bucket rate limiters that can drop high-frequency messages (e.g., `MeterValues`) before parsing, while allowing critical messages through.
+- **Path-based Routing**: `ts-ocpp` uses class-based handlers. `ocpp-ws-io` offers Express-style path routing (`OCPPRouter`) with scoped middleware and authentication per route.
 
 ---
 
 ## 2. `ocpp-eliftech`
 
-`ocpp-eliftech` is one of the oldest and most trusted JavaScript/Node packages for OCPP implementation.
+`ocpp-eliftech` is one of the oldest JavaScript/Node packages for OCPP implementation.
 
 **Where they excel:**
 
-- Immense stability. It has been battle-tested for years.
+- Long track record — it has been used in production for years.
 - Complete implementation of OCPP 1.6-J.
-- Very barebones, giving older Node architectures unopinionated freedom.
+- Minimal and unopinionated design.
 
-**Where `ocpp-ws-io` shines in comparison:**
+**What `ocpp-ws-io` addresses differently:**
 
-- **Modern Syntax**: `ocpp-eliftech` relies heavily on older Promise patterns and prototypical inheritances that are hard to type securely. `ocpp-ws-io` is built on modern TypeScript async/await paradigms.
-- **Strict Schema Validation**: `ocpp-ws-io` implements dynamic runtime JSON schema validation combining AJV and Zod, immediately catching Format Violations and returning natively mapped OCPP Error Codes (like `FormatViolation` vs `PropertyConstraintViolation`), saving significant boilerplate validation.
-- **Idempotency Keys**: Network blips commonly cause "double-spends" when retrying events. `ocpp-ws-io` supports single-source-of-truth message IDs natively (`idempotencyKey`).
-- **Telemetry**: `ocpp-ws-io` provides built-in Prometheus metrics (`/metrics`) and instantaneous internal memory health endpoints (`/health`).
+- **Modern TypeScript**: `ocpp-eliftech` relies on older Promise patterns and prototypical inheritance. `ocpp-ws-io` uses TypeScript async/await and provides auto-generated types for all OCPP methods.
+- **Schema Validation**: `ocpp-ws-io` implements runtime JSON schema validation using AJV, mapping violations to OCPP-J error codes (e.g., `FormatViolation` vs `PropertyConstraintViolation`).
+- **Idempotency Keys**: To prevent duplicate processing on network retries, `ocpp-ws-io` supports deterministic message IDs (`idempotencyKey`) on `call()`.
+- **Observability**: `ocpp-ws-io` provides built-in Prometheus metrics (`/metrics`) and health endpoints (`/health`).
 
 ---
 
 ## 3. `rpc-websockets`
 
-While not inherently an OCPP library, many companies choose to pipe their raw WebSocket JSON-RPC through native generic wrappers like `rpc-websockets` and build OCPP logic themselves.
+While not an OCPP library, many teams pipe raw WebSocket JSON-RPC through `rpc-websockets` and build OCPP logic on top.
 
 **Where they excel:**
 
-- Ultra-lightweight and completely agnostic JSON-RPC execution.
-- Doesn't force specific OCPP schemas or constraints on developers.
+- Lightweight and protocol-agnostic JSON-RPC execution.
+- No OCPP-specific constraints imposed on the developer.
 
-**Where `ocpp-ws-io` shines in comparison:**
+**What `ocpp-ws-io` addresses differently:**
 
-- **OCPP Awareness**: `rpc-websockets` doesn't know what a `CallError` (Type [4]) is or how OCPP error payloads strictly differ from generic JSON-RPC Type [2]. You must write the entire interpretation engine.
-- **Version Compatibility**: `ocpp-ws-io` handles the negotiation payload via subprotocols natively (`ocpp1.6` vs `ocpp2.0.1`), routing calls instantly into strictly typed payload engines depending on the version negotiated at the HTTP upgrade layer.
-- **Fire-and-forget Protection**: Generic RPC libraries allow `noReply: true`. This strictly violates the OCPP specification which requires every message (except explicit `NOREPLY` server-side suppression) to be correlated and tracked. `ocpp-ws-io` maintains standards adherence while buffering out-of-sync interactions.
+- **OCPP Awareness**: `rpc-websockets` doesn't understand `CallError` (Type [4]) or how OCPP error payloads differ from generic JSON-RPC. With `ocpp-ws-io`, OCPP-J framing (Call, CallResult, CallError) is handled natively.
+- **Subprotocol Negotiation**: `ocpp-ws-io` manages `ocpp1.6` vs `ocpp2.0.1` subprotocol negotiation at the HTTP upgrade layer and routes calls into version-typed handlers.
+- **Spec Compliance**: Generic RPC libraries allow fire-and-forget (`noReply: true`). OCPP requires every message to be correlated and tracked. `ocpp-ws-io` enforces this while providing `NOREPLY` as an explicit opt-out.
 
 ---
 
 ## 4. `ocpp-rpc`
 
-`ocpp-rpc` is another widely referenced OCPP JSON-RPC library tailored for specific OCPP setups.
+`ocpp-rpc` is another widely used OCPP JSON-RPC library for Node.js.
 
 **Where they excel:**
-- Excellent strict validation matching the official schemas.
-- Clean distinction between CSMS (Central System) and Charge Point implementations.
 
-**Where `ocpp-ws-io` shines in comparison:**
-- **Zero-Dependency Native Architecture**: `ocpp-rpc` relies on Heavy fastify/express bindings for its WebSocket server. `ocpp-ws-io` uses the blazing fast, native Node.js `ws` library directly, drastically reducing memory overhead and removing unnecessary HTTP routing stacks from the WebSocket engine.
-- **Clustering and Rehydration**: `ocpp-rpc` relies on you to build the pub/sub bridging if you deploy to more than one server. `ocpp-ws-io` features the `RedisAdapter` built exactly for multi-node deployments, maintaining the cluster state natively.
-- **Express-style WS Routing**: With `ocpp-ws-io`'s `OCPPRouter`, you can use standard path matchers (e.g., `/api/v2/chargers/*`) securely authenticated and middleware-scoped natively, something that requires entirely external frameworks in `ocpp-rpc`.
+- Strict validation matching the official OCPP JSON schemas.
+- Clean separation between CSMS and Charge Point roles.
 
----
+**What `ocpp-ws-io` addresses differently:**
 
-## 4. Scalability, Speed, and Load Comparison
-
-When building for enterprise scale, the architecture of your WebSocket library becomes the primary bottleneck. Below is a comparison of how `ocpp-ws-io` specifically handles extreme load growth compared to standard in-memory approaches (typical of early `rpc-websockets` or `ts-ocpp` implementations before custom clustering is built).
-
-### Horizontal Scalability & Growth
-
-| Metric                               | Standard In-Memory Libraries   | `ocpp-ws-io` (with RedisAdapter)        |
-| :----------------------------------- | :----------------------------- | :-------------------------------------- |
-| **Max Connections per Node**         | ~5,000 - 10,000                | ~10,000 - 15,000+ (optimized buffers)   |
-| **Multi-Node Routing**               | Manual implementation required | Native O(1) Presence Registry           |
-| **Connection Rehydration**           | Connections lost on restart    | Eager automatic Redis rehydration       |
-| **Surge Handling (Thundering Herd)** | Node CPU spikes & freezes      | Native ±25% Ping Jitter & Token Buckets |
-
-### Speed & Throughput (per Node)
-
-_Benchmarks running on standard 2vCPU / 4GB RAM instances processing typical OCPP payloads._
-
-| Operation                       | Standard Implementations            | `ocpp-ws-io`                                        | Advantage                       |
-| :------------------------------ | :---------------------------------- | :-------------------------------------------------- | :------------------------------ |
-| **RPC Round-Trip Time**         | 15-25ms                             | **2-5ms**                                           | Zero-copy fast paths            |
-| **Validation Overhead**         | Full schema parsing per event       | **Bypass support** for high-volume like `Heartbeat` | Up to 80% CPU savings           |
-| **Mass Broadcast (1,000+ CPs)** | Serial iteration (N TCP handshakes) | **Redis Pipeline Batching**                         | 900% faster outbound throughput |
-
-### Load & Memory Management
-
-| Feature                        | Standard Libraries                 | `ocpp-ws-io`                                   |
-| :----------------------------- | :--------------------------------- | :--------------------------------------------- |
-| **Memory per 10k Connections** | 1.8GB - 2.5GB                      | **< 600MB** (Shared LRU contexts)              |
-| **Dead Connection Eviction**   | Aggressive, drops offline queues   | **Session TTLs** persist state across drops    |
-| **Rate Limiting**              | Application layer (Late rejection) | **Socket Layer** (Early drop of DDoS traffic)  |
-| **Observability**              | None built-in                      | Native **Prometheus `/metrics`** & Node Health |
+- **WebSocket Routing**: Both libraries use the `ws` library directly. `ocpp-ws-io` adds Express-style path routing (`OCPPRouter`) at the WebSocket layer — scoped middleware, authentication, and path matchers (e.g., `/api/v2/chargers/*`) without requiring an external HTTP framework.
+- **Clustering**: `ocpp-rpc` leaves multi-node pub/sub bridging to you. `ocpp-ws-io` provides a `RedisAdapter` for presence tracking and stream-based unicast routing across nodes.
 
 ---
 
-## Summary
+## 5. Scalability Approach
 
-`ocpp-ws-io` is purpose-built for Modern DevOps. If you're building a simple, single-instance project, libraries like `ts-ocpp` remain fantastic choices.
+When scaling horizontally, the architecture of your WebSocket library matters. Here is how `ocpp-ws-io` approaches common scaling concerns.
 
-However, if you are attempting to scale to **30,000+ persistent WebSockets**, requiring advanced Redis pipelining, multi-node clustering, dynamic authentication bounds via Routers, and Prometheus health exposure — `ocpp-ws-io` provides the precise "missing infrastructure" layer required for production OCPP platforms.
+### Horizontal Scalability
+
+| Concern                              | Typical In-Memory Libraries    | `ocpp-ws-io` (with RedisAdapter)                         |
+| :----------------------------------- | :----------------------------- | :------------------------------------------------------- |
+| **Multi-Node Routing**               | Manual implementation required | Presence registry with O(1) lookup                       |
+| **Connection Rehydration**           | Connections lost on restart    | Automatic Redis presence re-registration on reconnect    |
+| **Surge Handling (Thundering Herd)** | No built-in protection         | Randomized ±25% ping jitter + token bucket rate limiters |
+
+### Throughput Design
+
+- **Selective validation bypass**: High-frequency messages like `Heartbeat` can skip JSON schema validation via `strictModeMethods`, reducing CPU overhead for trusted traffic.
+- **Redis pipeline batching**: `broadcastBatch()` groups unicast commands per target node and dispatches them in a single `Redis.pipeline()` call, collapsing N individual round-trips into one per node.
+
+### Resource Management
+
+- **Session TTLs**: Dead connections are evicted after a configurable `sessionTtlMs` rather than being immediately dropped, preserving state across temporary disconnects.
+- **Socket-level rate limiting**: Token bucket rate limiters operate at the transport layer, dropping traffic before payload parsing.
+- **Built-in observability**: `healthEndpoint: true` exposes `/health` and Prometheus `/metrics` on the native HTTP server.
+
+---
+
+## When to Use What
+
+| Your Situation                                              | Recommended Library                    |
+| :---------------------------------------------------------- | :------------------------------------- |
+| Simple single-instance OCPP 1.6 app, mature community       | `@voltbras/ts-ocpp` or `ocpp-eliftech` |
+| Bare-metal JSON-RPC, you want full control                  | `rpc-websockets`                       |
+| Strict OCPP validation, clean CSMS/CP separation            | `ocpp-rpc`                             |
+| Need clustering, path routing, rate limiting, observability | `ocpp-ws-io`                           |
+
+`ocpp-ws-io` is an open-source tool built to solve specific infrastructure problems. If those problems aren't yours, the other libraries listed here are excellent choices.

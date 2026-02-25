@@ -13,7 +13,7 @@ Every OCPP method has typed request and response interfaces:
 
 - **OCPP 1.6**: `Authorize`, `BootNotification`, `Heartbeat`, `MeterValues`, `StartTransaction`, `StopTransaction`, `Reset`, and all others
 - **OCPP 2.0.1**: `BootNotification`, `TransactionEvent`, `StatusNotification`, `RequestStartTransaction`, and all others
-- **OCPP 2.1**: Full method coverage including the latest spec additions
+- **OCPP 2.1**: Method coverage generated from the official OCA schemas (type-safe, not yet tested against real 2.1 hardware)
 
 Each method is mapped in `OCPPMethodMap` — the single interface that powers all type inference for `handle()`, `call()`, and `protocols`.
 

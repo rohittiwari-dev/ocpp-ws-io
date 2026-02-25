@@ -13,7 +13,20 @@ import { Mermaid } from "@/components/mermaid";
 
 **Type-safe OCPP WebSocket RPC client & server for Node.js.**
 
-Built with TypeScript from the ground up — supports **OCPP 1.6**, **2.0.1**, and **2.1** with full JSON schema validation, all three OCPP security profiles, optional Redis-based clustering, and a zero-dependency browser client for testing.
+Built with TypeScript from the ground up — supports **OCPP 1.6**, **2.0.1**, and **2.1** with JSON schema validation, all three OCPP security profiles, optional Redis-based clustering, and a zero-dependency browser client for testing.
+
+<Callout type="warn">
+  **Transparency**: `ocpp-ws-io` is a newer, open-source library with a small
+  user base. It has been tested in controlled environments and limited
+  deployments — not yet at the scale of established alternatives like `ts-ocpp`
+  or `ocpp-eliftech`. We built it to solve specific infrastructure gaps
+  (clustering, routing, observability) that we kept running into. OCPP 2.1 types
+  are auto-generated from the [official OCA
+  schemas](https://openchargealliance.org/protocols/open-charge-point-protocol/#OCPP2.1)
+  and are type-safe, but have not been tested against real OCPP 2.1 hardware. If
+  you find issues, [please report
+  them](https://github.com/rohittiwari-dev/ocpp-ts-rpc/issues).
+</Callout>
 
 <Callout type="info">
   Looking for **browser usage**? Check out the [Browser
@@ -32,7 +45,7 @@ Built with TypeScript from the ground up — supports **OCPP 1.6**, **2.0.1**, a
   />
   <Card
     title="🎯 Type-Safe"
-    description="Auto-generated TypeScript types for every OCPP 1.6, 2.0.1, and 2.1 method. Full request/response inference — catch errors at compile time."
+    description="Auto-generated TypeScript types for OCPP 1.6, 2.0.1, and 2.1 methods. Request/response inference — catch errors at compile time."
   />
   <Card
     title="🔒 Security Profiles 0–3"
