@@ -969,6 +969,60 @@ export class OCPPClient<
     }
 
     const messageType = message[0];
+    const messageId = message[1];
+
+    if (typeof messageId !== "string") {
+      this._onBadMessage(
+        typeof rawData === "string" ? rawData : (rawData as Buffer).toString(),
+        new RPCMessageTypeNotSupportedError(
+          `Invalid MessageId type: ${typeof messageId} (expected string)`,
+        ),
+      );
+      return;
+    }
+
+    // Basic structure validation: CALL must have 4 elements, RESULT/ERROR must have 3/5
+    if (
+      (messageType === MessageType.CALL && message.length < 4) ||
+      (messageType === MessageType.CALLRESULT && message.length < 3) ||
+      (messageType === MessageType.CALLERROR && message.length < 5)
+    ) {
+      this._onBadMessage(
+        JSON.stringify(message),
+        new RPCMessageTypeNotSupportedError(
+          `Missing payload elements for message type ${messageType}`,
+        ),
+      );
+      return;
+    }
+
+    // Payload MUST be a JSON object (not null, array, or primitive)
+    const payloadIndex =
+      messageType === MessageType.CALLERROR
+        ? 4
+        : messageType === MessageType.CALL
+          ? 3
+          : 2;
+    const payload = message[payloadIndex];
+    if (
+      typeof payload !== "object" ||
+      payload === null ||
+      Array.isArray(payload)
+    ) {
+      this._onBadMessage(
+        JSON.stringify(message),
+        new RPCMessageTypeNotSupportedError(
+          `Payload must be a JSON object, got ${
+            payload === null
+              ? "null"
+              : Array.isArray(payload)
+                ? "array"
+                : typeof payload
+          }`,
+        ),
+      );
+      return;
+    }
 
     switch (messageType) {
       case MessageType.CALL:

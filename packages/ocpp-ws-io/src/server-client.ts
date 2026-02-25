@@ -141,7 +141,18 @@ export class OCPPServerClient extends OCPPClient {
       // @ts-expect-error
       this._onClose(code, reason),
     );
-    ws.on("error", (err: Error) => this.emit("error", err));
+    ws.on("error", (err: Error) => {
+      if (this.listenerCount("error") > 0) {
+        this.emit("error", err);
+      } else {
+        this._logger?.debug?.(
+          "WebSocket error (unhandled by client listener)",
+          {
+            error: err.message,
+          },
+        );
+      }
+    });
     ws.on("ping", () => {
       // @ts-expect-error
       this._recordActivity();

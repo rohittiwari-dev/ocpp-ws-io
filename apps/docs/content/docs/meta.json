@@ -19,7 +19,8 @@
     "api-reference",
     "---Ecosystem---",
     "comparison",
-    "voltlog-io"
+    "voltlog-io",
+    "cli"
   ],
   "title": "Documentation",
   "icon": "Pin"
