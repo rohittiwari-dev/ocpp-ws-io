@@ -1,8 +1,8 @@
-# ocpp-ws-io
+<p align="center">
+  <img src=".github/banner.svg" alt="ocpp-ws-io" width="420" />
+</p>
 
-> **Type-safe OCPP WebSocket RPC client & server for Node.js.**
->
-> built with TypeScript — supports OCPP 1.6, 2.0.1, and 2.1 with full JSON schema validation, all security profiles, clustering support, and blazing fast structured logging powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io).
+> built with TypeScript — supports OCPP 1.6, 2.0.1, and 2.1 with optional JSON schema validation, all security profiles, clustering support, and structured logging powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io).
 
 [![npm version](https://img.shields.io/npm/v/ocpp-ws-io.svg)](https://www.npmjs.com/package/ocpp-ws-io)
 [![License](https://img.shields.io/npm/l/ocpp-ws-io.svg)](https://github.com/rohittiwari-dev/ocpp-ws-io/blob/main/LICENSE)
@@ -173,7 +173,7 @@ client.handle("StatusNotification", ({ params }) => {
 
 ## 📝 Logging
 
-`ocpp-ws-io` comes with blazing fast, **built-in structured JSON logging** powered by our custom-built logger, [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io). It is finely tuned specifically for high-throughput WebSocket environments.
+`ocpp-ws-io` includes **built-in structured JSON logging** powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io), designed for high-throughput WebSocket environments.
 
 ### Default Behavior
 
@@ -375,7 +375,7 @@ Scale your OCPP server across multiple nodes using Redis.
 
 - **Unicast Routing**: Send messages to any client on any node.
 - **Presence**: Track connected clients across the cluster.
-- **Reliability**: Zero message loss during node restarts (via Redis Streams).
+- **Reliability**: Uses Redis Streams for durable message delivery.
 - **Batch Processing**: Use `server.broadcastBatch` to combine multi-node calls effortlessly.
 
 ### Custom Adapters (`EventAdapterInterface`)

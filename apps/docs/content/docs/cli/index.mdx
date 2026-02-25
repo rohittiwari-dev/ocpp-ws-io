@@ -1,6 +1,6 @@
 ---
 title: CLI Ecosystem
-description: Master the 15 built-in CLI commands to scaffold, test, and debug your OCPP infrastructure.
+description: CLI tools for scaffolding, testing, and debugging your OCPP infrastructure.
 ---
 
 import { Cards, Card } from "fumadocs-ui/components/card";
@@ -9,11 +9,18 @@ import { Tab, Tabs } from "fumadocs-ui/components/tabs";
 
 # The ocpp-ws-io CLI
 
-The **ocpp-ws-io** ecosystem includes 15 built-in CLI tools. Rather than building your own testing simulators, payload inspectors, and certificate authorities, these are provided out of the box.
+The **ocpp-ws-io** ecosystem includes CLI tools for building, testing, and debugging OCPP infrastructure. Some are stable and shipping today, others are in beta or on the roadmap.
 
 <Callout type="info">
   **Installation**  
   You can install the CLI globally via `npm install -g ocpp-ws-cli`, or run it on the fly using `npx ocpp-ws-cli <command>`.
+</Callout>
+
+<Callout type="warn">
+  **Command Status**: Not all CLI commands are at the same maturity level.
+  Commands marked **[stable]** are fully implemented and tested. Commands marked
+  **[beta]** work but may change. Commands marked **[planned]** are documented
+  for roadmap visibility but not yet available.
 </Callout>
 
 ---
@@ -22,7 +29,7 @@ The **ocpp-ws-io** ecosystem includes 15 built-in CLI tools. Rather than buildin
 
 These commands help you write code faster by automating boilerplate and TypeScript configuration.
 
-### `ocpp init`
+### `ocpp init` [stable]
 
 **What it does:** Bootstraps a new Central System (CSMS) project with sensible defaults.  
 **When to use it:** When you are starting a new OCPP project and don't want to manually configure TypeScript, Biome, and WebSockets.
@@ -31,7 +38,7 @@ These commands help you write code faster by automating boilerplate and TypeScri
 npx ocpp-ws-cli init ./my-charging-network
 ```
 
-### `ocpp generate`
+### `ocpp generate` [stable]
 
 **What it does:** Reads your custom `.json` OCPP schemas and generates perfectly typed `.d.ts` declaration files.  
 **When to use it:** When your hardware vendor provides custom DataTransfer methods and you want full IDE autocomplete in your handlers.
@@ -40,7 +47,7 @@ npx ocpp-ws-cli init ./my-charging-network
 ocpp generate --schemas ./schemas --out ./src/generated
 ```
 
-### `ocpp sdk`
+### `ocpp sdk` [beta]
 
 **What it does:** Automatically generates a frontend-ready TypeScript SDK built around your JSON schemas.  
 **When to use it:** When your Frontend UI or Mobile App teams need a type-safe API to talk to your CSMS (e.g., `api.bootNotification({...})`).
@@ -55,7 +62,7 @@ ocpp sdk --schemas ./schemas --out ./frontend/api.ts
 
 Testing Websockets is notoriously difficult. These tools allow you to simulate hardware and stress-test your server.
 
-### `ocpp simulate`
+### `ocpp simulate` [stable]
 
 **What it does:** Spins up an interactive, terminal-based Charge Point simulator.  
 **When to use it:** When you need a virtual charger to connect to your CSMS so you can rapidly test your `BootNotification` and `Heartbeat` database logic.
@@ -64,7 +71,7 @@ Testing Websockets is notoriously difficult. These tools allow you to simulate h
 ocpp simulate --identity CP-001 --endpoint ws://localhost:3000
 ```
 
-### `ocpp virtual-station`
+### `ocpp virtual-station` [beta]
 
 **What it does:** Runs a fully autonomous, state-machine governed Virtual Charge Point simulator.  
 **When to use it:** When you need a "Full" OCPP simulated client to sit in the background and correctly respond to incoming `RemoteStartTransaction`, `UpdateFirmware`, and `GetDiagnostics` commands without user intervention.
@@ -73,7 +80,7 @@ ocpp simulate --identity CP-001 --endpoint ws://localhost:3000
 ocpp virtual-station --identity VS-001 --protocol ocpp1.6
 ```
 
-### `ocpp call`
+### `ocpp call` [stable]
 
 **What it does:** Connects to your server, fires a single exact JSON payload, logs the response, and disconnects.  
 **When to use it:** When you want to trigger a very specific scenario (like a malformed schema validation rejection) without running a full simulator.
@@ -82,7 +89,7 @@ ocpp virtual-station --identity VS-001 --protocol ocpp1.6
 ocpp call BootNotification '{"chargePointModel": "ModelX"}'
 ```
 
-### `ocpp load-test`
+### `ocpp load-test` [planned]
 
 **What it does:** Spawns thousands of concurrent headless web sockets.  
 **When to use it:** When you've configured Redis Clustering and Rate Limiting, and want to prove your infrastructure can handle massive traffic spikes.
@@ -91,7 +98,7 @@ ocpp call BootNotification '{"chargePointModel": "ModelX"}'
 ocpp load-test --clients 5000 --ramp-up 30s --endpoint wss://api.csms.com
 ```
 
-### `ocpp fuzz`
+### `ocpp fuzz` [planned]
 
 **What it does:** Aggressively spams your server with malformed strings, invalid arrays, and schema-breaking payloads.  
 **When to use it:** To guarantee your CSMS Strict-Mode validators and crash-guards are correctly dropping bad actors before they crash Node.js.
@@ -100,7 +107,7 @@ ocpp load-test --clients 5000 --ramp-up 30s --endpoint wss://api.csms.com
 ocpp fuzz --endpoint ws://localhost:3000 --workers 20
 ```
 
-### `ocpp replay`
+### `ocpp replay` [beta]
 
 **What it does:** Reads an incident log file containing network frames and replays them back to your CSMS with exact timing.  
 **When to use it:** When an obscure bug happens in production, and you need to reproduce the exact transaction sequence locally to find the flaw.
@@ -115,7 +122,7 @@ ocpp replay ./incidents/crash.json --target ws://localhost:3000
 
 When payloads are flying across the cluster, these tools give you total visibility.
 
-### `ocpp tail`
+### `ocpp tail` [planned]
 
 **What it does:** Hooks into your Redis deployment to act as a real-time network sniffer across your entire fleet.  
 **When to use it:** When you need to watch payloads flying in and out of a specific physical charger, but don't want to comb through massive log aggregators.
@@ -125,7 +132,7 @@ When payloads are flying across the cluster, these tools give you total visibili
 ocpp tail --identity CP-999 --method Heartbeat --redis redis://localhost:6379
 ```
 
-### `ocpp top`
+### `ocpp top` [planned]
 
 **What it does:** A live terminal dashboard (TUI) showing memory, active sessions, and socket connections.  
 **When to use it:** To monitor the real-time health and load distribution of your CSMS nodes.
@@ -134,7 +141,7 @@ ocpp tail --identity CP-999 --method Heartbeat --redis redis://localhost:6379
 ocpp top --redis redis://localhost:6379
 ```
 
-### `ocpp proxy`
+### `ocpp proxy` [planned]
 
 **What it does:** A Man-in-the-Middle reverse proxy that sits between a physical charger and your CSMS.  
 **When to use it:** When working with 3rd-party vendors and you need to decrypt/see the encrypted raw WebSocket frames they are sending you before they hit the real server.
@@ -143,7 +150,7 @@ ocpp top --redis redis://localhost:6379
 ocpp proxy --listen 8080 --target wss://vendor.csms.com
 ```
 
-### `ocpp parse`
+### `ocpp parse` [stable]
 
 **What it does:** Takes messy, raw OCPP JSON array-tuples and cleanly formats them.  
 **When to use it:** When you copy a raw `[2, "msg_id", "Heartbeat", {}]` string out of AWS CloudWatch and need to read it easily.
@@ -158,7 +165,7 @@ ocpp parse '[2, "123", "Heartbeat", {"vendor": "unknown"}]'
 
 Utilities for handling complex hardware requirements like Firmware and Mutual TLS.
 
-### `ocpp certs`
+### `ocpp certs` [stable]
 
 **What it does:** Operates as a local Certificate Authority utilizing OpenSSL to generate `.pem` files.  
 **When to use it:** When you are implementing Security Profile 2 (TLS) or Profile 3 (mTLS) and need immediate spoofed client/server certificates to validate your handshake logic.
@@ -167,7 +174,7 @@ Utilities for handling complex hardware requirements like Firmware and Mutual TL
 ocpp certs --type client --identity CP-001 --out ./certs
 ```
 
-### `ocpp ota`
+### `ocpp ota` [stable]
 
 **What it does:** A specialized HTTP static file server that supports chunked binary transfers.  
 **When to use it:** When sending an `UpdateFirmware` packet to a physical EV charger, you can point the charger download URL back to this local CLI server.
@@ -176,7 +183,7 @@ ocpp certs --type client --identity CP-001 --out ./certs
 ocpp ota ./firmware-binaries --port 4000
 ```
 
-### `ocpp mock`
+### `ocpp mock` [stable]
 
 **What it does:** An HTTP Server-Sent Events (SSE) stream that endlessly spits out dummy OCPP data.  
 **When to use it:** When your Frontend/React developers are building the fleet dashboard and need a fast stream of mock `MeterValues` without running a real server.

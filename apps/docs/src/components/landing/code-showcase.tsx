@@ -237,7 +237,7 @@ export function CodeShowcase() {
   const activeCode = tabs.find((t) => t.id === activeTab);
 
   return (
-    <section className="container mx-auto px-4 py-24 border-t border-fd-border/50">
+    <section className="container max-w-7xl mx-auto px-4 py-24">
       <div className="mb-12 text-center">
         <h2 className="text-3xl font-bold tracking-tight text-fd-foreground sm:text-4xl">
           One API, Three Environments
@@ -252,7 +252,7 @@ export function CodeShowcase() {
       <div className="mx-auto max-w-2xl">
         <motion.div
           layout
-          className="overflow-hidden rounded-xl border border-fd-border bg-[#0d1117] shadow-2xl"
+          className="overflow-hidden rounded-2xl border border-fd-border bg-[#0d1117] shadow-xl"
         >
           {/* Tab Bar */}
           <div className="flex items-center border-b border-gray-800 bg-[#161b22]">

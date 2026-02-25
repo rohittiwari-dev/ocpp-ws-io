@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CodeShowcase } from "@/components/landing/code-showcase";
 import { Features } from "@/components/landing/features";
 import { Footer } from "@/components/landing/footer";
 import { Hero } from "@/components/landing/hero";
-import { VideoDemo } from "@/components/landing/video-demo";
+import { Showcase } from "@/components/landing/showcase";
+import { Stats } from "@/components/landing/stats";
 import { blogSource } from "@/lib/blog";
 
 export const metadata: Metadata = {
@@ -51,19 +51,19 @@ export default function HomePage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen max-w-7xl mx-auto">
+    <div className="flex flex-col min-h-screen w-full">
       <script
         type="application/ld+json"
         // biome-ignore lint/security/noDangerouslySetInnerHtml: safe as we control the content
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <Hero />
-      <VideoDemo />
-      <CodeShowcase />
+      <Stats />
+      <Showcase />
       <Features />
 
       {/* Blog Section */}
-      <section className="container mx-auto px-4 py-18 border-t border-fd-border/50">
+      <section className="container max-w-7xl mx-auto px-4 py-18 border-t border-fd-border/50">
         <div className="mb-12 flex items-center justify-between">
           <div className="space-y-1">
             <h2 className="text-3xl font-bold tracking-tight text-fd-foreground">
@@ -86,7 +86,7 @@ export default function HomePage() {
             <Link
               key={post.url}
               href={post.url}
-              className="group flex flex-col overflow-hidden rounded-xl border border-fd-border bg-fd-card/40 transition-all hover:bg-fd-card/60 hover:shadow-lg backdrop-blur-sm"
+              className="group flex flex-col overflow-hidden rounded-2xl border border-fd-border bg-fd-card transition-all hover:shadow-lg hover:-translate-y-0.5"
             >
               <div className="aspect-video w-full overflow-hidden bg-fd-muted">
                 {post.image ? (

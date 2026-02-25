@@ -9,7 +9,11 @@ import { Step, Steps } from "fumadocs-ui/components/steps";
 import { Callout } from "fumadocs-ui/components/callout";
 import { Mermaid } from "@/components/mermaid";
 
-# ocpp-ws-io
+<img
+  src="/images/banner-logo.svg"
+  alt="ocpp-ws-io"
+  style={{ maxWidth: 360, marginBottom: 16 }}
+/>
 
 **Type-safe OCPP WebSocket RPC client & server for Node.js.**
 
@@ -112,19 +116,22 @@ const client = new OCPPClient({
 
 // Register a typed handler
 client.handle("Reset", ({ params }) => {
-  console.log("Reset type:", params.type); // typed: "Hard" | "Soft"
+  client.log.info("Reset type:", params.type); // typed: "Hard" | "Soft"
   return { status: "Accepted" };
 });
 
 await client.connect();
 
 // Version-aware call — fully typed
-const response = await client.call("ocpp1.6", "BootNotification", {
-  chargePointVendor: "VendorX",
-  chargePointModel: "ModelY",
-});
-
-console.log("Status:", response.status); // "Accepted" | "Pending" | "Rejected"
+try {
+  const response = await client.call("ocpp1.6", "BootNotification", {
+    chargePointVendor: "VendorX",
+    chargePointModel: "ModelY",
+  });
+  client.log.info("Status:", response.status); // "Accepted" | "Pending" | "Rejected"
+} catch (error) {
+  client.log.error("BootNotification failed:", error);
+}
 ```
 
 </Step>

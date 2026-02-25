@@ -35,7 +35,7 @@ export function VideoDemo() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setActiveLogIndex((prev) => (prev + 1) % (logs.length + 4)); // +4 for pause at end
+      setActiveLogIndex((prev) => (prev + 1) % (logs.length + 4));
     }, 1500);
     return () => clearInterval(interval);
   }, []);
@@ -50,8 +50,8 @@ export function VideoDemo() {
   return (
     <section className="container mx-auto px-4 py-16">
       <div className="mb-12 text-center">
-        <div className="inline-flex items-center rounded-full border border-fd-border px-3 py-1 text-sm text-fd-muted-foreground mb-4">
-          <span className="flex h-2 w-2 rounded-full bg-green-500 mr-2 animate-pulse"></span>
+        <div className="inline-flex items-center rounded-full border border-fd-border bg-fd-card px-4 py-1.5 text-sm text-fd-muted-foreground mb-4 shadow-sm">
+          <span className="flex h-2 w-2 rounded-full bg-green-500 mr-2 animate-pulse" />
           Live Simulation
         </div>
         <h2 className="text-3xl font-bold text-fd-foreground sm:text-4xl">
@@ -61,7 +61,7 @@ export function VideoDemo() {
 
       <div className="mx-auto grid max-w-5xl gap-8 lg:grid-cols-2 items-center">
         {/* Left: Terminal Logs */}
-        <div className="rounded-xl border border-fd-border bg-[#0d1117] p-4 shadow-2xl font-mono text-sm h-[400px] flex flex-col">
+        <div className="rounded-2xl border border-fd-border bg-[#0d1117] p-5 shadow-xl font-mono text-sm h-[400px] flex flex-col">
           <div className="flex items-center gap-2 border-b border-gray-800 pb-3 mb-3">
             <Terminal className="h-4 w-4 text-gray-400" />
             <span className="text-gray-400 text-xs">server-logs</span>
@@ -100,9 +100,9 @@ export function VideoDemo() {
         </div>
 
         {/* Right: Visual System State */}
-        <div className="relative h-[400px] rounded-xl border border-fd-border bg-fd-card p-8 flex flex-col items-center justify-center">
+        <div className="relative h-[400px] rounded-2xl border border-fd-border bg-fd-card p-8 flex flex-col items-center justify-center shadow-sm">
           {/* Connection Line */}
-          <div className="absolute top-1/2 left-0 w-full h-px border-t border-dashed border-fd-border -z-10"></div>
+          <div className="absolute top-1/2 left-0 w-full h-px border-t border-dashed border-fd-border -z-10" />
 
           <div className="flex justify-between w-full max-w-sm items-center z-10">
             {/* Charger Node */}
@@ -114,12 +114,12 @@ export function VideoDemo() {
               }`}
             >
               <div
-                className={`h-24 w-16 rounded-lg border-2 flex items-center justify-center transition-colors duration-500 ${
+                className={`h-24 w-16 rounded-xl border-2 flex items-center justify-center transition-colors duration-500 ${
                   currentStatus === "Charging"
-                    ? "border-blue-500 bg-blue-500/10"
+                    ? "border-blue-500 bg-blue-50 dark:bg-blue-500/10"
                     : activeLogIndex >= 3
-                      ? "border-green-500 bg-green-500/10"
-                      : "border-gray-500 bg-gray-500/10"
+                      ? "border-green-500 bg-green-50 dark:bg-green-500/10"
+                      : "border-gray-300 bg-gray-50 dark:border-gray-500 dark:bg-gray-500/10"
                 }`}
               >
                 <Zap
@@ -131,7 +131,7 @@ export function VideoDemo() {
                 />
               </div>
               <div className="text-center">
-                <div className="font-bold">CP_12345</div>
+                <div className="font-bold text-fd-foreground">CP_12345</div>
                 <div className="text-xs text-fd-muted-foreground">
                   Charge Point
                 </div>
@@ -148,7 +148,7 @@ export function VideoDemo() {
                   transition={{ duration: 1 }}
                   className="absolute top-1/2 -translate-y-1/2 flex items-center gap-2"
                 >
-                  <div className="h-2 w-2 rounded-full bg-fd-primary shadow-[0_0_10px_currentColor]"></div>
+                  <div className="h-2 w-2 rounded-full bg-fd-primary shadow-[0_0_10px_currentColor]" />
                   <div className="text-[10px] bg-fd-primary/10 px-2 rounded text-fd-primary whitespace-nowrap">
                     JSON Payload
                   </div>
@@ -158,19 +158,19 @@ export function VideoDemo() {
 
             {/* Server Node */}
             <div className="flex flex-col items-center gap-4">
-              <div className="h-24 w-24 rounded-full border-2 border-fd-primary/50 bg-fd-primary/5 flex items-center justify-center relative">
-                <div className="absolute inset-0 rounded-full border border-fd-primary animate-ping opacity-20"></div>
+              <div className="h-24 w-24 rounded-full border-2 border-fd-primary/30 bg-fd-primary/5 flex items-center justify-center relative">
+                <div className="absolute inset-0 rounded-full border border-fd-primary animate-ping opacity-20" />
                 <Wifi className="h-8 w-8 text-fd-primary" />
               </div>
               <div className="text-center">
-                <div className="font-bold">OCPP Server</div>
+                <div className="font-bold text-fd-foreground">OCPP Server</div>
                 <div className="text-xs text-fd-muted-foreground">Node.js</div>
               </div>
             </div>
           </div>
 
           {/* Status Badge */}
-          <div className="absolute bottom-8 px-4 py-2 rounded-full bg-fd-secondary border border-fd-border flex items-center gap-2">
+          <div className="absolute bottom-8 px-5 py-2.5 rounded-full bg-fd-secondary border border-fd-border flex items-center gap-2 shadow-sm">
             <div
               className={`h-2 w-2 rounded-full ${
                 currentStatus === "Charging"
@@ -179,8 +179,10 @@ export function VideoDemo() {
                     ? "bg-green-500"
                     : "bg-yellow-500"
               }`}
-            ></div>
-            <span className="text-sm font-medium">Status: {currentStatus}</span>
+            />
+            <span className="text-sm font-medium text-fd-foreground">
+              Status: {currentStatus}
+            </span>
           </div>
         </div>
       </div>
