@@ -1,10 +1,12 @@
 <div align="center">
 
-# ocpp-ws-io
+<p align="center">
+  <img src="packages/ocpp-ws-io/.github/banner.svg" alt="ocpp-ws-io" width="420" />
+</p>
 
 **Type-safe OCPP WebSocket RPC client & server for Node.js**
 
-Built with TypeScript from the ground up — supports OCPP 1.6, 2.0.1, and 2.1 with full JSON schema validation, all security profiles, Redis-based clustering, and blazing fast structured logging powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io).
+Built with TypeScript from the ground up — supports OCPP 1.6, 2.0.1, and 2.1 with optional JSON schema validation, all security profiles, Redis-based clustering, and structured logging powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io).
 
 [![npm version](https://img.shields.io/npm/v/ocpp-ws-io.svg?style=flat-square&color=cb3837)](https://www.npmjs.com/package/ocpp-ws-io)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
@@ -28,9 +30,9 @@ Building an OCPP-compliant charging station management system (CSMS) or charge p
 - 🚦 **DDoS Protection** — Socket-layer Token Bucket Rate Limiting per station and method
 - 🔁 **Auto-Reconnect & Rehydration** — Exponential backoff with Eager Redis state-synchronization
 - 🧩 **Framework Agnostic** — Standalone, Express, Fastify, NestJS, or custom `handleUpgrade`
-- 📡 **Clustering** — Redis adapter for multi-instance deployments featuring Zero-Message-Loss streams
+- 📡 **Clustering** — Redis adapter for multi-instance deployments with durable message delivery via Streams
 - 📊 **Prometheus Ready** — Turnkey `/health` and `/metrics` observability endpoints
-- 🪵 **Logging** — Blazing fast, built-in structured logging powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io)
+- 🪵 **Logging** — Built-in structured logging powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io)
 - 🌐 **Browser Client** — Zero-dependency browser WebSocket client via `ocpp-ws-io/browser`
 - 🔀 **Express-style Routing** — Dynamically scope auth and middleware across `OCPPRouter` URL paths
 - 🔑 **Idempotency Keys** — Single Source of Truth message tracking guaranteeing exactly-once delivery on retries
