@@ -91,9 +91,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     this.setMaxListeners(0);
 
     if (options.strictMode) {
-      if (!options.strictModeValidators && !options.protocols?.length) {
+      if (!options.protocols?.length) {
         throw new Error(
-          "strictMode requires either strictModeValidators or protocols to be specified",
+          "strictMode requires protocols to be specified (e.g. protocols: ['ocpp1.6'])",
         );
       }
     }

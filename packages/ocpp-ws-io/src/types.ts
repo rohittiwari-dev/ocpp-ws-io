@@ -483,13 +483,11 @@ export interface CORSOptions {
 
 // ─── Server Options ──────────────────────────────────────────────
 
-export interface ServerOptions {
+interface ServerOptionsBase {
   /** OCPP Security Profile (default: NONE) */
   securityProfile?: SecurityProfile;
   /** TLS options for HTTPS server (Profile 2 & 3) */
   tls?: TLSOptions;
-  /** Accepted OCPP subprotocols */
-  protocols?: AnyOCPPProtocol[];
   /** Call timeout in ms — inherited by server clients (default: 30000) */
   callTimeoutMs?: number;
   /** Ping interval in ms — inherited by server clients (default: 30000) */
@@ -498,8 +496,6 @@ export interface ServerOptions {
   deferPingsOnActivity?: boolean;
   /** Max concurrent outbound calls — inherited (default: 1) */
   callConcurrency?: number;
-  /** Enable strict mode — inherited (default: false) */
-  strictMode?: boolean | OCPPProtocol[];
   /** If defined, restricts strict mode validation ONLY to these methods */
   strictModeMethods?: Array<AllMethodNames<OCPPProtocol>>;
   /** Custom validators — inherited */
@@ -553,13 +549,27 @@ export interface ServerOptions {
    */
   healthEndpoint?: boolean;
   /**
-   * I1: Maximum WebSocket payload size in bytes. Messages exceeding this limit
+   * Maximum WebSocket payload size in bytes. Messages exceeding this limit
    * are rejected at the transport layer before JSON parsing, preventing OOM
    * from oversized or malicious payloads.
    * (default: 65536 / 64KB — sufficient for any standard OCPP message)
    */
   maxPayloadBytes?: number;
 }
+
+/** When strictMode is enabled, protocols MUST be specified */
+interface StrictServerOptions extends ServerOptionsBase {
+  strictMode: true | OCPPProtocol[];
+  protocols: AnyOCPPProtocol[];
+}
+
+/** When strictMode is disabled or omitted, protocols are optional */
+interface RelaxedServerOptions extends ServerOptionsBase {
+  strictMode?: false;
+  protocols?: AnyOCPPProtocol[];
+}
+
+export type ServerOptions = StrictServerOptions | RelaxedServerOptions;
 
 // ─── Observability ─────────────────────────────────────────────────
 

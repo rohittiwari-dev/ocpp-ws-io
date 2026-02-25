@@ -191,7 +191,7 @@ By default (`logging: true`), logs are output as structured JSON to `stdout`.
 
 ### Pretty Printing & Exchange Logs
 
-Enable `prettify` for development to see colored output with icons.  
+Enable `prettify` for development to see colored output with icons.
 Enable `exchangeLog` to log all OCPP messages with direction (`IN`/`OUT`) and metadata.
 
 ```typescript
