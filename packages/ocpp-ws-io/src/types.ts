@@ -449,6 +449,30 @@ export interface RateLimitOptions {
    * Note: The method must be parsed from the raw JSON payload to apply this.
    */
   methods?: Record<string, { limit: number; windowMs: number }>;
+
+  // ─── Adaptive Rate Limiting ──────────────────────────────────────
+
+  /**
+   * Enable adaptive rate limiting based on CPU/memory pressure.
+   * When enabled, the token refill rate is automatically reduced under
+   * high load and restored after a cooldown period. (default: false)
+   */
+  adaptive?: boolean;
+  /**
+   * CPU usage percent threshold to begin throttling.
+   * Applies only when `adaptive` is true. (default: 80)
+   */
+  cpuThresholdPercent?: number;
+  /**
+   * Heap usage percent threshold to begin throttling.
+   * Applies only when `adaptive` is true. (default: 85)
+   */
+  memThresholdPercent?: number;
+  /**
+   * Time (ms) both CPU and memory must stay below their thresholds
+   * before restoring the original rate. (default: 5000)
+   */
+  cooldownMs?: number;
 }
 
 // ─── Router Options ──────────────────────────────────────────────
@@ -555,6 +579,15 @@ interface ServerOptionsBase {
    * (default: 65536 / 64KB — sufficient for any standard OCPP message)
    */
   maxPayloadBytes?: number;
+  /**
+   * Enable worker thread pool for JSON parsing (+ optional AJV validation).
+   * Offloads CPU-heavy work to worker threads, keeping the main event loop free.
+   * Recommended for 10k+ concurrent connections. (default: false)
+   *
+   * - `true` → uses default pool size: `Math.max(2, os.cpus() - 2)`
+   * - `{ poolSize, maxQueueSize }` → fine-tuned pool configuration
+   */
+  workerThreads?: boolean | { poolSize?: number; maxQueueSize?: number };
 }
 
 /** When strictMode is enabled, protocols MUST be specified */
@@ -718,6 +751,48 @@ export interface EventAdapterInterface {
 
   // Observability Pipeline (Optional)
   metrics?(): Promise<Record<string, unknown>>;
+}
+
+// ─── Plugin System ───────────────────────────────────────────────
+
+/**
+ * Plugin interface for extending OCPPServer functionality.
+ *
+ * Plugins provide a unified way to hook into server lifecycle events
+ * without modifying core internals. Useful for:
+ * - Observability (OpenTelemetry, Prometheus)
+ * - Custom adapters and integrations
+ * - Auditing and compliance
+ *
+ * @example
+ * ```ts
+ * const myPlugin: OCPPPlugin = {
+ *   name: 'my-plugin',
+ *   onInit(server) { console.log('Plugin initialized'); },
+ *   onConnection(client) { console.log(`${client.identity} connected`); },
+ *   onDisconnect(client) { console.log(`${client.identity} disconnected`); },
+ *   onClose() { console.log('Server shutting down'); },
+ * };
+ * server.use(myPlugin);
+ * ```
+ */
+export interface OCPPPlugin {
+  /** Unique plugin name (used for logging and deduplication) */
+  name: string;
+  /** Called when the plugin is registered via server.use(plugin) */
+  onInit?(server: import("./server.js").OCPPServer): void | Promise<void>;
+  /** Called for each new client connection after auth succeeds */
+  onConnection?(
+    client: import("./server-client.js").OCPPServerClient,
+  ): void | Promise<void>;
+  /** Called when a client disconnects */
+  onDisconnect?(
+    client: import("./server-client.js").OCPPServerClient,
+    code: number,
+    reason: string,
+  ): void;
+  /** Called during server.close() for plugin cleanup */
+  onClose?(): void | Promise<void>;
 }
 
 // ─── Symbols ─────────────────────────────────────────────────────

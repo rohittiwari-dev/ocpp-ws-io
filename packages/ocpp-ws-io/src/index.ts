@@ -3,7 +3,12 @@
 // ─── Adapters ────────────────────────────────────────────────────
 export { defineAdapter, InMemoryAdapter } from "./adapters/adapter.js";
 export { RedisAdapter } from "./adapters/redis/index.js";
-
+export type {
+  AdaptedEvent,
+  AdaptiveLimiterOptions,
+} from "./adaptive-limiter.js";
+// ─── Adaptive Rate Limiting ──────────────────────────────────────
+export { AdaptiveLimiter } from "./adaptive-limiter.js";
 export { OCPPClient } from "./client.js";
 // ─── Errors ──────────────────────────────────────────────────────
 export {
@@ -75,7 +80,9 @@ export {
   type OCPPCallError,
   type OCPPCallResult,
   type OCPPMessage,
+  type OCPPPlugin,
   type OCPPProtocol,
+  type RateLimitOptions,
   type RouterConfig,
   SecurityProfile,
   type ServerEvents,

@@ -23,12 +23,17 @@ export class OCPPServerClient extends OCPPClient {
       handshake: HandshakeInfo;
       session: Record<string, any>;
       protocol?: string;
+      /** Optional adaptive rate multiplier getter (from OCPPServer.AdaptiveLimiter) */
+      adaptiveMultiplier?: () => number;
+      /** Optional worker pool for off-thread JSON parsing */
+      workerPool?: import("./worker-pool.js").WorkerPool;
     },
   ) {
     super(options);
 
     this._serverSession = context.session;
     this._serverHandshake = context.handshake;
+    this._adaptiveMultiplier = context.adaptiveMultiplier ?? null;
 
     // Set state to OPEN directly (already connected via server)
     this._state = ConnectionState.OPEN;
@@ -51,6 +56,7 @@ export class OCPPServerClient extends OCPPClient {
 
   private _rateLimits: Record<string, { tokens: number; lastRefill: number }> =
     {};
+  private _adaptiveMultiplier: (() => number) | null = null;
 
   private _checkRateLimit(method?: string): boolean {
     const limits = this._options.rateLimit;
@@ -65,8 +71,9 @@ export class OCPPServerClient extends OCPPClient {
         this._rateLimits[key] = bucket;
       } else {
         const timePassed = now - bucket.lastRefill;
-        // Refill logic (tokens per ms)
-        const refillRate = limit / windowMs;
+        // Refill logic (tokens per ms) — adaptive multiplier scales the refill rate
+        const adaptiveScale = this._adaptiveMultiplier?.() ?? 1;
+        const refillRate = (limit / windowMs) * adaptiveScale;
         const tokensToAdd = timePassed * refillRate;
         if (tokensToAdd > 0) {
           bucket.tokens = Math.min(limit, bucket.tokens + tokensToAdd);

@@ -9,13 +9,13 @@ import type { Duplex } from "node:stream";
 import type { TLSSocket } from "node:tls";
 import { createId } from "@paralleldrive/cuid2";
 import { WebSocketServer } from "ws";
+import { AdaptiveLimiter } from "./adaptive-limiter.js";
 import { checkCORS } from "./cors.js";
 import { initLogger } from "./init-logger.js";
 import { LRUMap } from "./lru-map.js";
 import { RadixTrie } from "./radix-trie.js";
 import { executeMiddlewareChain, OCPPRouter } from "./router.js";
 import { OCPPServerClient } from "./server-client.js";
-
 import {
   type AllMethodNames,
   type AuthAccept,
@@ -30,6 +30,7 @@ import {
   type ListenOptions,
   type LoggerLike,
   type LoggerLikeNotOptional,
+  type OCPPPlugin,
   type OCPPProtocol,
   type OCPPRequestType,
   type OCPPResponseType,
@@ -39,6 +40,7 @@ import {
   type TypedEventEmitter,
 } from "./types.js";
 import { NOOP_LOGGER } from "./util.js";
+import { createWorkerPool, type WorkerPool } from "./worker-pool.js";
 import {
   abortHandshake,
   parseBasicAuth,
@@ -76,6 +78,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     string,
     { tokens: number; lastRefill: number }
   >();
+  private _adaptiveLimiter: AdaptiveLimiter | null = null;
+  private _plugins: OCPPPlugin[] = [];
+  private _workerPool: WorkerPool | null = null;
 
   // Robustness & Clustering
   private readonly _nodeId = createId();
@@ -138,6 +143,40 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     this._logger = initLogger(this._options.logging, {
       component: "OCPPServer",
     });
+
+    // Initialize adaptive rate limiter if enabled
+    const rl = this._options.rateLimit;
+    if (rl?.adaptive) {
+      this._adaptiveLimiter = new AdaptiveLimiter({
+        cpuThresholdPercent: rl.cpuThresholdPercent,
+        memThresholdPercent: rl.memThresholdPercent,
+        cooldownMs: rl.cooldownMs,
+      });
+      this._adaptiveLimiter.on(
+        "adapted",
+        (event: {
+          multiplier: number;
+          cpuPercent: number;
+          memPercent: number;
+        }) => {
+          this._logger?.info?.("Adaptive rate limit adjusted", event);
+          this.emit("rateLimit:adapted" as any, event);
+        },
+      );
+      this._adaptiveLimiter.start();
+    }
+
+    // Initialize worker thread pool if enabled
+    const wt = this._options.workerThreads;
+    if (wt) {
+      const poolOpts = typeof wt === "object" ? wt : {};
+      this._workerPool = createWorkerPool(poolOpts);
+      if (this._workerPool) {
+        this._logger?.info?.("Worker thread pool initialized", {
+          poolSize: this._workerPool.size,
+        });
+      }
+    }
   }
 
   // ─── Getters ─────────────────────────────────────────────────
@@ -276,10 +315,50 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   }
 
   /**
-   * Registers a new middleware chain, acting as a wildcard/catch-all router if no patterns are added.
-   * `server.use(middleware).route("/api").on("client", ...)`
+   * Registers middleware chain(s) or a plugin.
+   *
+   * - When called with `ConnectionMiddleware` function(s), acts as a wildcard/catch-all router.
+   * - When called with an `OCPPPlugin` object (identified by `name` property), registers the plugin.
+   *
+   * @example Middleware
+   * ```ts
+   * server.use(myMiddleware).route("/api").on("client", ...);
+   * ```
+   *
+   * @example Plugin
+   * ```ts
+   * server.use({ name: 'my-plugin', onConnection(client) { ... } });
+   * ```
    */
-  use(...middlewares: ConnectionMiddleware[]): OCPPRouter {
+  use(plugin: OCPPPlugin): this;
+  use(...middlewares: ConnectionMiddleware[]): OCPPRouter;
+  use(...args: [OCPPPlugin] | ConnectionMiddleware[]): this | OCPPRouter {
+    // Plugin path: single argument with a `name` property
+    if (
+      args.length === 1 &&
+      typeof args[0] === "object" &&
+      args[0] !== null &&
+      "name" in args[0]
+    ) {
+      const plugin = args[0] as OCPPPlugin;
+      this._plugins.push(plugin);
+      this._logger?.info?.("Plugin registered", { name: plugin.name });
+      if (plugin.onInit) {
+        const result = plugin.onInit(this);
+        if (result instanceof Promise) {
+          result.catch((err) => {
+            this._logger?.error?.("Plugin onInit error", {
+              name: plugin.name,
+              error: (err as Error).message,
+            });
+          });
+        }
+      }
+      return this;
+    }
+
+    // Middleware path: existing behavior
+    const middlewares = args as ConnectionMiddleware[];
     const router = new OCPPRouter();
     router.use(...middlewares);
     this._registerRouter(router);
@@ -1059,6 +1138,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         handshake,
         session: finalSession,
         protocol: selectedProtocol,
+        adaptiveMultiplier: this._adaptiveLimiter
+          ? () => this._adaptiveLimiter!.multiplier
+          : undefined,
+        workerPool: this._workerPool ?? undefined,
       });
 
       this._updateSessionActivity(identity, client.session);
@@ -1109,22 +1192,56 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         protocol: selectedProtocol,
       });
 
-      client.on("close", () => {
-        this._clients.delete(client);
-        if (this._clientsByIdentity.get(identity) === client) {
-          this._clientsByIdentity.delete(identity);
-        }
-        // Remove presence
-        if (this?._adapter?.removePresence) {
-          this._adapter.removePresence(identity).catch((err) => {
-            this._logger?.error?.("Error removing presence", {
-              identity,
-              error: err,
+      client.on(
+        "close",
+        ({ code, reason }: { code: number; reason: string }) => {
+          this._clients.delete(client);
+          if (this._clientsByIdentity.get(identity) === client) {
+            this._clientsByIdentity.delete(identity);
+          }
+          // Remove presence
+          if (this?._adapter?.removePresence) {
+            this._adapter.removePresence(identity).catch((err) => {
+              this._logger?.error?.("Error removing presence", {
+                identity,
+                error: err,
+              });
             });
+          }
+          // Plugin: onDisconnect
+          for (const plugin of this._plugins) {
+            try {
+              plugin.onDisconnect?.(client, code, reason);
+            } catch (err) {
+              this._logger?.error?.("Plugin onDisconnect error", {
+                name: plugin.name,
+                error: (err as Error).message,
+              });
+            }
+          }
+          this._logger?.info?.("Client disconnected", { identity });
+        },
+      );
+
+      // Plugin: onConnection
+      for (const plugin of this._plugins) {
+        try {
+          const result = plugin.onConnection?.(client);
+          if (result instanceof Promise) {
+            result.catch((err) => {
+              this._logger?.error?.("Plugin onConnection error", {
+                name: plugin.name,
+                error: (err as Error).message,
+              });
+            });
+          }
+        } catch (err) {
+          this._logger?.error?.("Plugin onConnection error", {
+            name: plugin.name,
+            error: (err as Error).message,
           });
         }
-        this._logger?.info?.("Client disconnected", { identity });
-      });
+      }
 
       // Dispatch route-specific "client" events
       this.emit("client", client);
@@ -1218,6 +1335,26 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     );
     await Promise.allSettled(serverClosePromises);
     this._httpServers.clear();
+
+    // Stop adaptive limiter
+    if (this._adaptiveLimiter) {
+      this._adaptiveLimiter.stop();
+    }
+
+    // Plugin: onClose
+    for (const plugin of this._plugins) {
+      try {
+        const result = plugin.onClose?.();
+        if (result instanceof Promise) {
+          await result;
+        }
+      } catch (err) {
+        this._logger?.error?.("Plugin onClose error", {
+          name: plugin.name,
+          error: (err as Error).message,
+        });
+      }
+    }
 
     // Disconnect adapter
     if (this._adapter) {
@@ -1388,6 +1525,70 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         });
       }
       return undefined;
+    }
+  }
+  // ─── Batch Calls ──────────────────────────────────────────────
+
+  /**
+   * Pipeline multiple calls to a single client into a concurrent batch.
+   * Useful for reconnection warm-up (e.g. GetConfiguration, ChangeAvailability, etc.)
+   * where sequential calls would add unnecessary round-trip latency.
+   *
+   * @param identity The client identity to send calls to
+   * @param calls Array of { method, params, options? } to execute concurrently
+   * @returns Array of results in the same order as the calls array.
+   *          Each element is the call result, or `undefined` if that individual call failed.
+   *
+   * @example
+   * ```ts
+   * const results = await server.sendBatch('CP-101', [
+   *   { method: 'GetConfiguration', params: { key: ['MeterInterval'] } },
+   *   { method: 'ChangeAvailability', params: { type: 'Operative' } },
+   *   { method: 'TriggerMessage', params: { requestedMessage: 'StatusNotification' } },
+   * ]);
+   * ```
+   */
+  async sendBatch(
+    identity: string,
+    calls: Array<{
+      method: string;
+      params: Record<string, unknown>;
+      options?: CallOptions;
+    }>,
+  ): Promise<Array<unknown | undefined>> {
+    if (calls.length === 0) return [];
+
+    const client = this._clientsByIdentity.get(identity);
+    if (!client) {
+      this._logger?.warn?.("sendBatch: client not found locally", { identity });
+      // If adapter supports presence, attempt remote unicast batch (future enhancement)
+      return calls.map(() => undefined);
+    }
+
+    // Temporarily raise call concurrency to allow all calls to fly in parallel
+    const originalConcurrency = client.options.callConcurrency ?? 1;
+    if (calls.length > originalConcurrency) {
+      client.reconfigure({ callConcurrency: calls.length });
+    }
+
+    try {
+      const results = await Promise.allSettled(
+        calls.map((c) => client.call(c.method, c.params, c.options ?? {})),
+      );
+
+      return results.map((r) => {
+        if (r.status === "fulfilled") return r.value;
+        this._logger?.warn?.("sendBatch: individual call failed", {
+          identity,
+          error: (r.reason as Error)?.message,
+        });
+        return undefined;
+      });
+    } finally {
+      // Restore original concurrency
+      if (calls.length > originalConcurrency) {
+        client.reconfigure({ callConcurrency: originalConcurrency });
+      }
     }
   }
 
