@@ -951,14 +951,19 @@ export class OCPPClient<
 
   // ─── Internal: Message handling ──────────────────────────────
 
-  private _onMessage(rawData: WebSocket.RawData): void {
+  protected _onMessage(rawData: WebSocket.RawData, preParsed?: unknown): void {
     this._recordActivity();
 
     let message: OCPPMessage;
     try {
-      // Zero-copy — JSON.parse accepts Buffer directly (Node 18+),
-      // avoiding an intermediate string allocation per message.
-      message = JSON.parse(rawData as unknown as string) as OCPPMessage;
+      if (preParsed !== undefined) {
+        // Worker pool already parsed — skip JSON.parse entirely
+        message = preParsed as OCPPMessage;
+      } else {
+        // Zero-copy — JSON.parse accepts Buffer directly (Node 18+),
+        // avoiding an intermediate string allocation per message.
+        message = JSON.parse(rawData as unknown as string) as OCPPMessage;
+      }
       if (!Array.isArray(message)) throw new Error("Message is not an array");
     } catch (err) {
       this._onBadMessage(
@@ -1001,8 +1006,8 @@ export class OCPPClient<
       messageType === MessageType.CALLERROR
         ? 4
         : messageType === MessageType.CALL
-          ? 3
-          : 2;
+        ? 3
+        : 2;
     const payload = message[payloadIndex];
     if (
       typeof payload !== "object" ||
@@ -1016,8 +1021,8 @@ export class OCPPClient<
             payload === null
               ? "null"
               : Array.isArray(payload)
-                ? "array"
-                : typeof payload
+              ? "array"
+              : typeof payload
           }`,
         ),
       );
