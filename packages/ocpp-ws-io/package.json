@@ -79,8 +79,7 @@
     "url": "https://github.com/rohittiwari-dev/ocpp-ws-io/issues"
   },
   "files": [
-    "dist",
-    "assets"
+    "dist"
   ],
   "license": "MIT",
   "dependencies": {

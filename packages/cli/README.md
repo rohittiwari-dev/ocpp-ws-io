@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="ocpp-ws-io" width="420" />
+  <img src="https://raw.githubusercontent.com/rohittiwari-dev/ocpp-ws-io/main/assets/banner.svg" alt="ocpp-ws-io" width="420" />
 </p>
 
 # ocpp-ws-cli

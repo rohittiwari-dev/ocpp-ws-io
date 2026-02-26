@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="ocpp-ws-io" width="420" />
+  <img src="https://raw.githubusercontent.com/rohittiwari-dev/ocpp-ws-io/main/assets/banner.svg" alt="ocpp-ws-io" width="420" />
 </p>
 
 > built with TypeScript — supports OCPP 1.6, 2.0.1, and 2.1 with optional JSON schema validation, all security profiles, clustering support, and structured logging powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io).
