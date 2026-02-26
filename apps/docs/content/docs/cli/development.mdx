@@ -1,6 +1,6 @@
 ---
 title: Development Tools
-description: Utilities for mocking APIs and hosting firmware during local development.
+description: Utilities for mocking APIs and generating telemetry.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
@@ -17,41 +17,13 @@ ocpp mock [options]
 
 ### Options
 
-| Option | Alias | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--port` | `-p` | `8080` | The HTTP port to listen on. |
-| `--rate` | `-r` | `1000` | The interval in milliseconds for generating random events. |
+| Option   | Alias | Default | Description                                                |
+| :------- | :---- | :------ | :--------------------------------------------------------- |
+| `--port` | `-p`  | `8080`  | The HTTP port to listen on.                                |
+| `--rate` | `-r`  | `500`   | The interval in milliseconds for generating random events. |
 
 ### How it works
 
-1.  Starts an HTTP server at `http://localhost:8080`.
-2.  Exposes an `/events` endpoint that streams random `StatusNotification` and `MeterValues` updates via SSE.
-3.  Frontend apps can subscribe to this stream to visualize charging sessions in real-time.
-
----
-
-## `ocpp ota`
-
-A simple HTTP file server optimized for hosting firmware binaries locally. This is essential when testing `UpdateFirmware` commands on simulated or real Charge Points in a development environment.
-
-### Usage
-
-```bash
-ocpp ota [directory] [options]
-```
-
-### Options
-
-| Option | Alias | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--port` | `-p` | `4000` | The HTTP port to serve files on. |
-
-### Example
-
-1.  Place your firmware binary (e.g., `fw-v1.bin`) in a folder named `firmware`.
-2.  Start the OTA server:
-    ```bash
-    ocpp ota ./firmware
-    ```
-3.  Send an `UpdateFirmware` command to your Charge Point with location:
-    `http://<your-ip>:4000/fw-v1.bin`
+1. Starts an HTTP server at `http://localhost:8080`.
+2. Exposes an `/events` endpoint that streams random `StatusNotification` and `MeterValues` updates via SSE.
+3. Frontend apps can subscribe to this stream to visualize charging sessions in real-time.

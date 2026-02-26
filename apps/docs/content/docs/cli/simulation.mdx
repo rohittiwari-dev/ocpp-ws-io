@@ -1,13 +1,13 @@
 ---
 title: Testing & Simulation
-description: Tools for simulating Charge Points, replaying traffic, and stress-testing your infrastructure.
+description: Tools for simulating Charge Points and stress-testing your infrastructure.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
 ## `ocpp simulate`
 
-An interactive, terminal-based Charge Point simulator. It allows you to manually trigger OCPP messages and observe responses in real-time.
+An interactive, automated Charge Point simulator. It allows you to manually trigger OCPP messages and observe responses in real-time.
 
 ### Usage
 
@@ -17,10 +17,13 @@ ocpp simulate [options]
 
 ### Options
 
-| Option | Alias | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--identity` | `-i` | `Simulated-CP-01` | The unique Identity (ChargeBox ID) of the simulated CP. |
-| `--endpoint` | `-e` | `ws://localhost:3000` | The WebSocket URL of your CSMS server. |
+| Option         | Alias | Default                    | Description                                  |
+| :------------- | :---- | :------------------------- | :------------------------------------------- |
+| `--identity`   | `-i`  | `Simulator001`             | The unique Identity of the simulated CP.     |
+| `--endpoint`   | `-e`  | `ws://localhost:3000/ocpp` | The WebSocket URL of your CSMS server.       |
+| `--protocol`   | `-p`  | `ocpp1.6`                  | OCPP subprotocol to use.                     |
+| `--report`     |       | -                          | Export metrics on exit (`json`, `md`, `txt`) |
+| `--report-dir` |       | -                          | Custom directory to save the report          |
 
 ### Commands (Interactive Mode)
 
@@ -29,60 +32,8 @@ Once connected, you can type the following keys:
 - `B`: Send `BootNotification`
 - `H`: Send `Heartbeat`
 - `S`: Send `StatusNotification`
+- `M`: Send `MeterValues`
 - `Q`: Quit simulation
-
----
-
-## `ocpp virtual-station`
-
-A fully automated, stateful Virtual Charge Point simulator. It maintains internal state (Available, Charging, Faulted) and automatically responds to CSMS commands like `RemoteStartTransaction` or `GetDiagnostics`.
-
-### Usage
-
-```bash
-ocpp virtual-station [options]
-```
-
-### Options
-
-| Option | Alias | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--identity` | `-i` | `VS-001` | The unique Identity of the Virtual Station. |
-| `--endpoint` | `-e` | `ws://localhost:3000` | The WebSocket URL of your CSMS server. |
-| `--protocol` | `-p` | `ocpp1.6` | OCPP Protocol version to simulate (e.g., `ocpp1.6`, `ocpp2.0.1`). |
-
-### Supported Features
-
-- **Boot Sequence**: Automatically sends `BootNotification` and starts heartbeat loop.
-- **Remote Control**: Handles `RemoteStartTransaction` and `RemoteStopTransaction`.
-- **Status Updates**: Automatically transitions states (Available -> Preparing -> Charging) and sends `StatusNotification`.
-- **Firmware Updates**: Simulates `UpdateFirmware` process (Download -> Install -> Reboot).
-- **Diagnostics**: Simulates `GetDiagnostics` log upload.
-
----
-
-## `ocpp call`
-
-Sends a single, one-off JSON payload to a CSMS and logs the response. Useful for quick testing or debugging specific message handlers.
-
-### Usage
-
-```bash
-ocpp call <method> [payload] [options]
-```
-
-### Options
-
-| Option | Alias | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--identity` | `-i` | `CLI-Agent` | The Identity to use for the connection. |
-| `--endpoint` | `-e` | `ws://localhost:3000` | The WebSocket URL of your CSMS server. |
-
-### Example
-
-```bash
-ocpp call BootNotification '{"chargePointModel": "TestModel", "chargePointVendor": "TestVendor"}'
-```
 
 ---
 
@@ -98,11 +49,13 @@ ocpp load-test [options]
 
 ### Options
 
-| Option | Alias | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--endpoint` | `-e` | `ws://localhost:3000` | The WebSocket URL of your CSMS server. |
-| `--clients` | `-c` | `100` | Number of concurrent simulated clients. |
-| `--ramp-up` | `-r` | `10` | Time in seconds to ramp up connections (staggered connect). |
+| Option         | Alias | Default                    | Description                                                 |
+| :------------- | :---- | :------------------------- | :---------------------------------------------------------- |
+| `--endpoint`   | `-e`  | `ws://localhost:3000/ocpp` | The WebSocket URL of your CSMS server.                      |
+| `--clients`    | `-c`  | `100`                      | Number of concurrent simulated clients.                     |
+| `--ramp-up`    | `-r`  | `10`                       | Time in seconds to ramp up connections (staggered connect). |
+| `--report`     |       | -                          | Export load test statistics (`json`, `md`, `txt`)           |
+| `--report-dir` |       | -                          | Custom directory to save the report                         |
 
 ### Use Case
 
@@ -122,42 +75,16 @@ ocpp fuzz [options]
 
 ### Options
 
-| Option | Alias | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--endpoint` | `-e` | `ws://localhost:3000` | The WebSocket URL of your CSMS server. |
-| `--workers` | `-w` | `5` | Number of concurrent fuzzing worker threads. |
+| Option         | Alias | Default                    | Description                                        |
+| :------------- | :---- | :------------------------- | :------------------------------------------------- |
+| `--endpoint`   | `-e`  | `ws://localhost:3000/ocpp` | The WebSocket URL of your CSMS server.             |
+| `--workers`    | `-w`  | `5`                        | Number of concurrent fuzzing worker threads.       |
+| `--flood`      | `-f`  | -                          | Enable Flood Mode (Blast anomalies with 0ms delay) |
+| `--report`     |       | -                          | Export chaos engine results (`json`, `md`, `txt`)  |
+| `--report-dir` |       | -                          | Custom directory to save the report                |
 
 ### What it tests
 
 - **JSON Parsing**: Sends invalid JSON strings.
 - **Schema Validation**: Sends payloads missing required fields or with incorrect types.
 - **Protocol Compliance**: Sends messages out of sequence or with invalid MessageType IDs.
-
----
-
-## `ocpp replay`
-
-Replays a sequence of OCPP messages from a log file. This allows you to recreate specific traffic patterns or bug scenarios.
-
-### Usage
-
-```bash
-ocpp replay <file> [options]
-```
-
-### Options
-
-| Option | Alias | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--target` | `-t` | `ws://localhost:3000` | The WebSocket URL of your CSMS server. |
-
-### Log File Format
-
-The input file should be a JSON array of frame objects:
-
-```json
-[
-  { "delay": 0, "payload": [2, "msg1", "BootNotification", {...}] },
-  { "delay": 1000, "payload": [2, "msg2", "Heartbeat", {}] }
-]
-```

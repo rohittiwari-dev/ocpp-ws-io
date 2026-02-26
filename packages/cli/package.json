@@ -1,0 +1,34 @@
+{
+  "name": "ocpp-ws-cli",
+  "version": "1.0.0-beta.1",
+  "description": "The ultimate CLI ecosystem for ocpp-ws-io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rohittiwari-dev/ocpp-ws-io"
+  },
+  "main": "dist/index.js",
+  "bin": {
+    "ocpp": "./dist/index.js",
+    "ocpp-ws-cli": "./dist/index.js"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.0.1",
+    "@types/ws": "^8.18.1",
+    "cac": "^6.7.14",
+    "json-schema-to-typescript": "^15.0.4",
+    "log-update": "^7.1.0",
+    "picocolors": "^1.0.0",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.5"
+  }
+}

@@ -5,31 +5,6 @@ description: Commands for scaffolding projects, generating types, and managing c
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-## `ocpp init`
-
-Scaffolds a new ocpp-ws-io project with sensible defaults and best practices.
-
-### Usage
-
-```bash
-npx ocpp-ws-cli init <directory>
-```
-
-### Arguments
-
-| Argument    | Description                                 |
-| :---------- | :------------------------------------------ |
-| `directory` | The directory to create the new project in. |
-
-### What it does
-
-- Creates a new directory structure.
-- Initializes a `package.json` with necessary dependencies.
-- Sets up `tsconfig.json` for optimal TypeScript configuration.
-- Creates a basic `src/index.ts` entry point with an `OCPPServer` instance.
-
----
-
 ## `ocpp generate`
 
 Generates TypeScript declaration files (`.d.ts`) from custom JSON schemas. This is crucial for ensuring type safety when working with vendor-specific OCPP extensions.
@@ -42,40 +17,16 @@ ocpp generate [options]
 
 ### Options
 
-| Option      | Alias | Default | Description                                         |
-| :---------- | :---- | :------ | :-------------------------------------------------- |
-| `--schemas` | `-s`  | -       | Directory containing your custom JSON schema files. |
-| `--out`     | `-o`  | -       | Output directory for the generated `.d.ts` files.   |
+| Option     | Alias | Default               | Description                                   |
+| :--------- | :---- | :-------------------- | :-------------------------------------------- |
+| `--schema` | `-s`  | -                     | Schema URL or local file path.                |
+| `--name`   | `-n`  | -                     | Subprotocol name (e.g. `my-custom-protocol`). |
+| `--out`    | `-o`  | `./@types/ocpp-ws-io` | Output directory for the generated files.     |
 
 ### Example
 
 ```bash
-ocpp generate --schemas ./custom-schemas --out ./src/types/generated
-```
-
----
-
-## `ocpp sdk`
-
-Automatically generates a frontend-ready TypeScript SDK based on your JSON schemas. This allows your frontend or mobile teams to interact with your CSMS using a type-safe API.
-
-### Usage
-
-```bash
-ocpp sdk [options]
-```
-
-### Options
-
-| Option      | Alias | Default                  | Description                                        |
-| :---------- | :---- | :----------------------- | :------------------------------------------------- |
-| `--schemas` | `-s`  | `./schemas`              | Directory containing JSON schemas.                 |
-| `--out`     | `-o`  | `./src/generated/sdk.ts` | Output path for the generated TypeScript SDK file. |
-
-### Example
-
-```bash
-ocpp sdk --schemas ./schemas --out ./frontend/src/api/ocpp-ws-client.ts
+ocpp generate --schema ./custom-schemas/station.json --name vendor-extensions --out ./src/types
 ```
 
 ---

@@ -29,31 +29,13 @@ The **ocpp-ws-io** ecosystem includes CLI tools for building, testing, and debug
 
 These commands help you write code faster by automating boilerplate and TypeScript configuration.
 
-### `ocpp init` [stable]
-
-**What it does:** Bootstraps a new Central System (CSMS) project with sensible defaults.  
-**When to use it:** When you are starting a new OCPP project and don't want to manually configure TypeScript, Biome, and WebSockets.
-
-```bash
-npx ocpp-ws-cli init ./my-charging-network
-```
-
 ### `ocpp generate` [stable]
 
 **What it does:** Reads your custom `.json` OCPP schemas and generates perfectly typed `.d.ts` declaration files.  
 **When to use it:** When your hardware vendor provides custom DataTransfer methods and you want full IDE autocomplete in your handlers.
 
 ```bash
-ocpp generate --schemas ./schemas --out ./src/generated
-```
-
-### `ocpp sdk` [beta]
-
-**What it does:** Automatically generates a frontend-ready TypeScript SDK built around your JSON schemas.  
-**When to use it:** When your Frontend UI or Mobile App teams need a type-safe API to talk to your CSMS (e.g., `api.bootNotification({...})`).
-
-```bash
-ocpp sdk --schemas ./schemas --out ./frontend/api.ts
+ocpp generate --schema ./schemas/custom-cp.json --name custom-1.6
 ```
 
 ---
@@ -64,106 +46,60 @@ Testing Websockets is notoriously difficult. These tools allow you to simulate h
 
 ### `ocpp simulate` [stable]
 
-**What it does:** Spins up an interactive, terminal-based Charge Point simulator.  
+**What it does:** Spins up an interactive, automated Charge Point simulator.  
 **When to use it:** When you need a virtual charger to connect to your CSMS so you can rapidly test your `BootNotification` and `Heartbeat` database logic.
 
 ```bash
-ocpp simulate --identity CP-001 --endpoint ws://localhost:3000
+ocpp simulate --identity CP-001 --endpoint ws://localhost:3000/ocpp
 ```
 
-### `ocpp virtual-station` [beta]
+### `ocpp load-test` [stable]
 
-**What it does:** Runs a fully autonomous, state-machine governed Virtual Charge Point simulator.  
-**When to use it:** When you need a "Full" OCPP simulated client to sit in the background and correctly respond to incoming `RemoteStartTransaction`, `UpdateFirmware`, and `GetDiagnostics` commands without user intervention.
-
-```bash
-ocpp virtual-station --identity VS-001 --protocol ocpp1.6
-```
-
-### `ocpp call` [stable]
-
-**What it does:** Connects to your server, fires a single exact JSON payload, logs the response, and disconnects.  
-**When to use it:** When you want to trigger a very specific scenario (like a malformed schema validation rejection) without running a full simulator.
-
-```bash
-ocpp call BootNotification '{"chargePointModel": "ModelX"}'
-```
-
-### `ocpp load-test` [planned]
-
-**What it does:** Spawns thousands of concurrent headless web sockets.  
+**What it does:** A distributed load testing engine capable of simulating thousands of concurrent Charge Point connections.  
 **When to use it:** When you've configured Redis Clustering and Rate Limiting, and want to prove your infrastructure can handle massive traffic spikes.
 
 ```bash
-ocpp load-test --clients 5000 --ramp-up 30s --endpoint wss://api.csms.com
+ocpp load-test --clients 1000 --ramp-up 20 --endpoint wss://api.csms.com/ocpp
 ```
 
-### `ocpp fuzz` [planned]
+### `ocpp fuzz` [stable]
 
-**What it does:** Aggressively spams your server with malformed strings, invalid arrays, and schema-breaking payloads.  
+**What it does:** A protocol fuzzer that aggressively spams your server with malformed strings, invalid arrays, and schema-breaking anomalies.  
 **When to use it:** To guarantee your CSMS Strict-Mode validators and crash-guards are correctly dropping bad actors before they crash Node.js.
 
 ```bash
-ocpp fuzz --endpoint ws://localhost:3000 --workers 20
-```
-
-### `ocpp replay` [beta]
-
-**What it does:** Reads an incident log file containing network frames and replays them back to your CSMS with exact timing.  
-**When to use it:** When an obscure bug happens in production, and you need to reproduce the exact transaction sequence locally to find the flaw.
-
-```bash
-ocpp replay ./incidents/crash.json --target ws://localhost:3000
+ocpp fuzz --endpoint ws://localhost:3000/ocpp --workers 20 --flood
 ```
 
 ---
 
-## 🔎 3. Observability & Debugging
+## 🔎 3. Compliance & Auditing
 
-When payloads are flying across the cluster, these tools give you total visibility.
+When you need to ensure your implementation strictly adheres to the OCPP specification and security profiles.
 
-### `ocpp tail` [planned]
+### `ocpp test` [stable]
 
-**What it does:** Hooks into your Redis deployment to act as a real-time network sniffer across your entire fleet.  
-**When to use it:** When you need to watch payloads flying in and out of a specific physical charger, but don't want to comb through massive log aggregators.
+**What it does:** Runs OCTT (Open Charge Point Testing Tool) style compliance tests against a running OCPP server.  
+**When to use it:** When you're ready for certification or need to verify your transport and RPC layers strictly follow OCPP specification.
 
 ```bash
-# Watch only Heartbeats from CP-999
-ocpp tail --identity CP-999 --method Heartbeat --redis redis://localhost:6379
+ocpp test --endpoint ws://localhost:3000/ocpp --suite rpc --report md
 ```
 
-### `ocpp top` [planned]
+### `ocpp audit` [stable]
 
-**What it does:** A live terminal dashboard (TUI) showing memory, active sessions, and socket connections.  
-**When to use it:** To monitor the real-time health and load distribution of your CSMS nodes.
-
-```bash
-ocpp top --redis redis://localhost:6379
-```
-
-### `ocpp proxy` [planned]
-
-**What it does:** A Man-in-the-Middle reverse proxy that sits between a physical charger and your CSMS.  
-**When to use it:** When working with 3rd-party vendors and you need to decrypt/see the encrypted raw WebSocket frames they are sending you before they hit the real server.
+**What it does:** An interactive wizard for production security auditing.  
+**When to use it:** Before deploying to production, to ensure your endpoints are properly secured and reject unauthenticated or legacy protocol connections.
 
 ```bash
-ocpp proxy --listen 8080 --target wss://vendor.csms.com
-```
-
-### `ocpp parse` [stable]
-
-**What it does:** Takes messy, raw OCPP JSON array-tuples and cleanly formats them.  
-**When to use it:** When you copy a raw `[2, "msg_id", "Heartbeat", {}]` string out of AWS CloudWatch and need to read it easily.
-
-```bash
-ocpp parse '[2, "123", "Heartbeat", {"vendor": "unknown"}]'
+ocpp audit --endpoint wss://api.csms.com/ocpp
 ```
 
 ---
 
-## 🔒 4. Security & Infrastructure Tools
+## 🔒 4. Security & Development Tools
 
-Utilities for handling complex hardware requirements like Firmware and Mutual TLS.
+Utilities for handling complex hardware requirements like Mutual TLS and mocking dashboards.
 
 ### `ocpp certs` [stable]
 
@@ -174,18 +110,9 @@ Utilities for handling complex hardware requirements like Firmware and Mutual TL
 ocpp certs --type client --identity CP-001 --out ./certs
 ```
 
-### `ocpp ota` [stable]
-
-**What it does:** A specialized HTTP static file server that supports chunked binary transfers.  
-**When to use it:** When sending an `UpdateFirmware` packet to a physical EV charger, you can point the charger download URL back to this local CLI server.
-
-```bash
-ocpp ota ./firmware-binaries --port 4000
-```
-
 ### `ocpp mock` [stable]
 
-**What it does:** An HTTP Server-Sent Events (SSE) stream that endlessly spits out dummy OCPP data.  
+**What it does:** An HTTP Server-Sent Events (SSE) stream that endlessly spits out dummy OCPP telemetry data.  
 **When to use it:** When your Frontend/React developers are building the fleet dashboard and need a fast stream of mock `MeterValues` without running a real server.
 
 ```bash
