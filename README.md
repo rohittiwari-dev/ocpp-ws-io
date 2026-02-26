@@ -1,7 +1,7 @@
 <div align="center">
 
 <p align="center">
-  <img src="packages/ocpp-ws-io/.github/banner.svg" alt="ocpp-ws-io" width="420" />
+  <img src="packages/ocpp-ws-io/assets/banner.svg" alt="ocpp-ws-io" width="420" />
 </p>
 
 **Type-safe OCPP WebSocket RPC client & server for Node.js**
@@ -36,6 +36,7 @@ Building an OCPP-compliant charging station management system (CSMS) or charge p
 - 🌐 **Browser Client** — Zero-dependency browser WebSocket client via `ocpp-ws-io/browser`
 - 🔀 **Express-style Routing** — Dynamically scope auth and middleware across `OCPPRouter` URL paths
 - 🔑 **Idempotency Keys** — Single Source of Truth message tracking guaranteeing exactly-once delivery on retries
+- ⚡ **CLI Ecosystem** — Built-in `ocpp-ws-cli` for generating types, load testing, fuzzing, and simulating virtual charge points
 
 ## Quick Start
 
@@ -112,7 +113,8 @@ await server.listen(3000);
 ```
 ocpp-ws-io/
 ├── packages/
-│   └── ocpp-ws-io/          # Core OCPP WebSocket library (npm: ocpp-ws-io)
+│   ├── ocpp-ws-io/          # Core OCPP WebSocket library (npm: ocpp-ws-io)
+│   └── cli/                 # The CLI ecosystem (npm: ocpp-ws-cli)
 ├── apps/
 │   └── docs/                # Documentation site (ocpp-ws-io.rohittiwari.me)
 └── .github/
@@ -122,6 +124,7 @@ ocpp-ws-io/
 | Package                                      | Description                               | Status       |
 | -------------------------------------------- | ----------------------------------------- | ------------ |
 | [`ocpp-ws-io`](packages/ocpp-ws-io)          | Core OCPP WebSocket RPC client & server   | ✅ Published |
+| [`ocpp-ws-cli`](packages/cli)                | CLI for generation, simulation & testing  | ✅ Published |
 | [`voltlog-io`](https://npmjs.com/voltlog-io) | Structured Logger (Maintained Separately) | ✅ Published |
 
 ## Requirements

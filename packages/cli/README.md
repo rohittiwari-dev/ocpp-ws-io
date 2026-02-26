@@ -84,6 +84,20 @@ Execute modularized test suites against your servers:
 
 Read your custom JSON schemas and output exact TypeScript `.d.ts` declaration libraries for 100% strict type safety across your entire charging network.
 
+### `ocpp load-test` : Distributed Load Testing Engine
+
+A distributed load testing engine capable of simulating thousands of concurrent Charge Point connections.
+
+- Simulates intense traffic spikes with staggered connections.
+- Generates detailed metrics for successful and failed requests.
+
+### `ocpp fuzz` : Protocol Chaos Engine (Fuzzer)
+
+A protocol fuzzer that sends malformed, invalid, or unexpected payloads.
+
+- Floods the server with protocol anomalies using multiple concurrent worker threads.
+- Validates that strict-mode schema enforcement and error handling are robust.
+
 ---
 
 ## 📚 Documentation

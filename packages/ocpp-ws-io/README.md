@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/banner.svg" alt="ocpp-ws-io" width="420" />
+  <img src="assets/banner.svg" alt="ocpp-ws-io" width="420" />
 </p>
 
 > built with TypeScript — supports OCPP 1.6, 2.0.1, and 2.1 with optional JSON schema validation, all security profiles, clustering support, and structured logging powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io).
@@ -19,6 +19,7 @@ For full API reference, advanced usage, and guides, visit the **[Official Docume
 - 📐 **Strict Mode** — Optional JSON schema validation
 - 📡 **Clustering** — Redis adapter support
 - 🌐 **Browser Client** — Zero-dependency client for simulators
+- ⚡ **CLI Ecosystem** — Built-in `ocpp-ws-cli` for generating types, load testing, fuzzing, and simulating virtual charge points
 
 ## 📦 Installation
 

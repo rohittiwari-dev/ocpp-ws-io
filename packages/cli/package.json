@@ -1,6 +1,6 @@
 {
   "name": "ocpp-ws-cli",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0",
   "description": "The ultimate CLI ecosystem for ocpp-ws-io",
   "repository": {
     "type": "git",
@@ -25,6 +25,10 @@
     "picocolors": "^1.0.0",
     "ws": "^8.19.0"
   },
+  "files": [
+    "dist",
+    "assets"
+  ],
   "devDependencies": {
     "@types/node": "^20.0.0",
     "tsup": "^8.0.0",
