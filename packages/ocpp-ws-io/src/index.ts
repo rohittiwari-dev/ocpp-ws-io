@@ -44,6 +44,7 @@ export type { OCPP201Methods } from "./generated/ocpp201.js";
 export {
   combineAuth,
   createLoggingMiddleware,
+  createPlugin,
   defineAuth,
   defineMiddleware,
   defineRpcMiddleware,
