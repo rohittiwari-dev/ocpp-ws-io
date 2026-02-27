@@ -6,6 +6,7 @@ import type {
   LoggingConfig,
   MiddlewareContext,
   MiddlewareFunction,
+  OCPPPlugin,
 } from "../types.js";
 
 // ─── Middleware Definition ───────────────────────────────────────
@@ -18,6 +19,31 @@ export function defineMiddleware(
   mw: ConnectionMiddleware,
 ): ConnectionMiddleware {
   return mw;
+}
+
+// ─── Plugin Definition ──────────────────────────────────────────
+
+/**
+ * Utility to define and strongly-type an `OCPPPlugin` object.
+ * Provides full IDE autocomplete for all lifecycle hooks.
+ *
+ * @example
+ * ```ts
+ * import { createPlugin } from 'ocpp-ws-io';
+ *
+ * const metricsPlugin = createPlugin({
+ *   name: 'metrics',
+ *   onInit(server)       { console.log('Metrics plugin ready'); },
+ *   onConnection(client) { metrics.gauge('connections').inc(); },
+ *   onDisconnect(client) { metrics.gauge('connections').dec(); },
+ *   onClose()            { metrics.flush(); },
+ * });
+ *
+ * server.plugin(metricsPlugin);
+ * ```
+ */
+export function createPlugin(plugin: OCPPPlugin): OCPPPlugin {
+  return plugin;
 }
 
 /**

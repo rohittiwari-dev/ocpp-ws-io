@@ -79,13 +79,17 @@ Furthermore, if the Redis connection itself experiences a temporary blackout, th
 
 ### Configuration Options
 
-| Option           | Type     | Description                           |
-| :--------------- | :------- | :------------------------------------ |
-| `pubClient`      | `Redis`  | Used for publishing and setting keys. |
-| `subClient`      | `Redis`  | Used for Pub/Sub subscriptions.       |
-| `blockingClient` | `Redis`  | (Optional) Dedicated for `XREAD`.     |
-| `prefix`         | `string` | Key prefix (default: `ocpp-ws-io:`).  |
-| `streamMaxLen`   | `number` | Max stream length (default: `1000`).  |
+| Option               | Type       | Description                                                        |
+| :------------------- | :--------- | :----------------------------------------------------------------- |
+| `pubClient`          | `Redis`    | Used for publishing and setting keys.                              |
+| `subClient`          | `Redis`    | Used for Pub/Sub subscriptions.                                    |
+| `blockingClient`     | `Redis`    | (Optional) Dedicated for `XREAD`.                                  |
+| `prefix`             | `string`   | Key prefix (default: `ocpp-ws-io:`).                               |
+| `streamMaxLen`       | `number`   | Max stream length (default: `1000`).                               |
+| `streamTtlSeconds`   | `number`   | TTL for ephemeral stream keys (default: `300`).                    |
+| `presenceTtlSeconds` | `number`   | Presence heartbeat TTL (default: `300`).                           |
+| `poolSize`           | `number`   | Connection pool size (default: `1`). See below.                    |
+| `driverFactory`      | `function` | Factory for additional pool drivers. Required when `poolSize > 1`. |
 
 ### Advanced Redis Functions
 
@@ -105,6 +109,63 @@ console.log(telemetry.redisConsumerLag.pendingMessages); // "142"
 When dispatching multi-node Unicast events (like a fleet-wide `ClearCache`), `ocpp-ws-io` groups all messages per target node and dispatches them using a single `Redis.pipeline()`. This collapses N individual Redis round-trips into one pipeline call per node, reducing latency under bulk dispatch.
 
 This is automatically utilized when you call `server.broadcastBatch()`.
+
+### Connection Pooling
+
+At 30k+ connections, a single Redis TCP connection becomes a bottleneck due to head-of-line blocking. Connection pooling distributes write operations across multiple connections using round-robin.
+
+```typescript
+import Redis from "ioredis";
+import { RedisAdapter } from "ocpp-ws-io/adapters/redis";
+import { createDriver } from "ocpp-ws-io/adapters/redis";
+
+const adapter = new RedisAdapter({
+  pubClient: new Redis(process.env.REDIS_URL),
+  subClient: new Redis(process.env.REDIS_URL),
+  poolSize: 4, // 4 write connections
+  driverFactory: () =>
+    createDriver(
+      new Redis(process.env.REDIS_URL),
+      new Redis(process.env.REDIS_URL),
+    ),
+});
+```
+
+**How it works:**
+
+- Writes (`xadd`, `publish`, `set`) rotate across the pool via round-robin
+- Pub/Sub subscriptions always use the primary driver (index 0) since they're stateful
+- `poolSize: 1` (default) preserves existing single-connection behavior
+- `disconnect()` closes all pool members gracefully
+
+### Redis Cluster Mode
+
+For deployments using Redis Cluster (multiple shards), use the built-in `ClusterDriver`:
+
+```typescript
+import { ClusterDriver, RedisAdapter } from "ocpp-ws-io";
+
+const clusterDriver = new ClusterDriver({
+  nodes: [
+    { host: "10.0.0.1", port: 6379 },
+    { host: "10.0.0.2", port: 6379 },
+    { host: "10.0.0.3", port: 6379 },
+  ],
+  // Optional: Docker/k8s NAT mapping
+  natMap: {
+    "172.17.0.2:6379": { host: "localhost", port: 6380 },
+  },
+});
+
+// Use the cluster driver as a pool factory
+const adapter = new RedisAdapter({
+  pubClient: {} as any, // Not used when driverFactory is provided
+  subClient: {} as any,
+  driverFactory: () => clusterDriver,
+});
+```
+
+The `ClusterDriver` requires `ioredis` as a peer dependency. It automatically handles `MOVED`/`ASK` redirections and gracefully falls back to individual `GET` calls when `MGET` spans multiple hash slots.
 
 ## Custom Adapters (EventAdapterInterface)
 

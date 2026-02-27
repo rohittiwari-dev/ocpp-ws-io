@@ -1,5 +1,49 @@
 # ocpp-ws-io
 
+## 2.1.8
+
+### 🔌 Plugin System
+
+- **Built-in Plugin Architecture**: Introduced `server.plugin()` API for composable server extensions. Plugins receive lifecycle hooks (`onInit`, `onConnection`, `onDisconnect`, `onClose`) and can be registered via `import { ... } from "ocpp-ws-io/plugins"`.
+- **7 Built-in Plugins**:
+  - `heartbeatPlugin()` — Auto-responds to OCPP `Heartbeat` calls with `{ currentTime }`.
+  - `metricsPlugin()` — Real-time connection metrics (active, peak, avg duration, uptime) with periodic snapshots.
+  - `connectionGuardPlugin()` — Enforces hard limit on concurrent connections (force-close with code `4001`).
+  - `anomalyPlugin()` — Detects rapid reconnection storms; emits `securityEvent` with `ANOMALY_RAPID_RECONNECT`.
+  - `sessionLogPlugin()` — Logs connect/disconnect events with identity, IP, protocol, and duration.
+  - `otelPlugin()` — OpenTelemetry span creation for connection lifecycle. Auto-detects `@opentelemetry/api` peer dependency.
+  - `webhookPlugin()` — HTTP POST webhooks on lifecycle events with HMAC-SHA256 signing and retry support.
+- **`createPlugin()` helper** — Type-safe factory for building custom plugins.
+
+### ⚡ Performance & Scaling
+
+- **Worker Thread Pool (`workerThreads`)**: Off-loads JSON parsing to a configurable thread pool. Enable with `workerThreads: true` (auto-sizes) or `{ poolSize, maxQueueSize }`. Uses `MessageChannel` for zero-copy handoff.
+- **Redis Connection Pooling (`poolSize`)**: Distributes write operations (`xadd`, `publish`, `set`) across N connections via round-robin. Subscriptions remain pinned to the primary driver. Default `poolSize: 1` preserves existing behavior.
+- **Redis `driverFactory` option**: Factory function to create additional pool drivers when `poolSize > 1`.
+- **Redis Cluster Mode (`ClusterDriver`)**: Native Redis Cluster support via `ioredis`. Handles `MOVED`/`ASK` redirections, hash-tag sharding for presence keys, and pipeline-based batch operations (`xaddBatch`, `setPresenceBatch`). Gracefully falls back to individual `GET` calls when `MGET` spans multiple slots.
+
+### 📦 WebSocket Compression
+
+- **`permessage-deflate` support**: Enable via `compression: true` (sensible defaults) or fine-tune with `{ threshold, level, memLevel, serverNoContextTakeover, clientNoContextTakeover }`. Available on both `OCPPServer` and `OCPPClient`. ~80% bandwidth reduction for JSON payloads.
+
+### 🩹 Fixes
+
+- **Plugin/Middleware separation**: Fixed plugin registration to cleanly separate from RPC middleware pipeline.
+- **Export ordering**: Alphabetized type exports in `index.ts` for consistency.
+- **Ternary formatting**: Fixed indentation of nested ternary expressions in `client.ts` and `server.ts`.
+
+### 🧪 Testing
+
+- Added `phase-g.test.ts` — 11 tests covering Redis connection pooling (round-robin distribution, subscription pinning, disconnect), compression type contracts, and cluster driver options.
+- Added plugin integration tests covering all 7 built-in plugins, lifecycle hooks, and `server.plugin()` registration.
+- Full suite: **703 tests / 50 files** — all passing.
+
+### 📚 Documentation
+
+- **New page**: `plugins.mdx` — Full documentation for all 7 built-in plugins with options tables, usage examples, and custom plugin creation guide.
+- **Updated**: `clustering.mdx` — Added Connection Pooling and Redis Cluster Mode sections with configuration examples.
+- **Updated**: `api-reference.mdx` — Added `compression`, `workerThreads`, `offlineQueue` options to server/client tables. Added `CompressionOptions` reference table.
+
 ## 2.1.5
 
 ### ⚡ Performance Improvements

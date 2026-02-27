@@ -26,6 +26,23 @@ export interface RedisAdapterOptions {
    * Used for batch presence heartbeat pipeline.
    */
   presenceTtlSeconds?: number;
+  /**
+   * Number of Redis connections to pool for write operations (default: 1).
+   * Higher values distribute load via round-robin, eliminating TCP head-of-line blocking.
+   * Pub/Sub subscriptions always use the primary driver (pool index 0).
+   * - `1` = current single-connection behavior (backward compatible)
+   * - `N` = round-robin across N connections for xadd/set/publish
+   *
+   * When poolSize > 1, additional pub/blocking clients are created by the factory.
+   * Provide `driverFactory` to control how additional drivers are created.
+   */
+  poolSize?: number;
+  /**
+   * Factory function to create additional driver instances for the pool.
+   * Each call should return a fresh, independent set of Redis connections.
+   * Required when `poolSize > 1`.
+   */
+  driverFactory?: () => RedisPubSubDriver;
 }
 
 /**
@@ -56,16 +73,33 @@ export class RedisAdapter implements EventAdapterInterface {
   // Stored presence entries for rehydration on reconnect
   private _presenceCache = new Map<string, { nodeId: string; ttl: number }>();
 
+  // Connection pool
+  private _driverPool: RedisPubSubDriver[];
+  private _nextPoolIndex: number;
+
   constructor(options: RedisAdapterOptions) {
     this._prefix = options.prefix ?? "ocpp-ws-io:";
     this._streamMaxLen = options.streamMaxLen ?? 1000;
     this._streamTtlSeconds = options.streamTtlSeconds ?? 300;
     this._presenceTtlSeconds = options.presenceTtlSeconds ?? 300;
+
+    // Primary driver (always created)
     this._driver = createDriver(
       options.pubClient,
       options.subClient,
       options.blockingClient,
     );
+
+    // Connection pool — default 1 (backward compatible)
+    const poolSize = options.poolSize ?? 1;
+    this._driverPool = [this._driver];
+    this._nextPoolIndex = 0;
+
+    if (poolSize > 1 && options.driverFactory) {
+      for (let i = 1; i < poolSize; i++) {
+        this._driverPool.push(options.driverFactory());
+      }
+    }
 
     // Redis Failure Rehydration — listen for errors and re-sync on reconnect
     if (this._driver.onError) {
@@ -79,6 +113,14 @@ export class RedisAdapter implements EventAdapterInterface {
         this._rehydratePresence().catch(() => {});
       });
     }
+  }
+
+  /** Get the next driver from the pool (round-robin) */
+  private _getPoolDriver(): RedisPubSubDriver {
+    if (this._driverPool.length === 1) return this._driver;
+    const driver = this._driverPool[this._nextPoolIndex];
+    this._nextPoolIndex = (this._nextPoolIndex + 1) % this._driverPool.length;
+    return driver;
   }
 
   async publish(channel: string, data: unknown): Promise<void> {
@@ -100,14 +142,15 @@ export class RedisAdapter implements EventAdapterInterface {
 
     // Unicast (Node-to-Node) -> Use Streams
     if (channel.startsWith("ocpp:node:")) {
-      await this._driver.xadd(prefixedChannel, { message }, this._streamMaxLen);
+      const poolDriver = this._getPoolDriver();
+      await poolDriver.xadd(prefixedChannel, { message }, this._streamMaxLen);
       // Set TTL lease on ephemeral stream key to prevent memory leaks
-      await this._driver
+      await poolDriver
         .expire(prefixedChannel, this._streamTtlSeconds)
         .catch(() => {});
     } else {
       // Broadcast -> Use Pub/Sub
-      await this._driver.publish(prefixedChannel, message);
+      await this._getPoolDriver().publish(prefixedChannel, message);
     }
   }
 
@@ -132,14 +175,16 @@ export class RedisAdapter implements EventAdapterInterface {
     const promises: Promise<void>[] = [];
 
     if (streamMessages.length > 0) {
-      promises.push(this._driver.xaddBatch(streamMessages, this._streamMaxLen));
+      promises.push(
+        this._getPoolDriver().xaddBatch(streamMessages, this._streamMaxLen),
+      );
     }
 
     if (broadcastMessages.length > 0) {
       promises.push(
         Promise.all(
           broadcastMessages.map((bm) =>
-            this._driver.publish(bm.channel, bm.message),
+            this._getPoolDriver().publish(bm.channel, bm.message),
           ),
         ).then(() => {}), // Map `Promise<void[]>` to `Promise<void>`
       );
@@ -196,7 +241,8 @@ export class RedisAdapter implements EventAdapterInterface {
     this._sequenceCounters.clear();
     if (this._unsubError) this._unsubError();
     if (this._unsubReconnect) this._unsubReconnect();
-    await this._driver.disconnect();
+    // Disconnect all pool drivers
+    await Promise.allSettled(this._driverPool.map((d) => d.disconnect()));
   }
 
   private _handleMessage(channel: string, message: string): void {

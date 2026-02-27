@@ -2,8 +2,18 @@
 
 // ─── Adapters ────────────────────────────────────────────────────
 export { defineAdapter, InMemoryAdapter } from "./adapters/adapter.js";
+export {
+  ClusterDriver,
+  type ClusterDriverOptions,
+  type ClusterNode,
+} from "./adapters/redis/cluster-driver.js";
 export { RedisAdapter } from "./adapters/redis/index.js";
-
+export type {
+  AdaptedEvent,
+  AdaptiveLimiterOptions,
+} from "./adaptive-limiter.js";
+// ─── Adaptive Rate Limiting ──────────────────────────────────────
+export { AdaptiveLimiter } from "./adaptive-limiter.js";
 export { OCPPClient } from "./client.js";
 // ─── Errors ──────────────────────────────────────────────────────
 export {
@@ -39,6 +49,7 @@ export type { OCPP201Methods } from "./generated/ocpp201.js";
 export {
   combineAuth,
   createLoggingMiddleware,
+  createPlugin,
   defineAuth,
   defineMiddleware,
   defineRpcMiddleware,
@@ -60,6 +71,7 @@ export {
   type ClientOptions,
   type CloseOptions,
   type CORSOptions,
+  type CompressionOptions,
   type ConnectionContext,
   type ConnectionMiddleware,
   ConnectionState,
@@ -75,7 +87,9 @@ export {
   type OCPPCallError,
   type OCPPCallResult,
   type OCPPMessage,
+  type OCPPPlugin,
   type OCPPProtocol,
+  type RateLimitOptions,
   type RouterConfig,
   SecurityProfile,
   type ServerEvents,

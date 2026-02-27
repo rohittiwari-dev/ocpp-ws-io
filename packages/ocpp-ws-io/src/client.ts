@@ -951,14 +951,19 @@ export class OCPPClient<
 
   // ─── Internal: Message handling ──────────────────────────────
 
-  private _onMessage(rawData: WebSocket.RawData): void {
+  protected _onMessage(rawData: WebSocket.RawData, preParsed?: unknown): void {
     this._recordActivity();
 
     let message: OCPPMessage;
     try {
-      // Zero-copy — JSON.parse accepts Buffer directly (Node 18+),
-      // avoiding an intermediate string allocation per message.
-      message = JSON.parse(rawData as unknown as string) as OCPPMessage;
+      if (preParsed !== undefined) {
+        // Worker pool already parsed — skip JSON.parse entirely
+        message = preParsed as OCPPMessage;
+      } else {
+        // Zero-copy — JSON.parse accepts Buffer directly (Node 18+),
+        // avoiding an intermediate string allocation per message.
+        message = JSON.parse(rawData as unknown as string) as OCPPMessage;
+      }
       if (!Array.isArray(message)) throw new Error("Message is not an array");
     } catch (err) {
       this._onBadMessage(
@@ -1698,6 +1703,30 @@ export class OCPPClient<
         if (tls.key) opts.key = tls.key;
         if (tls.passphrase) opts.passphrase = tls.passphrase;
       }
+    }
+
+    // Compression: permessage-deflate
+    const compression = this._options.compression;
+    if (compression) {
+      opts.perMessageDeflate =
+        compression === true
+          ? {
+              zlibDeflateOptions: { level: 6, memLevel: 8 },
+              zlibInflateOptions: {},
+              clientNoContextTakeover: true,
+              serverNoContextTakeover: true,
+            }
+          : {
+              zlibDeflateOptions: {
+                level: compression.level ?? 6,
+                memLevel: compression.memLevel ?? 8,
+              },
+              zlibInflateOptions: {},
+              clientNoContextTakeover:
+                compression.clientNoContextTakeover ?? true,
+              serverNoContextTakeover:
+                compression.serverNoContextTakeover ?? true,
+            };
     }
 
     return opts;

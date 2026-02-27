@@ -13,6 +13,7 @@
     "security",
     "logging",
     "clustering",
+    "plugins",
     "type-safety",
     "---System---",
     "type-generation",

@@ -1,6 +1,6 @@
 {
   "name": "ocpp-ws-io",
-  "version": "2.1.7",
+  "version": "2.1.8",
   "description": "Type-safe OCPP 1.6 & 2.0.1 WebSocket RPC client & server. Build EV charging CSMS platforms with Redis clustering, strict validation, and DDoS protection.",
   "repository": {
     "type": "git",
@@ -29,6 +29,11 @@
       "types": "./dist/logger.d.ts",
       "import": "./dist/logger.mjs",
       "require": "./dist/logger.js"
+    },
+    "./plugins": {
+      "types": "./dist/plugins.d.ts",
+      "import": "./dist/plugins.mjs",
+      "require": "./dist/plugins.js"
     }
   },
   "scripts": {

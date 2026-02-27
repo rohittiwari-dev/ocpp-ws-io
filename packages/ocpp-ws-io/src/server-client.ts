@@ -5,6 +5,7 @@ import {
   ConnectionState,
   type HandshakeInfo,
 } from "./types.js";
+import type { WorkerPool } from "./worker-pool.js";
 
 /**
  * OCPPServerClient — A server-side client representation.
@@ -23,12 +24,18 @@ export class OCPPServerClient extends OCPPClient {
       handshake: HandshakeInfo;
       session: Record<string, any>;
       protocol?: string;
+      /** Optional adaptive rate multiplier getter (from OCPPServer.AdaptiveLimiter) */
+      adaptiveMultiplier?: () => number;
+      /** Optional worker pool for off-thread JSON parsing */
+      workerPool?: WorkerPool;
     },
   ) {
     super(options);
 
     this._serverSession = context.session;
     this._serverHandshake = context.handshake;
+    this._adaptiveMultiplier = context.adaptiveMultiplier ?? null;
+    this._workerPool = context.workerPool ?? null;
 
     // Set state to OPEN directly (already connected via server)
     this._state = ConnectionState.OPEN;
@@ -51,6 +58,8 @@ export class OCPPServerClient extends OCPPClient {
 
   private _rateLimits: Record<string, { tokens: number; lastRefill: number }> =
     {};
+  private _adaptiveMultiplier: (() => number) | null = null;
+  private _workerPool: WorkerPool | null = null;
 
   private _checkRateLimit(method?: string): boolean {
     const limits = this._options.rateLimit;
@@ -65,8 +74,9 @@ export class OCPPServerClient extends OCPPClient {
         this._rateLimits[key] = bucket;
       } else {
         const timePassed = now - bucket.lastRefill;
-        // Refill logic (tokens per ms)
-        const refillRate = limit / windowMs;
+        // Refill logic (tokens per ms) — adaptive multiplier scales the refill rate
+        const adaptiveScale = this._adaptiveMultiplier?.() ?? 1;
+        const refillRate = (limit / windowMs) * adaptiveScale;
         const tokensToAdd = timePassed * refillRate;
         if (tokensToAdd > 0) {
           bucket.tokens = Math.min(limit, bucket.tokens + tokensToAdd);
@@ -128,12 +138,29 @@ export class OCPPServerClient extends OCPPClient {
           return;
         }
 
-        // Fast path: if we parsed data to find a method, reconstruct to string or pass it if possible
-        // Actually, super._onMessage expects RawData. It'll parse it again.
-        // It's a small performance hit, but safe.
+        // If we parsed for rate limiting, pass the pre-parsed data to avoid double-parse
+        if (pData !== undefined) {
+          this._onMessage(data, pData);
+          return;
+        }
       }
 
-      // @ts-expect-error
+      // Worker pool path: off-thread parse, then forward pre-parsed result
+      if (this._workerPool) {
+        const raw = typeof data === "string" ? data : (data as Buffer);
+        this._workerPool
+          .parse(raw)
+          .then((result) => {
+            this._onMessage(data, result.message);
+          })
+          .catch(() => {
+            // Parse failed — fall through to _onMessage which will handle bad JSON
+            this._onMessage(data);
+          });
+        return;
+      }
+
+      // Default path: main-thread parse
       this._onMessage(data);
     });
 
