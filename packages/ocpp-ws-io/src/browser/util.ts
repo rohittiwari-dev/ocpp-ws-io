@@ -7,7 +7,10 @@ export { NOOP_LOGGER } from "../util.js";
 
 const RPC_ERROR_REGISTRY = new Map<
   string,
-  new (message?: string, details?: Record<string, unknown>) => RPCError
+  new (
+    message?: string,
+    details?: Record<string, unknown>,
+  ) => RPCError
 >([
   ["GenericError", errors.RPCGenericError],
   ["RpcFrameworkError", errors.RPCFrameworkError],
