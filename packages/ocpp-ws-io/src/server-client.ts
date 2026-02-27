@@ -1,4 +1,4 @@
-import type { RawData, WebSocket } from "ws";
+import type { TransportSocket } from "./transport.js";
 import { OCPPClient } from "./client.js";
 import {
   type ClientOptions,
@@ -20,7 +20,7 @@ export class OCPPServerClient extends OCPPClient {
   constructor(
     options: ClientOptions,
     context: {
-      ws: WebSocket;
+      ws: TransportSocket;
       handshake: HandshakeInfo;
       session: Record<string, any>;
       protocol?: string;
@@ -109,8 +109,8 @@ export class OCPPServerClient extends OCPPClient {
 
   // ─── Websocket Override ──────────────────────────────────────────
 
-  private _attachServerWebsocket(ws: WebSocket): void {
-    ws.on("message", (data: RawData) => {
+  private _attachServerWebsocket(ws: TransportSocket): void {
+    ws.on("message", (data: Buffer | string) => {
       // @ts-expect-error
       this._recordActivity();
 

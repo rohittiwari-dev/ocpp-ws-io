@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { createId } from "@paralleldrive/cuid2";
-import WebSocket from "ws";
+import type { TransportConnector, TransportSocket } from "./transport.js";
+import { WsTransportConnector } from "./transports/ws-transport.js";
 import {
   type RPCError,
   RPCGenericError,
@@ -98,9 +99,10 @@ export class OCPPClient<
     ClientOptions;
 
   protected _state: ConnectionState = CLOSED;
-  protected _ws: WebSocket | null = null;
+  protected _ws: TransportSocket | null = null;
   protected _protocol: string | undefined;
   protected _identity: string;
+  protected _transport: TransportConnector;
 
   private _handlers = new Map<string, CallHandler>();
   private _wildcardHandler: WildcardHandler | null = null;
@@ -140,6 +142,7 @@ export class OCPPClient<
     }
 
     this._identity = options.identity;
+    this._transport = options.transport ?? new WsTransportConnector();
 
     this._options = {
       reconnect: true,
@@ -305,7 +308,7 @@ export class OCPPClient<
       this._logger?.debug?.("Connecting", { url: endpoint });
       this.emit("connecting", { url: endpoint });
 
-      const ws = new WebSocket(
+      const ws = this._transport.connect(
         endpoint,
         this._options.protocols ?? [],
         wsOptions,
@@ -338,14 +341,8 @@ export class OCPPClient<
 
         this._logger?.info?.("Connected", { protocol: ws.protocol });
 
-        // Create a minimal response object
-        const response = (
-          ws as unknown as {
-            _req?: { res?: import("node:http").IncomingMessage };
-          }
-        )._req?.res;
         const result = {
-          response: response as import("node:http").IncomingMessage,
+          response: ws.upgradeResponse as import("node:http").IncomingMessage,
         };
         this.emit("open", result);
         resolve(result);
@@ -928,8 +925,8 @@ export class OCPPClient<
 
   // ─── Internal: WebSocket attachment ──────────────────────────
 
-  protected _attachWebsocket(ws: WebSocket): void {
-    ws.on("message", (data: WebSocket.RawData) => this._onMessage(data));
+  protected _attachWebsocket(ws: TransportSocket): void {
+    ws.on("message", (data: Buffer | string) => this._onMessage(data));
     ws.on("close", (code: number, reason: Buffer) =>
       this._onClose(code, reason),
     );
@@ -951,7 +948,7 @@ export class OCPPClient<
 
   // ─── Internal: Message handling ──────────────────────────────
 
-  protected _onMessage(rawData: WebSocket.RawData, preParsed?: unknown): void {
+  protected _onMessage(rawData: Buffer | string, preParsed?: unknown): void {
     this._recordActivity();
 
     let message: OCPPMessage;
@@ -1006,8 +1003,8 @@ export class OCPPClient<
       messageType === MessageType.CALLERROR
         ? 4
         : messageType === MessageType.CALL
-          ? 3
-          : 2;
+        ? 3
+        : 2;
     const payload = message[payloadIndex];
     if (
       typeof payload !== "object" ||
@@ -1021,8 +1018,8 @@ export class OCPPClient<
             payload === null
               ? "null"
               : Array.isArray(payload)
-                ? "array"
-                : typeof payload
+              ? "array"
+              : typeof payload
           }`,
         ),
       );
@@ -1459,11 +1456,11 @@ export class OCPPClient<
    * before sending. Prevents OOM on slow 2G/3G charger connections.
    */
   private _safeSend(
-    ws: WebSocket | null,
+    ws: TransportSocket | null,
     data: string,
     cb?: (err?: Error) => void,
   ): void {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (!ws || ws.readyState !== OPEN) {
       cb?.(new Error("WebSocket is not open"));
       return;
     }
@@ -1484,7 +1481,7 @@ export class OCPPClient<
       let waited = 0;
       const drainCheck = setInterval(() => {
         waited += 50;
-        if (!ws || ws.readyState !== WebSocket.OPEN) {
+        if (!ws || ws.readyState !== OPEN) {
           clearInterval(drainCheck);
           cb?.(new Error("WebSocket closed during backpressure wait"));
           return;
@@ -1665,8 +1662,8 @@ export class OCPPClient<
     return url;
   }
 
-  private _buildWsOptions(): WebSocket.ClientOptions {
-    const opts: WebSocket.ClientOptions = {
+  private _buildWsOptions(): Record<string, any> {
+    const opts: Record<string, any> = {
       headers: {
         ...this._options.headers,
         "User-Agent": getPackageIdent(),

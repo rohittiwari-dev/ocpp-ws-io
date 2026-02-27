@@ -15,6 +15,19 @@ export type {
 // ─── Adaptive Rate Limiting ──────────────────────────────────────
 export { AdaptiveLimiter } from "./adaptive-limiter.js";
 export { OCPPClient } from "./client.js";
+// ─── Transport Abstraction ───────────────────────────────────────
+export {
+  TransportState,
+  type TransportConnector,
+  type TransportServer,
+  type TransportSocket,
+  type TransportStateValue,
+} from "./transport.js";
+export {
+  WsTransportConnector,
+  WsTransportServer,
+  WsTransportSocket,
+} from "./transports/ws-transport.js";
 // ─── Errors ──────────────────────────────────────────────────────
 export {
   type RPCError,
