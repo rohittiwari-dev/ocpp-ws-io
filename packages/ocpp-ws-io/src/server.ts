@@ -315,32 +315,21 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   }
 
   /**
-   * Registers middleware chain(s) or a plugin.
+   * Registers one or more plugins for server lifecycle hooks.
+   * Plugins are called in registration order for all lifecycle events.
    *
-   * - When called with `ConnectionMiddleware` function(s), acts as a wildcard/catch-all router.
-   * - When called with an `OCPPPlugin` object (identified by `name` property), registers the plugin.
-   *
-   * @example Middleware
+   * @example Single plugin
    * ```ts
-   * server.use(myMiddleware).route("/api").on("client", ...);
+   * server.plugin(metricsPlugin);
    * ```
    *
-   * @example Plugin
+   * @example Multiple plugins
    * ```ts
-   * server.use({ name: 'my-plugin', onConnection(client) { ... } });
+   * server.plugin(metricsPlugin, loggingPlugin, otelPlugin);
    * ```
    */
-  use(plugin: OCPPPlugin): this;
-  use(...middlewares: ConnectionMiddleware[]): OCPPRouter;
-  use(...args: [OCPPPlugin] | ConnectionMiddleware[]): this | OCPPRouter {
-    // Plugin path: single argument with a `name` property
-    if (
-      args.length === 1 &&
-      typeof args[0] === "object" &&
-      args[0] !== null &&
-      "name" in args[0]
-    ) {
-      const plugin = args[0] as OCPPPlugin;
+  plugin(...plugins: OCPPPlugin[]): this {
+    for (const plugin of plugins) {
       this._plugins.push(plugin);
       this._logger?.info?.("Plugin registered", { name: plugin.name });
       if (plugin.onInit) {
@@ -354,11 +343,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           });
         }
       }
-      return this;
     }
+    return this;
+  }
 
-    // Middleware path: existing behavior
-    const middlewares = args as ConnectionMiddleware[];
+  /**
+   * Registers middleware chain(s) as a wildcard/catch-all router.
+   *
+   * @example
+   * ```ts
+   * server.use(myMiddleware).route("/api").on("client", ...);
+   * ```
+   */
+  use(...middlewares: ConnectionMiddleware[]): OCPPRouter {
     const router = new OCPPRouter();
     router.use(...middlewares);
     this._registerRouter(router);
@@ -1519,8 +1516,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             typeof args[2] === "string"
               ? args[2] // versioned: id, ver, method, params, options
               : args.length >= 3 && typeof args[1] === "string"
-                ? args[1] // global: id, method, params, options
-                : "unknown",
+              ? args[1] // global: id, method, params, options
+              : "unknown",
           error,
         });
       }

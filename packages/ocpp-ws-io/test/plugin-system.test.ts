@@ -16,10 +16,10 @@ describe("Phase K9 — Plugin System", () => {
     if (server) await server.close({ force: true }).catch(() => {});
   });
 
-  it("should register a plugin via server.use()", () => {
+  it("should register a plugin via server.plugin()", () => {
     server = new OCPPServer();
     const plugin: OCPPPlugin = { name: "test-plugin" };
-    const result = server.use(plugin);
+    const result = server.plugin(plugin);
     expect(result).toBe(server); // Chainable
     // @ts-expect-error — accessing private field for test
     expect(server._plugins).toHaveLength(1);
@@ -34,7 +34,7 @@ describe("Phase K9 — Plugin System", () => {
       name: "init-plugin",
       onInit: initSpy,
     };
-    server.use(plugin);
+    server.plugin(plugin);
     expect(initSpy).toHaveBeenCalledOnce();
     expect(initSpy).toHaveBeenCalledWith(server);
   });
@@ -49,7 +49,7 @@ describe("Phase K9 — Plugin System", () => {
         resolved = true;
       },
     };
-    server.use(plugin);
+    server.plugin(plugin);
     // Should not have resolved yet (async)
     expect(resolved).toBe(false);
     await new Promise((r) => setTimeout(r, 100));
@@ -65,7 +65,7 @@ describe("Phase K9 — Plugin System", () => {
       name: "conn-plugin",
       onConnection: connectionSpy,
     };
-    server.use(plugin);
+    server.plugin(plugin);
 
     const httpServer = await server.listen(0);
     const port = getPort(httpServer);
@@ -96,7 +96,7 @@ describe("Phase K9 — Plugin System", () => {
       name: "disconnect-plugin",
       onDisconnect: disconnectSpy,
     };
-    server.use(plugin);
+    server.plugin(plugin);
 
     const httpServer = await server.listen(0);
     const port = getPort(httpServer);
@@ -123,7 +123,7 @@ describe("Phase K9 — Plugin System", () => {
       name: "close-plugin",
       onClose: closeSpy,
     };
-    server.use(plugin);
+    server.plugin(plugin);
 
     await server.listen(0);
     await server.close({ force: true });
@@ -134,18 +134,44 @@ describe("Phase K9 — Plugin System", () => {
     server = null as any;
   });
 
-  it("should register multiple plugins and call all hooks", () => {
+  it("should register multiple plugins individually and call all hooks", () => {
     server = new OCPPServer();
     const spy1 = vi.fn();
     const spy2 = vi.fn();
 
-    server.use({ name: "p1", onInit: spy1 });
-    server.use({ name: "p2", onInit: spy2 });
+    server.plugin({ name: "p1", onInit: spy1 });
+    server.plugin({ name: "p2", onInit: spy2 });
 
     expect(spy1).toHaveBeenCalledOnce();
     expect(spy2).toHaveBeenCalledOnce();
     // @ts-expect-error
     expect(server._plugins).toHaveLength(2);
+  });
+
+  it("should register multiple plugins in a single call", () => {
+    server = new OCPPServer();
+    const spy1 = vi.fn();
+    const spy2 = vi.fn();
+    const spy3 = vi.fn();
+
+    const result = server.plugin(
+      { name: "p1", onInit: spy1 },
+      { name: "p2", onInit: spy2 },
+      { name: "p3", onInit: spy3 },
+    );
+
+    expect(result).toBe(server); // Chainable
+    expect(spy1).toHaveBeenCalledOnce();
+    expect(spy2).toHaveBeenCalledOnce();
+    expect(spy3).toHaveBeenCalledOnce();
+    // @ts-expect-error
+    expect(server._plugins).toHaveLength(3);
+    // @ts-expect-error
+    expect(server._plugins.map((p: OCPPPlugin) => p.name)).toEqual([
+      "p1",
+      "p2",
+      "p3",
+    ]);
   });
 
   it("should still support middleware via use()", () => {
@@ -179,6 +205,6 @@ describe("Phase K9 — Plugin System", () => {
     };
 
     // Async error should be caught by .catch() — no uncaught rejection
-    expect(() => server.use(asyncPlugin)).not.toThrow();
+    expect(() => server.plugin(asyncPlugin)).not.toThrow();
   });
 });

@@ -39,7 +39,7 @@ export function defineMiddleware(
  *   onClose()            { metrics.flush(); },
  * });
  *
- * server.use(metricsPlugin);
+ * server.plugin(metricsPlugin);
  * ```
  */
 export function createPlugin(plugin: OCPPPlugin): OCPPPlugin {

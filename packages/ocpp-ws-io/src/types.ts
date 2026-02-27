@@ -773,13 +773,13 @@ export interface EventAdapterInterface {
  *   onDisconnect(client) { console.log(`${client.identity} disconnected`); },
  *   onClose() { console.log('Server shutting down'); },
  * };
- * server.use(myPlugin);
+ * server.plugin(myPlugin);
  * ```
  */
 export interface OCPPPlugin {
   /** Unique plugin name (used for logging and deduplication) */
   name: string;
-  /** Called when the plugin is registered via server.use(plugin) */
+  /** Called when the plugin is registered via server.plugin(plugin) */
   onInit?(server: import("./server.js").OCPPServer): void | Promise<void>;
   /** Called for each new client connection after auth succeeds */
   onConnection?(
