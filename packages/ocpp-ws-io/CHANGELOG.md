@@ -1,6 +1,6 @@
 # ocpp-ws-io
 
-## 2.1.7
+## 2.1.8
 
 ### 🔌 Plugin System
 

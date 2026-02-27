@@ -1,6 +1,6 @@
 # docs
 
-## 2.1.7
+## 2.1.8
 
 ### Minor Changes
 
