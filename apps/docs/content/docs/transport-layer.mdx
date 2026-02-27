@@ -1,0 +1,211 @@
+---
+title: Transport Layer
+description: Swap the underlying WebSocket implementation without changing any application code.
+---
+
+The **Transport Abstraction Layer** decouples `ocpp-ws-io` from the `ws` library, allowing you to plug in alternate WebSocket implementations (µWebSockets.js, HTTP/2, or custom protocols) without modifying any OCPP logic.
+
+> [!NOTE]
+> This is a **non-breaking, additive feature**. If you don't provide a custom transport, `ocpp-ws-io` uses the built-in `ws`-based defaults — your existing code works unchanged.
+
+## Architecture
+
+```
+┌───────────────────────────┐
+│   OCPPClient / OCPPServer │  ← Application layer (your code)
+├───────────────────────────┤
+│   TransportSocket         │  ← Abstract interface
+│   TransportConnector      │
+│   TransportServer         │
+├───────────────────────────┤
+│   WsTransportConnector    │  ← Default ws implementation
+│   WsTransportServer       │
+│   WsTransportSocket       │
+└───────────────────────────┘
+```
+
+## Interfaces
+
+### TransportSocket
+
+A transport-agnostic bidirectional message stream.
+
+```ts
+interface TransportSocket {
+  readonly readyState: TransportStateValue; // 0–3
+  readonly bufferedAmount: number;
+  readonly protocol: string;
+  readonly upgradeResponse?: IncomingMessage;
+
+  send(data: string | Buffer, cb?: (err?: Error) => void): void;
+  close(code?: number, reason?: string): void;
+  terminate(): void;
+  ping(data?: Buffer): void;
+
+  on(
+    event: "message" | "close" | "error" | "open" | "ping" | "pong",
+    handler: Function,
+  ): this;
+  removeListener(event: string, handler: Function): this;
+  removeAllListeners(event?: string): this;
+}
+```
+
+### TransportConnector (Client)
+
+Factory for creating outbound connections.
+
+```ts
+interface TransportConnector {
+  connect(
+    url: string,
+    protocols: string[],
+    options: Record<string, unknown>,
+  ): TransportSocket;
+}
+```
+
+### TransportServer (Server)
+
+Server-side transport that accepts incoming connections.
+
+```ts
+interface TransportServer {
+  handleUpgrade(
+    req: IncomingMessage,
+    socket: Duplex,
+    head: Buffer,
+    cb: (socket: TransportSocket) => void,
+  ): void;
+  readonly clients: Set<TransportSocket>;
+  close(cb?: () => void): void;
+}
+```
+
+### TransportState
+
+Transport-agnostic connection state constants (matches the WebSocket spec values):
+
+```ts
+import { TransportState } from "ocpp-ws-io";
+
+TransportState.CONNECTING; // 0
+TransportState.OPEN; // 1
+TransportState.CLOSING; // 2
+TransportState.CLOSED; // 3
+```
+
+## Usage
+
+### Custom Client Transport
+
+```ts
+import { OCPPClient } from "ocpp-ws-io";
+import { MyCustomConnector } from "./my-transport";
+
+const client = new OCPPClient({
+  identity: "CP-001",
+  endpoint: "ws://localhost:9000/ocpp",
+  transport: new MyCustomConnector(), // ← inject here
+});
+
+await client.connect();
+```
+
+### Custom Server Transport
+
+```ts
+import { OCPPServer } from "ocpp-ws-io";
+import { MyCustomServer } from "./my-transport";
+
+const server = new OCPPServer({
+  transportServer: new MyCustomServer(), // ← inject here
+});
+
+server.auth((ctx) => ctx.accept());
+await server.listen(9000);
+```
+
+## Writing a Custom Transport
+
+Implement the three interfaces to wrap any bidirectional stream:
+
+```ts
+import type {
+  TransportSocket,
+  TransportConnector,
+  TransportState,
+} from "ocpp-ws-io";
+
+class MySocket implements TransportSocket {
+  get readyState() {
+    return this._state;
+  }
+  get bufferedAmount() {
+    return 0;
+  }
+  get protocol() {
+    return this._protocol;
+  }
+
+  send(data: string | Buffer, cb?: (err?: Error) => void) {
+    /* ... */
+  }
+  close(code?: number, reason?: string) {
+    /* ... */
+  }
+  terminate() {
+    /* ... */
+  }
+  ping() {
+    /* no-op if unsupported */
+  }
+
+  on(event: string, handler: Function) {
+    /* ... */ return this;
+  }
+  removeListener(event: string, handler: Function) {
+    /* ... */ return this;
+  }
+  removeAllListeners() {
+    /* ... */ return this;
+  }
+}
+
+class MyConnector implements TransportConnector {
+  connect(
+    url: string,
+    protocols: string[],
+    options: Record<string, unknown>,
+  ): TransportSocket {
+    const socket = new MySocket(url, protocols, options);
+    return socket;
+  }
+}
+```
+
+### Required Events
+
+Your `TransportSocket` must emit these events for `ocpp-ws-io` to function:
+
+| Event                 | Payload                          | When                                        |
+| --------------------- | -------------------------------- | ------------------------------------------- |
+| `open`                | —                                | Connection established                      |
+| `message`             | `Buffer \| string`               | Message received                            |
+| `close`               | `(code: number, reason: Buffer)` | Connection closed                           |
+| `error`               | `Error`                          | Transport error                             |
+| `ping`                | —                                | Ping frame received                         |
+| `pong`                | —                                | Pong frame received                         |
+| `unexpected-response` | `(req, res)`                     | Non-101 HTTP upgrade response (client only) |
+
+## Default Implementation
+
+The built-in `ws`-based implementations are also exported for extension or composition:
+
+```ts
+import {
+  WsTransportConnector,
+  WsTransportServer,
+  WsTransportSocket,
+} from "ocpp-ws-io";
+```

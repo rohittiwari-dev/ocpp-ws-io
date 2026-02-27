@@ -10,8 +10,8 @@ import type {
   OCPPRequestType,
   OCPPResponseType,
 } from "./generated/index.js";
-import type { Validator } from "./validator.js";
 import type { TransportConnector, TransportServer } from "./transport.js";
+import type { Validator } from "./validator.js";
 
 export type {
   AllMethodNames,

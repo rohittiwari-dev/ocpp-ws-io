@@ -1,5 +1,5 @@
-import type { TransportSocket } from "./transport.js";
 import { OCPPClient } from "./client.js";
+import type { TransportSocket } from "./transport.js";
 import {
   type ClientOptions,
   ConnectionState,

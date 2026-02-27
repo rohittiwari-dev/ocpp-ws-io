@@ -15,19 +15,6 @@ export type {
 // ─── Adaptive Rate Limiting ──────────────────────────────────────
 export { AdaptiveLimiter } from "./adaptive-limiter.js";
 export { OCPPClient } from "./client.js";
-// ─── Transport Abstraction ───────────────────────────────────────
-export {
-  TransportState,
-  type TransportConnector,
-  type TransportServer,
-  type TransportSocket,
-  type TransportStateValue,
-} from "./transport.js";
-export {
-  WsTransportConnector,
-  WsTransportServer,
-  WsTransportSocket,
-} from "./transports/ws-transport.js";
 // ─── Errors ──────────────────────────────────────────────────────
 export {
   type RPCError,
@@ -73,6 +60,19 @@ export { createRouter, OCPPRouter } from "./router.js";
 export { OCPPServer } from "./server.js";
 export { OCPPServerClient } from "./server-client.js";
 export { getStandardValidators } from "./standard-validators.js";
+// ─── Transport Abstraction ───────────────────────────────────────
+export {
+  type TransportConnector,
+  type TransportServer,
+  type TransportSocket,
+  TransportState,
+  type TransportStateValue,
+} from "./transport.js";
+export {
+  WsTransportConnector,
+  WsTransportServer,
+  WsTransportSocket,
+} from "./transports/ws-transport.js";
 // ─── Types ───────────────────────────────────────────────────────
 export {
   type AnyOCPPProtocol,

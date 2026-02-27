@@ -1,7 +1,5 @@
 import { EventEmitter } from "node:events";
 import { createId } from "@paralleldrive/cuid2";
-import type { TransportConnector, TransportSocket } from "./transport.js";
-import { WsTransportConnector } from "./transports/ws-transport.js";
 import {
   type RPCError,
   RPCGenericError,
@@ -20,6 +18,12 @@ import { initLogger } from "./init-logger.js";
 import { type MiddlewareFunction, MiddlewareStack } from "./middleware";
 import { Queue } from "./queue.js";
 import { getStandardValidators } from "./standard-validators.js";
+import {
+  TransportState,
+  type TransportConnector,
+  type TransportSocket,
+} from "./transport.js";
+import { WsTransportConnector } from "./transports/ws-transport.js";
 import {
   type CallHandler,
   type CallOptions,
@@ -453,7 +457,7 @@ export class OCPPClient<
     }
 
     return new Promise<{ code: number; reason: string }>((resolve) => {
-      if (!this._ws || this._ws.readyState === WebSocket.CLOSED) {
+      if (!this._ws || this._ws.readyState === TransportState.CLOSED) {
         this._state = CLOSED;
         this._cleanup();
         const result = { code, reason };
@@ -856,7 +860,7 @@ export class OCPPClient<
           sentAt: Date.now(),
         });
 
-        if (this._ws?.readyState === WebSocket.OPEN) {
+        if (this._ws?.readyState === TransportState.OPEN) {
           this._safeSend(this._ws, messageStr, (err) => {
             if (err) {
               // Failed to send

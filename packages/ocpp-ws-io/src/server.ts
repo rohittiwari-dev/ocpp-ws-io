@@ -8,8 +8,6 @@ import { createServer as createHttpsServer } from "node:https";
 import type { Duplex } from "node:stream";
 import type { TLSSocket } from "node:tls";
 import { createId } from "@paralleldrive/cuid2";
-import type { TransportServer } from "./transport.js";
-import { WsTransportServer } from "./transports/ws-transport.js";
 import { AdaptiveLimiter } from "./adaptive-limiter.js";
 import { checkCORS } from "./cors.js";
 import { initLogger } from "./init-logger.js";
@@ -17,6 +15,8 @@ import { LRUMap } from "./lru-map.js";
 import { RadixTrie } from "./radix-trie.js";
 import { executeMiddlewareChain, OCPPRouter } from "./router.js";
 import { OCPPServerClient } from "./server-client.js";
+import type { TransportServer } from "./transport.js";
+import { WsTransportServer } from "./transports/ws-transport.js";
 import {
   type AllMethodNames,
   type AuthAccept,
@@ -1524,8 +1524,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             typeof args[2] === "string"
               ? args[2] // versioned: id, ver, method, params, options
               : args.length >= 3 && typeof args[1] === "string"
-              ? args[1] // global: id, method, params, options
-              : "unknown",
+                ? args[1] // global: id, method, params, options
+                : "unknown",
           error,
         });
       }
