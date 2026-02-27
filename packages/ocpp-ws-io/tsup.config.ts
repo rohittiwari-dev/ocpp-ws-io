@@ -7,6 +7,7 @@ export default defineConfig([
       index: "src/index.ts",
       "adapters/redis": "src/adapters/redis/index.ts",
       logger: "src/logger/index.ts",
+      plugins: "src/plugins/index.ts",
     },
     format: ["cjs", "esm"],
     dts: true,

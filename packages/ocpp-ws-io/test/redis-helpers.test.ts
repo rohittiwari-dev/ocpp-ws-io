@@ -124,6 +124,113 @@ describe("IoRedisDriver", () => {
     expect(pub.quit).toHaveBeenCalled();
     expect(sub.quit).toHaveBeenCalled();
   });
+
+  test("disconnect uses disconnect() if quit is unavailable", async () => {
+    const pubNoQuit = {
+      ...pub,
+      quit: undefined,
+      disconnect: vi.fn(),
+    };
+    const subNoQuit = {
+      ...sub,
+      quit: undefined,
+      disconnect: vi.fn(),
+    };
+    const d = new IoRedisDriver(pubNoQuit, subNoQuit);
+    await d.disconnect();
+    expect(pubNoQuit.disconnect).toHaveBeenCalled();
+    expect(subNoQuit.disconnect).toHaveBeenCalled();
+  });
+
+  test("xaddBatch uses pipeline", async () => {
+    const exec = vi.fn();
+    pub.pipeline = vi.fn().mockReturnValue({
+      xadd: vi.fn(),
+      exec,
+    });
+    await driver.xaddBatch(
+      [
+        { stream: "s1", args: { a: "1" } },
+        { stream: "s2", args: { b: "2" } },
+      ],
+      50,
+    );
+    expect(pub.pipeline).toHaveBeenCalled();
+    expect(exec).toHaveBeenCalled();
+  });
+
+  test("xaddBatch returns early for empty messages", async () => {
+    pub.pipeline = vi.fn();
+    await driver.xaddBatch([]);
+    expect(pub.pipeline).not.toHaveBeenCalled();
+  });
+
+  test("xlen delegates to pub.xlen", async () => {
+    pub.xlen = vi.fn().mockResolvedValue(42);
+    const result = await driver.xlen("mystream");
+    expect(pub.xlen).toHaveBeenCalledWith("mystream");
+    expect(result).toBe(42);
+  });
+
+  test("mget delegates to pub.mget", async () => {
+    pub.mget = vi.fn().mockResolvedValue(["v1", null, "v3"]);
+    const result = await driver.mget(["k1", "k2", "k3"]);
+    expect(pub.mget).toHaveBeenCalledWith("k1", "k2", "k3");
+    expect(result).toEqual(["v1", null, "v3"]);
+  });
+
+  test("mget returns empty array for empty keys", async () => {
+    const result = await driver.mget([]);
+    expect(result).toEqual([]);
+  });
+
+  test("setPresenceBatch uses pipeline", async () => {
+    const exec = vi.fn();
+    pub.pipeline = vi.fn().mockReturnValue({
+      set: vi.fn(),
+      exec,
+    });
+    await driver.setPresenceBatch([
+      { key: "p:1", value: "node1", ttlSeconds: 60 },
+      { key: "p:2", value: "node2", ttlSeconds: 120 },
+    ]);
+    expect(pub.pipeline).toHaveBeenCalled();
+    expect(exec).toHaveBeenCalled();
+  });
+
+  test("setPresenceBatch returns early for empty entries", async () => {
+    pub.pipeline = vi.fn();
+    await driver.setPresenceBatch([]);
+    expect(pub.pipeline).not.toHaveBeenCalled();
+  });
+
+  test("expire delegates to pub.expire", async () => {
+    pub.expire = vi.fn();
+    await driver.expire("key", 300);
+    expect(pub.expire).toHaveBeenCalledWith("key", 300);
+  });
+
+  test("onError subscribes and returns unsubscribe function", () => {
+    pub.on = vi.fn();
+    pub.removeListener = vi.fn();
+    const handler = vi.fn();
+    const unsub = driver.onError(handler);
+    expect(pub.on).toHaveBeenCalledWith("error", handler);
+
+    unsub();
+    expect(pub.removeListener).toHaveBeenCalledWith("error", handler);
+  });
+
+  test("onReconnect subscribes and returns unsubscribe function", () => {
+    pub.on = vi.fn();
+    pub.removeListener = vi.fn();
+    const handler = vi.fn();
+    const unsub = driver.onReconnect(handler);
+    expect(pub.on).toHaveBeenCalledWith("connect", handler);
+
+    unsub();
+    expect(pub.removeListener).toHaveBeenCalledWith("connect", handler);
+  });
 });
 
 describe("NodeRedisDriver", () => {
@@ -140,6 +247,8 @@ describe("NodeRedisDriver", () => {
       xAdd: vi.fn(),
       xRead: vi.fn(),
       disconnect: vi.fn(),
+      on: vi.fn(),
+      removeListener: vi.fn(),
     };
     sub = {
       subscribe: vi.fn(),
@@ -160,15 +269,59 @@ describe("NodeRedisDriver", () => {
     expect(sub.subscribe).toHaveBeenCalledWith("chan", handler);
   });
 
+  test("unsubscribe calls sub.unsubscribe", async () => {
+    await driver.unsubscribe("chan");
+    expect(sub.unsubscribe).toHaveBeenCalledWith("chan");
+  });
+
   test("set with TTL", async () => {
     await driver.set("k", "v", 10);
     expect(pub.set).toHaveBeenCalledWith("k", "v", { EX: 10 });
   });
 
+  test("set without TTL", async () => {
+    await driver.set("k", "v");
+    expect(pub.set).toHaveBeenCalledWith("k", "v");
+  });
+
+  test("get delegates to pub.get", async () => {
+    pub.get.mockResolvedValue("val");
+    expect(await driver.get("k")).toBe("val");
+    pub.get.mockResolvedValue(null);
+    expect(await driver.get("k")).toBe(null);
+  });
+
+  test("del delegates to pub.del", async () => {
+    await driver.del("k");
+    expect(pub.del).toHaveBeenCalledWith("k");
+  });
+
+  test("mget delegates to pub.mGet", async () => {
+    pub.mGet = vi.fn().mockResolvedValue(["a", null]);
+    const result = await driver.mget(["k1", "k2"]);
+    expect(pub.mGet).toHaveBeenCalledWith(["k1", "k2"]);
+    expect(result).toEqual(["a", null]);
+  });
+
+  test("mget returns empty array for empty keys", async () => {
+    const result = await driver.mget([]);
+    expect(result).toEqual([]);
+  });
+
+  test("xadd without maxLen", async () => {
+    pub.xAdd.mockResolvedValue("1-0");
+    await driver.xadd("s", { f: "v" });
+    expect(pub.xAdd).toHaveBeenCalledWith(
+      "s",
+      "*",
+      { f: "v" },
+      { TRIM: undefined },
+    );
+  });
+
   test("xadd uses xAdd with options", async () => {
     pub.xAdd.mockResolvedValue("1-0");
     await driver.xadd("s", { f: "v" }, 100);
-    // Verify arguments structure matches Node Redis v4
     expect(pub.xAdd).toHaveBeenCalledWith(
       "s",
       "*",
@@ -181,6 +334,23 @@ describe("NodeRedisDriver", () => {
         },
       },
     );
+  });
+
+  test("xaddBatch uses multi", async () => {
+    const exec = vi.fn();
+    pub.multi = vi.fn().mockReturnValue({
+      xAdd: vi.fn(),
+      exec,
+    });
+    await driver.xaddBatch([{ stream: "s1", args: { a: "1" } }], 50);
+    expect(pub.multi).toHaveBeenCalled();
+    expect(exec).toHaveBeenCalled();
+  });
+
+  test("xaddBatch returns early for empty messages", async () => {
+    pub.multi = vi.fn();
+    await driver.xaddBatch([]);
+    expect(pub.multi).not.toHaveBeenCalled();
   });
 
   test("xread uses xRead with options", async () => {
@@ -201,12 +371,80 @@ describe("NodeRedisDriver", () => {
     // Empty result
     pub.xRead.mockResolvedValue(null);
     expect(await driver.xread([{ key: "s", id: "0" }])).toBeNull();
+
+    // Empty array result
+    pub.xRead.mockResolvedValue([]);
+    expect(await driver.xread([{ key: "s", id: "0" }])).toBeNull();
+  });
+
+  test("xread uses blocking client when block is set", async () => {
+    const blockingClient = {
+      xRead: vi
+        .fn()
+        .mockResolvedValue([
+          { name: "s", messages: [{ id: "1-0", message: { k: "v" } }] },
+        ]),
+    };
+    const driverWithBlocking = new NodeRedisDriver(pub, sub, blockingClient);
+    await driverWithBlocking.xread([{ key: "s", id: "0" }], 5, 1000);
+    expect(blockingClient.xRead).toHaveBeenCalled();
+    expect(pub.xRead).not.toHaveBeenCalled();
+  });
+
+  test("xlen delegates to pub.xLen", async () => {
+    pub.xLen = vi.fn().mockResolvedValue(10);
+    const result = await driver.xlen("mystream");
+    expect(pub.xLen).toHaveBeenCalledWith("mystream");
+    expect(result).toBe(10);
   });
 
   test("disconnect calls disconnect", async () => {
     await driver.disconnect();
     expect(pub.disconnect).toHaveBeenCalled();
     expect(sub.disconnect).toHaveBeenCalled();
+  });
+
+  test("setPresenceBatch uses multi", async () => {
+    const exec = vi.fn();
+    pub.multi = vi.fn().mockReturnValue({
+      set: vi.fn(),
+      exec,
+    });
+    await driver.setPresenceBatch([
+      { key: "p:1", value: "n1", ttlSeconds: 60 },
+    ]);
+    expect(pub.multi).toHaveBeenCalled();
+    expect(exec).toHaveBeenCalled();
+  });
+
+  test("setPresenceBatch returns early for empty entries", async () => {
+    pub.multi = vi.fn();
+    await driver.setPresenceBatch([]);
+    expect(pub.multi).not.toHaveBeenCalled();
+  });
+
+  test("expire delegates to pub.expire", async () => {
+    pub.expire = vi.fn();
+    await driver.expire("key", 60);
+    expect(pub.expire).toHaveBeenCalledWith("key", 60);
+  });
+
+  test("onError subscribes and returns unsubscribe function", () => {
+    const handler = vi.fn();
+    const unsub = driver.onError(handler);
+    expect(pub.on).toHaveBeenCalledWith("error", handler);
+
+    unsub();
+    expect(pub.removeListener).toHaveBeenCalledWith("error", handler);
+  });
+
+  test("onReconnect subscribes and returns unsubscribe function", () => {
+    const handler = vi.fn();
+    const unsub = driver.onReconnect(handler);
+    expect(pub.on).toHaveBeenCalledWith("connect", handler);
+
+    unsub();
+    expect(pub.removeListener).toHaveBeenCalledWith("connect", handler);
   });
 });
 

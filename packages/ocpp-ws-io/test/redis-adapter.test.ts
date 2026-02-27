@@ -228,3 +228,253 @@ describe("RedisAdapter (Node Redis v4)", () => {
     expect(sub.disconnect).toHaveBeenCalled();
   });
 });
+
+// ─── Stream & Unicast Coverage ──────────────────────────────────
+
+describe("RedisAdapter Streams", () => {
+  const createStreamMock = () => ({
+    publish: vi.fn().mockResolvedValue(1),
+    subscribe: vi.fn().mockResolvedValue(undefined),
+    unsubscribe: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(),
+    removeListener: vi.fn(),
+    disconnect: vi.fn().mockResolvedValue(undefined),
+    quit: vi.fn().mockResolvedValue(undefined),
+    xadd: vi.fn().mockResolvedValue("1-0"),
+    xread: vi.fn().mockResolvedValue(null),
+    xlen: vi.fn().mockResolvedValue(0),
+    set: vi.fn(),
+    get: vi.fn(),
+    mget: vi.fn().mockResolvedValue([]),
+    del: vi.fn(),
+    expire: vi.fn(),
+    pipeline: vi.fn().mockReturnValue({ set: vi.fn(), exec: vi.fn() }),
+  });
+
+  it("should publish to streams for ocpp:node: channels", async () => {
+    const pub = createStreamMock();
+    const sub = createStreamMock();
+    const adapter = new RedisAdapter({
+      pubClient: pub,
+      subClient: sub,
+      prefix: "test:",
+    });
+
+    await adapter.publish("ocpp:node:123", { method: "Test", params: {} });
+
+    expect(pub.xadd).toHaveBeenCalled();
+    expect(pub.expire).toHaveBeenCalled();
+  });
+
+  it("should add sequence counters to unicast messages", async () => {
+    const pub = createStreamMock();
+    const sub = createStreamMock();
+    const adapter = new RedisAdapter({ pubClient: pub, subClient: sub });
+
+    const data = { method: "Test", params: {} } as any;
+    await adapter.publish("ocpp:node:n1", data);
+
+    // __seq should be attached
+    expect(data.__seq).toBe(1);
+  });
+
+  it("should subscribe to streams and start polling", async () => {
+    const pub = createStreamMock();
+    const sub = createStreamMock();
+    const adapter = new RedisAdapter({ pubClient: pub, subClient: sub });
+
+    const handler = vi.fn();
+    await adapter.subscribe("ocpp:node:mynode", handler);
+
+    // Stream subscription doesn't call sub.subscribe
+    expect(sub.subscribe).not.toHaveBeenCalled();
+
+    // Cleanup
+    await adapter.disconnect();
+  });
+
+  it("should unsubscribe from stream channels", async () => {
+    const pub = createStreamMock();
+    const sub = createStreamMock();
+    const adapter = new RedisAdapter({ pubClient: pub, subClient: sub });
+
+    await adapter.subscribe("ocpp:node:n1", vi.fn());
+    await adapter.unsubscribe("ocpp:node:n1");
+
+    // Should not call sub.unsubscribe for stream channels
+    expect(sub.unsubscribe).not.toHaveBeenCalled();
+    await adapter.disconnect();
+  });
+});
+
+// ─── Presence Coverage ──────────────────────────────────────────
+
+describe("RedisAdapter Presence", () => {
+  const createPresenceMock = () => ({
+    publish: vi.fn().mockResolvedValue(1),
+    subscribe: vi.fn().mockResolvedValue(undefined),
+    unsubscribe: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(),
+    removeListener: vi.fn(),
+    disconnect: vi.fn().mockResolvedValue(undefined),
+    quit: vi.fn().mockResolvedValue(undefined),
+    set: vi.fn(),
+    get: vi.fn(),
+    mget: vi.fn(),
+    del: vi.fn(),
+    pipeline: vi.fn().mockReturnValue({ set: vi.fn(), exec: vi.fn() }),
+  });
+
+  it("should set and get presence", async () => {
+    const pub = createPresenceMock();
+    const sub = createPresenceMock();
+    const adapter = new RedisAdapter({
+      pubClient: pub,
+      subClient: sub,
+      prefix: "p:",
+    });
+
+    await adapter.setPresence("CP-1", "node-a", 300);
+    expect(pub.set).toHaveBeenCalledWith(
+      "p:presence:CP-1",
+      "node-a",
+      "EX",
+      300,
+    );
+
+    pub.get.mockResolvedValue("node-a");
+    const result = await adapter.getPresence("CP-1");
+    expect(result).toBe("node-a");
+  });
+
+  it("should get presence batch", async () => {
+    const pub = createPresenceMock();
+    const sub = createPresenceMock();
+    const adapter = new RedisAdapter({ pubClient: pub, subClient: sub });
+
+    pub.mget.mockResolvedValue(["node-a", null]);
+    const result = await adapter.getPresenceBatch(["CP-1", "CP-2"]);
+    expect(result).toEqual(["node-a", null]);
+  });
+
+  it("should return empty array for empty presence batch", async () => {
+    const pub = createPresenceMock();
+    const sub = createPresenceMock();
+    const adapter = new RedisAdapter({ pubClient: pub, subClient: sub });
+
+    const result = await adapter.getPresenceBatch([]);
+    expect(result).toEqual([]);
+  });
+
+  it("should remove presence", async () => {
+    const pub = createPresenceMock();
+    const sub = createPresenceMock();
+    const adapter = new RedisAdapter({
+      pubClient: pub,
+      subClient: sub,
+      prefix: "x:",
+    });
+
+    await adapter.removePresence("CP-1");
+    expect(pub.del).toHaveBeenCalledWith("x:presence:CP-1");
+  });
+
+  it("should set presence batch with pipeline", async () => {
+    const pub = createPresenceMock();
+    const sub = createPresenceMock();
+    const adapter = new RedisAdapter({ pubClient: pub, subClient: sub });
+
+    await adapter.setPresenceBatch([
+      { identity: "CP-1", nodeId: "n1", ttl: 60 },
+      { identity: "CP-2", nodeId: "n2" },
+    ]);
+    expect(pub.pipeline).toHaveBeenCalled();
+  });
+
+  it("should return early for empty setPresenceBatch", async () => {
+    const pub = createPresenceMock();
+    const sub = createPresenceMock();
+    const adapter = new RedisAdapter({ pubClient: pub, subClient: sub });
+
+    pub.pipeline = vi.fn();
+    await adapter.setPresenceBatch([]);
+    expect(pub.pipeline).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Metrics Coverage ───────────────────────────────────────────
+
+describe("RedisAdapter Metrics", () => {
+  it("should return metrics for active streams", async () => {
+    const pub = {
+      publish: vi.fn().mockResolvedValue(1),
+      subscribe: vi.fn().mockResolvedValue(undefined),
+      unsubscribe: vi.fn().mockResolvedValue(undefined),
+      on: vi.fn(),
+      removeListener: vi.fn(),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      quit: vi.fn().mockResolvedValue(undefined),
+      xlen: vi.fn().mockResolvedValue(5),
+      xread: vi.fn().mockResolvedValue(null),
+      set: vi.fn(),
+      get: vi.fn(),
+      mget: vi.fn(),
+      del: vi.fn(),
+      expire: vi.fn(),
+      xadd: vi.fn().mockResolvedValue("1-0"),
+      pipeline: vi.fn().mockReturnValue({ set: vi.fn(), exec: vi.fn() }),
+    };
+    const sub = { ...pub };
+    const adapter = new RedisAdapter({ pubClient: pub, subClient: sub });
+
+    // Subscribe to trigger stream polling
+    await adapter.subscribe("ocpp:node:m1", vi.fn());
+
+    const m = await adapter.metrics();
+    expect(m.activeStreams).toBe(1);
+    expect(m.pendingMessages).toBe(5);
+
+    await adapter.disconnect();
+  });
+});
+
+// ─── publishBatch Coverage ──────────────────────────────────────
+
+describe("RedisAdapter publishBatch", () => {
+  it("should batch stream and broadcast messages", async () => {
+    const pub = {
+      publish: vi.fn().mockResolvedValue(1),
+      subscribe: vi.fn().mockResolvedValue(undefined),
+      unsubscribe: vi.fn().mockResolvedValue(undefined),
+      on: vi.fn(),
+      removeListener: vi.fn(),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      quit: vi.fn().mockResolvedValue(undefined),
+      xadd: vi.fn().mockResolvedValue("1-0"),
+      xread: vi.fn().mockResolvedValue(null),
+      set: vi.fn(),
+      get: vi.fn(),
+      mget: vi.fn(),
+      del: vi.fn(),
+      expire: vi.fn(),
+      pipeline: vi.fn().mockReturnValue({
+        xadd: vi.fn(),
+        exec: vi.fn(),
+      }),
+    };
+    const sub = { ...pub };
+    const adapter = new RedisAdapter({ pubClient: pub, subClient: sub });
+
+    await adapter.publishBatch([
+      { channel: "ocpp:node:n1", data: { m: "unicast" } },
+      { channel: "ocpp:broadcast", data: { m: "bcast" } },
+    ]);
+
+    // Stream messages go through pipeline
+    expect(pub.pipeline).toHaveBeenCalled();
+    // Broadcast goes through publish
+    expect(pub.publish).toHaveBeenCalled();
+
+    await adapter.disconnect();
+  });
+});

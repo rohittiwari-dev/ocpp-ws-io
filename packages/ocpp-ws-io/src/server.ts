@@ -1516,8 +1516,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             typeof args[2] === "string"
               ? args[2] // versioned: id, ver, method, params, options
               : args.length >= 3 && typeof args[1] === "string"
-              ? args[1] // global: id, method, params, options
-              : "unknown",
+                ? args[1] // global: id, method, params, options
+                : "unknown",
           error,
         });
       }
