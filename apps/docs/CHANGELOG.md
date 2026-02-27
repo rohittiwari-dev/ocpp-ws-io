@@ -1,5 +1,18 @@
 # docs
 
+## 2.1.7
+
+### Minor Changes
+
+- **New Page — Plugins**: Full documentation for all 7 built-in plugins (`heartbeatPlugin`, `metricsPlugin`, `connectionGuardPlugin`, `anomalyPlugin`, `sessionLogPlugin`, `otelPlugin`, `webhookPlugin`) with options tables, usage examples, and custom plugin creation guide.
+- **Clustering — Connection Pooling**: New section documenting `poolSize` and `driverFactory` options for distributing Redis write operations across multiple connections via round-robin.
+- **Clustering — Redis Cluster Mode**: New section documenting `ClusterDriver` with NAT mapping, hash-tag sharding, and ioredis peer dependency.
+- **Clustering — Config Table**: Added `streamTtlSeconds`, `presenceTtlSeconds`, `poolSize`, `driverFactory` to the configuration options table.
+- **API Reference — Compression**: Added `compression` option to both `ClientOptions` and `ServerOptions` tables. Added full `CompressionOptions` reference table (threshold, level, memLevel, noContextTakeover).
+- **API Reference — Worker Threads**: Added `workerThreads` option to `ServerOptions` table.
+- **API Reference — Offline Queue**: Added `offlineQueue` and `offlineQueueMaxSize` options to `ClientOptions` table.
+- **Sidebar**: Added `plugins` page between Clustering and Type Safety.
+
 ## 2.1.5
 
 ### Minor Changes
