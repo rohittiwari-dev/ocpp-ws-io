@@ -21,18 +21,17 @@
     "@types/ws": "^8.18.1",
     "cac": "^6.7.14",
     "json-schema-to-typescript": "^15.0.4",
-    "log-update": "^7.1.0",
-    "picocolors": "^1.0.0",
+    "log-update": "^7.2.0",
+    "picocolors": "^1.1.1",
     "ws": "^8.19.0"
   },
   "files": [
-    "dist",
-    "assets"
+    "dist"
   ],
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "tsup": "^8.0.0",
-    "typescript": "^5.0.0",
-    "vitest": "^3.0.5"
+    "@types/node": "^20.19.35",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
   }
 }
