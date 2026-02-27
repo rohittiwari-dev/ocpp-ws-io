@@ -1,0 +1,199 @@
+---
+title: Plugins
+description: Extend your OCPP server with built-in plugins.
+---
+
+# Plugins
+
+`ocpp-ws-io` ships 7 built-in plugins that extend your server with production-ready features. All plugins are imported from `ocpp-ws-io/plugins`.
+
+```typescript
+import { metricsPlugin, heartbeatPlugin } from "ocpp-ws-io/plugins";
+
+server.plugin(metricsPlugin());
+server.plugin(heartbeatPlugin());
+```
+
+## Plugin API
+
+Every plugin implements the `OCPPPlugin` interface with lifecycle hooks:
+
+| Hook                   | When it fires           |
+| :--------------------- | :---------------------- |
+| `onInit`               | Server starts listening |
+| `onConnection(client)` | New client connects     |
+| `onDisconnect(client)` | Client disconnects      |
+| `onClose`              | Server shuts down       |
+
+---
+
+## Built-in Plugins
+
+### `heartbeatPlugin()`
+
+Auto-responds to OCPP `Heartbeat` calls with `{ currentTime }`. Drop-in replacement for manual Heartbeat handlers.
+
+```typescript
+import { heartbeatPlugin } from "ocpp-ws-io/plugins";
+
+server.plugin(heartbeatPlugin());
+```
+
+---
+
+### `metricsPlugin(options?)`
+
+Tracks real-time server metrics: active/peak connections, average duration, uptime.
+
+| Option       | Type       | Default | Description                                |
+| :----------- | :--------- | :------ | :----------------------------------------- |
+| `intervalMs` | `number`   | `30000` | Snapshot emit interval. `0` to disable.    |
+| `onSnapshot` | `function` | —       | Callback fired each interval with metrics. |
+
+```typescript
+import { metricsPlugin } from "ocpp-ws-io/plugins";
+
+const metrics = metricsPlugin({
+  intervalMs: 10_000,
+  onSnapshot: (snap) => console.log(`Active: ${snap.activeConnections}`),
+});
+server.plugin(metrics);
+
+// On-demand
+const snap = metrics.getMetrics();
+// { activeConnections, peakConnections, totalConnections, connectionDurationAvgMs, uptimeMs, ... }
+```
+
+---
+
+### `connectionGuardPlugin(options)`
+
+Enforces a hard limit on concurrent connections. Exceeding clients are force-closed with code `4001`.
+
+| Option           | Type     | Required | Description                             |
+| :--------------- | :------- | :------- | :-------------------------------------- |
+| `maxConnections` | `number` | ✅       | Maximum allowed concurrent connections. |
+
+```typescript
+import { connectionGuardPlugin } from "ocpp-ws-io/plugins";
+
+server.plugin(connectionGuardPlugin({ maxConnections: 50_000 }));
+```
+
+---
+
+### `anomalyPlugin(options?)`
+
+Detects anomalous connection patterns (e.g., rapid reconnections from the same identity). Emits `securityEvent` with type `ANOMALY_RAPID_RECONNECT`.
+
+| Option               | Type     | Default | Description                                |
+| :------------------- | :------- | :------ | :----------------------------------------- |
+| `reconnectThreshold` | `number` | `5`     | Max reconnects within window before alert. |
+| `windowMs`           | `number` | `60000` | Sliding window duration in ms.             |
+
+```typescript
+import { anomalyPlugin } from "ocpp-ws-io/plugins";
+
+server.plugin(anomalyPlugin({ reconnectThreshold: 10 }));
+
+server.on("securityEvent", (evt) => {
+  if (evt.type === "ANOMALY_RAPID_RECONNECT") {
+    console.warn(`Reconnect storm: ${evt.identity}`);
+  }
+});
+```
+
+---
+
+### `sessionLogPlugin(options?)`
+
+Logs connect/disconnect events with identity, IP, protocol, and connection duration.
+
+| Option   | Type       | Default   | Description             |
+| :------- | :--------- | :-------- | :---------------------- |
+| `logger` | `{ info }` | `console` | Custom logger instance. |
+
+```typescript
+import { sessionLogPlugin } from "ocpp-ws-io/plugins";
+
+server.plugin(sessionLogPlugin());
+// => Connected: CP-101 from 192.168.1.1 via ocpp1.6
+// => Disconnected: CP-101 after 3600s (code: 1000)
+```
+
+---
+
+### `otelPlugin(options?)`
+
+OpenTelemetry integration — creates spans for connection lifecycle events. Requires `@opentelemetry/api` as an **optional peer dependency**. If not installed, the plugin silently disables itself.
+
+| Option        | Type         | Default         | Description                                        |
+| :------------ | :----------- | :-------------- | :------------------------------------------------- |
+| `serviceName` | `string`     | `"ocpp-server"` | Tracer service name.                               |
+| `tracer`      | `TracerLike` | —               | Custom tracer instance (overrides auto-detection). |
+
+```typescript
+import { otelPlugin } from "ocpp-ws-io/plugins";
+
+server.plugin(otelPlugin({ serviceName: "my-csms" }));
+```
+
+---
+
+### `webhookPlugin(options)`
+
+Sends HTTP POST webhooks on server lifecycle events with HMAC-SHA256 signing and retry support.
+
+| Option    | Type       | Default    | Description                                               |
+| :-------- | :--------- | :--------- | :-------------------------------------------------------- |
+| `url`     | `string`   | _required_ | Webhook endpoint URL.                                     |
+| `events`  | `string[]` | All        | Filter: `"init"`, `"connect"`, `"disconnect"`, `"close"`. |
+| `headers` | `Record`   | —          | Custom HTTP headers.                                      |
+| `secret`  | `string`   | —          | HMAC-SHA256 secret (sent as `X-Signature`).               |
+| `timeout` | `number`   | `5000`     | Fetch timeout in ms.                                      |
+| `retries` | `number`   | `1`        | Retry count on failure.                                   |
+
+```typescript
+import { webhookPlugin } from "ocpp-ws-io/plugins";
+
+server.plugin(
+  webhookPlugin({
+    url: "https://api.example.com/ocpp-events",
+    secret: process.env.WEBHOOK_SECRET,
+    events: ["connect", "disconnect"],
+    headers: { Authorization: "Bearer token123" },
+  }),
+);
+```
+
+---
+
+## Creating Custom Plugins
+
+Use `createPlugin` for type-safe custom plugins:
+
+```typescript
+import { createPlugin } from "ocpp-ws-io";
+
+const myPlugin = createPlugin({
+  name: "my-plugin",
+
+  onInit(server) {
+    console.log("Server initialized");
+  },
+
+  onConnection(client) {
+    console.log(`${client.identity} connected`);
+  },
+
+  onDisconnect(client) {
+    console.log(`${client.identity} disconnected`);
+  },
+
+  onClose() {
+    console.log("Server closing");
+  },
+});
+
+server.plugin(myPlugin);
+```
