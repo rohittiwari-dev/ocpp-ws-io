@@ -19,9 +19,9 @@ import { type MiddlewareFunction, MiddlewareStack } from "./middleware";
 import { Queue } from "./queue.js";
 import { getStandardValidators } from "./standard-validators.js";
 import {
-  TransportState,
   type TransportConnector,
   type TransportSocket,
+  TransportState,
 } from "./transport.js";
 import { WsTransportConnector } from "./transports/ws-transport.js";
 import {
@@ -1007,8 +1007,8 @@ export class OCPPClient<
       messageType === MessageType.CALLERROR
         ? 4
         : messageType === MessageType.CALL
-        ? 3
-        : 2;
+          ? 3
+          : 2;
     const payload = message[payloadIndex];
     if (
       typeof payload !== "object" ||
@@ -1022,8 +1022,8 @@ export class OCPPClient<
             payload === null
               ? "null"
               : Array.isArray(payload)
-              ? "array"
-              : typeof payload
+                ? "array"
+                : typeof payload
           }`,
         ),
       );
