@@ -1705,6 +1705,30 @@ export class OCPPClient<
       }
     }
 
+    // Compression: permessage-deflate
+    const compression = this._options.compression;
+    if (compression) {
+      opts.perMessageDeflate =
+        compression === true
+          ? {
+              zlibDeflateOptions: { level: 6, memLevel: 8 },
+              zlibInflateOptions: {},
+              clientNoContextTakeover: true,
+              serverNoContextTakeover: true,
+            }
+          : {
+              zlibDeflateOptions: {
+                level: compression.level ?? 6,
+                memLevel: compression.memLevel ?? 8,
+              },
+              zlibInflateOptions: {},
+              clientNoContextTakeover:
+                compression.clientNoContextTakeover ?? true,
+              serverNoContextTakeover:
+                compression.serverNoContextTakeover ?? true,
+            };
+    }
+
     return opts;
   }
 

@@ -2,6 +2,11 @@
 
 // ─── Adapters ────────────────────────────────────────────────────
 export { defineAdapter, InMemoryAdapter } from "./adapters/adapter.js";
+export {
+  ClusterDriver,
+  type ClusterDriverOptions,
+  type ClusterNode,
+} from "./adapters/redis/cluster-driver.js";
 export { RedisAdapter } from "./adapters/redis/index.js";
 export type {
   AdaptedEvent,
@@ -66,6 +71,7 @@ export {
   type ClientOptions,
   type CloseOptions,
   type CORSOptions,
+  type CompressionOptions,
   type ConnectionContext,
   type ConnectionMiddleware,
   ConnectionState,

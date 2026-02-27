@@ -127,6 +127,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     this._wss = new WebSocketServer({
       noServer: true,
       maxPayload: this._options.maxPayloadBytes ?? 65536,
+      perMessageDeflate: this._buildCompressionConfig(),
     });
 
     // Start Session Garbage Collector
@@ -1779,5 +1780,31 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
 
     await Promise.all(localPromises);
+  }
+
+  // ─── Internal: Compression Config ───────────────────────────────
+
+  private _buildCompressionConfig(): boolean | object {
+    const compression = this._options.compression;
+    if (!compression) return false;
+    if (compression === true) {
+      return {
+        threshold: 1024,
+        zlibDeflateOptions: { level: 6, memLevel: 8 },
+        zlibInflateOptions: {},
+        serverNoContextTakeover: true,
+        clientNoContextTakeover: true,
+      };
+    }
+    return {
+      threshold: compression.threshold ?? 1024,
+      zlibDeflateOptions: {
+        level: compression.level ?? 6,
+        memLevel: compression.memLevel ?? 8,
+      },
+      zlibInflateOptions: {},
+      serverNoContextTakeover: compression.serverNoContextTakeover ?? true,
+      clientNoContextTakeover: compression.clientNoContextTakeover ?? true,
+    };
   }
 }

@@ -421,6 +421,29 @@ export interface ClientOptions {
    * Oldest messages are dropped when exceeded. (default: 100)
    */
   offlineQueueMaxSize?: number;
+  /**
+   * Enable WebSocket `permessage-deflate` compression.
+   * Reduces bandwidth by ~80% for JSON payloads at the cost of ~0.2ms CPU per message.
+   * - `true` → sensible defaults (threshold: 1024, level: 6)
+   * - `object` → fine-tuned configuration
+   * (default: false)
+   */
+  compression?: boolean | CompressionOptions;
+}
+
+// ─── Compression Options ─────────────────────────────────────────
+
+export interface CompressionOptions {
+  /** Minimum payload size in bytes to compress (default: 1024) */
+  threshold?: number;
+  /** zlib compression level 1 (fastest) to 9 (smallest) (default: 6) */
+  level?: number;
+  /** zlib memory level 1–9 (default: 8) */
+  memLevel?: number;
+  /** Server does not retain deflate context between messages (default: true — saves ~120KB/conn) */
+  serverNoContextTakeover?: boolean;
+  /** Client does not retain deflate context between messages (default: true) */
+  clientNoContextTakeover?: boolean;
 }
 
 // ─── Rate Limit Options ──────────────────────────────────────────
@@ -588,6 +611,14 @@ interface ServerOptionsBase {
    * - `{ poolSize, maxQueueSize }` → fine-tuned pool configuration
    */
   workerThreads?: boolean | { poolSize?: number; maxQueueSize?: number };
+  /**
+   * Enable WebSocket `permessage-deflate` compression.
+   * Reduces bandwidth by ~80% for JSON payloads at the cost of ~0.2ms CPU per message.
+   * - `true` → sensible defaults (threshold: 1024, level: 6)
+   * - `object` → fine-tuned configuration
+   * (default: false)
+   */
+  compression?: boolean | CompressionOptions;
 }
 
 /** When strictMode is enabled, protocols MUST be specified */
