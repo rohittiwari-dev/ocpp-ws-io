@@ -1,5 +1,8 @@
 name: Deploy Docs to Netlify
 
+permissions:
+  contents: read
+
 on:
   push:
     tags:
