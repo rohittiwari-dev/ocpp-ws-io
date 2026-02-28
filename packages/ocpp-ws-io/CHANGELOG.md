@@ -25,6 +25,14 @@
   } from "ocpp-ws-io";
   ```
 
+## 2.1.9
+
+### Patch Changes
+
+- fix: resolve CodeQL security vulnerabilities including dynamic method call invocation issues
+
+  fix: update CI/CD pipeline with Netlify build hooks for reliable monorepo deployments
+
 ## 2.1.8
 
 ### 🔌 Plugin System

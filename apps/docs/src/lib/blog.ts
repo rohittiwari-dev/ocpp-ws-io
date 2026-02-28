@@ -84,7 +84,7 @@ export function getRelatedDocs(tags: string[], limit = 5) {
     const page = source.getPage([slug]);
     if (page) {
       docs.push({
-        title: page.data.title,
+        title: page.data.title ?? "",
         description: page.data.description,
         url: page.url,
       });

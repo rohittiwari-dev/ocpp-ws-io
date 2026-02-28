@@ -1,8 +1,8 @@
+import { metaSchema, pageSchema } from "fumadocs-core/source/schema";
 import {
   defineCollections,
   defineConfig,
   defineDocs,
-  frontmatterSchema,
 } from "fumadocs-mdx/config";
 import lastModified from "fumadocs-mdx/plugins/last-modified";
 import {
@@ -15,12 +15,15 @@ import * as z from "zod";
 export const docs = defineDocs({
   dir: "./content/docs",
   docs: {
-    schema: frontmatterSchema.extend({
+    schema: pageSchema.extend({
       keywords: z.array(z.string()).optional(),
     }),
     postprocess: {
       includeProcessedMarkdown: true,
     },
+  },
+  meta: {
+    schema: metaSchema,
   },
 });
 
