@@ -1,5 +1,7 @@
 # docs
 
+[![Netlify Status](https://api.netlify.com/api/v1/badges/a164304a-fc20-4a92-8d2f-fb06b0af2ed7/deploy-status)](https://app.netlify.com/projects/ocppwsio/deploys)
+
 This is a Next.js application generated with
 [Create Fumadocs](https://github.com/fuma-nama/fumadocs).
 
