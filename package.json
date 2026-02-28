@@ -66,23 +66,11 @@
     "commitizen": "^4.3.1",
     "cz-conventional-changelog": "^3.3.0",
     "husky": "^9.1.7",
-    "turbo": "^2.8.11"
+    "turbo": "^2.8.12"
   },
   "workspaces": [
     "packages/*",
     "apps/*"
   ],
-  "packageManager": "^npm@10.2.4",
-  "dependencies": {
-    "@radix-ui/react-collapsible": "^1.1.12",
-    "@radix-ui/react-popover": "^1.1.15",
-    "@radix-ui/react-presence": "^1.1.5",
-    "@radix-ui/react-scroll-area": "^1.2.10",
-    "class-variance-authority": "^0.7.1",
-    "lucide-react": "^0.570.0",
-    "next-themes": "^0.4.6",
-    "react": "^19.2.4",
-    "scroll-into-view-if-needed": "^3.1.0",
-    "tailwind-merge": "^3.4.1"
-  }
+  "packageManager": "^npm@10.2.4"
 }
