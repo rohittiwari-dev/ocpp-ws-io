@@ -8,7 +8,7 @@ export interface ReportConfig {
 }
 
 export interface ReportData {
-  command: "load-test" | "fuzz" | "simulate" | "test";
+  command: "bench" | "load-test" | "fuzz" | "simulate" | "test";
   elapsedMs: number;
   metrics: Record<string, unknown>;
   metadata?: Record<string, unknown>;

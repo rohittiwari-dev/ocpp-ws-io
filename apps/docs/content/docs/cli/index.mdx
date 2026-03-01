@@ -62,6 +62,15 @@ ocpp simulate --identity CP-001 --endpoint ws://localhost:3000/ocpp
 ocpp load-test --clients 1000 --ramp-up 20 --endpoint wss://api.csms.com/ocpp
 ```
 
+### `ocpp bench` [stable]
+
+**What it does:** Benchmarks your OCPP server's throughput (msg/s) and round-trip latency with p50/p95/p99 percentile tracking.
+**When to use it:** When you want precise performance metrics to compare deployments, validate optimizations, or establish baseline latency numbers.
+
+```bash
+ocpp bench --endpoint ws://localhost:3000/ocpp --duration 30 --concurrency 5
+```
+
 ### `ocpp fuzz` [stable]
 
 **What it does:** A protocol fuzzer that aggressively spams your server with malformed strings, invalid arrays, and schema-breaking anomalies.  

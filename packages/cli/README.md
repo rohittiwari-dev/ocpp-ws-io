@@ -91,6 +91,27 @@ A distributed load testing engine capable of simulating thousands of concurrent 
 - Simulates intense traffic spikes with staggered connections.
 - Generates detailed metrics for successful and failed requests.
 
+### `ocpp bench` : Server Throughput & Latency Benchmark
+
+Measure your OCPP server's real-world performance with precise latency percentiles and throughput metrics.
+
+- **Round-Trip Latency**: Tracks min / avg / p50 / p95 / p99 / max latency for every RPC call using `performance.now()` sub-millisecond precision.
+- **Throughput**: Measures sustained messages-per-second across the benchmark duration.
+- **Connection Time**: Records WebSocket handshake + BootNotification round-trip.
+- **Error Rate**: Tracks failed and timed-out calls as a percentage.
+- **Live Dashboard**: Real-time terminal UI showing all metrics as the benchmark runs.
+- **Configurable**: Set duration (`-d`), concurrency (`-c`), protocol (`-p`), and endpoint (`-e`).
+- **Report Export**: Save results as JSON, Markdown, or plain text via `--report`.
+
+```bash
+# Interactive mode
+ocpp bench
+
+# CLI flags
+ocpp bench -e ws://localhost:5000/ocpp -d 30 -c 5
+ocpp bench -e ws://localhost:5000/ocpp --report json
+```
+
 ### `ocpp fuzz` : Protocol Chaos Engine (Fuzzer)
 
 A protocol fuzzer that sends malformed, invalid, or unexpected payloads.

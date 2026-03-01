@@ -1,5 +1,13 @@
 # ocpp-ws-io
 
+## 2.1.10
+
+### Patch Changes
+
+- perf: replace `@paralleldrive/cuid2` with `crypto.randomUUID()` for faster, zero-dependency ID generation
+- perf: disable source maps, enable minification and tree shaking — package size reduced from ~9MB to 2.9MB (unpacked)
+- chore: remove `@paralleldrive/cuid2` from dependencies
+
 ## 2.1.9
 
 ### Patch Changes

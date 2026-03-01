@@ -1,5 +1,12 @@
 # ocpp-ws-cli
 
+## 1.0.2
+
+### Patch Changes
+
+- feat: add `ocpp bench` command — benchmark your OCPP server's throughput (msg/s) and round-trip latency with p50/p95/p99 percentile tracking, live terminal dashboard, and optional report export (json/md/txt)
+- fix: disable source maps and enable treeshake in build config for smaller package size
+
 ## 1.0.1
 
 ### Patch Changes
