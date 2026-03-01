@@ -7,7 +7,6 @@ import {
 import { createServer as createHttpsServer } from "node:https";
 import type { Duplex } from "node:stream";
 import type { TLSSocket } from "node:tls";
-import { WebSocketServer } from "ws";
 import { AdaptiveLimiter } from "./adaptive-limiter.js";
 import { checkCORS } from "./cors.js";
 import { initLogger } from "./init-logger.js";
@@ -15,6 +14,8 @@ import { LRUMap } from "./lru-map.js";
 import { RadixTrie } from "./radix-trie.js";
 import { executeMiddlewareChain, OCPPRouter } from "./router.js";
 import { OCPPServerClient } from "./server-client.js";
+import type { TransportServer } from "./transport.js";
+import { WsTransportServer } from "./transports/ws-transport.js";
 import {
   type AllMethodNames,
   type AuthAccept,
@@ -65,7 +66,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _clients = new Set<OCPPServerClient>();
   private _clientsByIdentity = new Map<string, OCPPServerClient>();
   private _httpServers = new Set<Server>();
-  private _wss: WebSocketServer | null = null;
+  private _wss: TransportServer | null = null;
   private _state: "OPEN" | "CLOSING" | "CLOSED" = "OPEN";
   private _adapter: EventAdapterInterface | null = null;
   private _httpServerAbortControllers = new Set<AbortController>();
@@ -121,13 +122,15 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     const maxSessions = this._options.maxSessions ?? 50_000;
     this._sessions = new LRUMap(maxSessions);
 
-    // Initialize WebSocketServer immediately (ws best practice: noServer mode)
+    // Initialize TransportServer (ws best practice: noServer mode)
     // Apply maxPayloadBytes to reject oversized frames at the transport layer
-    this._wss = new WebSocketServer({
-      noServer: true,
-      maxPayload: this._options.maxPayloadBytes ?? 65536,
-      perMessageDeflate: this._buildCompressionConfig(),
-    });
+    this._wss =
+      this._options.transportServer ??
+      new WsTransportServer({
+        noServer: true,
+        maxPayload: this._options.maxPayloadBytes ?? 65536,
+        perMessageDeflate: this._buildCompressionConfig(),
+      });
 
     // Start Session Garbage Collector
     this._gcInterval = setInterval(() => {
@@ -1092,10 +1095,12 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     // Ensure _wss is available (should always be after constructor init)
     if (!this._wss) {
       // Reapply maxPayload on re-init
-      this._wss = new WebSocketServer({
-        noServer: true,
-        maxPayload: this._options.maxPayloadBytes ?? 65536,
-      });
+      this._wss =
+        this._options.transportServer ??
+        new WsTransportServer({
+          noServer: true,
+          maxPayload: this._options.maxPayloadBytes ?? 65536,
+        });
     }
 
     // Complete WebSocket upgrade & create client
@@ -1317,10 +1322,12 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
     this._httpServerAbortControllers.clear();
 
-    // Close WebSocket server and re-init for potential restart
+    // Close transport server and re-init for potential restart
     if (this._wss) {
       this._wss.close();
-      this._wss = new WebSocketServer({ noServer: true });
+      this._wss =
+        this._options.transportServer ??
+        new WsTransportServer({ noServer: true });
     }
 
     // Close all HTTP servers

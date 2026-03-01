@@ -1,5 +1,11 @@
 # ocpp-ws-cli
 
+## 1.0.3
+
+### Patch Changes
+
+- feat: re-enable source maps in build output for improved debugging and stack trace readability
+
 ## 1.0.2
 
 ### Patch Changes

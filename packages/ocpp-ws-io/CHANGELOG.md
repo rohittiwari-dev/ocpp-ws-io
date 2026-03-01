@@ -1,5 +1,36 @@
 # ocpp-ws-io
 
+## 2.1.11
+
+### Patch Changes
+
+- feat: re-enable source maps in build output for improved debugging and stack trace readability
+
+## 2.2.0
+
+### 🔌 Transport Abstraction Layer
+
+> **Breaking Changes: None** — This is a fully backwards-compatible, additive change. Existing code continues to work without modification.
+
+- **Transport Interfaces**: Introduced `TransportSocket`, `TransportConnector`, and `TransportServer` interfaces in `transport.ts`. These provide a transport-agnostic abstraction over any bidirectional message stream (WebSocket, µWebSockets.js, HTTP/2 streams).
+- **`TransportState` Constants**: Exported `TransportState` (`CONNECTING=0`, `OPEN=1`, `CLOSING=2`, `CLOSED=3`) as a transport-agnostic replacement for `WebSocket.OPEN`, `WebSocket.CLOSED`, etc. All internal state checks now use `TransportState` instead of `ws`-specific constants.
+- **Default `ws` Implementations**: `WsTransportConnector`, `WsTransportServer`, and `WsTransportSocket` wrap the existing `ws` library. These are the defaults when no custom transport is provided.
+- **Client Transport Injection**: `OCPPClient` accepts `options.transport` (`TransportConnector`) — defaults to `WsTransportConnector`.
+- **Server Transport Injection**: `OCPPServer` accepts `options.transportServer` (`TransportServer`) — defaults to `WsTransportServer`.
+- **`ws` Isolation**: The `ws` library is now only directly imported in `transports/ws-transport.ts`. All core files (`client.ts`, `server.ts`, `server-client.ts`) interact exclusively through the transport interfaces.
+- **Public Exports**: All transport types and implementations are exported from the main entry point:
+  ```ts
+  import {
+    TransportState,
+    TransportSocket,
+    TransportConnector,
+    TransportServer,
+    WsTransportConnector,
+    WsTransportServer,
+    WsTransportSocket,
+  } from "ocpp-ws-io";
+  ```
+
 ## 2.1.10
 
 ### Patch Changes

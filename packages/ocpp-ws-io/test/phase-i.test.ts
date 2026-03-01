@@ -100,13 +100,13 @@ describe("Phase I — Payload Size Limits (maxPayloadBytes)", () => {
   it("should default to 65536 (64KB) when maxPayloadBytes is not set", () => {
     server = new OCPPServer();
     // @ts-expect-error — accessing private field for test coverage
-    expect(server._wss.options.maxPayload).toBe(65536);
+    expect(server._wss._wss.options.maxPayload).toBe(65536);
   });
 
   it("should use a custom maxPayloadBytes value when provided", () => {
     server = new OCPPServer({ maxPayloadBytes: 131072 });
     // @ts-expect-error — accessing private field for test coverage
-    expect(server._wss.options.maxPayload).toBe(131072);
+    expect(server._wss._wss.options.maxPayload).toBe(131072);
   });
 });
 

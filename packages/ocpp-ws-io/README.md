@@ -6,6 +6,8 @@
 
 [![npm version](https://img.shields.io/npm/v/ocpp-ws-io.svg)](https://www.npmjs.com/package/ocpp-ws-io)
 [![License](https://img.shields.io/npm/l/ocpp-ws-io.svg)](https://github.com/rohittiwari-dev/ocpp-ws-io/blob/main/LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/rohittiwari-dev/ocpp-ws-io?style=flat&label=stars)](https://github.com/rohittiwari-dev/ocpp-ws-io/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/rohittiwari-dev/ocpp-ws-io?style=flat&label=forks)](https://github.com/rohittiwari-dev/ocpp-ws-io/network/members)
 
 ## 📚 Documentation
 

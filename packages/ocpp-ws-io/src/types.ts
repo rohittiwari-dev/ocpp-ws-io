@@ -10,6 +10,7 @@ import type {
   OCPPRequestType,
   OCPPResponseType,
 } from "./generated/index.js";
+import type { TransportConnector, TransportServer } from "./transport.js";
 import type { Validator } from "./validator.js";
 
 export type {
@@ -429,6 +430,12 @@ export interface ClientOptions {
    * (default: false)
    */
   compression?: boolean | CompressionOptions;
+  /**
+   * Advanced: Provide a custom transport connector factory.
+   * Defaults to WsTransportConnector (using the `ws` library).
+   * Allows swapping to alternate WebSocket clients (e.g. µWebSockets.js, HTTP/2).
+   */
+  transport?: TransportConnector;
 }
 
 // ─── Compression Options ─────────────────────────────────────────
@@ -619,6 +626,12 @@ interface ServerOptionsBase {
    * (default: false)
    */
   compression?: boolean | CompressionOptions;
+  /**
+   * Advanced: Provide a custom transport server instance.
+   * Defaults to WsTransportServer (using the `ws` library).
+   * Allows swapping to alternate WebSocket server handlers.
+   */
+  transportServer?: TransportServer;
 }
 
 /** When strictMode is enabled, protocols MUST be specified */

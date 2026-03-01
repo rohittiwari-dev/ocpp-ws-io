@@ -36,6 +36,7 @@ const client = new OCPPClient(options: ClientOptions);
 | `offlineQueue`        | `boolean`                       | `false`    | Queue calls while disconnected, flush on reconnect. |
 | `offlineQueueMaxSize` | `number`                        | `100`      | Max offline queue size before oldest are dropped.   |
 | `compression`         | `boolean \| CompressionOptions` | `false`    | Enable WebSocket `permessage-deflate` compression.  |
+| `transport`           | `TransportConnector`            | ws default | Custom transport connector (e.g. µWebSockets.js).   |
 
 #### LoggingConfig
 
@@ -154,19 +155,20 @@ const server = new OCPPServer(options?: ServerOptions);
 
 #### ServerOptions
 
-| Option               | Type                            | Default   | Description                                                                                                                                    |
-| :------------------- | :------------------------------ | :-------- | :--------------------------------------------------------------------------------------------------------------------------------------------- |
-| `protocols`          | `string[]`                      | `[]`      | Accepted OCPP subprotocols                                                                                                                     |
-| `securityProfile`    | `SecurityProfile`               | `NONE`    | Security profile                                                                                                                               |
-| `handshakeTimeoutMs` | `number`                        | `30000`   | Timeout for WebSocket handshake (ms)                                                                                                           |
-| `tls`                | `TLSOptions`                    | —         | TLS options (Profile 2 & 3)                                                                                                                    |
-| `logging`            | `LoggingConfig`                 | `{}`      | Configuration for structured logging.                                                                                                          |
-| `sessionTtlMs`       | `number`                        | `7200000` | Garbage collection inactivity timeout                                                                                                          |
-| `rateLimit`          | `RateLimitOptions`              | —         | Token bucket socket & method limiter                                                                                                           |
-| `healthEndpoint`     | `boolean`                       | `false`   | Expose HTTP `/health` and `/metrics`                                                                                                           |
-| `maxPayloadBytes`    | `number`                        | `65536`   | Max WebSocket frame size in bytes. Rejects oversized messages at the transport layer before any parsing. Prevents OOM from malicious payloads. |
-| `workerThreads`      | `boolean \| object`             | `false`   | Enable worker thread pool for JSON parsing. `true` = auto pool size, `{ poolSize, maxQueueSize }` for fine-tuning.                             |
-| `compression`        | `boolean \| CompressionOptions` | `false`   | Enable WebSocket `permessage-deflate` compression. `true` = sensible defaults (threshold: 1024, level: 6).                                     |
+| Option               | Type                            | Default    | Description                                                                                                                                    |
+| :------------------- | :------------------------------ | :--------- | :--------------------------------------------------------------------------------------------------------------------------------------------- |
+| `protocols`          | `string[]`                      | `[]`       | Accepted OCPP subprotocols                                                                                                                     |
+| `securityProfile`    | `SecurityProfile`               | `NONE`     | Security profile                                                                                                                               |
+| `handshakeTimeoutMs` | `number`                        | `30000`    | Timeout for WebSocket handshake (ms)                                                                                                           |
+| `tls`                | `TLSOptions`                    | —          | TLS options (Profile 2 & 3)                                                                                                                    |
+| `logging`            | `LoggingConfig`                 | `{}`       | Configuration for structured logging.                                                                                                          |
+| `sessionTtlMs`       | `number`                        | `7200000`  | Garbage collection inactivity timeout                                                                                                          |
+| `rateLimit`          | `RateLimitOptions`              | —          | Token bucket socket & method limiter                                                                                                           |
+| `healthEndpoint`     | `boolean`                       | `false`    | Expose HTTP `/health` and `/metrics`                                                                                                           |
+| `maxPayloadBytes`    | `number`                        | `65536`    | Max WebSocket frame size in bytes. Rejects oversized messages at the transport layer before any parsing. Prevents OOM from malicious payloads. |
+| `workerThreads`      | `boolean \| object`             | `false`    | Enable worker thread pool for JSON parsing. `true` = auto pool size, `{ poolSize, maxQueueSize }` for fine-tuning.                             |
+| `compression`        | `boolean \| CompressionOptions` | `false`    | Enable WebSocket `permessage-deflate` compression. `true` = sensible defaults (threshold: 1024, level: 6).                                     |
+| `transportServer`    | `TransportServer`               | ws default | Custom transport server instance (e.g. µWebSockets.js).                                                                                        |
 
 #### CompressionOptions
 

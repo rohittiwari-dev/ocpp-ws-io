@@ -8,7 +8,7 @@ import { Stats } from "@/components/landing/stats";
 import { blogSource } from "@/lib/blog";
 
 export const metadata: Metadata = {
-  title: "The Type-Safe OCPP WebSocket Library for Node.js",
+  title: "Type-Safe OCPP WebSocket Library for Node.js",
   description:
     "Build scalable CSMS and Charging Stations with ocpp-ws-io. Supports OCPP 1.6, 2.0.1, 2.1, strict validation, and clustering.",
   keywords: [
@@ -22,15 +22,25 @@ export const metadata: Metadata = {
     "TypeScript",
   ],
   openGraph: {
-    title: "OCPP WS IO - The Type-Safe OCPP Library",
-    description: "Type-safe OCPP WebSocket RPC client & server for Node.js",
+    title: "OCPP WS IO — Type-Safe OCPP WebSocket Library",
+    description:
+      "Build scalable CSMS and Charging Stations with ocpp-ws-io. Type-safe OCPP WebSocket library for Node.js.",
     url: "https://ocpp-ws-io.rohittiwari.me",
     type: "website",
+    images: [
+      {
+        url: "/og.png",
+        width: 1200,
+        height: 630,
+        alt: "OCPP WS IO",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "OCPP WS IO - The Type-Safe OCPP Library",
+    title: "OCPP WS IO — Type-Safe OCPP WebSocket Library",
     description: "Type-safe OCPP WebSocket RPC client & server for Node.js",
+    images: ["/og.png"],
   },
   alternates: {
     canonical: "./",
@@ -47,7 +57,22 @@ export default function HomePage() {
     "@type": "WebSite",
     url: "https://ocpp-ws-io.rohittiwari.me",
     name: "OCPP WS IO",
-    description: "Type-safe OCPP WebSocket RPC client & server for Node.js",
+    description:
+      "Type-safe OCPP WebSocket RPC client & server for Node.js. Supports OCPP 1.6, 2.0.1, 2.1.",
+    publisher: {
+      "@type": "Person",
+      name: "Rohit Tiwari",
+      url: "https://rohittiwari.me",
+    },
+    potentialAction: {
+      "@type": "SearchAction",
+      target: {
+        "@type": "EntryPoint",
+        urlTemplate:
+          "https://ocpp-ws-io.rohittiwari.me/docs?search={search_term_string}",
+      },
+      "query-input": "required name=search_term_string",
+    },
   };
 
   return (

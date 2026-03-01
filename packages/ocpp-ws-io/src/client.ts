@@ -1,5 +1,4 @@
 import { EventEmitter } from "node:events";
-import WebSocket from "ws";
 import {
   type RPCError,
   RPCGenericError,
@@ -18,6 +17,12 @@ import { initLogger } from "./init-logger.js";
 import { type MiddlewareFunction, MiddlewareStack } from "./middleware";
 import { Queue } from "./queue.js";
 import { getStandardValidators } from "./standard-validators.js";
+import {
+  type TransportConnector,
+  type TransportSocket,
+  TransportState,
+} from "./transport.js";
+import { WsTransportConnector } from "./transports/ws-transport.js";
 import {
   type CallHandler,
   type CallOptions,
@@ -98,9 +103,10 @@ export class OCPPClient<
     ClientOptions;
 
   protected _state: ConnectionState = CLOSED;
-  protected _ws: WebSocket | null = null;
+  protected _ws: TransportSocket | null = null;
   protected _protocol: string | undefined;
   protected _identity: string;
+  protected _transport: TransportConnector;
 
   private _handlers = new Map<string, CallHandler>();
   private _wildcardHandler: WildcardHandler | null = null;
@@ -140,6 +146,7 @@ export class OCPPClient<
     }
 
     this._identity = options.identity;
+    this._transport = options.transport ?? new WsTransportConnector();
 
     this._options = {
       reconnect: true,
@@ -305,7 +312,7 @@ export class OCPPClient<
       this._logger?.debug?.("Connecting", { url: endpoint });
       this.emit("connecting", { url: endpoint });
 
-      const ws = new WebSocket(
+      const ws = this._transport.connect(
         endpoint,
         this._options.protocols ?? [],
         wsOptions,
@@ -338,14 +345,8 @@ export class OCPPClient<
 
         this._logger?.info?.("Connected", { protocol: ws.protocol });
 
-        // Create a minimal response object
-        const response = (
-          ws as unknown as {
-            _req?: { res?: import("node:http").IncomingMessage };
-          }
-        )._req?.res;
         const result = {
-          response: response as import("node:http").IncomingMessage,
+          response: ws.upgradeResponse as import("node:http").IncomingMessage,
         };
         this.emit("open", result);
         resolve(result);
@@ -456,7 +457,7 @@ export class OCPPClient<
     }
 
     return new Promise<{ code: number; reason: string }>((resolve) => {
-      if (!this._ws || this._ws.readyState === WebSocket.CLOSED) {
+      if (!this._ws || this._ws.readyState === TransportState.CLOSED) {
         this._state = CLOSED;
         this._cleanup();
         const result = { code, reason };
@@ -859,7 +860,7 @@ export class OCPPClient<
           sentAt: Date.now(),
         });
 
-        if (this._ws?.readyState === WebSocket.OPEN) {
+        if (this._ws?.readyState === TransportState.OPEN) {
           this._safeSend(this._ws, messageStr, (err) => {
             if (err) {
               // Failed to send
@@ -928,8 +929,8 @@ export class OCPPClient<
 
   // ─── Internal: WebSocket attachment ──────────────────────────
 
-  protected _attachWebsocket(ws: WebSocket): void {
-    ws.on("message", (data: WebSocket.RawData) => this._onMessage(data));
+  protected _attachWebsocket(ws: TransportSocket): void {
+    ws.on("message", (data: Buffer | string) => this._onMessage(data));
     ws.on("close", (code: number, reason: Buffer) =>
       this._onClose(code, reason),
     );
@@ -951,7 +952,7 @@ export class OCPPClient<
 
   // ─── Internal: Message handling ──────────────────────────────
 
-  protected _onMessage(rawData: WebSocket.RawData, preParsed?: unknown): void {
+  protected _onMessage(rawData: Buffer | string, preParsed?: unknown): void {
     this._recordActivity();
 
     let message: OCPPMessage;
@@ -1459,11 +1460,11 @@ export class OCPPClient<
    * before sending. Prevents OOM on slow 2G/3G charger connections.
    */
   private _safeSend(
-    ws: WebSocket | null,
+    ws: TransportSocket | null,
     data: string,
     cb?: (err?: Error) => void,
   ): void {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (!ws || ws.readyState !== OPEN) {
       cb?.(new Error("WebSocket is not open"));
       return;
     }
@@ -1484,7 +1485,7 @@ export class OCPPClient<
       let waited = 0;
       const drainCheck = setInterval(() => {
         waited += 50;
-        if (!ws || ws.readyState !== WebSocket.OPEN) {
+        if (!ws || ws.readyState !== OPEN) {
           clearInterval(drainCheck);
           cb?.(new Error("WebSocket closed during backpressure wait"));
           return;
@@ -1665,8 +1666,8 @@ export class OCPPClient<
     return url;
   }
 
-  private _buildWsOptions(): WebSocket.ClientOptions {
-    const opts: WebSocket.ClientOptions = {
+  private _buildWsOptions(): Record<string, any> {
+    const opts: Record<string, any> = {
       headers: {
         ...this._options.headers,
         "User-Agent": getPackageIdent(),
