@@ -22,7 +22,7 @@ export const metadata = {
   },
   title: {
     template: "%s | OCPP WS IO",
-    default: "OCPP WS IO — Type-Safe OCPP WebSocket Library for Node.js",
+    default: "OCPP WS IO Docs",
   },
   description:
     "Build scalable CSMS and Charging Stations with ocpp-ws-io. Type-safe OCPP WebSocket library for Node.js — supports OCPP 1.6, 2.0.1, 2.1, strict validation, Redis clustering, and a browser client.",
@@ -52,6 +52,14 @@ export const metadata = {
     index: true,
     follow: true,
   },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "48x48" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: "/apple-icon.png",
+  },
+  manifest: "/manifest.webmanifest",
   openGraph: {
     type: "website",
     locale: "en_US",
@@ -79,44 +87,12 @@ export const metadata = {
 };
 
 export default function Layout({ children }: { children: ReactNode }) {
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    name: "ocpp-ws-io",
-    operatingSystem: "Independent",
-    applicationCategory: "DeveloperApplication",
-    description:
-      "Build scalable CSMS and Charging Stations with ocpp-ws-io. Type-safe OCPP WebSocket library for Node.js — supports OCPP 1.6, 2.0.1, 2.1, strict validation, Redis clustering, and a browser client.",
-    aggregateRating: {
-      "@type": "AggregateRating",
-      ratingValue: "5",
-      ratingCount: "1",
-    },
-    offers: {
-      "@type": "Offer",
-      price: "0",
-      priceCurrency: "USD",
-    },
-    author: {
-      "@type": "Person",
-      name: "Rohit Tiwari",
-      url: "https://rohittiwari.me",
-    },
-  };
-
   return (
     <html
       lang="en"
       className={`${inter.variable} ${outfit.variable}`}
       suppressHydrationWarning
     >
-      <head>
-        <script
-          type="application/ld+json"
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: safe as we control the content
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-        />
-      </head>
       <body className="flex flex-col min-h-screen">
         <RootProvider>{children}</RootProvider>
       </body>

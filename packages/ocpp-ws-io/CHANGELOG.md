@@ -1,5 +1,11 @@
 # ocpp-ws-io
 
+## 2.1.11
+
+### Patch Changes
+
+- feat: re-enable source maps in build output for improved debugging and stack trace readability
+
 ## 2.2.0
 
 ### 🔌 Transport Abstraction Layer
@@ -32,7 +38,6 @@
 - perf: replace `@paralleldrive/cuid2` with `crypto.randomUUID()` for faster, zero-dependency ID generation
 - perf: disable source maps, enable minification and tree shaking — package size reduced from ~9MB to 2.9MB (unpacked)
 - chore: remove `@paralleldrive/cuid2` from dependencies
-
 
 ## 2.1.9
 
@@ -162,15 +167,14 @@ This patch release encapsulates several major registry layout optimizations and 
 
   ### 🩹 Fixes & Additions
 
-
   - **Handshake API Normalization**: Standardized legacy `endpoint` configurations by officially transitioning them to Node-native `pathname` properties inside `HandshakeInfo` and constructor objects.
   - **Duplicate Handler Collisions**: Protected `client.handle()` RPC registration tables from silently overriding each other by throwing explicit runtime errors when identical handlers are accidentally attached.
   - **Global Server Fallbacks**: Modernized the core `OCPPServer` HTTP routing logic to cleanly enforce wildcard sub-routers, providing built-in unauthenticated catch-alls that terminate hanging connections.
   - **Logging Formatter Duplication**: Resolved manual format injection overhead inside the browser bundles by deferring payload formatting accurately to `createLoggingMiddleware()`.
+
 - # Reliability, Middleware, and Type Safety
 
   ## 🚀 Features
-
 
   - **Redis Streams for Unicast**: Replaced Pub/Sub for node-to-node communication. This ensures **zero message loss** during temporary node restarts or network instability.
   - **Middleware System**: Added `client.use()` and server-side middleware for intercepting and modifying OCPP messages.
