@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import * as p from "@clack/prompts";
 import cacModule from "cac";
 import { runAudit } from "./commands/audit.js";
+import { runBench } from "./commands/bench.js";
 import { runCerts } from "./commands/certs.js";
 import { runFuzz } from "./commands/fuzz.js";
 import { runGenerate } from "./commands/generate.js";
@@ -65,6 +66,11 @@ cli.command("", "Interactive Menu").action(async () => {
             hint: "ocpp load-test",
           },
           {
+            value: "bench",
+            label: "Benchmark Server Throughput & Latency",
+            hint: "ocpp bench",
+          },
+          {
             value: "fuzz",
             label: "Protocol Chaos Engine (Fuzzer)",
             hint: "ocpp fuzz",
@@ -93,6 +99,8 @@ cli.command("", "Interactive Menu").action(async () => {
         await runSimulate({});
       } else if (command === "load-test") {
         await runLoadTest({});
+      } else if (command === "bench") {
+        await runBench({});
       } else if (command === "fuzz") {
         await runFuzz({});
       } else if (command === "generate") {
@@ -308,6 +316,51 @@ cli
         endpoint: options.endpoint,
         clients: options.clients,
         rampUp: options.rampUp,
+        report: options.report,
+        reportDir: options.reportDir,
+      });
+    },
+  );
+
+// ── Bench Command ──────────────────────────────────────────────
+
+cli
+  .command(
+    "bench",
+    "Benchmark your OCPP server's throughput (msg/s) and latency (p50/p95/p99)",
+  )
+  .option(
+    "-e, --endpoint <url>",
+    "The WebSocket URL of your CSMS server. (default: ws://localhost:5000/ocpp)",
+  )
+  .option(
+    "-d, --duration <seconds>",
+    "How long to run the benchmark in seconds. (default: 30)",
+  )
+  .option(
+    "-c, --concurrency <num>",
+    "Number of parallel benchmark clients. (default: 1)",
+  )
+  .option("-p, --protocol <proto>", "OCPP subprotocol (default: ocpp1.6)")
+  .option("--report <format>", "Export benchmark results (json | md | txt)")
+  .option("--report-dir <dir>", "Custom directory to save the report")
+  .example("  ocpp bench -e ws://localhost:5000/ocpp -d 30 -c 5")
+  .example("  ocpp bench -e ws://localhost:5000/ocpp --report json")
+  .action(
+    async (options: {
+      endpoint?: string;
+      duration?: number;
+      concurrency?: number;
+      protocol?: string;
+      report?: "json" | "md" | "txt";
+      reportDir?: string;
+    }) => {
+      printBanner(pkg.version);
+      await runBench({
+        endpoint: options.endpoint,
+        duration: options.duration,
+        concurrency: options.concurrency,
+        protocol: options.protocol,
         report: options.report,
         reportDir: options.reportDir,
       });

@@ -63,6 +63,40 @@ Validate your infrastructure's scalability, Redis clustering performance, and We
 
 ---
 
+## `ocpp bench`
+
+Benchmark your OCPP server's throughput and round-trip latency with precise percentile tracking and a live terminal dashboard.
+
+### Usage
+
+```bash
+ocpp bench [options]
+```
+
+### Options
+
+| Option          | Alias | Default                    | Description                                    |
+| :-------------- | :---- | :------------------------- | :--------------------------------------------- |
+| `--endpoint`    | `-e`  | `ws://localhost:5000/ocpp` | The WebSocket URL of your CSMS server.         |
+| `--duration`    | `-d`  | `30`                       | How long to run the benchmark in seconds.      |
+| `--concurrency` | `-c`  | `1`                        | Number of parallel benchmark clients.          |
+| `--protocol`    | `-p`  | `ocpp1.6`                  | OCPP subprotocol to use.                       |
+| `--report`      |       | -                          | Export benchmark results (`json`, `md`, `txt`) |
+| `--report-dir`  |       | -                          | Custom directory to save the report            |
+
+### Metrics
+
+- **Throughput**: Sustained messages per second.
+- **Latency**: Round-trip min / avg / p50 / p95 / p99 / max using sub-millisecond `performance.now()` precision.
+- **Connection Time**: WebSocket handshake + BootNotification round-trip.
+- **Error Rate**: Percentage of failed or timed-out calls.
+
+### Use Case
+
+Establish baseline performance numbers, compare deployments, and validate optimizations with reproducible benchmarks.
+
+---
+
 ## `ocpp fuzz`
 
 A protocol fuzzer that sends malformed, invalid, or unexpected payloads to your CSMS to test its resilience and error handling.

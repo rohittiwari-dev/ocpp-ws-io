@@ -1,6 +1,6 @@
 {
   "name": "ocpp-ws-cli",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "The ultimate CLI ecosystem for ocpp-ws-io",
   "repository": {
     "type": "git",

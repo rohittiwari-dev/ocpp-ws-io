@@ -1,6 +1,17 @@
+import { randomUUID } from "node:crypto";
 import type { RPCError } from "./errors.js";
 import * as errors from "./errors.js";
 import type { LoggerLikeNotOptional } from "./types.js";
+
+// ─── ID Generation ──────────────────────────────────────────────
+
+/**
+ * Generate a unique ID using `crypto.randomUUID()`.
+ * Replaces `@paralleldrive/cuid2` for faster, dependency-free ID generation.
+ */
+export function createId(): string {
+  return randomUUID();
+}
 
 // ─── RPC Error Factory ──────────────────────────────────────────
 
