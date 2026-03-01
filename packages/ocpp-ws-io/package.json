@@ -88,7 +88,6 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@paralleldrive/cuid2": "^3.3.0",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
     "voltlog-io": "^1.0.3",

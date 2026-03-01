@@ -7,7 +7,6 @@ import {
 import { createServer as createHttpsServer } from "node:https";
 import type { Duplex } from "node:stream";
 import type { TLSSocket } from "node:tls";
-import { createId } from "@paralleldrive/cuid2";
 import { WebSocketServer } from "ws";
 import { AdaptiveLimiter } from "./adaptive-limiter.js";
 import { checkCORS } from "./cors.js";
@@ -39,7 +38,7 @@ import {
   type ServerOptions,
   type TypedEventEmitter,
 } from "./types.js";
-import { NOOP_LOGGER } from "./util.js";
+import { createId, NOOP_LOGGER } from "./util.js";
 import { createWorkerPool, type WorkerPool } from "./worker-pool.js";
 import {
   abortHandshake,
@@ -1517,8 +1516,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             typeof args[2] === "string"
               ? args[2] // versioned: id, ver, method, params, options
               : args.length >= 3 && typeof args[1] === "string"
-                ? args[1] // global: id, method, params, options
-                : "unknown",
+              ? args[1] // global: id, method, params, options
+              : "unknown",
           error,
         });
       }
