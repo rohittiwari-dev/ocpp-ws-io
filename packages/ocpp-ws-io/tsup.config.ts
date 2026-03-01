@@ -12,7 +12,7 @@ export default defineConfig([
     format: ["cjs", "esm"],
     dts: true,
     splitting: false,
-    sourcemap: false,
+    sourcemap: true,
     clean: true,
     outDir: "dist",
     target: "node18",

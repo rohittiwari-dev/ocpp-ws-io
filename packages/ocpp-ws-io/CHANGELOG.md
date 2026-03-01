@@ -1,5 +1,12 @@
 # ocpp-ws-io
 
+## 2.1.11
+
+### Patch Changes
+
+- feat: re-enable source maps in build output for improved debugging and stack trace readability
+- add: voltlog new version that allows client side imports
+
 ## 2.1.10
 
 ### Patch Changes
