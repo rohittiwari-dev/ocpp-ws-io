@@ -12,11 +12,13 @@ export default defineConfig([
     format: ["cjs", "esm"],
     dts: true,
     splitting: false,
-    sourcemap: true,
+    sourcemap: false,
     clean: true,
     outDir: "dist",
     target: "node18",
     shims: true,
+    minify: true,
+    treeshake: true,
   },
   // Browser entry (no Node.js dependencies)
   {
@@ -26,10 +28,12 @@ export default defineConfig([
     format: ["cjs", "esm"],
     dts: true,
     splitting: false,
-    sourcemap: true,
+    sourcemap: false,
     clean: false,
     outDir: "dist",
     target: "esnext",
     platform: "browser",
+    minify: true,
+    treeshake: true,
   },
 ]);
