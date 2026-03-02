@@ -1,5 +1,14 @@
 /// <reference lib="dom" />
 
+import { type MiddlewareFunction, MiddlewareStack } from "../middleware.js";
+import type { MiddlewareContext } from "../types.js";
+import { EventEmitter } from "./emitter.js";
+import {
+  type RPCError,
+  RPCGenericError,
+  RPCMessageTypeNotSupportedError,
+  TimeoutError,
+} from "./errors.js";
 /**
  * BrowserOCPPClient — A full-featured browser WebSocket RPC client for OCPP.
  *
@@ -13,15 +22,6 @@
  * - NOREPLY support
  */
 import { initLogger } from "./init-logger.js";
-import { type MiddlewareFunction, MiddlewareStack } from "../middleware.js";
-import type { MiddlewareContext } from "../types.js";
-import { EventEmitter } from "./emitter.js";
-import {
-  type RPCError,
-  RPCGenericError,
-  RPCMessageTypeNotSupportedError,
-  TimeoutError,
-} from "./errors.js";
 import { Queue } from "./queue.js";
 import {
   type AllMethodNames,
