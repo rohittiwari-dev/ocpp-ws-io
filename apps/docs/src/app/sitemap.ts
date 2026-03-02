@@ -9,26 +9,26 @@ export default function sitemap(): MetadataRoute.Sitemap {
     {
       url,
       lastModified: new Date(),
-      changeFrequency: "weekly",
+      changeFrequency: "daily",
       priority: 1,
     },
     {
       url: `${url}/blog`,
       lastModified: new Date(),
-      changeFrequency: "weekly",
-      priority: 0.9,
+      changeFrequency: "daily",
+      priority: 1,
     },
     ...source.getPages().map((page) => ({
       url: `${url}${page.url}`,
       lastModified: new Date(),
-      changeFrequency: "weekly" as const,
-      priority: 0.8,
+      changeFrequency: "daily" as const,
+      priority: 1,
     })),
     ...blogSource.getPages().map((page) => ({
       url: `${url}${page.url}`,
       lastModified: new Date(),
-      changeFrequency: "weekly" as const,
-      priority: 0.8,
+      changeFrequency: "daily" as const,
+      priority: 1,
     })),
   ];
 }
