@@ -1,5 +1,23 @@
 # ocpp-ws-io
 
+## 2.1.13
+
+### Patch Changes
+
+- Bump `voltlog-io` to v1.0.6
+
+  v1.0.5 and earlier shipped `dist/chunk-DAFMRCAN.mjs` which unconditionally
+  executed `import { fileURLToPath } from "url"` (a Node.js built-in) as part of
+  tsup's ESM shim, crashing every browser bundler (Vite, Next.js/webpack, esbuild)
+  with `fileURLToPath is not a function`.
+
+  v1.0.6 removes the shared chunk entirely and ships a clean browser-safe client
+  bundle — no Node.js shim, no `path`/`url` imports.
+
+  This unblocks `voltlog-io/client` usage in `ocpp-ws-io/browser` (`browser/init-logger.ts`)
+  which was added in the previous patch to replace the root `init-logger.ts` that
+  imported from the Node.js-only full `voltlog-io` entry point.
+
 ## 2.1.12
 
 ### Patch Changes
