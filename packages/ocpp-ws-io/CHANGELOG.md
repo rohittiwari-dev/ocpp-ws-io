@@ -1,5 +1,16 @@
 # ocpp-ws-io
 
+## 2.1.12
+
+### Patch Changes
+
+- Fix browser package pulling in Node.js-only modules
+
+  - `browser/util.ts`: inline `NOOP_LOGGER` definition instead of re-exporting from `../util.js`, which transitively imported `node:crypto` and would break any strict browser bundler (Vite, webpack, esbuild)
+  - `browser/init-logger.ts`: new browser-safe logger initialiser that imports from `voltlog-io/client` (the browser-only bundle) instead of the full `voltlog-io` package which includes Node.js transports
+  - `browser/client.ts`: update `initLogger` import to `./init-logger.js` (new browser-local file)
+  - `browser/index.ts`: replace `export * from "../helpers/index.js"` with explicit named exports of only the two browser-safe helpers (`createLoggingMiddleware`, `defineRpcMiddleware`); server-only exports (`defineMiddleware`, `createPlugin`, `defineAuth`, `combineAuth`) are no longer part of the browser API surface
+
 ## 2.1.11
 
 ### Patch Changes

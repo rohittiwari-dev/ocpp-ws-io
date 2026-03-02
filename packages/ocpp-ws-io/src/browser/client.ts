@@ -12,7 +12,7 @@
  * - Bad message handling
  * - NOREPLY support
  */
-import { initLogger } from "../init-logger.js";
+import { initLogger } from "./init-logger.js";
 import { type MiddlewareFunction, MiddlewareStack } from "../middleware.js";
 import type { MiddlewareContext } from "../types.js";
 import { EventEmitter } from "./emitter.js";

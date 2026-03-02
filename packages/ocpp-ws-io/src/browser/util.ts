@@ -1,7 +1,18 @@
 import type { RPCError } from "./errors.js";
 import * as errors from "./errors.js";
+import type { LoggerLikeNotOptional } from "./types.js";
 
-export { NOOP_LOGGER } from "../util.js";
+/**
+ * No-op logger for when logging is disabled.
+ * Defined locally to avoid importing ../util.js which pulls in node:crypto.
+ */
+export const NOOP_LOGGER: LoggerLikeNotOptional = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  child: () => NOOP_LOGGER,
+};
 
 // ─── RPC Error Factory ──────────────────────────────────────────
 

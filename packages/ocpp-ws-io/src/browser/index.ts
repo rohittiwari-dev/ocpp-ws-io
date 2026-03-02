@@ -1,6 +1,10 @@
 // ─── Core ────────────────────────────────────────────────────────
 
-export * from "../helpers/index.js";
+// Only export browser-safe helpers (server-only: defineMiddleware, createPlugin, defineAuth, combineAuth)
+export {
+  createLoggingMiddleware,
+  defineRpcMiddleware,
+} from "../helpers/index.js";
 export * from "../middleware.js";
 export type { Validator, ValidatorSchema } from "../validator.js";
 export { BrowserOCPPClient } from "./client.js";
