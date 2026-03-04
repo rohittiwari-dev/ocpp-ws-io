@@ -1,0 +1,31 @@
+
+> ocpp-ws-simulator@1.0.0 build
+> next build
+
+▲ Next.js 16.1.6 (Turbopack)
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 7.8s
+  Running TypeScript ...
+  Collecting page data using 7 workers ...
+  Generating static pages using 7 workers (0/10) ...
+  Generating static pages using 7 workers (2/10) 
+  Generating static pages using 7 workers (4/10) 
+  Generating static pages using 7 workers (7/10) 
+✓ Generating static pages using 7 workers (10/10) in 415.0ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/auth
+├ ƒ /api/auth/check
+├ ○ /apple-icon.png
+├ ○ /icon.svg
+├ ○ /robots.txt
+└ ○ /sitemap.xml
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
