@@ -119,6 +119,26 @@ export interface StationConfigKey {
   value: string;
 }
 
+// ─── OCPP 2.x Types ──────────────────────────────────────────────────────────
+
+export interface ComponentVariable {
+  component: string; // e.g. "ChargingStation", "EVSE", "Connector"
+  variable: string; // e.g. "AvailabilityState", "Model"
+  value: string;
+  mutability: "ReadOnly" | "ReadWrite";
+}
+
+export interface EVSEConnector {
+  connectorId: number;
+  type?: string; // e.g. "cType2", "cCCS2"
+}
+
+export interface EVSEState {
+  evseId: number;
+  status: "Available" | "Occupied" | "Reserved" | "Unavailable" | "Faulted";
+  connectors: EVSEConnector[];
+}
+
 export interface MeasurandsConfig {
   energy: boolean;
   power: boolean;
@@ -180,6 +200,10 @@ export interface ChargerRuntimeState {
   localAuthList: LocalAuthEntry[];
   localAuthListVersion: number;
   connectedAt: number | null;
+  // ── OCPP 2.x runtime ──
+  deviceModel: ComponentVariable[];
+  evse: EVSEState[];
+  transactionSeq: number; // monotonically increasing 2.x sequence number
 }
 
 // ─── Charger Slot (one per tab) ───────────────────────────────────────────────
@@ -239,6 +263,20 @@ export interface EmulatorStore {
   loadProfile: (id: string, name: string) => void;
   deleteProfile: (id: string, name: string) => void;
 
+  // ── Per-charger OCPP 2.x runtime ──
+  updateEVSE: (
+    id: string,
+    evseId: number,
+    data: Partial<Omit<EVSEState, "evseId">>,
+  ) => void;
+  setDeviceVariable: (
+    id: string,
+    component: string,
+    variable: string,
+    value: string,
+  ) => void;
+  bumpTransactionSeq: (id: string) => number;
+
   // ── Selector helper ──
   getSlot: (id: string) => ChargerSlot | undefined;
 }
@@ -264,6 +302,16 @@ export type EmulatorState = ChargerSlot &
     saveProfile: (name: string) => void;
     loadProfile: (name: string) => void;
     deleteProfile: (name: string) => void;
+    updateEVSE: (
+      evseId: number,
+      data: Partial<Omit<EVSEState, "evseId">>,
+    ) => void;
+    setDeviceVariable: (
+      component: string,
+      variable: string,
+      value: string,
+    ) => void;
+    bumpTransactionSeq: () => number;
   };
 
 // ─── Defaults ────────────────────────────────────────────────────────────────
@@ -386,6 +434,70 @@ const makeDefaultRuntime = (rfidTag: string): ChargerRuntimeState => ({
   localAuthList: [],
   localAuthListVersion: 0,
   connectedAt: null,
+  // ── OCPP 2.x runtime defaults ──
+  deviceModel: [
+    {
+      component: "ChargingStation",
+      variable: "Model",
+      value: "Virtual-Emulator-1",
+      mutability: "ReadOnly",
+    },
+    {
+      component: "ChargingStation",
+      variable: "VendorName",
+      value: "Elmo",
+      mutability: "ReadOnly",
+    },
+    {
+      component: "ChargingStation",
+      variable: "FirmwareVersion",
+      value: "1.0.0",
+      mutability: "ReadOnly",
+    },
+    {
+      component: "ChargingStation",
+      variable: "SerialNumber",
+      value: "elm.001.00",
+      mutability: "ReadOnly",
+    },
+    {
+      component: "HeartbeatInterval",
+      variable: "Interval",
+      value: "300",
+      mutability: "ReadWrite",
+    },
+    {
+      component: "ClockAlignedDataInterval",
+      variable: "Interval",
+      value: "0",
+      mutability: "ReadWrite",
+    },
+    {
+      component: "SampledDataInterval",
+      variable: "Interval",
+      value: "60",
+      mutability: "ReadWrite",
+    },
+    {
+      component: "AllowedChargingRateUnit",
+      variable: "Actual",
+      value: "W",
+      mutability: "ReadOnly",
+    },
+  ],
+  evse: [
+    {
+      evseId: 1,
+      status: "Available",
+      connectors: [{ connectorId: 1, type: "cType2" }],
+    },
+    {
+      evseId: 2,
+      status: "Available",
+      connectors: [{ connectorId: 1, type: "cType2" }],
+    },
+  ],
+  transactionSeq: 0,
 });
 
 export const makeDefaultSlot = (index: number): ChargerSlot => {
@@ -657,6 +769,51 @@ export const useEmulatorStore = create<EmulatorStore>()(
             savedProfiles: slot.savedProfiles.filter((p) => p.name !== name),
           })),
         })),
+
+      // ── OCPP 2.x runtime actions ──────────────────────────────────────────
+
+      updateEVSE: (id, evseId, data) =>
+        set((s) => ({
+          chargers: updateRuntime(s.chargers, id, (r) => ({
+            ...r,
+            evse: r.evse.map((e) =>
+              e.evseId === evseId ? { ...e, ...data } : e,
+            ),
+          })),
+        })),
+
+      setDeviceVariable: (id, component, variable, value) =>
+        set((s) => ({
+          chargers: updateRuntime(s.chargers, id, (r) => {
+            const exists = r.deviceModel.some(
+              (v) => v.component === component && v.variable === variable,
+            );
+            return {
+              ...r,
+              deviceModel: exists
+                ? r.deviceModel.map((v) =>
+                    v.component === component && v.variable === variable
+                      ? { ...v, value }
+                      : v,
+                  )
+                : [
+                    ...r.deviceModel,
+                    { component, variable, value, mutability: "ReadWrite" },
+                  ],
+            };
+          }),
+        })),
+
+      bumpTransactionSeq: (id) => {
+        let seq = 0;
+        set((s) => ({
+          chargers: updateRuntime(s.chargers, id, (r) => {
+            seq = r.transactionSeq + 1;
+            return { ...r, transactionSeq: seq };
+          }),
+        }));
+        return seq;
+      },
     }),
     {
       name: "ocpp-emulator-storage",

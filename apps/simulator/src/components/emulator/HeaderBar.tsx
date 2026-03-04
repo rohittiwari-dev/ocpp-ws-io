@@ -13,6 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/components/emulator/AuthGate";
+import { ShortcutsDialog } from "@/components/emulator/ShortcutsDialog";
 import { useActiveCharger } from "@/hooks/useActiveCharger";
 import type { ConnectionStatus } from "@/store/emulatorStore";
 
@@ -46,7 +47,9 @@ export function HeaderBar({ onSettingsOpen }: { onSettingsOpen: () => void }) {
   const [vRect, setVRect] = useState<DOMRect | null>(null);
   const vBtnRef = useRef<HTMLButtonElement>(null);
   const VERSIONS = ["ocpp1.6", "ocpp2.0.1", "ocpp2.1"] as const;
+  const vLocked = isConnected || isConnecting;
 
+  /* close version picker on outside click */
   useEffect(() => {
     if (!vOpen) return;
     const close = () => setVOpen(false);
@@ -131,12 +134,23 @@ export function HeaderBar({ onSettingsOpen }: { onSettingsOpen: () => void }) {
       <div className="relative shrink-0">
         <button
           ref={vBtnRef}
+          disabled={vLocked}
           onClick={() => {
+            if (vLocked) return;
             if (vBtnRef.current)
               setVRect(vBtnRef.current.getBoundingClientRect());
             setVOpen(!vOpen);
           }}
-          className="h-7 flex items-center gap-1.5 px-2.5 rounded-lg bg-[#0f1117] border border-[#232636] hover:border-[#2d3050] hover:bg-[#13151f] transition-all cursor-pointer group"
+          title={
+            vLocked
+              ? "Disconnect first to change OCPP version"
+              : "Change OCPP version"
+          }
+          className={`h-7 flex items-center gap-1.5 px-2.5 rounded-lg bg-[#0f1117] border border-[#232636] transition-all group ${
+            vLocked
+              ? "opacity-40 cursor-not-allowed"
+              : "hover:border-[#2d3050] hover:bg-[#13151f] cursor-pointer"
+          }`}
         >
           <span className="text-[9px] font-mono font-bold text-[#8b5cf6] uppercase tracking-wider">
             {config.ocppVersion.replace("ocpp", "v")}
@@ -270,6 +284,9 @@ export function HeaderBar({ onSettingsOpen }: { onSettingsOpen: () => void }) {
           </>
         )}
       </button>
+
+      {/* ── Shortcuts button ── */}
+      <ShortcutsDialog />
 
       {/* ── Logout ── */}
       {process.env.NEXT_PUBLIC_ALLOW_AUTH === "true" && (

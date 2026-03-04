@@ -11,7 +11,9 @@ import {
   ChevronRight,
   Copy,
   Download,
+  FileSpreadsheet,
   Info,
+  PanelBottomClose,
   Radio,
   Search,
   Trash2,
@@ -296,7 +298,7 @@ function LogEntry({ log, isNew }: { log: OCPPLog; isNew: boolean }) {
 const FILTERS = ["All", "Tx", "Rx", "Error"] as const;
 type Filter = (typeof FILTERS)[number];
 
-export function LogsPanel() {
+export function LogsPanel({ onHide }: { onHide?: () => void }) {
   const { logs, clearLogs } = useActiveCharger();
   const [filter, setFilter] = useState<Filter>("All");
   const [search, setSearch] = useState("");
@@ -369,6 +371,33 @@ export function LogsPanel() {
     const a = document.createElement("a");
     a.href = url;
     a.download = `ocpp_logs_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadCSV = () => {
+    const q = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const header = [
+      "timestamp",
+      "direction",
+      "action",
+      "raw_message",
+      "payload",
+    ].join(",");
+    const rows = logs.map((l) =>
+      [
+        q(l.timestamp),
+        q(l.direction),
+        q(l.action),
+        q(l.rawMessage ?? ""),
+        q(JSON.stringify(l.payload ?? "")),
+      ].join(","),
+    );
+    const blob = new Blob([[header, ...rows].join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ocpp_logs_${Date.now()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -489,12 +518,31 @@ export function LogsPanel() {
             <Download className="h-3.5 w-3.5" />
           </button>
           <button
+            onClick={downloadCSV}
+            title="Export CSV"
+            className="p-1 rounded text-[#3d4459] hover:text-[#4ade80] hover:bg-[#091a0d] transition-colors cursor-pointer"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" />
+          </button>
+          <button
             onClick={clearLogs}
             title="Clear"
             className="p-1 rounded text-[#3d4459] hover:text-[#f43f5e] hover:bg-[#26101a] transition-colors cursor-pointer"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
+          {onHide && (
+            <>
+              <div className="w-px h-3.5 bg-[#23253a] shrink-0 mx-0.5" />
+              <button
+                onClick={onHide}
+                title="Hide log panel"
+                className="p-1 rounded text-[#3d4459] hover:text-[#c4b5fd] hover:bg-[#1e1535] transition-colors cursor-pointer"
+              >
+                <PanelBottomClose className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
         </div>
 
         {/* Search bar — slides open */}

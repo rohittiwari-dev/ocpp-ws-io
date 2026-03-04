@@ -250,10 +250,12 @@ const ERROR_CODES = [
 export function ConnectorPanel({ connectorId }: { connectorId: number }) {
   const {
     status: globalStatus,
+    config,
     connectors,
     updateConnector,
   } = useActiveCharger();
   const connector = connectors[connectorId];
+  const is2x = config.ocppVersion !== "ocpp1.6";
 
   const [selectedStatus, setSelectedStatus] = useState<ConnectorStatus>(
     connector?.status || "Available",
@@ -597,7 +599,9 @@ export function ConnectorPanel({ connectorId }: { connectorId: number }) {
               <button
                 disabled={!isConnected}
                 onClick={() =>
-                  ocppService.authorize(connectorId, connector.idTag)
+                  is2x
+                    ? ocppService.sendAuthorize201(connector.idTag)
+                    : ocppService.authorize(connectorId, connector.idTag)
                 }
                 className="h-9 px-4 rounded-md btn-primary text-[11px] font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer disabled:opacity-40 shrink-0"
               >
@@ -615,7 +619,14 @@ export function ConnectorPanel({ connectorId }: { connectorId: number }) {
               {!inTx ? (
                 <button
                   disabled={!isConnected}
-                  onClick={() => ocppService.startTransaction(connectorId)}
+                  onClick={() =>
+                    is2x
+                      ? ocppService.startTransaction201(
+                          connectorId,
+                          connector.idTag,
+                        )
+                      : ocppService.startTransaction(connectorId)
+                  }
                   className="h-10 rounded-md btn-success text-[12px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
                 >
                   <Play className="h-4 w-4" /> Start Tx
@@ -623,7 +634,11 @@ export function ConnectorPanel({ connectorId }: { connectorId: number }) {
               ) : (
                 <button
                   disabled={!isConnected}
-                  onClick={() => ocppService.stopTransaction(connectorId)}
+                  onClick={() =>
+                    is2x
+                      ? ocppService.stopTransaction201(connectorId)
+                      : ocppService.stopTransaction(connectorId)
+                  }
                   className="h-10 rounded-md btn-danger text-[12px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
                 >
                   <Square className="h-4 w-4" /> Stop Tx

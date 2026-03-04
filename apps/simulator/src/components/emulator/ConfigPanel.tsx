@@ -515,7 +515,66 @@ function BootNotificationTab() {
    ═══════════════════════════════════════════ */
 
 function StationConfigTab() {
-  const { config, updateStationConfigKey } = useActiveCharger();
+  const { config, updateStationConfigKey, setDeviceVariable, deviceModel } =
+    useActiveCharger();
+  const is2x = config.ocppVersion !== "ocpp1.6";
+
+  if (is2x) {
+    // ── OCPP 2.x Device Model view ──
+    const editableCount = deviceModel.filter(
+      (v) => v.mutability !== "ReadOnly",
+    ).length;
+    return (
+      <SectionCard
+        title="Device Model Variables"
+        icon={<SlidersHorizontal className="h-3.5 w-3.5" />}
+        color="text-amber-400"
+        description={`${deviceModel.length} total · ${editableCount} writable · GetVariables / SetVariables`}
+      >
+        <div className="space-y-0.5 -mx-1">
+          {deviceModel.map((v) => (
+            <div
+              key={`${v.component}/${v.variable}`}
+              className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-white/3 transition-colors"
+            >
+              <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                <span className="text-[10px] font-mono text-slate-500 truncate">
+                  {v.component}/
+                </span>
+                <span
+                  className={`text-[11px] font-mono truncate ${
+                    v.mutability === "ReadOnly"
+                      ? "text-slate-600"
+                      : "text-slate-300"
+                  }`}
+                >
+                  {v.variable}
+                </span>
+                {v.mutability === "ReadOnly" && (
+                  <Badge
+                    variant="outline"
+                    className="text-[7px] px-1 py-0 h-3 text-amber-400/70 border-amber-400/15 bg-amber-400/5 shrink-0 font-mono"
+                  >
+                    RO
+                  </Badge>
+                )}
+              </div>
+              <Input
+                value={v.value}
+                disabled={v.mutability === "ReadOnly"}
+                onChange={(e) =>
+                  setDeviceVariable(v.component, v.variable, e.target.value)
+                }
+                className="h-7 text-[10px] w-32 shrink-0 font-mono bg-white/3 border-white/8 text-white rounded-md focus-visible:ring-amber-500/30"
+              />
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+    );
+  }
+
+  // ── OCPP 1.6 Station Config (original) ──
   const keys = config.stationConfig;
   const editableCount = keys.filter((k) => !k.readonly).length;
 

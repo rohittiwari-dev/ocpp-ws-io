@@ -6,6 +6,7 @@ import {
   type BootNotificationConfig,
   type ConnectorState,
   type EmulatorConfig,
+  type EVSEState,
   type LocalAuthEntry,
   makeDefaultSlot,
   type OCPPLog,
@@ -94,6 +95,20 @@ export function useActiveCharger() {
     (name: string) => store.deleteProfile(id, name),
     [id, store],
   );
+  const updateEVSE = useCallback(
+    (evseId: number, data: Partial<Omit<EVSEState, "evseId">>) =>
+      store.updateEVSE(id, evseId, data),
+    [id, store],
+  );
+  const setDeviceVariable = useCallback(
+    (component: string, variable: string, value: string) =>
+      store.setDeviceVariable(id, component, variable, value),
+    [id, store],
+  );
+  const bumpTransactionSeq = useCallback(
+    () => store.bumpTransactionSeq(id),
+    [id, store],
+  );
 
   return {
     // Slot identity
@@ -121,5 +136,8 @@ export function useActiveCharger() {
     saveProfile,
     loadProfile,
     deleteProfile,
+    updateEVSE,
+    setDeviceVariable,
+    bumpTransactionSeq,
   };
 }

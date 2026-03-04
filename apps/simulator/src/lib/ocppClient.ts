@@ -155,7 +155,19 @@ class OCPPService {
 
   // ─── Incoming CSMS Handlers ───────────────────────────────────────────────
 
+  /** Dispatch to the right handler set based on configured OCPP version */
   private registerHandlers() {
+    if (!this.client) return;
+    const { config } = getSlotState(this.chargerId);
+    if (config.ocppVersion === "ocpp1.6") {
+      this.registerHandlers16();
+    } else {
+      // ocpp2.0.1 and ocpp2.1 share the same handler set
+      this.registerHandlers201();
+    }
+  }
+
+  private registerHandlers16() {
     if (!this.client) return;
 
     const cid = this.chargerId;
@@ -819,6 +831,711 @@ class OCPPService {
       });
       return { status: "Accepted" };
     });
+  }
+
+  // ─── OCPP 2.x Incoming Handlers ───────────────────────────────────────────
+
+  private registerHandlers201() {
+    if (!this.client) return;
+    const cid = this.chargerId;
+
+    // ── Reset ──
+    this.client.handle("Reset", (ctx) => {
+      const payload = ctx.params as { type: string };
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "Reset",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      if (payload.type === "Immediate") {
+        setTimeout(() => {
+          this.disconnect();
+          setTimeout(() => this.connect(), 1500);
+        }, 300);
+      }
+      return { status: "Accepted" };
+    });
+
+    // ── ChangeAvailability ──
+    this.client.handle("ChangeAvailability", (ctx) => {
+      const payload = ctx.params as {
+        evseId?: number;
+        operationalStatus: string;
+      };
+      const s = useEmulatorStore.getState();
+      s.addLog(cid, {
+        direction: "Rx",
+        action: "ChangeAvailability",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      const evseId = payload.evseId ?? 0;
+      const status =
+        payload.operationalStatus === "Operative" ? "Available" : "Unavailable";
+      if (evseId === 0) {
+        // all EVSEs
+        const slot = s.chargers.find((c) => c.id === cid);
+        slot?.runtime.evse.forEach((e) =>
+          s.updateEVSE(cid, e.evseId, { status }),
+        );
+      } else {
+        s.updateEVSE(cid, evseId, {
+          status: status as "Available" | "Unavailable",
+        });
+      }
+      return { status: "Accepted" };
+    });
+
+    // ── GetVariables ──
+    this.client.handle("GetVariables", (ctx) => {
+      const payload = ctx.params as {
+        getVariableData: {
+          component: { name: string };
+          variable: { name: string };
+          attributeType?: string;
+        }[];
+      };
+      const s = useEmulatorStore.getState();
+      s.addLog(cid, {
+        direction: "Rx",
+        action: "GetVariables",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      const slot = s.chargers.find((c) => c.id === cid);
+      const model = slot?.runtime.deviceModel ?? [];
+      const result = payload.getVariableData.map((req) => {
+        const found = model.find(
+          (v) =>
+            v.component === req.component.name &&
+            v.variable === req.variable.name,
+        );
+        return {
+          component: req.component,
+          variable: req.variable,
+          attributeType: (req.attributeType ?? "Actual") as
+            | "Actual"
+            | "Target"
+            | "MinSet"
+            | "MaxSet",
+          attributeStatus: (found ? "Accepted" : "UnknownVariable") as
+            | "Accepted"
+            | "Rejected"
+            | "UnknownComponent"
+            | "UnknownVariable"
+            | "NotSupportedAttributeType",
+          attributeValue: found?.value,
+        };
+      });
+      return { getVariableResult: result };
+    });
+
+    // ── SetVariables ──
+    this.client.handle("SetVariables", (ctx) => {
+      const payload = ctx.params as {
+        setVariableData: {
+          component: { name: string };
+          variable: { name: string };
+          attributeValue: string;
+        }[];
+      };
+      const s = useEmulatorStore.getState();
+      s.addLog(cid, {
+        direction: "Rx",
+        action: "SetVariables",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      const slot = s.chargers.find((c) => c.id === cid);
+      const model = slot?.runtime.deviceModel ?? [];
+      const result = payload.setVariableData.map((req) => {
+        const found = model.find(
+          (v) =>
+            v.component === req.component.name &&
+            v.variable === req.variable.name,
+        );
+        if (found?.mutability === "ReadOnly") {
+          return {
+            component: req.component,
+            variable: req.variable,
+            attributeStatus: "Rejected" as
+              | "Accepted"
+              | "Rejected"
+              | "UnknownComponent"
+              | "UnknownVariable"
+              | "NotSupportedAttributeType",
+          };
+        }
+        s.setDeviceVariable(
+          cid,
+          req.component.name,
+          req.variable.name,
+          req.attributeValue,
+        );
+        return {
+          component: req.component,
+          variable: req.variable,
+          attributeStatus: "Accepted" as
+            | "Accepted"
+            | "Rejected"
+            | "UnknownComponent"
+            | "UnknownVariable"
+            | "NotSupportedAttributeType",
+        };
+      });
+      return { setVariableResult: result };
+    });
+
+    // ── TriggerMessage (2.x) ──
+    this.client.handle("TriggerMessage", (ctx) => {
+      const payload = ctx.params as {
+        requestedMessage: string;
+        evse?: { id: number };
+      };
+      const s = useEmulatorStore.getState();
+      s.addLog(cid, {
+        direction: "Rx",
+        action: "TriggerMessage",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      const evseId = payload.evse?.id ?? 1;
+      setTimeout(() => {
+        const msg = payload.requestedMessage;
+        if (msg === "Heartbeat") this.sendHeartbeat();
+        else if (msg === "BootNotification") this.sendBootNotification201();
+        else if (msg === "StatusNotification") {
+          const ev = useEmulatorStore
+            .getState()
+            .chargers.find((c) => c.id === cid)
+            ?.runtime.evse.find((e) => e.evseId === evseId);
+          this.sendStatusNotification201(evseId, 1, ev?.status ?? "Available");
+        } else if (msg === "MeterValues") this.sendMeterValues(evseId);
+      }, 300);
+      return { status: "Accepted" };
+    });
+
+    // ── RemoteStartTransaction (2.x → use TransactionEvent) ──
+    this.client.handle("RemoteStartTransaction", (ctx) => {
+      const payload = ctx.params as unknown as {
+        evseId?: number;
+        idToken: { idToken: string; type: string };
+      };
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers.find((c) => c.id === cid);
+      const evseId = payload.evseId ?? 1;
+      s.addLog(cid, {
+        direction: "Rx",
+        action: "RemoteStartTransaction",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      if (slot?.runtime.connectors[evseId]?.inTransaction)
+        return { status: "Rejected" };
+      setTimeout(
+        () => this.startTransaction201(evseId, payload.idToken.idToken),
+        500,
+      );
+      return { status: "Accepted" };
+    });
+
+    // ── RemoteStopTransaction (2.x) ──
+    this.client.handle("RemoteStopTransaction", (ctx) => {
+      const payload = ctx.params as unknown as { transactionId: string };
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers.find((c) => c.id === cid);
+      s.addLog(cid, {
+        direction: "Rx",
+        action: "RemoteStopTransaction",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      const n = slot?.config.numberOfConnectors ?? 1;
+      let evseId: number | null = null;
+      for (let i = 1; i <= n; i++) {
+        if (
+          String(slot?.runtime.connectors[i]?.transactionId) ===
+          payload.transactionId
+        ) {
+          evseId = i;
+          break;
+        }
+      }
+      if (!evseId) return { status: "Rejected" };
+      setTimeout(
+        () => this.stopTransaction201(evseId as number, "Remote"),
+        500,
+      );
+      return { status: "Accepted" };
+    });
+
+    // ── ClearCache ──
+    this.client.handle("ClearCache", (ctx) => {
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "ClearCache",
+        payload: ctx.params,
+        ocppMessageId: ctx.messageId,
+      });
+      return { status: "Accepted" };
+    });
+
+    // ── SetChargingProfile ──
+    this.client.handle("SetChargingProfile", (ctx) => {
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "SetChargingProfile",
+        payload: ctx.params,
+        ocppMessageId: ctx.messageId,
+      });
+      return { status: "Accepted" };
+    });
+
+    // ── ClearChargingProfile ──
+    this.client.handle("ClearChargingProfile", (ctx) => {
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "ClearChargingProfile",
+        payload: ctx.params,
+        ocppMessageId: ctx.messageId,
+      });
+      return { status: "Accepted" };
+    });
+
+    // ── GetChargingProfiles ──
+    this.client.handle("GetChargingProfiles", (ctx) => {
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "GetChargingProfiles",
+        payload: ctx.params,
+        ocppMessageId: ctx.messageId,
+      });
+      return { status: "NoProfiles" };
+    });
+
+    // ── ReserveNow (2.x evseId-based) ──
+    this.client.handle("ReserveNow", (ctx) => {
+      const payload = ctx.params as {
+        id: number;
+        evseId?: number;
+        idToken: { idToken: string; type: string };
+        expiryDateTime: string;
+      };
+      const s = useEmulatorStore.getState();
+      s.addLog(cid, {
+        direction: "Rx",
+        action: "ReserveNow",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      const evseId = payload.evseId ?? 1;
+      s.updateEVSE(cid, evseId, { status: "Reserved" });
+      return { status: "Accepted" };
+    });
+
+    // ── CancelReservation ──
+    this.client.handle("CancelReservation", (ctx) => {
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "CancelReservation",
+        payload: ctx.params,
+        ocppMessageId: ctx.messageId,
+      });
+      return { status: "Accepted" };
+    });
+
+    // ── SendLocalList ──
+    this.client.handle("SendLocalList", (ctx) => {
+      const payload = ctx.params as {
+        versionNumber: number;
+        localAuthorizationList?: {
+          idToken: { idToken: string };
+          idTokenInfo?: { status: string };
+        }[];
+        updateType: string;
+      };
+      const s = useEmulatorStore.getState();
+      s.addLog(cid, {
+        direction: "Rx",
+        action: "SendLocalList",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      const list =
+        payload.localAuthorizationList?.map((e) => ({
+          idTag: e.idToken.idToken,
+          idTagInfo: e.idTokenInfo
+            ? { status: (e.idTokenInfo.status ?? "Accepted") as "Accepted" }
+            : undefined,
+        })) ?? [];
+      s.setLocalAuthList(cid, list, payload.versionNumber);
+      return { status: "Accepted" };
+    });
+
+    // ── GetLocalListVersion ──
+    this.client.handle("GetLocalListVersion", (ctx) => {
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers.find((c) => c.id === cid);
+      s.addLog(cid, {
+        direction: "Rx",
+        action: "GetLocalListVersion",
+        payload: ctx.params,
+        ocppMessageId: ctx.messageId,
+      });
+      return { versionNumber: slot?.runtime.localAuthListVersion ?? 0 };
+    });
+
+    // ── UnlockConnector ──
+    this.client.handle("UnlockConnector", (ctx) => {
+      const payload = ctx.params as { evseId: number; connectorId: number };
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "UnlockConnector",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      return { status: "Unlocked" };
+    });
+
+    // ── DataTransfer ──
+    this.client.handle("DataTransfer", (ctx) => {
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "DataTransfer",
+        payload: ctx.params,
+        ocppMessageId: ctx.messageId,
+      });
+      return { status: "Accepted" };
+    });
+
+    // ── GetLog ──
+    this.client.handle("GetLog", (ctx) => {
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "GetLog",
+        payload: ctx.params,
+        ocppMessageId: ctx.messageId,
+      });
+      return { status: "Accepted", filename: "emulator-log.txt" };
+    });
+
+    // ── InstallCertificate (simulated) ──
+    this.client.handle("InstallCertificate", (ctx) => {
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "InstallCertificate",
+        payload: ctx.params,
+        ocppMessageId: ctx.messageId,
+      });
+      return { status: "Accepted" };
+    });
+
+    // ── DeleteCertificate (simulated) ──
+    this.client.handle("DeleteCertificate", (ctx) => {
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "DeleteCertificate",
+        payload: ctx.params,
+        ocppMessageId: ctx.messageId,
+      });
+      return { status: "Accepted" };
+    });
+
+    // ── GetInstalledCertificateIds (simulated) ──
+    this.client.handle("GetInstalledCertificateIds", (ctx) => {
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "GetInstalledCertificateIds",
+        payload: ctx.params,
+        ocppMessageId: ctx.messageId,
+      });
+      return { status: "Accepted", certificateHashDataChain: [] };
+    });
+
+    // ── CertificateSigned (simulated) ──
+    this.client.handle("CertificateSigned", (ctx) => {
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "CertificateSigned",
+        payload: ctx.params,
+        ocppMessageId: ctx.messageId,
+      });
+      return { status: "Accepted" };
+    });
+  }
+
+  // ─── OCPP 2.x Outgoing Methods ────────────────────────────────────────────
+
+  async sendBootNotification201() {
+    if (!this.client) return;
+    const { slot, store } = getSlotState(this.chargerId);
+    const boot = slot.config.bootNotification;
+    const payload = {
+      reason: "PowerUp",
+      chargingStation: {
+        model: boot.chargePointModel,
+        vendorName: boot.chargePointVendor,
+        serialNumber: boot.chargePointSerialNumber || undefined,
+        firmwareVersion: boot.firmwareVersion || undefined,
+        modem:
+          boot.iccid || boot.imsi
+            ? { iccid: boot.iccid || undefined, imsi: boot.imsi || undefined }
+            : undefined,
+      },
+    };
+    const msgId = nanoid(8);
+    store.addLog(this.chargerId, {
+      direction: "Tx",
+      action: "BootNotification",
+      payload,
+      ocppMessageId: msgId,
+    });
+    try {
+      const res = (await this.client.call("BootNotification", payload)) as {
+        status: string;
+        currentTime: string;
+        interval?: number;
+      };
+      store.addLog(this.chargerId, {
+        direction: "Rx",
+        action: "BootNotificationConf",
+        payload: res,
+        ocppMessageId: msgId,
+      });
+      if (res.status === "Accepted") {
+        const interval = res.interval ?? 300;
+        store.setDeviceVariable(
+          this.chargerId,
+          "HeartbeatInterval",
+          "Interval",
+          String(interval),
+        );
+        this.startHeartbeatTimer(interval);
+        // Send StatusNotification for each EVSE
+        const evse =
+          useEmulatorStore
+            .getState()
+            .chargers.find((c) => c.id === this.chargerId)?.runtime.evse ?? [];
+        for (const e of evse) {
+          for (const conn of e.connectors) {
+            this.sendStatusNotification201(
+              e.evseId,
+              conn.connectorId,
+              e.status,
+            );
+          }
+        }
+      }
+    } catch (err) {
+      store.addLog(this.chargerId, {
+        direction: "Error",
+        action: "BootNotification",
+        payload: { message: String(err) },
+        ocppMessageId: msgId,
+      });
+    }
+  }
+
+  async sendTransactionEvent(
+    trigger: "Started" | "Updated" | "Ended",
+    evseId: number,
+    reason?: string,
+    meterValue?: number,
+  ) {
+    if (!this.client) return;
+    const { slot, store } = getSlotState(this.chargerId);
+    const connector = slot.runtime.connectors[evseId];
+    const seq = store.bumpTransactionSeq(this.chargerId);
+    const ts = new Date().toISOString();
+    const payload: Record<string, unknown> = {
+      eventType: trigger,
+      seqNo: seq,
+      timestamp: ts,
+      triggerReason:
+        reason ??
+        (trigger === "Started"
+          ? "Authorized"
+          : trigger === "Ended"
+            ? "Local"
+            : "ChargingRateChanged"),
+      transactionInfo: {
+        transactionId: String(connector?.transactionId ?? `TXN-${nanoid(6)}`),
+        chargingState:
+          trigger === "Ended"
+            ? "SuspendedEVSE"
+            : trigger === "Started"
+              ? "Charging"
+              : "Charging",
+      },
+      evse: { id: evseId, connectorId: 1 },
+      idToken: connector?.idTag
+        ? { idToken: connector.idTag, type: "ISO14443" }
+        : undefined,
+    };
+    if (meterValue !== undefined) {
+      payload.meterValue = [
+        {
+          timestamp: ts,
+          sampledValue: [
+            {
+              value: meterValue,
+              measurand: "Energy.Active.Import.Register",
+              unitOfMeasure: { unit: "Wh" },
+            },
+          ],
+        },
+      ];
+    }
+    const msgId = nanoid(8);
+    store.addLog(this.chargerId, {
+      direction: "Tx",
+      action: "TransactionEvent",
+      payload,
+      ocppMessageId: msgId,
+    });
+    try {
+      const res = await this.client.call("TransactionEvent", payload);
+      store.addLog(this.chargerId, {
+        direction: "Rx",
+        action: "TransactionEventConf",
+        payload: res,
+        ocppMessageId: msgId,
+      });
+    } catch (err) {
+      store.addLog(this.chargerId, {
+        direction: "Error",
+        action: "TransactionEvent",
+        payload: { message: String(err) },
+        ocppMessageId: msgId,
+      });
+    }
+  }
+
+  async sendStatusNotification201(
+    evseId: number,
+    connectorId: number,
+    status: string,
+  ) {
+    if (!this.client) return;
+    const { store } = getSlotState(this.chargerId);
+    const payload = {
+      timestamp: new Date().toISOString(),
+      connectorStatus: status,
+      evseId,
+      connectorId,
+    };
+    const msgId = nanoid(8);
+    store.addLog(this.chargerId, {
+      direction: "Tx",
+      action: "StatusNotification",
+      payload,
+      ocppMessageId: msgId,
+    });
+    try {
+      await this.client.call("StatusNotification", payload);
+    } catch (err) {
+      store.addLog(this.chargerId, {
+        direction: "Error",
+        action: "StatusNotification",
+        payload: { message: String(err) },
+        ocppMessageId: msgId,
+      });
+    }
+  }
+
+  async sendAuthorize201(idToken: string, type = "ISO14443") {
+    if (!this.client) return;
+    const { store } = getSlotState(this.chargerId);
+    const payload = { idToken: { idToken, type } };
+    const msgId = nanoid(8);
+    store.addLog(this.chargerId, {
+      direction: "Tx",
+      action: "Authorize",
+      payload,
+      ocppMessageId: msgId,
+    });
+    try {
+      const res = await this.client.call("Authorize", payload);
+      store.addLog(this.chargerId, {
+        direction: "Rx",
+        action: "AuthorizeConf",
+        payload: res,
+        ocppMessageId: msgId,
+      });
+      return res;
+    } catch (err) {
+      store.addLog(this.chargerId, {
+        direction: "Error",
+        action: "Authorize",
+        payload: { message: String(err) },
+        ocppMessageId: msgId,
+      });
+    }
+  }
+
+  async startTransaction201(evseId: number, idTag: string) {
+    if (!this.client) return;
+    const { store } = getSlotState(this.chargerId);
+    const txId = Date.now();
+    store.updateConnector(this.chargerId, evseId, {
+      inTransaction: true,
+      transactionId: txId,
+      idTag,
+      startMeterValue:
+        store.getSlot(this.chargerId)?.runtime.connectors[evseId]
+          ?.currentMeterValue ?? 0,
+    });
+    store.updateEVSE(this.chargerId, evseId, { status: "Occupied" });
+    this.sendStatusNotification201(evseId, 1, "Occupied");
+    await this.sendTransactionEvent("Started", evseId, "Authorized");
+    // Start meter timer
+    const cfgSlot = useEmulatorStore
+      .getState()
+      .chargers.find((c) => c.id === this.chargerId);
+    const meterInterval = parseInt(
+      cfgSlot?.config.stationConfig.find(
+        (k) => k.key === "MeterValueSampleInterval",
+      )?.value ?? "60",
+      10,
+    );
+    this.meterTimers[evseId] = setInterval(() => {
+      const s = useEmulatorStore.getState();
+      const cur = s.chargers.find((c) => c.id === this.chargerId)?.runtime
+        .connectors[evseId];
+      if (cur) {
+        s.updateConnector(this.chargerId, evseId, {
+          currentMeterValue:
+            cur.currentMeterValue +
+            (cfgSlot?.config.simulation.autoChargeMeterIncrement ?? 250) /
+              (meterInterval / 10),
+        });
+      }
+      this.sendMeterValues(evseId);
+    }, meterInterval * 1000);
+  }
+
+  async stopTransaction201(evseId: number, reason = "Local") {
+    if (!this.client) return;
+    const { store } = getSlotState(this.chargerId);
+    const snap = store.getSlot(this.chargerId)?.runtime.connectors[evseId];
+    await this.sendTransactionEvent(
+      "Ended",
+      evseId,
+      reason,
+      snap?.currentMeterValue,
+    );
+    // Stop meter timer
+    if (this.meterTimers[evseId]) {
+      clearInterval(this.meterTimers[evseId]);
+      delete this.meterTimers[evseId];
+    }
+    store.updateConnector(this.chargerId, evseId, {
+      inTransaction: false,
+      transactionId: null,
+    });
+    store.updateEVSE(this.chargerId, evseId, { status: "Available" });
+    this.sendStatusNotification201(evseId, 1, "Available");
   }
 
   // ─── Outgoing Commands ─────────────────────────────────────────────────────
