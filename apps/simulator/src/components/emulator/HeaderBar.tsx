@@ -13,7 +13,8 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/components/emulator/AuthGate";
-import { type ConnectionStatus, useEmulatorStore } from "@/store/emulatorStore";
+import { useActiveCharger } from "@/hooks/useActiveCharger";
+import type { ConnectionStatus } from "@/store/emulatorStore";
 
 /* ── Status config ── */
 type StCfg = { dot: string; text: string; label: string };
@@ -34,7 +35,7 @@ function formatUptime(ms: number) {
 
 /* ── Header ── */
 export function HeaderBar({ onSettingsOpen }: { onSettingsOpen: () => void }) {
-  const { status, config, connectedAt, updateConfig } = useEmulatorStore();
+  const { status, config, connectedAt, updateConfig } = useActiveCharger();
   const auth = useAuth();
   const isConnected = status === "connected";
   const isConnecting = status === "connecting";
@@ -66,7 +67,7 @@ export function HeaderBar({ onSettingsOpen }: { onSettingsOpen: () => void }) {
   }, [connectedAt]);
 
   const runService = (fn: (svc: any) => void) =>
-    import("@/lib/ocppClient").then(({ ocppService }) => fn(ocppService));
+    import("@/lib/ocppClient").then(({ ocppService }) => fn(ocppService)); // proxy auto-routes to active charger
 
   return (
     <header className="sticky top-0 z-30 h-14 flex items-center px-4 gap-4 bg-[#181a24] border-b border-[#232636]">

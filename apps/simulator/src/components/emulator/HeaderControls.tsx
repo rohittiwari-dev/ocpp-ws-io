@@ -2,11 +2,11 @@
 
 import { Loader2, Power, PowerOff, RefreshCw, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useActiveCharger } from "@/hooks/useActiveCharger";
 import { ocppService } from "@/lib/ocppClient";
-import { useEmulatorStore } from "@/store/emulatorStore";
 
 export function HeaderControls() {
-  const { status } = useEmulatorStore();
+  const { status } = useActiveCharger();
   const isConnected = status === "connected";
   const isConnecting = status === "connecting";
 

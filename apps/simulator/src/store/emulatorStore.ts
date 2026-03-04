@@ -2,6 +2,8 @@ import { nanoid } from "nanoid";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+// ─── Connection / Connector Status Types ─────────────────────────────────────
+
 export type ConnectionStatus =
   | "disconnected"
   | "connecting"
@@ -31,6 +33,8 @@ export type StopReason =
   | "SoftReset"
   | "UnlockCommand"
   | "DeAuthorized";
+
+// ─── Sub-types ────────────────────────────────────────────────────────────────
 
 export interface Reservation {
   reservationId: number;
@@ -115,6 +119,17 @@ export interface StationConfigKey {
   value: string;
 }
 
+export interface MeasurandsConfig {
+  energy: boolean;
+  power: boolean;
+  soc: boolean;
+  voltage: boolean;
+  current: boolean;
+  temperature: boolean;
+  frequency: boolean;
+  threePhase: boolean;
+}
+
 export interface SimulationConfig {
   diagnosticFileName: string;
   diagnosticUploadTime: number;
@@ -125,6 +140,8 @@ export interface SimulationConfig {
   autoChargeDurationSec: number;
   autoChargeMeterIncrement: number;
   autoChargeSocEnabled: boolean;
+  // Measurands
+  measurands: MeasurandsConfig;
 }
 
 export interface EmulatorConfig {
@@ -132,7 +149,8 @@ export interface EmulatorConfig {
   endpoint: string;
   chargePointId: string;
   ocppVersion: "ocpp1.6" | "ocpp2.0.1" | "ocpp2.1";
-  securityProfile: 0 | 1 | 2 | 3;
+  /** Only 0 (plain WS) and 1 (Basic Auth) are supported in browser */
+  securityProfile: 0 | 1;
   basicAuthPassword: string;
   // Hardware Identity
   bootNotification: BootNotificationConfig;
@@ -151,47 +169,106 @@ export interface ConfigProfile {
   createdAt: string;
 }
 
-export interface EmulatorState {
-  config: EmulatorConfig;
-  updateConfig: (newConfig: Partial<EmulatorConfig>) => void;
-  updateBootNotification: (fields: Partial<BootNotificationConfig>) => void;
-  updateStationConfigKey: (key: string, value: string) => void;
-  updateSimulation: (fields: Partial<SimulationConfig>) => void;
+// ─── Per-Charger Runtime State ────────────────────────────────────────────────
 
+export interface ChargerRuntimeState {
   status: ConnectionStatus;
-  setStatus: (status: ConnectionStatus) => void;
-
   connectors: Record<number, ConnectorState>;
-  updateConnector: (id: number, data: Partial<ConnectorState>) => void;
-  resetConnector: (id: number) => void;
-
   logs: OCPPLog[];
-  addLog: (log: Omit<OCPPLog, "id" | "timestamp">) => void;
-  clearLogs: () => void;
-
-  // Diagnostics upload simulation
   isUploading: boolean;
   uploadSecondsLeft: number;
-  setIsUploading: (val: boolean) => void;
-  setUploadSecondsLeft: (val: number) => void;
-
-  // Local auth list
   localAuthList: LocalAuthEntry[];
   localAuthListVersion: number;
-  setLocalAuthList: (list: LocalAuthEntry[], version: number) => void;
-
-  // Connection uptime
   connectedAt: number | null;
-  setConnectedAt: (ts: number | null) => void;
-
-  // Config profiles
-  savedProfiles: ConfigProfile[];
-  saveProfile: (name: string) => void;
-  loadProfile: (name: string) => void;
-  deleteProfile: (name: string) => void;
 }
 
-const DEFAULT_BOOT_NOTIFICATION: BootNotificationConfig = {
+// ─── Charger Slot (one per tab) ───────────────────────────────────────────────
+
+export interface ChargerSlot {
+  id: string;
+  label: string;
+  config: EmulatorConfig;
+  savedProfiles: ConfigProfile[];
+  runtime: ChargerRuntimeState;
+}
+
+// ─── Store Shape ─────────────────────────────────────────────────────────────
+
+export interface EmulatorStore {
+  chargers: ChargerSlot[];
+  activeChargerId: string;
+
+  // ── Tab management ──
+  addCharger: () => void;
+  removeCharger: (id: string) => void;
+  duplicateCharger: (id: string) => void;
+  setActiveCharger: (id: string) => void;
+  reorderChargers: (fromIndex: number, toIndex: number) => void;
+  updateChargerLabel: (id: string, label: string) => void;
+
+  // ── Per-charger config ──
+  updateConfig: (id: string, cfg: Partial<EmulatorConfig>) => void;
+  updateBootNotification: (
+    id: string,
+    fields: Partial<BootNotificationConfig>,
+  ) => void;
+  updateStationConfigKey: (id: string, key: string, value: string) => void;
+  updateSimulation: (id: string, fields: Partial<SimulationConfig>) => void;
+
+  // ── Per-charger runtime ──
+  setStatus: (id: string, status: ConnectionStatus) => void;
+  updateConnector: (
+    id: string,
+    connId: number,
+    data: Partial<ConnectorState>,
+  ) => void;
+  resetConnector: (id: string, connId: number) => void;
+  addLog: (id: string, log: Omit<OCPPLog, "id" | "timestamp">) => void;
+  clearLogs: (id: string) => void;
+  setIsUploading: (id: string, val: boolean) => void;
+  setUploadSecondsLeft: (id: string, val: number) => void;
+  setLocalAuthList: (
+    id: string,
+    list: LocalAuthEntry[],
+    version: number,
+  ) => void;
+  setConnectedAt: (id: string, ts: number | null) => void;
+
+  // ── Per-charger profiles ──
+  saveProfile: (id: string, name: string) => void;
+  loadProfile: (id: string, name: string) => void;
+  deleteProfile: (id: string, name: string) => void;
+
+  // ── Selector helper ──
+  getSlot: (id: string) => ChargerSlot | undefined;
+}
+
+// ─── Compatibility shim – so existing components work with useActiveCharger ──
+
+export type EmulatorState = ChargerSlot &
+  ChargerRuntimeState & {
+    // Bound actions (no id param, uses activeChargerId)
+    updateConfig: (cfg: Partial<EmulatorConfig>) => void;
+    updateBootNotification: (fields: Partial<BootNotificationConfig>) => void;
+    updateStationConfigKey: (key: string, value: string) => void;
+    updateSimulation: (fields: Partial<SimulationConfig>) => void;
+    setStatus: (status: ConnectionStatus) => void;
+    updateConnector: (connId: number, data: Partial<ConnectorState>) => void;
+    resetConnector: (connId: number) => void;
+    addLog: (log: Omit<OCPPLog, "id" | "timestamp">) => void;
+    clearLogs: () => void;
+    setIsUploading: (val: boolean) => void;
+    setUploadSecondsLeft: (val: number) => void;
+    setLocalAuthList: (list: LocalAuthEntry[], version: number) => void;
+    setConnectedAt: (ts: number | null) => void;
+    saveProfile: (name: string) => void;
+    loadProfile: (name: string) => void;
+    deleteProfile: (name: string) => void;
+  };
+
+// ─── Defaults ────────────────────────────────────────────────────────────────
+
+export const DEFAULT_BOOT_NOTIFICATION: BootNotificationConfig = {
   chargePointVendor: "Elmo",
   chargePointModel: "Virtual-Emulator-1",
   chargePointSerialNumber: "elm.001.00",
@@ -201,6 +278,17 @@ const DEFAULT_BOOT_NOTIFICATION: BootNotificationConfig = {
   imsi: "",
   meterType: "ELM NQC-ACDC",
   meterSerialNumber: "elm.001.00.01",
+};
+
+export const DEFAULT_MEASURANDS: MeasurandsConfig = {
+  energy: true,
+  power: true,
+  soc: false,
+  voltage: false,
+  current: false,
+  temperature: false,
+  frequency: false,
+  threePhase: false,
 };
 
 const DEFAULT_STATION_CONFIG: StationConfigKey[] = [
@@ -244,8 +332,36 @@ const DEFAULT_STATION_CONFIG: StationConfigKey[] = [
   { key: "WebSocketPingInterval", readonly: false, value: "600" },
 ];
 
-const makeDefaultConnector = (id: number, rfidTag: string): ConnectorState => ({
-  connectorId: id,
+const DEFAULT_SIMULATION: SimulationConfig = {
+  diagnosticFileName: "diagnostics.csv",
+  diagnosticUploadTime: 30,
+  diagnosticStatus: "Uploaded",
+  firmwareStatus: "Downloaded",
+  autoChargeTargetKWh: 30,
+  autoChargeDurationSec: 120,
+  autoChargeMeterIncrement: 250,
+  autoChargeSocEnabled: true,
+  measurands: DEFAULT_MEASURANDS,
+};
+
+const makeDefaultConfig = (index: number): EmulatorConfig => ({
+  endpoint: "ws://localhost:9000",
+  chargePointId: `CP-00${index}`,
+  ocppVersion: "ocpp1.6",
+  securityProfile: 0,
+  basicAuthPassword: "",
+  bootNotification: { ...DEFAULT_BOOT_NOTIFICATION },
+  stationConfig: DEFAULT_STATION_CONFIG.map((k) => ({ ...k })),
+  simulation: { ...DEFAULT_SIMULATION, measurands: { ...DEFAULT_MEASURANDS } },
+  rfidTag: "DEADBEEF",
+  numberOfConnectors: 1,
+});
+
+const makeDefaultConnector = (
+  connId: number,
+  rfidTag: string,
+): ConnectorState => ({
+  connectorId: connId,
   status: "Available",
   idTag: rfidTag,
   inTransaction: false,
@@ -258,84 +374,190 @@ const makeDefaultConnector = (id: number, rfidTag: string): ConnectorState => ({
   chargingProfiles: [],
 });
 
-const DEFAULT_CONFIG: EmulatorConfig = {
-  endpoint: "ws://localhost:9000",
-  chargePointId: "CP-001",
-  ocppVersion: "ocpp1.6",
-  securityProfile: 0,
-  basicAuthPassword: "",
-  bootNotification: DEFAULT_BOOT_NOTIFICATION,
-  stationConfig: DEFAULT_STATION_CONFIG,
-  simulation: {
-    diagnosticFileName: "diagnostics.csv",
-    diagnosticUploadTime: 30,
-    diagnosticStatus: "Uploaded",
-    firmwareStatus: "Downloaded",
-    autoChargeTargetKWh: 30,
-    autoChargeDurationSec: 120,
-    autoChargeMeterIncrement: 250,
-    autoChargeSocEnabled: true,
+const makeDefaultRuntime = (rfidTag: string): ChargerRuntimeState => ({
+  status: "disconnected",
+  connectors: {
+    1: makeDefaultConnector(1, rfidTag),
+    2: makeDefaultConnector(2, rfidTag),
   },
-  rfidTag: "DEADBEEF",
-  numberOfConnectors: 1,
+  logs: [],
+  isUploading: false,
+  uploadSecondsLeft: 0,
+  localAuthList: [],
+  localAuthListVersion: 0,
+  connectedAt: null,
+});
+
+export const makeDefaultSlot = (index: number): ChargerSlot => {
+  const cfg = makeDefaultConfig(index);
+  return {
+    id: nanoid(8),
+    label: `Charger ${index}`,
+    config: cfg,
+    savedProfiles: [],
+    runtime: makeDefaultRuntime(cfg.rfidTag),
+  };
 };
 
-export const useEmulatorStore = create<EmulatorState>()(
+// ─── Store ────────────────────────────────────────────────────────────────────
+
+const updateSlot = (
+  chargers: ChargerSlot[],
+  id: string,
+  updater: (slot: ChargerSlot) => ChargerSlot,
+): ChargerSlot[] => chargers.map((c) => (c.id === id ? updater(c) : c));
+
+const updateRuntime = (
+  chargers: ChargerSlot[],
+  id: string,
+  updater: (r: ChargerRuntimeState) => ChargerRuntimeState,
+): ChargerSlot[] =>
+  updateSlot(chargers, id, (slot) => ({
+    ...slot,
+    runtime: updater(slot.runtime),
+  }));
+
+export const useEmulatorStore = create<EmulatorStore>()(
   persist(
-    (set, _get) => ({
-      config: DEFAULT_CONFIG,
-      updateConfig: (newConfig) =>
-        set((s) => ({ config: { ...s.config, ...newConfig } })),
-      updateBootNotification: (fields) =>
-        set((s) => ({
-          config: {
-            ...s.config,
-            bootNotification: { ...s.config.bootNotification, ...fields },
-          },
-        })),
-      updateStationConfigKey: (key, value) =>
-        set((s) => ({
-          config: {
-            ...s.config,
-            stationConfig: s.config.stationConfig.map((k: StationConfigKey) =>
-              k.key === key ? { ...k, value } : k,
-            ),
-          },
-        })),
-      updateSimulation: (fields) =>
-        set((s) => ({
-          config: {
-            ...s.config,
-            simulation: { ...s.config.simulation, ...fields },
-          },
-        })),
+    (set, get) => ({
+      chargers: [makeDefaultSlot(1)],
+      activeChargerId: "",
 
-      status: "disconnected",
-      setStatus: (status) => set({ status }),
+      getSlot: (id) => get().chargers.find((c) => c.id === id),
 
-      connectors: {
-        1: makeDefaultConnector(1, DEFAULT_CONFIG.rfidTag),
-        2: makeDefaultConnector(2, DEFAULT_CONFIG.rfidTag),
-      },
-      updateConnector: (id, data) =>
-        set((s) => ({
-          connectors: {
-            ...s.connectors,
-            [id]: { ...s.connectors[id], ...data },
-          },
-        })),
-      resetConnector: (id) =>
-        set((s) => ({
-          connectors: {
-            ...s.connectors,
-            [id]: makeDefaultConnector(id, s.config.rfidTag),
-          },
-        })),
+      // ── Tab management ──────────────────────────────────────────────────────
 
-      logs: [],
-      addLog: (log) =>
+      addCharger: () =>
         set((s) => {
-          // Build OCPP-style raw message from real protocol data
+          const next = makeDefaultSlot(s.chargers.length + 1);
+          return { chargers: [...s.chargers, next], activeChargerId: next.id };
+        }),
+
+      removeCharger: (id) =>
+        set((s) => {
+          if (s.chargers.length <= 1) return s;
+          const filtered = s.chargers.filter((c) => c.id !== id);
+          const activeId =
+            s.activeChargerId === id
+              ? (filtered[filtered.length - 1]?.id ?? "")
+              : s.activeChargerId;
+          return { chargers: filtered, activeChargerId: activeId };
+        }),
+
+      duplicateCharger: (id) =>
+        set((s) => {
+          const src = s.chargers.find((c) => c.id === id);
+          if (!src) return s;
+          const dup: ChargerSlot = {
+            ...JSON.parse(JSON.stringify(src)),
+            id: nanoid(8),
+            label: `${src.label} (copy)`,
+            runtime: makeDefaultRuntime(src.config.rfidTag),
+          };
+          return {
+            chargers: [...s.chargers, dup],
+            activeChargerId: dup.id,
+          };
+        }),
+
+      setActiveCharger: (id) => set({ activeChargerId: id }),
+
+      reorderChargers: (fromIndex, toIndex) =>
+        set((s) => {
+          const arr = [...s.chargers];
+          const [moved] = arr.splice(fromIndex, 1);
+          arr.splice(toIndex, 0, moved);
+          return { chargers: arr };
+        }),
+
+      updateChargerLabel: (id, label) =>
+        set((s) => ({
+          chargers: updateSlot(s.chargers, id, (slot) => ({ ...slot, label })),
+        })),
+
+      // ── Config ──────────────────────────────────────────────────────────────
+
+      updateConfig: (id, cfg) =>
+        set((s) => ({
+          chargers: updateSlot(s.chargers, id, (slot) => ({
+            ...slot,
+            config: { ...slot.config, ...cfg },
+          })),
+        })),
+
+      updateBootNotification: (id, fields) =>
+        set((s) => ({
+          chargers: updateSlot(s.chargers, id, (slot) => ({
+            ...slot,
+            config: {
+              ...slot.config,
+              bootNotification: {
+                ...slot.config.bootNotification,
+                ...fields,
+              },
+            },
+          })),
+        })),
+
+      updateStationConfigKey: (id, key, value) =>
+        set((s) => ({
+          chargers: updateSlot(s.chargers, id, (slot) => ({
+            ...slot,
+            config: {
+              ...slot.config,
+              stationConfig: slot.config.stationConfig.map((k) =>
+                k.key === key ? { ...k, value } : k,
+              ),
+            },
+          })),
+        })),
+
+      updateSimulation: (id, fields) =>
+        set((s) => ({
+          chargers: updateSlot(s.chargers, id, (slot) => ({
+            ...slot,
+            config: {
+              ...slot.config,
+              simulation: { ...slot.config.simulation, ...fields },
+            },
+          })),
+        })),
+
+      // ── Runtime ─────────────────────────────────────────────────────────────
+
+      setStatus: (id, status) =>
+        set((s) => ({
+          chargers: updateRuntime(s.chargers, id, (r) => ({ ...r, status })),
+        })),
+
+      updateConnector: (id, connId, data) =>
+        set((s) => ({
+          chargers: updateRuntime(s.chargers, id, (r) => ({
+            ...r,
+            connectors: {
+              ...r.connectors,
+              [connId]: { ...r.connectors[connId], ...data },
+            },
+          })),
+        })),
+
+      resetConnector: (id, connId) =>
+        set((s) => {
+          const slot = s.chargers.find((c) => c.id === id);
+          if (!slot) return s;
+          return {
+            chargers: updateRuntime(s.chargers, id, (r) => ({
+              ...r,
+              connectors: {
+                ...r.connectors,
+                [connId]: makeDefaultConnector(connId, slot.config.rfidTag),
+              },
+            })),
+          };
+        }),
+
+      addLog: (id, log) =>
+        set((s) => {
           const typeId =
             log.direction === "Tx" ? 2 : log.direction === "Rx" ? 3 : 0;
           const rawMessage =
@@ -347,92 +569,220 @@ export const useEmulatorStore = create<EmulatorState>()(
                   ? [typeId, log.action, log.payload ?? {}]
                   : [log.action, log.payload ?? {}],
             );
+          const entry: OCPPLog = {
+            ...log,
+            id: nanoid(),
+            timestamp: new Date().toISOString(),
+            rawMessage,
+          };
           return {
-            logs: [
-              {
-                ...log,
-                id: nanoid(),
-                timestamp: new Date().toISOString(),
-                rawMessage,
-              },
-              ...s.logs,
-            ].slice(0, 500),
+            chargers: updateRuntime(s.chargers, id, (r) => ({
+              ...r,
+              logs: [entry, ...r.logs].slice(0, 500),
+            })),
           };
         }),
-      clearLogs: () => set({ logs: [] }),
 
-      isUploading: false,
-      uploadSecondsLeft: 0,
-      setIsUploading: (val) => set({ isUploading: val }),
-      setUploadSecondsLeft: (val) => set({ uploadSecondsLeft: val }),
-
-      localAuthList: [],
-      localAuthListVersion: 0,
-      setLocalAuthList: (list, version) =>
-        set({ localAuthList: list, localAuthListVersion: version }),
-
-      connectedAt: null,
-      setConnectedAt: (ts) => set({ connectedAt: ts }),
-
-      savedProfiles: [],
-      saveProfile: (name) =>
+      clearLogs: (id) =>
         set((s) => ({
-          savedProfiles: [
-            ...s.savedProfiles.filter((p: ConfigProfile) => p.name !== name),
-            {
-              name,
-              config: JSON.parse(JSON.stringify(s.config)),
-              createdAt: new Date().toISOString(),
-            },
-          ],
+          chargers: updateRuntime(s.chargers, id, (r) => ({ ...r, logs: [] })),
         })),
-      loadProfile: (name) =>
-        set((s) => {
-          const profile = s.savedProfiles.find(
-            (p: ConfigProfile) => p.name === name,
-          );
-          if (!profile) return s;
-          return { config: JSON.parse(JSON.stringify(profile.config)) };
-        }),
-      deleteProfile: (name) =>
+
+      setIsUploading: (id, val) =>
         set((s) => ({
-          savedProfiles: s.savedProfiles.filter(
-            (p: ConfigProfile) => p.name !== name,
-          ),
+          chargers: updateRuntime(s.chargers, id, (r) => ({
+            ...r,
+            isUploading: val,
+          })),
+        })),
+
+      setUploadSecondsLeft: (id, val) =>
+        set((s) => ({
+          chargers: updateRuntime(s.chargers, id, (r) => ({
+            ...r,
+            uploadSecondsLeft: val,
+          })),
+        })),
+
+      setLocalAuthList: (id, list, version) =>
+        set((s) => ({
+          chargers: updateRuntime(s.chargers, id, (r) => ({
+            ...r,
+            localAuthList: list,
+            localAuthListVersion: version,
+          })),
+        })),
+
+      setConnectedAt: (id, ts) =>
+        set((s) => ({
+          chargers: updateRuntime(s.chargers, id, (r) => ({
+            ...r,
+            connectedAt: ts,
+          })),
+        })),
+
+      // ── Profiles ────────────────────────────────────────────────────────────
+
+      saveProfile: (id, name) =>
+        set((s) => ({
+          chargers: updateSlot(s.chargers, id, (slot) => ({
+            ...slot,
+            savedProfiles: [
+              ...slot.savedProfiles.filter((p) => p.name !== name),
+              {
+                name,
+                config: JSON.parse(JSON.stringify(slot.config)),
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          })),
+        })),
+
+      loadProfile: (id, name) =>
+        set((s) => ({
+          chargers: updateSlot(s.chargers, id, (slot) => {
+            const profile = slot.savedProfiles.find((p) => p.name === name);
+            if (!profile) return slot;
+            return {
+              ...slot,
+              config: JSON.parse(JSON.stringify(profile.config)),
+            };
+          }),
+        })),
+
+      deleteProfile: (id, name) =>
+        set((s) => ({
+          chargers: updateSlot(s.chargers, id, (slot) => ({
+            ...slot,
+            savedProfiles: slot.savedProfiles.filter((p) => p.name !== name),
+          })),
         })),
     }),
     {
       name: "ocpp-emulator-storage",
-      version: 2,
-      // Only persist config, not runtime state
-      partialize: (s) => ({ config: s.config, savedProfiles: s.savedProfiles }),
-      // Deep-merge persisted config with defaults so new fields never crash
-      merge: (persisted: any, currentState: EmulatorState) => {
-        if (!persisted || !persisted.config) return currentState;
-        const pc = persisted.config;
+      version: 3,
+      // Only persist config + profiles per charger slot — NOT runtime state (logs/connectors)
+      partialize: (s) => ({
+        chargers: s.chargers.map((c) => ({
+          id: c.id,
+          label: c.label,
+          config: c.config,
+          savedProfiles: c.savedProfiles,
+        })),
+        activeChargerId: s.activeChargerId,
+      }),
+      // Restore runtime state with defaults when loading from storage
+      merge: (persisted: any, currentState: EmulatorStore) => {
+        if (!persisted) return currentState;
+
+        // v1/v2 migration: had flat config, not chargers[]
+        if (!Array.isArray(persisted.chargers)) {
+          const legacyConfig = persisted.config;
+          const slot = makeDefaultSlot(1);
+          if (legacyConfig) {
+            slot.config = {
+              ...makeDefaultConfig(1),
+              ...legacyConfig,
+              // Downgrade unsupported security profiles
+              securityProfile:
+                legacyConfig.securityProfile > 1
+                  ? 0
+                  : (legacyConfig.securityProfile ?? 0),
+              bootNotification: {
+                ...DEFAULT_BOOT_NOTIFICATION,
+                ...(legacyConfig.bootNotification ?? {}),
+              },
+              stationConfig:
+                Array.isArray(legacyConfig.stationConfig) &&
+                legacyConfig.stationConfig.length > 0
+                  ? legacyConfig.stationConfig
+                  : DEFAULT_STATION_CONFIG,
+              simulation: {
+                ...DEFAULT_SIMULATION,
+                ...(legacyConfig.simulation ?? {}),
+                measurands: {
+                  ...DEFAULT_MEASURANDS,
+                  ...(legacyConfig.simulation?.measurands ?? {}),
+                },
+              },
+            };
+            slot.savedProfiles = Array.isArray(persisted.savedProfiles)
+              ? persisted.savedProfiles
+              : [];
+          }
+          return {
+            ...currentState,
+            chargers: [
+              { ...slot, runtime: makeDefaultRuntime(slot.config.rfidTag) },
+            ],
+            activeChargerId: slot.id,
+          };
+        }
+
+        // v3 restore
+        const restoredChargers: ChargerSlot[] = persisted.chargers.map(
+          (c: Partial<ChargerSlot>) => {
+            const cfg = makeDefaultConfig(1);
+            const mergedConfig: EmulatorConfig = {
+              ...cfg,
+              ...(c.config ?? {}),
+              securityProfile:
+                (c.config?.securityProfile ?? 0) > 1
+                  ? 0
+                  : (c.config?.securityProfile ?? 0),
+              bootNotification: {
+                ...DEFAULT_BOOT_NOTIFICATION,
+                ...(c.config?.bootNotification ?? {}),
+              },
+              stationConfig:
+                Array.isArray(c.config?.stationConfig) &&
+                c.config?.stationConfig.length > 0
+                  ? c.config?.stationConfig
+                  : DEFAULT_STATION_CONFIG,
+              simulation: {
+                ...DEFAULT_SIMULATION,
+                ...(c.config?.simulation ?? {}),
+                measurands: {
+                  ...DEFAULT_MEASURANDS,
+                  ...(c.config?.simulation?.measurands ?? {}),
+                },
+              },
+            };
+            return {
+              id: c.id ?? nanoid(8),
+              label: c.label ?? "Charger",
+              config: mergedConfig,
+              savedProfiles: Array.isArray(c.savedProfiles)
+                ? c.savedProfiles
+                : [],
+              runtime: makeDefaultRuntime(mergedConfig.rfidTag),
+            };
+          },
+        );
+
+        const validChargers =
+          restoredChargers.length > 0 ? restoredChargers : [makeDefaultSlot(1)];
+        const activeId =
+          persisted.activeChargerId &&
+          validChargers.some((c) => c.id === persisted.activeChargerId)
+            ? persisted.activeChargerId
+            : validChargers[0].id;
+
         return {
           ...currentState,
-          savedProfiles: Array.isArray(persisted.savedProfiles)
-            ? persisted.savedProfiles
-            : [],
-          config: {
-            ...DEFAULT_CONFIG,
-            ...pc,
-            bootNotification: {
-              ...DEFAULT_BOOT_NOTIFICATION,
-              ...(pc.bootNotification ?? {}),
-            },
-            stationConfig:
-              Array.isArray(pc.stationConfig) && pc.stationConfig.length > 0
-                ? pc.stationConfig
-                : DEFAULT_STATION_CONFIG,
-            simulation: {
-              ...DEFAULT_CONFIG.simulation,
-              ...(pc.simulation ?? {}),
-            },
-          },
+          chargers: validChargers,
+          activeChargerId: activeId,
         };
       },
     },
   ),
 );
+
+// ─── Init active charger after hydration ─────────────────────────────────────
+// Called once on app boot to set activeChargerId if empty (first load)
+export function initActiveCharger() {
+  const s = useEmulatorStore.getState();
+  if (!s.activeChargerId && s.chargers.length > 0) {
+    useEmulatorStore.setState({ activeChargerId: s.chargers[0].id });
+  }
+}

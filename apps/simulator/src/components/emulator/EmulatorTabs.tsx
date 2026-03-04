@@ -1,10 +1,10 @@
 "use client";
 
-import { useEmulatorStore } from "@/store/emulatorStore";
+import { useActiveCharger } from "@/hooks/useActiveCharger";
 import { ConnectorPanel } from "./ConnectorPanel";
 
 export function ConnectorsView() {
-  const { config } = useEmulatorStore();
+  const { config } = useActiveCharger();
 
   return (
     <div className="flex-1">

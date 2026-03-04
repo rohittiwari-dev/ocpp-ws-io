@@ -30,8 +30,8 @@ import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useActiveCharger } from "@/hooks/useActiveCharger";
 import { ocppService } from "@/lib/ocppClient";
-import { useEmulatorStore } from "@/store/emulatorStore";
 
 /* ═══════════════════════════════════════════
    CUSTOM DROPDOWN (replaces Select)
@@ -213,7 +213,7 @@ type TabId = (typeof TABS)[number]["id"];
 
 function ProfilesSection() {
   const { savedProfiles, saveProfile, loadProfile, deleteProfile } =
-    useEmulatorStore();
+    useActiveCharger();
   const [profileName, setProfileName] = useState("");
 
   const handleSave = () => {
@@ -288,7 +288,7 @@ function ProfilesSection() {
    ═══════════════════════════════════════════ */
 
 function ConnectionTab() {
-  const { status, config, updateConfig } = useEmulatorStore();
+  const { status, config, updateConfig } = useActiveCharger();
   const locked = status === "connected" || status === "connecting";
 
   return (
@@ -389,12 +389,10 @@ function ConnectionTab() {
             disabled={locked}
             options={[
               { label: "0 — No Security", value: "0" },
-              { label: "1 — Basic Auth", value: "1" },
-              { label: "2 — TLS + Basic Auth", value: "2" },
-              { label: "3 — TLS + Client Cert", value: "3" },
+              { label: "1 — Basic Auth (password in URL)", value: "1" },
             ]}
             onChange={(v) =>
-              updateConfig({ securityProfile: Number(v) as 0 | 1 | 2 | 3 })
+              updateConfig({ securityProfile: Number(v) as 0 | 1 })
             }
           />
         </Field>
@@ -483,7 +481,7 @@ const BOOT_FIELDS: {
 ];
 
 function BootNotificationTab() {
-  const { status, config, updateBootNotification } = useEmulatorStore();
+  const { status, config, updateBootNotification } = useActiveCharger();
   const locked = status === "connected" || status === "connecting";
   const boot = config.bootNotification;
 
@@ -517,7 +515,7 @@ function BootNotificationTab() {
    ═══════════════════════════════════════════ */
 
 function StationConfigTab() {
-  const { config, updateStationConfigKey } = useEmulatorStore();
+  const { config, updateStationConfigKey } = useActiveCharger();
   const keys = config.stationConfig;
   const editableCount = keys.filter((k) => !k.readonly).length;
 
@@ -582,7 +580,7 @@ const FIRMWARE_STATUSES = [
 
 function SimulationTab() {
   const { config, updateSimulation, isUploading, uploadSecondsLeft, status } =
-    useEmulatorStore();
+    useActiveCharger();
   const { simulation } = config;
   const isConnected = status === "connected";
 
@@ -786,7 +784,7 @@ interface ComposerHistory {
 }
 
 function MessageComposerTab() {
-  const { status } = useEmulatorStore();
+  const { status } = useActiveCharger();
   const isConnected = status === "connected";
   const [action, setAction] = useState("Heartbeat");
   const [payload, setPayload] = useState("{}");

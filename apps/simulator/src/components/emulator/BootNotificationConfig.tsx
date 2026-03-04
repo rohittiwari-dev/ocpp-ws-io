@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useEmulatorStore } from "@/store/emulatorStore";
+import { useActiveCharger } from "@/hooks/useActiveCharger";
 
 const BOOT_FIELDS: { key: string; label: string; required?: boolean }[] = [
   { key: "chargePointVendor", label: "Charge Point Vendor", required: true },
@@ -25,7 +25,7 @@ const BOOT_FIELDS: { key: string; label: string; required?: boolean }[] = [
 ];
 
 export function BootNotificationConfig() {
-  const { config, updateBootNotification, status } = useEmulatorStore();
+  const { config, updateBootNotification, status } = useActiveCharger();
   const isConnected = status === "connected" || status === "connecting";
   const boot = config.bootNotification;
 

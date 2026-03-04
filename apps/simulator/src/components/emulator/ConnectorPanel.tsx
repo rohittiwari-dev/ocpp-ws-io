@@ -22,12 +22,9 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
+import { useActiveCharger } from "@/hooks/useActiveCharger";
 import { ocppService } from "@/lib/ocppClient";
-import {
-  type ConnectorStatus,
-  type StopReason,
-  useEmulatorStore,
-} from "@/store/emulatorStore";
+import type { ConnectorStatus, StopReason } from "@/store/emulatorStore";
 
 /* ──────────────────────────────────
    BASE UI COMPONENTS
@@ -255,7 +252,7 @@ export function ConnectorPanel({ connectorId }: { connectorId: number }) {
     status: globalStatus,
     connectors,
     updateConnector,
-  } = useEmulatorStore();
+  } = useActiveCharger();
   const connector = connectors[connectorId];
 
   const [selectedStatus, setSelectedStatus] = useState<ConnectorStatus>(

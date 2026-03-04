@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { AuthGate } from "@/components/emulator/AuthGate";
+import { ChargerTabBar } from "@/components/emulator/ChargerTabBar";
 import { ConfigPanel } from "@/components/emulator/ConfigPanel";
 import { ConnectorsView } from "@/components/emulator/EmulatorTabs";
 import { HeaderBar } from "@/components/emulator/HeaderBar";
@@ -22,19 +23,22 @@ export default function Home() {
     if (saved === "true") setConfigOpen(true);
   }, []);
 
-  const toggleConfig = useCallback(() => {
+  const toggleConfig = () => {
     setConfigOpen((v) => {
       const next = !v;
       localStorage.setItem("configPanelOpen", String(next));
       return next;
     });
-  }, []);
+  };
 
   return (
     <AuthGate>
       <main className="h-screen w-screen flex flex-col overflow-hidden">
         {/* ── Header ── */}
         <HeaderBar onSettingsOpen={toggleConfig} />
+
+        {/* ── Charger Tab Bar ── */}
+        <ChargerTabBar />
 
         {/* ── 3-Panel Resizable Layout ── */}
         <ResizablePanelGroup orientation="horizontal" className="flex-1">

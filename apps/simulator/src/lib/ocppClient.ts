@@ -9,7 +9,17 @@ import {
 
 type Timer = ReturnType<typeof setInterval>;
 
+// ─── Per-Charger Accessors ────────────────────────────────────────────────────
+
+function getSlotState(chargerId: string) {
+  const s = useEmulatorStore.getState();
+  const slot = s.chargers.find((c) => c.id === chargerId);
+  if (!slot) throw new Error(`No charger slot for id: ${chargerId}`);
+  return { slot, runtime: slot.runtime, config: slot.config, store: s };
+}
+
 class OCPPService {
+  private chargerId: string;
   private client: BrowserOCPPClient | null = null;
   private heartbeatTimer: Timer | null = null;
   private meterTimers: Record<number, Timer> = {};
@@ -17,13 +27,24 @@ class OCPPService {
   private reservationTimers: Record<number, Timer> = {};
   private autoChargeTimers: Record<number, Timer> = {};
 
-  // ─── Connection ──────────────────────────────────────────────────────────
+  constructor(chargerId: string) {
+    this.chargerId = chargerId;
+  }
+
+  // ─── Store helpers ────────────────────────────────────────────────────────
+
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: we may need this later
+  private get store() {
+    return useEmulatorStore.getState();
+  }
+
+  // ─── Connection ────────────────────────────────────────────────────────────
 
   async connect() {
-    const { config, setStatus, addLog } = useEmulatorStore.getState();
+    const { config, store } = getSlotState(this.chargerId);
     if (this.client) await this.disconnect();
 
-    setStatus("connecting");
+    store.setStatus(this.chargerId, "connecting");
 
     try {
       this.client = new BrowserOCPPClient({
@@ -33,16 +54,16 @@ class OCPPService {
         reconnect: true,
         maxReconnects: 5,
         logging: false,
-        ...(config.securityProfile > 0 && config.basicAuthPassword
+        ...(config.securityProfile === 1 && config.basicAuthPassword
           ? { password: config.basicAuthPassword }
           : {}),
       });
 
-      // ── Events (library uses 'open', 'close', 'error', 'connecting') ──
       this.client.on("open", () => {
-        setStatus("connected");
-        useEmulatorStore.getState().setConnectedAt(Date.now());
-        addLog({
+        const s = useEmulatorStore.getState();
+        s.setStatus(this.chargerId, "connected");
+        s.setConnectedAt(this.chargerId, Date.now());
+        s.addLog(this.chargerId, {
           direction: "System",
           action: "Connected",
           payload: { url: config.endpoint, protocol: config.ocppVersion },
@@ -51,10 +72,11 @@ class OCPPService {
       });
 
       this.client.on("error", (err: Event | Error) => {
-        setStatus("faulted");
         const message =
           err instanceof Error ? err.message : "WebSocket error event";
-        addLog({
+        const s = useEmulatorStore.getState();
+        s.setStatus(this.chargerId, "faulted");
+        s.addLog(this.chargerId, {
           direction: "Error",
           action: "WebSocket Error",
           payload: { message },
@@ -62,21 +84,22 @@ class OCPPService {
       });
 
       this.client.on("close", (info: { code: number; reason: string }) => {
-        setStatus("disconnected");
-        useEmulatorStore.getState().setConnectedAt(null);
+        const s = useEmulatorStore.getState();
+        s.setStatus(this.chargerId, "disconnected");
+        s.setConnectedAt(this.chargerId, null);
         this.clearAllTimers();
-        addLog({
+        s.addLog(this.chargerId, {
           direction: "System",
           action: "Disconnected",
           payload: { code: info.code, reason: info.reason },
         });
-        // Reset connectors
-        const { config: cfg, resetConnector } = useEmulatorStore.getState();
-        for (let i = 1; i <= cfg.numberOfConnectors; i++) resetConnector(i);
+        const slot = s.chargers.find((c) => c.id === this.chargerId);
+        const n = slot?.config.numberOfConnectors ?? 1;
+        for (let i = 1; i <= n; i++) s.resetConnector(this.chargerId, i);
       });
 
       this.client.on("connecting", (info: { url: string }) => {
-        addLog({
+        useEmulatorStore.getState().addLog(this.chargerId, {
           direction: "System",
           action: "Connecting",
           payload: { url: info.url },
@@ -86,7 +109,7 @@ class OCPPService {
       this.client.on(
         "reconnect",
         (info: { attempt: number; delay: number }) => {
-          addLog({
+          useEmulatorStore.getState().addLog(this.chargerId, {
             direction: "System",
             action: "Reconnecting",
             payload: info,
@@ -94,16 +117,13 @@ class OCPPService {
         },
       );
 
-      // Register CSMS handlers BEFORE connecting
       this.registerHandlers();
-
-      // Async connect
       await this.client.connect();
     } catch (err: unknown) {
-      setStatus("faulted");
       const msg =
         err instanceof Error ? err.message : "Failed to create client";
-      useEmulatorStore.getState().addLog({
+      useEmulatorStore.getState().setStatus(this.chargerId, "faulted");
+      useEmulatorStore.getState().addLog(this.chargerId, {
         direction: "Error",
         action: "Connect Failed",
         payload: { message: msg },
@@ -114,12 +134,10 @@ class OCPPService {
   async disconnect() {
     try {
       await this.client?.close({ code: 1000, reason: "User disconnect" });
-    } catch (_) {
-      /* ignore close errors */
-    }
+    } catch (_) {}
     this.client = null;
     this.clearAllTimers();
-    useEmulatorStore.getState().setStatus("disconnected");
+    useEmulatorStore.getState().setStatus(this.chargerId, "disconnected");
   }
 
   private clearAllTimers() {
@@ -136,17 +154,16 @@ class OCPPService {
   }
 
   // ─── Incoming CSMS Handlers ───────────────────────────────────────────────
-  //     Handlers receive { params, messageId, method, protocol, signal }
-  //     They must return the response payload.
 
   private registerHandlers() {
     if (!this.client) return;
 
+    const cid = this.chargerId;
+
     // ── Reset ──
     this.client.handle("Reset", (ctx) => {
       const payload = ctx.params as { type: string };
-      const { addLog } = useEmulatorStore.getState();
-      addLog({
+      useEmulatorStore.getState().addLog(cid, {
         direction: "Rx",
         action: "Reset",
         payload,
@@ -164,15 +181,17 @@ class OCPPService {
     // ── RemoteStartTransaction ──
     this.client.handle("RemoteStartTransaction", (ctx) => {
       const payload = ctx.params as { connectorId?: number; idTag: string };
-      const { addLog, connectors } = useEmulatorStore.getState();
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers.find((c) => c.id === cid);
       const connId = payload.connectorId ?? 1;
-      addLog({
+      s.addLog(cid, {
         direction: "Rx",
         action: "RemoteStartTransaction",
         payload,
         ocppMessageId: ctx.messageId,
       });
-      if (connectors[connId]?.inTransaction) return { status: "Rejected" };
+      if (slot?.runtime.connectors[connId]?.inTransaction)
+        return { status: "Rejected" };
       setTimeout(() => this.startTransaction(connId, payload.idTag), 500);
       return { status: "Accepted" };
     });
@@ -180,16 +199,20 @@ class OCPPService {
     // ── RemoteStopTransaction ──
     this.client.handle("RemoteStopTransaction", (ctx) => {
       const payload = ctx.params as { transactionId: number };
-      const { addLog, connectors, config } = useEmulatorStore.getState();
-      addLog({
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers.find((c) => c.id === cid);
+      s.addLog(cid, {
         direction: "Rx",
         action: "RemoteStopTransaction",
         payload,
         ocppMessageId: ctx.messageId,
       });
+      const n = slot?.config.numberOfConnectors ?? 1;
       let connId: number | null = null;
-      for (let i = 1; i <= config.numberOfConnectors; i++) {
-        if (connectors[i]?.transactionId === payload.transactionId) {
+      for (let i = 1; i <= n; i++) {
+        if (
+          slot?.runtime.connectors[i]?.transactionId === payload.transactionId
+        ) {
           connId = i;
           break;
         }
@@ -205,10 +228,10 @@ class OCPPService {
         requestedMessage: string;
         connectorId?: number;
       };
-      const { addLog, connectors, isUploading, config } =
-        useEmulatorStore.getState();
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers.find((c) => c.id === cid);
       const connId = payload.connectorId ?? 1;
-      addLog({
+      s.addLog(cid, {
         direction: "Rx",
         action: "TriggerMessage",
         payload,
@@ -217,24 +240,30 @@ class OCPPService {
       const { requestedMessage } = payload;
       if (
         requestedMessage === "MeterValues" &&
-        !connectors[connId]?.inTransaction
+        !slot?.runtime.connectors[connId]?.inTransaction
       )
         return { status: "Rejected" };
       setTimeout(() => {
         if (requestedMessage === "Heartbeat") this.sendHeartbeat();
         else if (requestedMessage === "BootNotification")
           this.sendBootNotification();
-        else if (requestedMessage === "StatusNotification")
-          this.sendStatusNotification(
-            connId,
-            connectors[connId]?.status ?? "Available",
-          );
-        else if (requestedMessage === "MeterValues")
+        else if (requestedMessage === "StatusNotification") {
+          const st =
+            useEmulatorStore.getState().chargers.find((c) => c.id === cid)
+              ?.runtime.connectors[connId]?.status ?? "Available";
+          this.sendStatusNotification(connId, st);
+        } else if (requestedMessage === "MeterValues")
           this.sendMeterValues(connId);
         else if (requestedMessage === "DiagnosticsStatusNotification") {
-          this.sendDiagnosticsStatus(isUploading ? "Uploading" : "Idle");
+          const isUp =
+            useEmulatorStore.getState().chargers.find((c) => c.id === cid)
+              ?.runtime.isUploading ?? false;
+          this.sendDiagnosticsStatus(isUp ? "Uploading" : "Idle");
         } else if (requestedMessage === "FirmwareStatusNotification") {
-          this.sendFirmwareStatus(config.simulation.firmwareStatus);
+          const fw =
+            useEmulatorStore.getState().chargers.find((c) => c.id === cid)
+              ?.config.simulation.firmwareStatus ?? "Downloaded";
+          this.sendFirmwareStatus(fw);
         }
       }, 200);
       return { status: "Accepted" };
@@ -243,8 +272,12 @@ class OCPPService {
     // ── GetConfiguration ──
     this.client.handle("GetConfiguration", (ctx) => {
       const payload = ctx.params as { key?: string[] };
-      const { addLog, config } = useEmulatorStore.getState();
-      addLog({
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers?.find((c) => c.id === cid);
+      if (!slot) {
+        return { status: "Rejected" };
+      }
+      s.addLog(cid, {
         direction: "Rx",
         action: "GetConfiguration",
         payload,
@@ -252,14 +285,14 @@ class OCPPService {
       });
       const keys = payload?.key;
       const configurationKey = keys?.length
-        ? config.stationConfig.filter((k: StationConfigKey) =>
+        ? slot.config.stationConfig.filter((k: StationConfigKey) =>
             keys.includes(k.key),
           )
-        : config.stationConfig;
+        : slot.config.stationConfig;
       const unknownKey = keys?.length
         ? keys.filter(
             (k: string) =>
-              !config.stationConfig.find(
+              !slot.config.stationConfig.find(
                 (sc: StationConfigKey) => sc.key === k,
               ),
           )
@@ -270,54 +303,61 @@ class OCPPService {
     // ── ChangeConfiguration ──
     this.client.handle("ChangeConfiguration", (ctx) => {
       const payload = ctx.params as { key: string; value: string };
-      const { addLog, config, updateStationConfigKey } =
-        useEmulatorStore.getState();
-      addLog({
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers?.find((c) => c.id === cid);
+      if (!slot) {
+        return { status: "Rejected" };
+      }
+      s.addLog(cid, {
         direction: "Rx",
         action: "ChangeConfiguration",
         payload,
         ocppMessageId: ctx.messageId,
       });
-      const found = config.stationConfig.find(
+      const found = slot.config.stationConfig.find(
         (k: StationConfigKey) => k.key === payload.key,
       );
       if (!found) return { status: "NotSupported" };
       if (found.readonly) return { status: "Rejected" };
-      updateStationConfigKey(payload.key, payload.value);
+      s.updateStationConfigKey(cid, payload.key, payload.value);
       return { status: "Accepted" };
     });
 
     // ── UnlockConnector ──
     this.client.handle("UnlockConnector", (ctx) => {
       const payload = ctx.params as { connectorId: number };
-      const { addLog, connectors } = useEmulatorStore.getState();
-      addLog({
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers.find((c) => c.id === cid);
+      s.addLog(cid, {
         direction: "Rx",
         action: "UnlockConnector",
         payload,
         ocppMessageId: ctx.messageId,
       });
-      const connector = connectors[payload.connectorId];
+      const connector = slot?.runtime.connectors[payload.connectorId];
       return { status: connector?.unlockStatus ?? "UnlockFailed" };
     });
 
     // ── GetDiagnostics ──
     this.client.handle("GetDiagnostics", (ctx) => {
-      const { addLog, config } = useEmulatorStore.getState();
-      addLog({
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers?.find((c) => c.id === cid);
+      if (!slot) {
+        return { status: "Rejected" };
+      }
+      s.addLog(cid, {
         direction: "Rx",
         action: "GetDiagnostics",
         payload: ctx.params,
         ocppMessageId: ctx.messageId,
       });
       this.startDiagnosticsUpload();
-      return { fileName: config.simulation.diagnosticFileName };
+      return { fileName: slot.config.simulation.diagnosticFileName };
     });
 
     // ── UpdateFirmware ──
     this.client.handle("UpdateFirmware", (ctx) => {
-      const { addLog } = useEmulatorStore.getState();
-      addLog({
+      useEmulatorStore.getState().addLog(cid, {
         direction: "Rx",
         action: "UpdateFirmware",
         payload: ctx.params,
@@ -332,7 +372,7 @@ class OCPPService {
 
     // ── ClearCache ──
     this.client.handle("ClearCache", (ctx) => {
-      useEmulatorStore.getState().addLog({
+      useEmulatorStore.getState().addLog(cid, {
         direction: "Rx",
         action: "ClearCache",
         payload: {},
@@ -347,8 +387,12 @@ class OCPPService {
         connectorId: number;
         type: "Inoperative" | "Operative";
       };
-      const { addLog, updateConnector } = useEmulatorStore.getState();
-      addLog({
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers?.find((c) => c.id === cid);
+      if (!slot) {
+        return { status: "Rejected" };
+      }
+      s.addLog(cid, {
         direction: "Rx",
         action: "ChangeAvailability",
         payload,
@@ -357,14 +401,14 @@ class OCPPService {
       const newStatus =
         payload.type === "Inoperative" ? "Unavailable" : "Available";
       if (payload.connectorId === 0) {
-        // All connectors
-        const { config } = useEmulatorStore.getState();
-        for (let i = 1; i <= config.numberOfConnectors; i++) {
-          updateConnector(i, { status: newStatus as any });
+        for (let i = 1; i <= slot.config.numberOfConnectors; i++) {
+          s.updateConnector(cid, i, { status: newStatus as any });
           this.sendStatusNotification(i, newStatus);
         }
       } else {
-        updateConnector(payload.connectorId, { status: newStatus as any });
+        s.updateConnector(cid, payload.connectorId, {
+          status: newStatus as any,
+        });
         this.sendStatusNotification(payload.connectorId, newStatus);
       }
       return { status: "Accepted" };
@@ -379,21 +423,23 @@ class OCPPService {
         parentIdTag?: string;
         reservationId: number;
       };
-      const { addLog, connectors, updateConnector } =
-        useEmulatorStore.getState();
-      addLog({
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers?.find((c) => c.id === cid);
+      if (!slot) {
+        return { status: "Rejected" };
+      }
+      s.addLog(cid, {
         direction: "Rx",
         action: "ReserveNow",
         payload,
         ocppMessageId: ctx.messageId,
       });
-      const conn = connectors[payload.connectorId];
+      const conn = slot.runtime.connectors[payload.connectorId];
       if (!conn) return { status: "Rejected" };
       if (conn.inTransaction) return { status: "Occupied" };
       if (conn.status === "Faulted") return { status: "Faulted" };
       if (conn.status === "Unavailable") return { status: "Unavailable" };
-      // Set reservation
-      updateConnector(payload.connectorId, {
+      s.updateConnector(cid, payload.connectorId, {
         status: "Reserved",
         reservation: {
           reservationId: payload.reservationId,
@@ -403,21 +449,23 @@ class OCPPService {
         },
       });
       this.sendStatusNotification(payload.connectorId, "Reserved");
-      // Auto-expire reservation
       const expiryMs = new Date(payload.expiryDate).getTime() - Date.now();
       if (expiryMs > 0) {
         this.reservationTimers[payload.connectorId] = setTimeout(() => {
-          const { connectors: c } = useEmulatorStore.getState();
-          if (
-            c[payload.connectorId]?.reservation?.reservationId ===
-            payload.reservationId
-          ) {
-            useEmulatorStore.getState().updateConnector(payload.connectorId, {
-              status: "Available",
-              reservation: null,
-            });
+          const current = useEmulatorStore
+            .getState()
+            .chargers.find((c) => c.id === cid)?.runtime.connectors[
+            payload.connectorId
+          ];
+          if (current?.reservation?.reservationId === payload.reservationId) {
+            useEmulatorStore
+              .getState()
+              .updateConnector(cid, payload.connectorId, {
+                status: "Available",
+                reservation: null,
+              });
             this.sendStatusNotification(payload.connectorId, "Available");
-            useEmulatorStore.getState().addLog({
+            useEmulatorStore.getState().addLog(cid, {
               direction: "System",
               action: "ReservationExpired",
               payload: {
@@ -434,19 +482,21 @@ class OCPPService {
     // ── CancelReservation ──
     this.client.handle("CancelReservation", (ctx) => {
       const payload = ctx.params as { reservationId: number };
-      const { addLog, connectors, updateConnector, config } =
-        useEmulatorStore.getState();
-      addLog({
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers?.find((c) => c.id === cid);
+      if (!slot) return { status: "Rejected" };
+      s.addLog(cid, {
         direction: "Rx",
         action: "CancelReservation",
         payload,
         ocppMessageId: ctx.messageId,
       });
-      for (let i = 1; i <= config.numberOfConnectors; i++) {
+      for (let i = 1; i <= slot.config.numberOfConnectors; i++) {
         if (
-          connectors[i]?.reservation?.reservationId === payload.reservationId
+          slot.runtime.connectors[i]?.reservation?.reservationId ===
+          payload.reservationId
         ) {
-          updateConnector(i, { status: "Available", reservation: null });
+          s.updateConnector(cid, i, { status: "Available", reservation: null });
           if (this.reservationTimers[i]) {
             clearTimeout(this.reservationTimers[i]);
             delete this.reservationTimers[i];
@@ -464,27 +514,33 @@ class OCPPService {
         connectorId: number;
         csChargingProfiles: ChargingProfile;
       };
-      const { addLog, connectors, updateConnector } =
-        useEmulatorStore.getState();
-      addLog({
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers?.find((c) => c.id === cid);
+      if (!slot) {
+        return { status: "Rejected" };
+      }
+      s.addLog(cid, {
         direction: "Rx",
         action: "SetChargingProfile",
         payload,
         ocppMessageId: ctx.messageId,
       });
-      const conn = connectors[payload.connectorId];
+      const conn = slot.runtime.connectors[payload.connectorId];
       if (!conn && payload.connectorId !== 0) return { status: "Rejected" };
-      // Store profile (replace existing with same id + stackLevel)
       const profile = payload.csChargingProfiles;
       const targetId = payload.connectorId === 0 ? 1 : payload.connectorId;
-      const existing = (connectors[targetId]?.chargingProfiles ?? []).filter(
+      const existing = (
+        slot.runtime.connectors[targetId]?.chargingProfiles ?? []
+      ).filter(
         (p) =>
           !(
             p.chargingProfileId === profile.chargingProfileId &&
             p.stackLevel === profile.stackLevel
           ),
       );
-      updateConnector(targetId, { chargingProfiles: [...existing, profile] });
+      s.updateConnector(cid, targetId, {
+        chargingProfiles: [...existing, profile],
+      });
       return { status: "Accepted" };
     });
 
@@ -496,23 +552,26 @@ class OCPPService {
         chargingProfilePurpose?: string;
         stackLevel?: number;
       };
-      const { addLog, connectors, updateConnector, config } =
-        useEmulatorStore.getState();
-      addLog({
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers?.find((c) => c.id === cid);
+      if (!slot) {
+        return { status: "Rejected" };
+      }
+      s.addLog(cid, {
         direction: "Rx",
         action: "ClearChargingProfile",
         payload,
         ocppMessageId: ctx.messageId,
       });
       let found = false;
-      for (let i = 1; i <= config.numberOfConnectors; i++) {
+      for (let i = 1; i <= slot.config.numberOfConnectors; i++) {
         if (
           payload.connectorId !== undefined &&
           payload.connectorId !== i &&
           payload.connectorId !== 0
         )
           continue;
-        const profiles = connectors[i]?.chargingProfiles ?? [];
+        const profiles = slot.runtime.connectors[i]?.chargingProfiles ?? [];
         const filtered = profiles.filter((p) => {
           if (payload.id !== undefined && p.chargingProfileId === payload.id)
             return false;
@@ -530,7 +589,7 @@ class OCPPService {
         });
         if (filtered.length !== profiles.length) {
           found = true;
-          updateConnector(i, { chargingProfiles: filtered });
+          s.updateConnector(cid, i, { chargingProfiles: filtered });
         }
       }
       return { status: found ? "Accepted" : "Unknown" };
@@ -543,17 +602,20 @@ class OCPPService {
         duration: number;
         chargingRateUnit?: "A" | "W";
       };
-      const { addLog, connectors } = useEmulatorStore.getState();
-      addLog({
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers?.find((c) => c.id === cid);
+      if (!slot) {
+        return { status: "Rejected" };
+      }
+      s.addLog(cid, {
         direction: "Rx",
         action: "GetCompositeSchedule",
         payload,
         ocppMessageId: ctx.messageId,
       });
-      const conn = connectors[payload.connectorId];
+      const conn = slot.runtime.connectors[payload.connectorId];
       if (!conn || conn.chargingProfiles.length === 0)
         return { status: "Rejected" };
-      // Return the highest stack-level profile's schedule
       const sorted = [...conn.chargingProfiles].sort(
         (a, b) => b.stackLevel - a.stackLevel,
       );
@@ -573,46 +635,52 @@ class OCPPService {
         localAuthorizationList?: LocalAuthEntry[];
         updateType: "Differential" | "Full";
       };
-      const { addLog, localAuthList, localAuthListVersion, setLocalAuthList } =
-        useEmulatorStore.getState();
-      addLog({
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers?.find((c) => c.id === cid);
+      if (!slot) {
+        return { status: "NotSupported" };
+      }
+      s.addLog(cid, {
         direction: "Rx",
         action: "SendLocalList",
         payload,
         ocppMessageId: ctx.messageId,
       });
       if (
-        payload.listVersion <= localAuthListVersion &&
+        payload.listVersion <= slot.runtime.localAuthListVersion &&
         payload.updateType === "Differential"
       ) {
         return { status: "VersionMismatch" };
       }
       const newEntries = payload.localAuthorizationList ?? [];
       if (payload.updateType === "Full") {
-        setLocalAuthList(newEntries, payload.listVersion);
+        s.setLocalAuthList(cid, newEntries, payload.listVersion);
       } else {
-        // Differential: merge entries
-        const merged = [...localAuthList];
+        const merged = [...slot.runtime.localAuthList];
         newEntries.forEach((entry) => {
           const idx = merged.findIndex((e) => e.idTag === entry.idTag);
           if (idx >= 0) merged[idx] = entry;
           else merged.push(entry);
         });
-        setLocalAuthList(merged, payload.listVersion);
+        s.setLocalAuthList(cid, merged, payload.listVersion);
       }
       return { status: "Accepted" };
     });
 
     // ── GetLocalListVersion ──
     this.client.handle("GetLocalListVersion", (ctx) => {
-      const { addLog, localAuthListVersion } = useEmulatorStore.getState();
-      addLog({
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers?.find((c) => c.id === cid);
+      if (!slot) {
+        return { status: "Rejected" };
+      }
+      s.addLog(cid, {
         direction: "Rx",
         action: "GetLocalListVersion",
         payload: {},
         ocppMessageId: ctx.messageId,
       });
-      return { listVersion: localAuthListVersion };
+      return { listVersion: slot.runtime.localAuthListVersion };
     });
 
     // ── DataTransfer (CSMS → CP) ──
@@ -622,8 +690,7 @@ class OCPPService {
         messageId?: string;
         data?: string;
       };
-      const { addLog } = useEmulatorStore.getState();
-      addLog({
+      useEmulatorStore.getState().addLog(cid, {
         direction: "Rx",
         action: "DataTransfer",
         payload,
@@ -638,10 +705,13 @@ class OCPPService {
         requestedMessage: string;
         connectorId?: number;
       };
-      const { addLog, connectors, isUploading, config } =
-        useEmulatorStore.getState();
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers?.find((c) => c.id === cid);
+      if (!slot) {
+        return { status: "Rejected" };
+      }
       const connId = payload.connectorId ?? 1;
-      addLog({
+      s.addLog(cid, {
         direction: "Rx",
         action: "ExtendedTriggerMessage",
         payload,
@@ -651,25 +721,34 @@ class OCPPService {
         const msg = payload.requestedMessage;
         if (msg === "BootNotification") this.sendBootNotification();
         else if (msg === "Heartbeat") this.sendHeartbeat();
-        else if (msg === "StatusNotification")
-          this.sendStatusNotification(
-            connId,
-            connectors[connId]?.status ?? "Available",
-          );
-        else if (msg === "MeterValues" && connectors[connId]?.inTransaction)
+        else if (msg === "StatusNotification") {
+          const st =
+            useEmulatorStore.getState().chargers.find((c) => c.id === cid)
+              ?.runtime.connectors[connId]?.status ?? "Available";
+          this.sendStatusNotification(connId, st);
+        } else if (
+          msg === "MeterValues" &&
+          slot.runtime.connectors[connId]?.inTransaction
+        )
           this.sendMeterValues(connId);
         else if (msg === "FirmwareStatusNotification")
-          this.sendFirmwareStatus(config.simulation.firmwareStatus);
+          this.sendFirmwareStatus(slot.config.simulation.firmwareStatus);
         else if (msg === "LogStatusNotification")
-          this.sendDiagnosticsStatus(isUploading ? "Uploading" : "Idle");
+          this.sendDiagnosticsStatus(
+            slot.runtime.isUploading ? "Uploading" : "Idle",
+          );
       }, 200);
       return { status: "Accepted" };
     });
 
     // ── GetLog ──
     this.client.handle("GetLog", (ctx) => {
-      const { addLog, config } = useEmulatorStore.getState();
-      addLog({
+      const s = useEmulatorStore.getState();
+      const slot = s.chargers?.find((c) => c.id === cid);
+      if (!slot) {
+        return { status: "Rejected" };
+      }
+      s.addLog(cid, {
         direction: "Rx",
         action: "GetLog",
         payload: ctx.params,
@@ -678,14 +757,13 @@ class OCPPService {
       this.startDiagnosticsUpload();
       return {
         status: "Accepted",
-        filename: config.simulation.diagnosticFileName,
+        filename: slot.config.simulation.diagnosticFileName,
       };
     });
 
     // ── SignedUpdateFirmware ──
     this.client.handle("SignedUpdateFirmware", (ctx) => {
-      const { addLog } = useEmulatorStore.getState();
-      addLog({
+      useEmulatorStore.getState().addLog(cid, {
         direction: "Rx",
         action: "SignedUpdateFirmware",
         payload: ctx.params,
@@ -700,8 +778,7 @@ class OCPPService {
 
     // ── InstallCertificate ──
     this.client.handle("InstallCertificate", (ctx) => {
-      const { addLog } = useEmulatorStore.getState();
-      addLog({
+      useEmulatorStore.getState().addLog(cid, {
         direction: "Rx",
         action: "InstallCertificate",
         payload: ctx.params,
@@ -712,8 +789,7 @@ class OCPPService {
 
     // ── DeleteCertificate ──
     this.client.handle("DeleteCertificate", (ctx) => {
-      const { addLog } = useEmulatorStore.getState();
-      addLog({
+      useEmulatorStore.getState().addLog(cid, {
         direction: "Rx",
         action: "DeleteCertificate",
         payload: ctx.params,
@@ -724,8 +800,7 @@ class OCPPService {
 
     // ── GetInstalledCertificateIds ──
     this.client.handle("GetInstalledCertificateIds", (ctx) => {
-      const { addLog } = useEmulatorStore.getState();
-      addLog({
+      useEmulatorStore.getState().addLog(cid, {
         direction: "Rx",
         action: "GetInstalledCertificateIds",
         payload: ctx.params,
@@ -736,8 +811,7 @@ class OCPPService {
 
     // ── CertificateSigned ──
     this.client.handle("CertificateSigned", (ctx) => {
-      const { addLog } = useEmulatorStore.getState();
-      addLog({
+      useEmulatorStore.getState().addLog(cid, {
         direction: "Rx",
         action: "CertificateSigned",
         payload: ctx.params,
@@ -751,10 +825,10 @@ class OCPPService {
 
   async sendBootNotification() {
     if (!this.client) return;
-    const { addLog, config } = useEmulatorStore.getState();
-    const payload = { ...config.bootNotification };
+    const { slot, store } = getSlotState(this.chargerId);
+    const payload = { ...slot.config.bootNotification };
     const msgId = nanoid(8);
-    addLog({
+    store.addLog(this.chargerId, {
       direction: "Tx",
       action: "BootNotification",
       payload,
@@ -765,7 +839,7 @@ class OCPPService {
         status: string;
         interval?: number;
       };
-      addLog({
+      store.addLog(this.chargerId, {
         direction: "Rx",
         action: "BootNotificationConf",
         payload: res,
@@ -773,16 +847,22 @@ class OCPPService {
       });
       if (res.status === "Accepted") {
         const interval = res.interval ?? 300;
-        useEmulatorStore
-          .getState()
-          .updateStationConfigKey("HeartbeatInterval", String(interval));
+        store.updateStationConfigKey(
+          this.chargerId,
+          "HeartbeatInterval",
+          String(interval),
+        );
         this.startHeartbeatTimer(interval);
-        const { config: cfg } = useEmulatorStore.getState();
-        for (let i = 1; i <= cfg.numberOfConnectors; i++)
+        const n =
+          useEmulatorStore
+            .getState()
+            .chargers.find((c) => c.id === this.chargerId)?.config
+            .numberOfConnectors ?? 1;
+        for (let i = 1; i <= n; i++)
           this.sendStatusNotification(i, "Available");
       }
     } catch (err) {
-      addLog({
+      store.addLog(this.chargerId, {
         direction: "Error",
         action: "BootNotification",
         payload: { message: String(err) },
@@ -801,9 +881,9 @@ class OCPPService {
 
   async sendHeartbeat() {
     if (!this.client) return;
-    const { addLog } = useEmulatorStore.getState();
+    const s = useEmulatorStore.getState();
     const msgId = nanoid(8);
-    addLog({
+    s.addLog(this.chargerId, {
       direction: "Tx",
       action: "Heartbeat",
       payload: {},
@@ -811,14 +891,14 @@ class OCPPService {
     });
     try {
       const res = await this.client.call("Heartbeat", {});
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Rx",
         action: "HeartbeatConf",
         payload: res,
         ocppMessageId: msgId,
       });
     } catch (err) {
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Error",
         action: "Heartbeat",
         payload: { message: String(err) },
@@ -833,7 +913,7 @@ class OCPPService {
     errorCode: string = "NoError",
   ) {
     if (!this.client) return;
-    const { addLog, updateConnector } = useEmulatorStore.getState();
+    const s = useEmulatorStore.getState();
     const payload = {
       connectorId,
       errorCode,
@@ -841,23 +921,23 @@ class OCPPService {
       timestamp: new Date().toISOString(),
     };
     const msgId = nanoid(8);
-    addLog({
+    s.addLog(this.chargerId, {
       direction: "Tx",
       action: "StatusNotification",
       payload,
       ocppMessageId: msgId,
     });
-    updateConnector(connectorId, { status: status as any });
+    s.updateConnector(this.chargerId, connectorId, { status: status as any });
     try {
       const res = await this.client.call("StatusNotification", payload);
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Rx",
         action: "StatusNotificationConf",
         payload: res,
         ocppMessageId: msgId,
       });
     } catch (err) {
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Error",
         action: "StatusNotification",
         payload: { message: String(err) },
@@ -868,9 +948,9 @@ class OCPPService {
 
   async authorize(_connectorId: number, idTag: string): Promise<boolean> {
     if (!this.client) return false;
-    const { addLog } = useEmulatorStore.getState();
+    const s = useEmulatorStore.getState();
     const msgId = nanoid(8);
-    addLog({
+    s.addLog(this.chargerId, {
       direction: "Tx",
       action: "Authorize",
       payload: { idTag },
@@ -880,7 +960,7 @@ class OCPPService {
       const res = (await this.client.call("Authorize", { idTag })) as {
         idTagInfo: { status: string };
       };
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Rx",
         action: "AuthorizeConf",
         payload: res,
@@ -888,7 +968,7 @@ class OCPPService {
       });
       return res?.idTagInfo?.status === "Accepted";
     } catch (err) {
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Error",
         action: "Authorize",
         payload: { message: String(err) },
@@ -900,13 +980,13 @@ class OCPPService {
 
   async startTransaction(connectorId: number, idTag?: string) {
     if (!this.client) return;
-    const { addLog, connectors, updateConnector } = useEmulatorStore.getState();
-    const connector = connectors[connectorId];
+    const { slot, store } = getSlotState(this.chargerId);
+    const connector = slot.runtime.connectors[connectorId];
     if (!connector) return;
     const tag = idTag ?? connector.idTag;
     const authorized = await this.authorize(connectorId, tag);
     if (!authorized) {
-      addLog({
+      store.addLog(this.chargerId, {
         direction: "System",
         action: "AuthFailed",
         payload: { message: "Authorization rejected" },
@@ -915,14 +995,18 @@ class OCPPService {
       return;
     }
     await this.sendStatusNotification(connectorId, "Preparing");
+    const freshSlot = useEmulatorStore
+      .getState()
+      ?.chargers.find((c) => c.id === this.chargerId);
+    if (!freshSlot) return;
     const payload = {
       connectorId,
       idTag: tag,
-      meterStart: connector.startMeterValue,
+      meterStart: freshSlot.runtime.connectors[connectorId].startMeterValue,
       timestamp: new Date().toISOString(),
     };
     const txMsgId = nanoid(8);
-    addLog({
+    store.addLog(this.chargerId, {
       direction: "Tx",
       action: "StartTransaction",
       payload,
@@ -933,39 +1017,48 @@ class OCPPService {
         idTagInfo: { status: string };
         transactionId: number;
       };
-      addLog({
+      store.addLog(this.chargerId, {
         direction: "Rx",
         action: "StartTransactionConf",
         payload: res,
         ocppMessageId: txMsgId,
       });
       if (res?.idTagInfo?.status === "Accepted") {
-        updateConnector(connectorId, {
+        store.updateConnector(this.chargerId, connectorId, {
           inTransaction: true,
           transactionId: res.transactionId,
           idTag: tag,
         });
         await this.sendStatusNotification(connectorId, "Charging");
-        const { config } = useEmulatorStore.getState();
+        const cfgSlot = useEmulatorStore
+          .getState()
+          ?.chargers.find((c) => c.id === this.chargerId);
+        if (!cfgSlot) return;
         const meterInterval = parseInt(
-          config.stationConfig.find(
+          cfgSlot.config.stationConfig.find(
             (k: StationConfigKey) => k.key === "MeterValueSampleInterval",
           )?.value ?? "60",
           10,
         );
         this.meterTimers[connectorId] = setInterval(() => {
-          useEmulatorStore.getState().updateConnector(connectorId, {
-            currentMeterValue:
-              useEmulatorStore.getState().connectors[connectorId]
-                .currentMeterValue + 50,
-          });
+          const s = useEmulatorStore.getState();
+          const current = s.chargers.find((c) => c.id === this.chargerId)
+            ?.runtime.connectors[connectorId];
+          if (current) {
+            s.updateConnector(this.chargerId, connectorId, {
+              currentMeterValue:
+                current.currentMeterValue +
+                cfgSlot.config.simulation.autoChargeMeterIncrement /
+                  (meterInterval / 10),
+            });
+          }
           this.sendMeterValues(connectorId);
         }, meterInterval * 1000);
       } else {
         await this.sendStatusNotification(connectorId, "Available");
       }
     } catch (err) {
-      addLog({
+      store.addLog(this.chargerId, {
         direction: "Error",
         action: "StartTransaction",
         payload: { message: String(err) },
@@ -976,67 +1069,93 @@ class OCPPService {
 
   async sendMeterValues(connectorId: number) {
     if (!this.client) return;
-    const { addLog, connectors } = useEmulatorStore.getState();
-    const connector = connectors[connectorId];
+    const s = useEmulatorStore.getState();
+    const slot = s.chargers?.find((c) => c.id === this.chargerId);
+    if (!slot) return;
+    const connector = slot.runtime.connectors[connectorId];
     if (!connector?.inTransaction) return;
+
+    const m = slot.config.simulation.measurands;
+    const meterWh = connector.currentMeterValue;
+    const targetWh = slot.config.simulation.autoChargeTargetKWh * 1000;
+    const socPct = Math.min(100, Math.round((meterWh / targetWh) * 100));
+    const powerW = 3000 + Math.floor(Math.random() * 2000);
+    const voltV = 228 + Math.round(Math.random() * 4);
+    const ampA = +(powerW / voltV).toFixed(1);
+    const phases = m.threePhase ? ["L1", "L2", "L3"] : ["L1"];
+
+    const sampledValues: Record<string, unknown>[] = [];
+
+    if (m.energy)
+      sampledValues.push({
+        measurand: "Energy.Active.Import.Register",
+        value: String(meterWh),
+        unit: "Wh",
+      });
+
+    if (m.power)
+      sampledValues.push({
+        measurand: "Power.Active.Import",
+        value: String(powerW),
+        unit: "W",
+      });
+
+    if (m.voltage)
+      phases.forEach((phase) =>
+        sampledValues.push({
+          measurand: "Voltage",
+          phase,
+          value: String(voltV),
+          unit: "V",
+        }),
+      );
+
+    if (m.current)
+      phases.forEach((phase) =>
+        sampledValues.push({
+          measurand: "Current.Import",
+          phase,
+          value: String(ampA),
+          unit: "A",
+        }),
+      );
+
+    if (m.soc)
+      sampledValues.push({
+        measurand: "SoC",
+        value: String(socPct),
+        unit: "Percent",
+        location: "EV",
+      });
+
+    if (m.temperature)
+      sampledValues.push({
+        measurand: "Temperature",
+        value: String(25 + Math.floor(Math.random() * 10)),
+        unit: "Celsius",
+        location: "Body",
+      });
+
+    if (m.frequency)
+      sampledValues.push({
+        measurand: "Frequency",
+        value: String((50 + (Math.random() - 0.5) * 0.2).toFixed(2)),
+        unit: "Hz",
+      });
+
     const payload = {
       connectorId,
       transactionId: connector.transactionId,
       meterValue: [
         {
           timestamp: new Date().toISOString(),
-          sampledValue: [
-            {
-              measurand: "Energy.Active.Import.Register",
-              value: String(connector.currentMeterValue),
-              unit: "Wh",
-            },
-            {
-              measurand: "Power.Active.Import",
-              value: String(Math.floor(Math.random() * 4000) + 3000),
-              unit: "W",
-            },
-            { measurand: "Voltage", phase: "L1", value: "220", unit: "V" },
-            {
-              measurand: "Current.Import",
-              phase: "L1",
-              value: String((Math.random() * 10 + 5).toFixed(1)),
-              unit: "A",
-            },
-            ...(useEmulatorStore.getState().config.simulation
-              .autoChargeSocEnabled
-              ? [
-                  {
-                    measurand: "SoC",
-                    value: String(
-                      Math.min(
-                        100,
-                        Math.round(
-                          (connector.currentMeterValue /
-                            (useEmulatorStore.getState().config.simulation
-                              .autoChargeTargetKWh *
-                              1000)) *
-                            100,
-                        ),
-                      ),
-                    ),
-                    unit: "Percent",
-                    location: "EV",
-                  },
-                  {
-                    measurand: "Temperature",
-                    value: String(25 + Math.floor(Math.random() * 10)),
-                    unit: "Celsius",
-                    location: "Body",
-                  },
-                ]
-              : []),
-          ],
+          sampledValue: sampledValues,
         },
       ],
     };
+
     const msgId = nanoid(8);
-    addLog({
+    s.addLog(this.chargerId, {
       direction: "Tx",
       action: "MeterValues",
       payload,
@@ -1044,14 +1163,14 @@ class OCPPService {
     });
     try {
       const res = await this.client.call("MeterValues", payload);
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Rx",
         action: "MeterValuesConf",
         payload: res,
         ocppMessageId: msgId,
       });
     } catch (err) {
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Error",
         action: "MeterValues",
         payload: { message: String(err) },
@@ -1062,10 +1181,11 @@ class OCPPService {
 
   async stopTransaction(connectorId: number) {
     if (!this.client) return;
-    const { addLog, connectors, updateConnector } = useEmulatorStore.getState();
-    const connector = connectors[connectorId];
+    const s = useEmulatorStore.getState();
+    const slot = s.chargers?.find((c) => c.id === this.chargerId);
+    if (!slot) return;
+    const connector = slot.runtime.connectors[connectorId];
     if (!connector?.inTransaction) return;
-    // Stop meter timer immediately
     if (this.meterTimers[connectorId]) {
       clearInterval(this.meterTimers[connectorId]);
       delete this.meterTimers[connectorId];
@@ -1079,7 +1199,7 @@ class OCPPService {
       reason: connector.stopReason,
     };
     const msgId = nanoid(8);
-    addLog({
+    s.addLog(this.chargerId, {
       direction: "Tx",
       action: "StopTransaction",
       payload,
@@ -1087,20 +1207,20 @@ class OCPPService {
     });
     try {
       const res = await this.client.call("StopTransaction", payload);
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Rx",
         action: "StopTransactionConf",
         payload: res,
         ocppMessageId: msgId,
       });
-      updateConnector(connectorId, {
+      useEmulatorStore.getState().updateConnector(this.chargerId, connectorId, {
         inTransaction: false,
         transactionId: null,
         startMeterValue: connector.currentMeterValue,
       });
       await this.sendStatusNotification(connectorId, "Available");
     } catch (err) {
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Error",
         action: "StopTransaction",
         payload: { message: String(err) },
@@ -1111,10 +1231,10 @@ class OCPPService {
 
   async sendDiagnosticsStatus(status: string) {
     if (!this.client) return;
-    const { addLog } = useEmulatorStore.getState();
+    const s = useEmulatorStore.getState();
     const payload = { status };
     const msgId = nanoid(8);
-    addLog({
+    s.addLog(this.chargerId, {
       direction: "Tx",
       action: "DiagnosticsStatusNotification",
       payload,
@@ -1125,7 +1245,7 @@ class OCPPService {
         "DiagnosticsStatusNotification",
         payload,
       );
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Rx",
         action: "DiagnosticsStatusNotificationConf",
         payload: res,
@@ -1136,10 +1256,10 @@ class OCPPService {
 
   async sendFirmwareStatus(status: string) {
     if (!this.client) return;
-    const { addLog } = useEmulatorStore.getState();
+    const s = useEmulatorStore.getState();
     const payload = { status };
     const msgId = nanoid(8);
-    addLog({
+    s.addLog(this.chargerId, {
       direction: "Tx",
       action: "FirmwareStatusNotification",
       payload,
@@ -1147,7 +1267,7 @@ class OCPPService {
     });
     try {
       const res = await this.client.call("FirmwareStatusNotification", payload);
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Rx",
         action: "FirmwareStatusNotificationConf",
         payload: res,
@@ -1157,22 +1277,26 @@ class OCPPService {
   }
 
   startDiagnosticsUpload() {
-    const { config, setIsUploading, setUploadSecondsLeft } =
-      useEmulatorStore.getState();
+    const s = useEmulatorStore.getState();
+    const slot = s.chargers?.find((c) => c.id === this.chargerId);
+    if (!slot) return;
     if (this.uploadTimer) clearInterval(this.uploadTimer);
-    let secs = config.simulation.diagnosticUploadTime;
-    setIsUploading(true);
-    setUploadSecondsLeft(secs);
+    let secs = slot.config.simulation.diagnosticUploadTime;
+    s.setIsUploading(this.chargerId, true);
+    s.setUploadSecondsLeft(this.chargerId, secs);
     this.sendDiagnosticsStatus("Uploading");
     this.uploadTimer = setInterval(() => {
       secs -= 1;
-      setUploadSecondsLeft(secs);
+      useEmulatorStore.getState().setUploadSecondsLeft(this.chargerId, secs);
       if (secs <= 0) {
         if (this.uploadTimer) clearInterval(this.uploadTimer);
         this.uploadTimer = null;
-        setIsUploading(false);
-        const { config: cfg } = useEmulatorStore.getState();
-        this.sendDiagnosticsStatus(cfg.simulation.diagnosticStatus);
+        useEmulatorStore.getState().setIsUploading(this.chargerId, false);
+        const diagStatus = useEmulatorStore
+          .getState()
+          .chargers.find((c) => c.id === this.chargerId)?.config
+          .simulation.diagnosticStatus;
+        this.sendDiagnosticsStatus(diagStatus ?? "Uploaded");
       }
     }, 1000);
   }
@@ -1180,14 +1304,14 @@ class OCPPService {
   // ─── DataTransfer (CP → CSMS) ─────────────────────────────────────────────
   async sendDataTransfer(vendorId: string, messageId?: string, data?: string) {
     if (!this.client) return;
-    const { addLog } = useEmulatorStore.getState();
+    const s = useEmulatorStore.getState();
     const payload: { vendorId: string; messageId?: string; data?: string } = {
       vendorId,
     };
     if (messageId) payload.messageId = messageId;
     if (data) payload.data = data;
     const msgId = nanoid(8);
-    addLog({
+    s.addLog(this.chargerId, {
       direction: "Tx",
       action: "DataTransfer",
       payload,
@@ -1195,10 +1319,14 @@ class OCPPService {
     });
     try {
       const res = await this.client.call("DataTransfer", payload);
-      addLog({ direction: "Rx", action: "DataTransferConf", payload: res });
+      s.addLog(this.chargerId, {
+        direction: "Rx",
+        action: "DataTransferConf",
+        payload: res,
+      });
       return res;
     } catch (err) {
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Error",
         action: "DataTransfer",
         payload: { message: String(err) },
@@ -1209,25 +1337,29 @@ class OCPPService {
   // ─── SecurityEventNotification (CP → CSMS) ────────────────────────────────
   async sendSecurityEventNotification(type: string, info?: string) {
     if (!this.client) return;
-    const { addLog } = useEmulatorStore.getState();
+    const s = useEmulatorStore.getState();
     const payload = {
       type,
       timestamp: new Date().toISOString(),
       techInfo: info ?? "",
     };
-    addLog({ direction: "Tx", action: "SecurityEventNotification", payload });
+    s.addLog(this.chargerId, {
+      direction: "Tx",
+      action: "SecurityEventNotification",
+      payload,
+    });
     try {
       const res = await this.client.call(
         "SecurityEventNotification" as any,
         payload as any,
       );
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Rx",
         action: "SecurityEventNotificationConf",
         payload: res,
       });
     } catch (err) {
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Error",
         action: "SecurityEventNotification",
         payload: { message: String(err) },
@@ -1238,22 +1370,26 @@ class OCPPService {
   // ─── LogStatusNotification (CP → CSMS) ────────────────────────────────────
   async sendLogStatusNotification(status: string, requestId?: number) {
     if (!this.client) return;
-    const { addLog } = useEmulatorStore.getState();
+    const s = useEmulatorStore.getState();
     const payload: Record<string, unknown> = { status };
     if (requestId !== undefined) payload.requestId = requestId;
-    addLog({ direction: "Tx", action: "LogStatusNotification", payload });
+    s.addLog(this.chargerId, {
+      direction: "Tx",
+      action: "LogStatusNotification",
+      payload,
+    });
     try {
       const res = await this.client.call(
         "LogStatusNotification" as any,
         payload as any,
       );
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Rx",
         action: "LogStatusNotificationConf",
         payload: res,
       });
     } catch (err) {
-      addLog({
+      s.addLog(this.chargerId, {
         direction: "Error",
         action: "LogStatusNotification",
         payload: { message: String(err) },
@@ -1262,26 +1398,26 @@ class OCPPService {
   }
 
   // ─── Auto Charge State Machine ─────────────────────────────────────────────
-  // Simulates: Preparing → Authorize → StartTx → Charging → periodic meter → StopTx → Available
   async startAutoCharge(connectorId: number) {
     if (!this.client) return;
-    const { connectors, config, addLog } = useEmulatorStore.getState();
-    const conn = connectors[connectorId];
+    const { slot, store } = getSlotState(this.chargerId);
+    const conn = slot.runtime.connectors[connectorId];
     if (!conn || conn.inTransaction) return;
 
-    addLog({
+    store.addLog(this.chargerId, {
       direction: "System",
       action: "AutoCharge",
       payload: { connectorId, message: "Starting auto-charge sequence" },
     });
 
-    // Step 1: Authorize + StartTx
     await this.startTransaction(connectorId, conn.idTag);
 
-    // Verify TX actually started
-    const updated = useEmulatorStore.getState().connectors[connectorId];
-    if (!updated?.inTransaction) {
-      addLog({
+    const freshSlot = useEmulatorStore
+      .getState()
+      .chargers.find((c) => c.id === this.chargerId);
+    const updatedConn = freshSlot?.runtime.connectors[connectorId];
+    if (!updatedConn?.inTransaction) {
+      store.addLog(this.chargerId, {
         direction: "System",
         action: "AutoCharge",
         payload: {
@@ -1292,40 +1428,36 @@ class OCPPService {
       return;
     }
 
-    // Step 2: Schedule auto-stop
     const {
       autoChargeDurationSec,
       autoChargeTargetKWh,
       autoChargeMeterIncrement,
-    } = config.simulation;
+    } = slot.config.simulation;
     const meterInterval = parseInt(
-      config.stationConfig.find((k) => k.key === "MeterValueSampleInterval")
-        ?.value ?? "60",
+      slot.config.stationConfig.find(
+        (k) => k.key === "MeterValueSampleInterval",
+      )?.value ?? "60",
       10,
     );
 
-    // Increment meter on interval
     let elapsed = 0;
     const tickSec = Math.min(meterInterval, 10);
     this.autoChargeTimers[connectorId] = setInterval(() => {
       elapsed += tickSec;
-      const { connectors: c, updateConnector: uc } =
-        useEmulatorStore.getState();
-      const current = c[connectorId];
+      const s = useEmulatorStore.getState();
+      const current = s.chargers.find((c) => c.id === this.chargerId)?.runtime
+        .connectors[connectorId];
       if (!current?.inTransaction) {
-        // TX was stopped externally
         if (this.autoChargeTimers[connectorId]) {
           clearInterval(this.autoChargeTimers[connectorId]);
           delete this.autoChargeTimers[connectorId];
         }
         return;
       }
-
-      // Increment meter
       const newMeter = current.currentMeterValue + autoChargeMeterIncrement;
-      uc(connectorId, { currentMeterValue: newMeter });
-
-      // Check completion
+      s.updateConnector(this.chargerId, connectorId, {
+        currentMeterValue: newMeter,
+      });
       const targetWh = autoChargeTargetKWh * 1000;
       if (newMeter >= targetWh || elapsed >= autoChargeDurationSec) {
         if (this.autoChargeTimers[connectorId]) {
@@ -1334,9 +1466,13 @@ class OCPPService {
         }
         this.sendMeterValues(connectorId);
         setTimeout(() => {
-          uc(connectorId, { stopReason: "Local" as any });
+          useEmulatorStore
+            .getState()
+            .updateConnector(this.chargerId, connectorId, {
+              stopReason: "Local" as any,
+            });
           this.stopTransaction(connectorId);
-          useEmulatorStore.getState().addLog({
+          useEmulatorStore.getState().addLog(this.chargerId, {
             direction: "System",
             action: "AutoCharge",
             payload: {
@@ -1356,8 +1492,10 @@ class OCPPService {
       clearInterval(this.autoChargeTimers[connectorId]);
       delete this.autoChargeTimers[connectorId];
     }
-    const { connectors } = useEmulatorStore.getState();
-    if (connectors[connectorId]?.inTransaction) {
+    const slot = useEmulatorStore
+      .getState()
+      .chargers.find((c) => c.id === this.chargerId);
+    if (slot?.runtime.connectors[connectorId]?.inTransaction) {
       this.stopTransaction(connectorId);
     }
   }
@@ -1365,16 +1503,60 @@ class OCPPService {
   // ─── Raw OCPP Call (Message Composer) ──────────────────────────────────────
   async sendRawCall(action: string, payload: Record<string, unknown>) {
     if (!this.client) return;
-    const { addLog } = useEmulatorStore.getState();
-    addLog({ direction: "Tx", action, payload });
+    const s = useEmulatorStore.getState();
+    s.addLog(this.chargerId, { direction: "Tx", action, payload });
     try {
       const res = await this.client.call(action as any, payload as any);
-      addLog({ direction: "Rx", action: `${action}Conf`, payload: res });
+      s.addLog(this.chargerId, {
+        direction: "Rx",
+        action: `${action}Conf`,
+        payload: res,
+      });
       return res;
     } catch (err) {
-      addLog({ direction: "Error", action, payload: { message: String(err) } });
+      s.addLog(this.chargerId, {
+        direction: "Error",
+        action,
+        payload: { message: String(err) },
+      });
     }
   }
 }
 
-export const ocppService = new OCPPService();
+// ─── Service Map (one OCPPService per charger slot) ───────────────────────────
+
+const serviceMap = new Map<string, OCPPService>();
+
+export function getService(chargerId: string): OCPPService {
+  if (!serviceMap.has(chargerId)) {
+    serviceMap.set(chargerId, new OCPPService(chargerId));
+  }
+  // biome-ignore lint/style/noNonNullAssertion: this is a map of chargerId to OCPPService
+  return serviceMap.get(chargerId)!;
+}
+
+export function removeService(chargerId: string) {
+  serviceMap.get(chargerId)?.disconnect();
+  serviceMap.delete(chargerId);
+}
+
+/**
+ * @deprecated Use getService(chargerId) instead.
+ * Legacy export for components that haven't been updated yet.
+ */
+export function getActiveService(): OCPPService {
+  const id = useEmulatorStore.getState().activeChargerId;
+  return getService(id);
+}
+
+// Legacy singleton alias — HeaderBar and ConnectorPanel do
+// import { ocppService } from "@/lib/ocppClient", so we export a proxy
+// object that always delegates to the currently active charger's service.
+export const ocppService = new Proxy({} as OCPPService, {
+  get(_target, prop) {
+    const id = useEmulatorStore.getState().activeChargerId;
+    const svc = getService(id);
+    const val = (svc as any)[prop];
+    return typeof val === "function" ? val.bind(svc) : val;
+  },
+});

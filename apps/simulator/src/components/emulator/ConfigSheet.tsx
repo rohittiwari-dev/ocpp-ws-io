@@ -40,8 +40,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useActiveCharger } from "@/hooks/useActiveCharger";
 import { ocppService } from "@/lib/ocppClient";
-import { useEmulatorStore } from "@/store/emulatorStore";
 
 interface ConfigSheetProps {
   open: boolean;
@@ -74,7 +74,7 @@ function Field({
 
 /* ─────────────────────────────── CONNECTION ─────────────────────────────── */
 function ConnectionTab() {
-  const { status, config, updateConfig } = useEmulatorStore();
+  const { status, config, updateConfig } = useActiveCharger();
   const disabled = status === "connected" || status === "connecting";
 
   return (
@@ -225,7 +225,7 @@ const BOOT_FIELDS: {
 ];
 
 function BootNotificationTab() {
-  const { status, config, updateBootNotification } = useEmulatorStore();
+  const { status, config, updateBootNotification } = useActiveCharger();
   const disabled = status === "connected" || status === "connecting";
   const boot = config.bootNotification;
 
@@ -258,7 +258,7 @@ function BootNotificationTab() {
 
 /* ─────────────────────────────── STATION CONFIG ─────────────────────────── */
 function StationConfigTab() {
-  const { config, updateStationConfigKey } = useEmulatorStore();
+  const { config, updateStationConfigKey } = useActiveCharger();
   const keys = config.stationConfig;
   const editableCount = keys.filter((k) => !k.readonly).length;
 
@@ -282,7 +282,9 @@ function StationConfigTab() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span
-                    className={`text-xs font-mono truncate ${k.readonly ? "text-slate-500" : "text-slate-300"}`}
+                    className={`text-xs font-mono truncate ${
+                      k.readonly ? "text-slate-500" : "text-slate-300"
+                    }`}
                   >
                     {k.key}
                   </span>
@@ -325,7 +327,7 @@ const FIRMWARE_STATUSES = [
 
 function SimulationTab() {
   const { config, updateSimulation, isUploading, uploadSecondsLeft, status } =
-    useEmulatorStore();
+    useActiveCharger();
   const { simulation } = config;
   const isConnected = status === "connected";
 

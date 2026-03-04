@@ -2,10 +2,10 @@
 
 import { AlertTriangle, Loader2, Wifi, WifiOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { type ConnectionStatus, useEmulatorStore } from "@/store/emulatorStore";
+import { useActiveCharger } from "@/hooks/useActiveCharger";
 
 const STATUS_MAP: Record<
-  ConnectionStatus,
+  string, // Changed from ConnectionStatus to string
   { label: string; icon: React.ReactNode; cls: string }
 > = {
   connected: {
@@ -31,7 +31,7 @@ const STATUS_MAP: Record<
 };
 
 export function StatusIndicator() {
-  const { status, config } = useEmulatorStore();
+  const { status, config } = useActiveCharger();
   const s = STATUS_MAP[status];
 
   return (

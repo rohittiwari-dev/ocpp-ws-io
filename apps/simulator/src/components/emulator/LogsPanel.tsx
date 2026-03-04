@@ -20,7 +20,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { JsonViewer } from "@/components/ui/json-viewer";
-import { type OCPPLog, useEmulatorStore } from "@/store/emulatorStore";
+import { useActiveCharger } from "@/hooks/useActiveCharger";
+import type { OCPPLog } from "@/store/emulatorStore";
 
 /* ═══════════════════════════════════════════════════════
    DIRECTION CONFIG
@@ -124,7 +125,9 @@ function LogEntry({ log, isNew }: { log: OCPPLog; isNew: boolean }) {
 
   return (
     <div
-      className={`group flex flex-col border-l-[3px] transition-colors duration-100 ${cfg.rowHover} ${expanded ? cfg.rowActive : ""}`}
+      className={`group flex flex-col border-l-[3px] transition-colors duration-100 ${
+        cfg.rowHover
+      } ${expanded ? cfg.rowActive : ""}`}
       style={{ borderLeftColor: cfg.border }}
     >
       {/* ── Row ── */}
@@ -218,7 +221,9 @@ function LogEntry({ log, isNew }: { log: OCPPLog; isNew: boolean }) {
         {/* Chevron */}
         {hasPayload ? (
           <ChevronRight
-            className={`shrink-0 h-3 w-3 text-[#2e3445] transition-transform duration-150 ${expanded ? "rotate-90 text-[#5d6577]!" : ""}`}
+            className={`shrink-0 h-3 w-3 text-[#2e3445] transition-transform duration-150 ${
+              expanded ? "rotate-90 text-[#5d6577]!" : ""
+            }`}
           />
         ) : (
           <span className="shrink-0 w-3" />
@@ -292,7 +297,7 @@ const FILTERS = ["All", "Tx", "Rx", "Error"] as const;
 type Filter = (typeof FILTERS)[number];
 
 export function LogsPanel() {
-  const { logs, clearLogs } = useEmulatorStore();
+  const { logs, clearLogs } = useActiveCharger();
   const [filter, setFilter] = useState<Filter>("All");
   const [search, setSearch] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
@@ -417,7 +422,11 @@ export function LogsPanel() {
                   {f}
                   {counts[f] > 0 && (
                     <span
-                      className={`text-[8px] font-mono px-1 py-px rounded ${active ? "bg-[#0f1117] text-[#4a5568]" : "text-[#2e3445]"}`}
+                      className={`text-[8px] font-mono px-1 py-px rounded ${
+                        active
+                          ? "bg-[#0f1117] text-[#4a5568]"
+                          : "text-[#2e3445]"
+                      }`}
                     >
                       {counts[f]}
                     </span>
@@ -449,7 +458,11 @@ export function LogsPanel() {
           <button
             onClick={() => setShowSearch(!showSearch)}
             title="Search"
-            className={`p-1 rounded cursor-pointer transition-colors ${showSearch ? "text-[#c4b5fd] bg-[#1e1535]" : "text-[#3d4459] hover:text-white hover:bg-[#1d1f2b]"}`}
+            className={`p-1 rounded cursor-pointer transition-colors ${
+              showSearch
+                ? "text-[#c4b5fd] bg-[#1e1535]"
+                : "text-[#3d4459] hover:text-white hover:bg-[#1d1f2b]"
+            }`}
           >
             <Search className="h-3.5 w-3.5" />
           </button>
