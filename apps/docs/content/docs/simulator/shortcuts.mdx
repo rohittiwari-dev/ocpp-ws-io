@@ -1,0 +1,86 @@
+---
+title: Keyboard Shortcuts
+description: Full reference for all keyboard shortcuts available in the OCPP Simulator.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+The simulator is fully keyboard-navigable. All shortcuts work globally — you do not need to focus a specific panel first.
+
+Open the **shortcuts dialog** at any time with `Ctrl+/` or by clicking the keyboard icon (⌨) in the header.
+
+---
+
+## Panels
+
+| Shortcut         | Action                                |
+| :--------------- | :------------------------------------ |
+| `Ctrl` + `` ` `` | Toggle **Log Panel** open / closed    |
+| `Ctrl` + `1`     | Toggle **Config Panel** open / closed |
+
+---
+
+## Charger
+
+| Shortcut         | Action                                                 |
+| :--------------- | :----------------------------------------------------- |
+| `Alt` + `C`      | **New charger** — adds a new tab with default settings |
+| `Ctrl` + `Enter` | **Connect / Disconnect** the active charger            |
+
+<Callout type="warn">
+  `Ctrl+N` and `Ctrl+Shift+N` are reserved by Chromium-based browsers (new
+  window / incognito) and cannot be overridden by web applications. `Alt+C` is
+  used instead as it is not intercepted at the browser level.
+</Callout>
+
+---
+
+## Logs
+
+| Shortcut               | Action                                                           |
+| :--------------------- | :--------------------------------------------------------------- |
+| `Ctrl` + `S`           | **Export logs as JSON** — downloads `ocpp_logs_<timestamp>.json` |
+| `Ctrl` + `Shift` + `S` | **Export logs as CSV** — downloads `ocpp_logs_<timestamp>.csv`   |
+
+The CSV export includes the following columns:
+
+| Column        | Description                                  |
+| :------------ | :------------------------------------------- |
+| `timestamp`   | ISO 8601 timestamp of the log entry          |
+| `direction`   | `Tx`, `Rx`, `Error`, or `System`             |
+| `action`      | OCPP action name (e.g. `BootNotification`)   |
+| `raw_message` | The raw OCPP-J frame as a JSON string        |
+| `payload`     | The parsed payload object serialized to JSON |
+
+All fields are properly quoted to handle commas and newlines inside JSON payloads.
+
+---
+
+## Shortcuts Dialog
+
+| Shortcut     | Action                            |
+| :----------- | :-------------------------------- |
+| `Ctrl` + `/` | Open / close the shortcuts dialog |
+| `Esc`        | Close the dialog                  |
+
+---
+
+## Browser Compatibility
+
+Some shortcuts may be intercepted by the browser or OS before reaching the simulator. The table below shows tested behaviour in common browsers on Windows:
+
+| Shortcut       | Chrome | Brave | Firefox | Edge |
+| :------------- | :----: | :---: | :-----: | :--: |
+| `Ctrl+\``      |   ✅   |  ✅   |   ✅    |  ✅  |
+| `Ctrl+1`       |   ✅   |  ✅   |   ✅    |  ✅  |
+| `Alt+C`        |   ✅   |  ✅   |   ✅    |  ✅  |
+| `Ctrl+Enter`   |   ✅   |  ✅   |   ✅    |  ✅  |
+| `Ctrl+S`       |   ✅   |  ✅   |   ✅    |  ✅  |
+| `Ctrl+Shift+S` |   ✅   |  ✅   |   ✅    |  ✅  |
+| `Ctrl+/`       |   ✅   |  ✅   |   ✅    |  ✅  |
+
+<Callout type="info">
+  `Ctrl+S` in browsers normally triggers the browser's **Save Page** dialog. The
+  simulator calls `event.preventDefault()` synchronously before any async work,
+  which successfully suppresses this in all major browsers.
+</Callout>

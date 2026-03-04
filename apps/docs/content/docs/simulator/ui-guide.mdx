@@ -1,0 +1,173 @@
+---
+title: UI Guide
+description: A walkthrough of every panel and control in the OCPP Simulator interface.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Step, Steps } from "fumadocs-ui/components/steps";
+
+## Layout Overview
+
+The simulator is a single-page application split into four main zones:
+
+```
+┌──────────────────────────────────────────────────────┐
+│                    Header Bar                        │
+├──────────────────────────────────────────────────────┤
+│                  Charger Tab Bar                     │
+├─────────────────────────────┬────────────────────────┤
+│                             │                        │
+│      Connectors View        │    Config Panel        │
+│                             │   (collapsible →)      │
+├─────────────────────────────┴────────────────────────┤
+│                   Logs Panel                         │
+│                 (collapsible ↓)                      │
+└──────────────────────────────────────────────────────┘
+```
+
+All panels except the Header are **resizable** by dragging the divider handles. The Config Panel and Logs Panel are independently **collapsible**.
+
+---
+
+## Header Bar
+
+The header contains global controls that apply to the currently active charger.
+
+| Element                      | Description                                                                                                                           |
+| :--------------------------- | :------------------------------------------------------------------------------------------------------------------------------------ |
+| **Brand logo**               | Links back to the landing page                                                                                                        |
+| **OCPP Version picker**      | Select between `OCPP 1.6`, `2.0.1`, and `2.1`. Locked (disabled) when connected — you cannot change version mid-session.              |
+| **Status indicator**         | Live dot showing `Connected` (green), `Connecting` (amber), `Faulted` (red), `Disconnected` (grey), plus uptime timer when connected. |
+| **Boot / Heartbeat buttons** | Appear only when connected. Manually trigger a `BootNotification` or `Heartbeat` message.                                             |
+| **Connect / Disconnect**     | Primary action button. Initiates or terminates the WebSocket connection to the CSMS.                                                  |
+| **Keyboard shortcuts**       | Opens the shortcuts reference dialog (`Ctrl+/`).                                                                                      |
+| **Settings**                 | Toggles the Config Panel open/closed (`Ctrl+1`).                                                                                      |
+
+<Callout type="info">
+  The OCPP version selector is intentionally locked when a connection is active.
+  Changing protocol mid-session would cause message framing mismatches with the
+  CSMS. Disconnect first, then change the version.
+</Callout>
+
+---
+
+## Charger Tab Bar
+
+The tab bar at the top lets you manage multiple simultaneous charger simulations.
+
+- **Click a tab** to switch the active charger
+- **`+` button** (or `Alt+C`) to add a new charger with default settings
+- **Drag tabs** to reorder them
+- **`×` on a tab** to remove a charger (disconnects first)
+- **Double-click a tab label** to rename it
+
+Each charger maintains its own:
+
+- WebSocket connection
+- OCPP config (endpoint, identity, version)
+- Connector states
+- Log stream
+
+---
+
+## Connectors View
+
+The main working area renders one **Connector Panel** per configured connector.
+
+### Connector Panel
+
+Each connector card shows:
+
+| Element                | Description                                                                                           |
+| :--------------------- | :---------------------------------------------------------------------------------------------------- |
+| **Status badge**       | Current OCPP connector status: `Available`, `Preparing`, `Charging`, `SuspendedEV`, `Finishing`, etc. |
+| **RFID / idTag field** | The ID tag used for authorization and transactions. Editable inline.                                  |
+| **Auth**               | Sends an `Authorize` request with the current idTag.                                                  |
+| **Start Tx**           | Starts a transaction (`StartTransaction` for 1.6, `TransactionEvent[Started]` for 2.x).               |
+| **Stop Tx**            | Stops the active transaction.                                                                         |
+| **Status controls**    | Manually set connector status via `StatusNotification`.                                               |
+| **Meter value**        | Live kWh counter updated by the background meter timer during a transaction.                          |
+
+<Callout type="info">
+  For OCPP 2.x, **Start Tx** sends `TransactionEvent` with trigger `Started` and
+  **Stop Tx** sends `TransactionEvent` with trigger `Ended`. The idTag is passed
+  as an `idToken` object with `type: "ISO14443"`.
+</Callout>
+
+---
+
+## Config Panel
+
+Open with the **Settings icon** in the header or `Ctrl+1`. Drag the left edge to resize.
+
+The Config Panel is split into tabs:
+
+### Connection Tab
+
+Configure the WebSocket endpoint and charger identity:
+
+| Field                    | Description                                            |
+| :----------------------- | :----------------------------------------------------- |
+| **Endpoint**             | Full WebSocket URL e.g. `ws://localhost:3000`          |
+| **Charge Point ID**      | Identity appended to the URL path: `ws://host/CPID`    |
+| **Security Profile**     | `0` = None, `1` = Basic Auth (browser-compatible only) |
+| **Basic Auth Password**  | Sent as HTTP `Authorization: Basic` header on upgrade  |
+| **Number of Connectors** | How many connector cards to render                     |
+
+### Boot Notification Tab
+
+Edit the fields sent in `BootNotification`:
+
+- Vendor, model, serial number, firmware version, ICCID, IMSI
+
+### Station Config Tab (OCPP 1.6)
+
+View and edit OCPP configuration key/value pairs (equivalent to `GetConfiguration` / `ChangeConfiguration`).
+
+### Device Model Tab (OCPP 2.x)
+
+View and edit Component/Variable pairs from the charge point's Device Model (equivalent to `GetVariables` / `SetVariables`).
+
+### Simulation Tab
+
+Control automatic behaviors:
+| Setting | Description |
+|:--------|:------------|
+| **Heartbeat interval** | How often to send `Heartbeat` when connected (seconds) |
+| **Meter interval** | How often to sample and send `MeterValues` during a transaction |
+| **Measurands** | Which meter measurands to simulate (Energy, Power, Current, Voltage, SoC, etc.) |
+| **Auto-accept RemoteStart** | Automatically respond `Accepted` to `RemoteStartTransaction` |
+
+### Profiles Tab
+
+Save and load named configuration snapshots. Useful for switching between different CSMS environments quickly.
+
+---
+
+## Logs Panel
+
+The log panel streams every OCPP frame in real time. Toggle visibility with the hide button (`▼`) or `Ctrl+\``.
+
+### Toolbar Controls
+
+| Control                                   | Description                                                                                                   |
+| :---------------------------------------- | :------------------------------------------------------------------------------------------------------------ |
+| **Filter tabs** (`All / Tx / Rx / Error`) | Show only messages in the selected direction                                                                  |
+| **Follow**                                | Auto-scroll to the newest entry (newest-first order)                                                          |
+| **Search**                                | Filter log entries by action name or payload content                                                          |
+| **Copy all**                              | Copy entire log as JSON to clipboard                                                                          |
+| **Export JSON** (↓ icon)                  | Download all logs as a `.json` file                                                                           |
+| **Export CSV** (spreadsheet icon)         | Download all logs as a `.csv` file with columns: `timestamp`, `direction`, `action`, `raw_message`, `payload` |
+| **Clear**                                 | Wipe all log entries for the active charger                                                                   |
+| **Hide**                                  | Collapse the panel to a slim restore bar                                                                      |
+
+### Log Entry Structure
+
+Each row shows:
+
+- **Direction badge** — `TX` (amber) / `RX` (green) / `ERR` (red) / `SYS` (grey)
+- **Timestamp** — `HH:MM:SS.mmm`
+- **Action name** — e.g. `BootNotification`, `Heartbeat`
+- **Expand arrow** — click to reveal the full payload inline
+
+Expanded payloads support two view modes: **Parsed** (interactive JSON tree) and **Raw** (plain text).

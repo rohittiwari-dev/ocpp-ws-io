@@ -1,0 +1,135 @@
+---
+title: Simulator Overview
+description: A fully browser-native OCPP charge point simulator built on top of ocpp-ws-io — no installs, no backend required.
+---
+
+import { Cards, Card } from "fumadocs-ui/components/card";
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+<Callout type="info">
+  The simulator is part of the `ocpp-ws-io` monorepo and lives in
+  `apps/simulator`. It runs as a standalone Next.js app and talks directly to
+  any OCPP-compliant Central System over WebSocket — no proxy or backend needed.
+</Callout>
+
+## What Is It?
+
+The **OCPP Simulator** is a visual, zero-install charge point emulator that runs entirely in the browser. It uses the `BrowserOCPPClient` from `ocpp-ws-io/browser` to establish real WebSocket connections to a Central System (CSMS) and emulate the full OCPP message lifecycle — from `BootNotification` all the way through `StartTransaction`, `MeterValues`, and `StopTransaction`.
+
+It supports **OCPP 1.6, 2.0.1, and 2.1** and is designed for:
+
+- **Development** — test your CSMS handlers without real hardware
+- **Integration testing** — reproduce edge cases and race conditions
+- **Protocol exploration** — inspect raw OCPP frames in real time
+
+---
+
+## Architecture
+
+<Mermaid chart={`
+graph TB
+    subgraph Browser["Browser (Simulator App)"]
+        UI["React UI (Next.js)"]
+        BCC["BrowserOCPPClient"]
+        Store["Zustand Store"]
+        UI --> Store
+        UI --> BCC
+        BCC --> Store
+    end
+
+    subgraph CSMS["Central System (CSMS)"]
+        WS["WebSocket Server\\n(ocpp-ws-io or any OCPP server)"]
+    end
+
+    BCC -->|"WebSocket (ws:// or wss://)"| WS
+    WS -->|"OCPP Messages (JSON)"| BCC
+
+`} />
+
+| Layer     | Technology             | Role                                |
+| :-------- | :--------------------- | :---------------------------------- |
+| UI        | Next.js + React        | Renders panels, controls, logs      |
+| State     | Zustand (persisted)    | Charger config, runtime state, logs |
+| Transport | `BrowserOCPPClient`    | WebSocket RPC to the CSMS           |
+| Protocol  | OCPP 1.6 / 2.0.1 / 2.1 | Message framing and type safety     |
+
+---
+
+## Key Features
+
+<Cards>
+  <Card
+    title="🔌 Multi-Charger"
+    description="Simulate multiple charge points simultaneously, each with its own WebSocket connection, config, and log stream."
+  />
+  <Card
+    title="📋 OCPP 1.6 + 2.x"
+    description="Full message coverage for OCPP 1.6. OCPP 2.0.1 and 2.1 handler support with Device Model and EVSE management."
+  />
+  <Card
+    title="📡 Live Log Panel"
+    description="Real-time OCPP frame viewer with direction filtering (Tx/Rx/Error), search, JSON/CSV export, and collapsible payloads."
+  />
+  <Card
+    title="⚙️ Config Panel"
+    description="Edit charge point config live — endpoint, identity, OCPP version, security profile, connectors, boot notification fields, and more."
+  />
+  <Card
+    title="⌨️ Keyboard Shortcuts"
+    description="Full shortcut suite for power users: toggle panels, connect/disconnect, new charger, and export logs without touching the mouse."
+  />
+  <Card
+    title="💾 Persistent State"
+    description="Config, profiles, and panel layout are persisted to localStorage — your setup survives page refreshes."
+  />
+</Cards>
+
+---
+
+## OCPP Version Support
+
+| Feature                         |       OCPP 1.6        |      OCPP 2.0.1       | OCPP 2.1 |
+| :------------------------------ | :-------------------: | :-------------------: | :------: |
+| BootNotification                |          ✅           |          ✅           |    ✅    |
+| Heartbeat                       |          ✅           |          ✅           |    ✅    |
+| StatusNotification              |          ✅           |          ✅           |    ✅    |
+| Authorize                       |          ✅           |          ✅           |    ✅    |
+| StartTransaction                |          ✅           | ✅ (TransactionEvent) |    ✅    |
+| StopTransaction                 |          ✅           | ✅ (TransactionEvent) |    ✅    |
+| MeterValues                     |          ✅           |          ✅           |    ✅    |
+| RemoteStart/Stop                |          ✅           |          ✅           |    ✅    |
+| Reset / ChangeAvailability      |          ✅           |          ✅           |    ✅    |
+| GetVariables / SetVariables     |           —           |          ✅           |    ✅    |
+| Device Model (UI)               |           —           |          ✅           |    ✅    |
+| Security Profile 0 (None)       |          ✅           |          ✅           |    ✅    |
+| Security Profile 1 (Basic Auth) |          ✅           |          ✅           |    ✅    |
+| Security Profile 2/3 (TLS)      | ❌ Browser limitation |          ❌           |    ❌    |
+
+<Callout type="warn">
+  TLS-based security profiles (2 and 3) require client certificate handling that
+  is not available in browser WebSocket APIs. Use the Node.js `OCPPClient` for
+  mTLS scenarios.
+</Callout>
+
+---
+
+## What's Next?
+
+<Cards>
+  <Card
+    title="UI Guide"
+    href="/docs/simulator/ui-guide"
+    description="Learn every panel, button, and control in the simulator interface."
+  />
+  <Card
+    title="Keyboard Shortcuts"
+    href="/docs/simulator/shortcuts"
+    description="Full reference for all keyboard shortcuts — connect, export, navigate without the mouse."
+  />
+  <Card
+    title="Browser Client API"
+    href="/docs/browser-client"
+    description="Understand the BrowserOCPPClient that powers the simulator under the hood."
+  />
+</Cards>
