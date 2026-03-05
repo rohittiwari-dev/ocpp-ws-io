@@ -184,7 +184,7 @@ function SectionCard({
 
 const TABS = [
   { id: "connection", label: "Connect", icon: Plug, color: "text-blue-400" },
-  { id: "boot", label: "Boot", icon: Cpu, color: "text-cyan-400" },
+  { id: "vendor", label: "Vendor", icon: Cpu, color: "text-cyan-400" },
   {
     id: "station",
     label: "Config",
@@ -480,39 +480,129 @@ const BOOT_FIELDS: {
   },
 ];
 
-function BootNotificationTab() {
-  const { status, config, updateBootNotification } = useActiveCharger();
+function VendorTab() {
+  const { status, config, updateBootNotification, updateVendorConfig } =
+    useActiveCharger();
   const locked = status === "connected" || status === "connecting";
   const boot = config.bootNotification;
+  const vendor = config.vendorConfig;
 
   return (
-    <SectionCard
-      title="Hardware Identity"
-      icon={<Cpu className="h-3.5 w-3.5" />}
-      color="text-cyan-400"
-      description="Sent to CSMS via BootNotification on connection."
-    >
-      <div className="grid grid-cols-2 gap-3">
-        {BOOT_FIELDS.map(({ key, label, icon, required }) => (
-          <Field key={key} label={label} icon={icon} required={required}>
+    <div className="space-y-4">
+      <SectionCard
+        title="Hardware Identity"
+        icon={<Cpu className="h-3.5 w-3.5" />}
+        color="text-cyan-400"
+        description="Sent to CSMS via BootNotification on connection."
+      >
+        <div className="grid grid-cols-2 gap-3">
+          {BOOT_FIELDS.map(({ key, label, icon, required }) => (
+            <Field key={key} label={label} icon={icon} required={required}>
+              <Input
+                value={(boot as any)[key] ?? ""}
+                disabled={locked}
+                onChange={(e) =>
+                  updateBootNotification({ [key]: e.target.value } as any)
+                }
+                className="h-9 bg-white/3 border-white/8 text-white text-[12px] font-mono rounded-lg focus-visible:ring-cyan-500/30"
+              />
+            </Field>
+          ))}
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Vendor Custom Extensions"
+        icon={<Server className="h-3.5 w-3.5" />}
+        color="text-indigo-400"
+        description="DataTransfer & Boot customData"
+      >
+        <div className="space-y-3">
+          <Field
+            label="Vendor ID"
+            icon={<HardDrive className="h-3 w-3 text-indigo-400/60" />}
+          >
             <Input
-              value={(boot as any)[key] ?? ""}
-              disabled={locked}
-              onChange={(e) =>
-                updateBootNotification({ [key]: e.target.value } as any)
-              }
-              className="h-9 bg-white/3 border-white/8 text-white text-[12px] font-mono rounded-lg focus-visible:ring-cyan-500/30"
+              value={vendor?.vendorId ?? ""}
+              onChange={(e) => updateVendorConfig({ vendorId: e.target.value })}
+              className="h-9 bg-white/3 border-white/8 text-white text-[12px] font-mono rounded-lg focus-visible:ring-indigo-500/30"
+              placeholder="e.g. com.elmo.virtual"
             />
           </Field>
-        ))}
-      </div>
-    </SectionCard>
+          <Field
+            label="Custom Data Payload (JSON)"
+            icon={<SlidersHorizontal className="h-3 w-3 text-indigo-400/60" />}
+          >
+            <textarea
+              value={vendor?.customDataStr ?? "{}"}
+              onChange={(e) =>
+                updateVendorConfig({ customDataStr: e.target.value })
+              }
+              className="w-full h-24 bg-white/3 border border-white/8 text-white text-[11px] font-mono rounded-lg p-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500/30 resize-none custom-scrollbar"
+              placeholder='{"customKey": "value"}'
+              spellCheck={false}
+            />
+          </Field>
+
+          <Button
+            onClick={() => {
+              import("@/lib/ocppClient").then((m) =>
+                m.getService(config.chargePointId).sendDataTransfer(),
+              );
+            }}
+            disabled={!vendor?.vendorId || locked !== true}
+            className="w-full h-8 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20 font-bold text-[10px] uppercase tracking-wider rounded-lg transition-colors mt-2"
+          >
+            {locked !== true
+              ? "Connect to Send DataTransfer"
+              : "Send DataTransfer"}
+            <MessageSquare className="h-3 w-3 ml-2 shrink-0 opacity-70" />
+          </Button>
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Simulated Vendor Errors"
+        icon={<Plug className="h-3.5 w-3.5" />}
+        color="text-rose-400"
+        description="Overrides standard StatusNotification error codes"
+      >
+        <Field
+          label="Vendor Error Code"
+          icon={<MessageSquare className="h-3 w-3 text-rose-400/60" />}
+        >
+          <Input
+            value={vendor?.vendorErrorCode ?? ""}
+            onChange={(e) =>
+              updateVendorConfig({ vendorErrorCode: e.target.value })
+            }
+            className="h-9 bg-white/3 border-white/8 text-white text-[12px] font-mono rounded-lg focus-visible:ring-rose-500/30"
+            placeholder="e.g. 0x01B (Optional)"
+          />
+        </Field>
+      </SectionCard>
+    </div>
   );
 }
 
 /* ═══════════════════════════════════════════
    STATION CONFIG TAB
    ═══════════════════════════════════════════ */
+
+// ── Helpers for UI Grouping ──
+const GROUP_16_SECURITY = ["SecurityProfile", "AuthorizationKey"];
+const GROUP_16_SMART_CHARGING = [
+  "ChargeProfileMaxStackLevel",
+  "MaxChargingProfilesInstalled",
+  "ChargingScheduleAllowedChargingRateUnit",
+  "ChargingScheduleMaxPeriods",
+];
+const GROUP_16_LOCAL_AUTH = [
+  "LocalAuthListMaxLength",
+  "SendLocalListMaxLength",
+  "LocalAuthorizeOffline",
+  "LocalPreAuthorize",
+];
 
 function StationConfigTab() {
   const { config, updateStationConfigKey, setDeviceVariable, deviceModel } =
@@ -521,103 +611,153 @@ function StationConfigTab() {
 
   if (is2x) {
     // ── OCPP 2.x Device Model view ──
-    const editableCount = deviceModel.filter(
-      (v) => v.mutability !== "ReadOnly",
-    ).length;
+    const grouped = deviceModel.reduce(
+      (acc, v) => {
+        if (!acc[v.component]) acc[v.component] = [];
+        acc[v.component].push(v);
+        return acc;
+      },
+      {} as Record<string, typeof deviceModel>,
+    );
+
     return (
-      <SectionCard
-        title="Device Model Variables"
-        icon={<SlidersHorizontal className="h-3.5 w-3.5" />}
-        color="text-amber-400"
-        description={`${deviceModel.length} total · ${editableCount} writable · GetVariables / SetVariables`}
-      >
-        <div className="space-y-0.5 -mx-1">
-          {deviceModel.map((v) => (
-            <div
-              key={`${v.component}/${v.variable}`}
-              className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-white/3 transition-colors"
+      <div className="space-y-4">
+        {Object.entries(grouped).map(([compName, vars]) => {
+          const editableCount = vars.filter(
+            (v) => v.mutability !== "ReadOnly",
+          ).length;
+          return (
+            <SectionCard
+              key={compName}
+              title={compName}
+              icon={<SlidersHorizontal className="h-3.5 w-3.5" />}
+              color="text-amber-400"
+              description={`${vars.length} vars · ${editableCount} writable`}
             >
-              <div className="flex-1 min-w-0 flex items-center gap-1.5">
-                <span className="text-[10px] font-mono text-slate-500 truncate">
-                  {v.component}/
-                </span>
-                <span
-                  className={`text-[11px] font-mono truncate ${
-                    v.mutability === "ReadOnly"
-                      ? "text-slate-600"
-                      : "text-slate-300"
-                  }`}
-                >
-                  {v.variable}
-                </span>
-                {v.mutability === "ReadOnly" && (
-                  <Badge
-                    variant="outline"
-                    className="text-[7px] px-1 py-0 h-3 text-amber-400/70 border-amber-400/15 bg-amber-400/5 shrink-0 font-mono"
+              <div className="space-y-0.5 -mx-1">
+                {vars.map((v) => (
+                  <div
+                    key={`${v.component}/${v.variable}`}
+                    className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-white/3 transition-colors"
                   >
-                    RO
-                  </Badge>
-                )}
+                    <div className="flex-1 min-w-0 flex items-center gap-1.5 mr-2">
+                      <span
+                        className={`text-[11px] font-mono truncate ${
+                          v.mutability === "ReadOnly"
+                            ? "text-slate-500"
+                            : "text-slate-300 font-medium"
+                        }`}
+                        title={v.variable}
+                      >
+                        {v.variable}
+                      </span>
+                      {v.mutability === "ReadOnly" && (
+                        <Badge
+                          variant="outline"
+                          className="text-[7px] px-1 py-0 h-3 text-amber-400/70 border-amber-400/15 bg-amber-400/5 shrink-0 font-mono"
+                        >
+                          RO
+                        </Badge>
+                      )}
+                    </div>
+                    <Input
+                      value={v.value}
+                      disabled={v.mutability === "ReadOnly"}
+                      onChange={(e) =>
+                        setDeviceVariable(
+                          v.component,
+                          v.variable,
+                          e.target.value,
+                        )
+                      }
+                      className="h-7 text-[10px] w-32 shrink-0 font-mono bg-white/3 border-white/8 text-white rounded-md focus-visible:ring-amber-500/30"
+                    />
+                  </div>
+                ))}
               </div>
-              <Input
-                value={v.value}
-                disabled={v.mutability === "ReadOnly"}
-                onChange={(e) =>
-                  setDeviceVariable(v.component, v.variable, e.target.value)
-                }
-                className="h-7 text-[10px] w-32 shrink-0 font-mono bg-white/3 border-white/8 text-white rounded-md focus-visible:ring-amber-500/30"
-              />
-            </div>
-          ))}
-        </div>
-      </SectionCard>
+            </SectionCard>
+          );
+        })}
+      </div>
     );
   }
 
-  // ── OCPP 1.6 Station Config (original) ──
+  // ── OCPP 1.6 Station Config ──
   const keys = config.stationConfig;
-  const editableCount = keys.filter((k) => !k.readonly).length;
+
+  const grouped = keys.reduce(
+    (acc, k) => {
+      if (GROUP_16_SECURITY.includes(k.key)) acc.Security.push(k);
+      else if (GROUP_16_SMART_CHARGING.includes(k.key))
+        acc["Smart Charging"].push(k);
+      else if (GROUP_16_LOCAL_AUTH.includes(k.key))
+        acc["Local Auth List"].push(k);
+      else acc["Core / Misc"].push(k);
+      return acc;
+    },
+    {
+      "Core / Misc": [],
+      Security: [],
+      "Smart Charging": [],
+      "Local Auth List": [],
+    } as Record<string, typeof keys>,
+  );
 
   return (
-    <SectionCard
-      title="Configuration Keys"
-      icon={<SlidersHorizontal className="h-3.5 w-3.5" />}
-      color="text-amber-400"
-      description={`${keys.length} total · ${editableCount} editable · GetConfiguration`}
-    >
-      <div className="space-y-0.5 -mx-1">
-        {keys.map((k) => (
-          <div
-            key={k.key}
-            className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-white/3 transition-colors"
-          >
-            <div className="flex-1 min-w-0 flex items-center gap-1.5">
-              <span
-                className={`text-[11px] font-mono truncate ${
-                  k.readonly ? "text-slate-600" : "text-slate-300"
-                }`}
-              >
-                {k.key}
-              </span>
-              {k.readonly && (
-                <Badge
-                  variant="outline"
-                  className="text-[7px] px-1 py-0 h-3 text-amber-400/70 border-amber-400/15 bg-amber-400/5 shrink-0 font-mono"
-                >
-                  RO
-                </Badge>
-              )}
-            </div>
-            <Input
-              value={k.value}
-              disabled={k.readonly}
-              onChange={(e) => updateStationConfigKey(k.key, e.target.value)}
-              className="h-7 text-[10px] w-32 shrink-0 font-mono bg-white/3 border-white/8 text-white rounded-md focus-visible:ring-amber-500/30"
-            />
-          </div>
-        ))}
-      </div>
-    </SectionCard>
+    <div className="space-y-4">
+      {Object.entries(grouped)
+        .filter(([_, list]) => list.length > 0)
+        .map(([groupName, groupKeys]) => {
+          const editableCount = groupKeys.filter((k) => !k.readonly).length;
+          return (
+            <SectionCard
+              key={groupName}
+              title={groupName}
+              icon={<SlidersHorizontal className="h-3.5 w-3.5" />}
+              color="text-amber-400"
+              description={`${groupKeys.length} keys · ${editableCount} editable`}
+            >
+              <div className="space-y-0.5 -mx-1">
+                {groupKeys.map((k) => (
+                  <div
+                    key={k.key}
+                    className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-white/3 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0 flex items-center gap-1.5 mr-2">
+                      <span
+                        className={`text-[11px] font-mono truncate ${
+                          k.readonly
+                            ? "text-slate-500"
+                            : "text-slate-300 font-medium"
+                        }`}
+                        title={k.key}
+                      >
+                        {k.key}
+                      </span>
+                      {k.readonly && (
+                        <Badge
+                          variant="outline"
+                          className="text-[7px] px-1 py-0 h-3 text-amber-400/70 border-amber-400/15 bg-amber-400/5 shrink-0 font-mono"
+                        >
+                          RO
+                        </Badge>
+                      )}
+                    </div>
+                    <Input
+                      value={k.value}
+                      disabled={k.readonly}
+                      onChange={(e) =>
+                        updateStationConfigKey(k.key, e.target.value)
+                      }
+                      className="h-7 text-[10px] w-32 shrink-0 font-mono bg-white/3 border-white/8 text-white rounded-md focus-visible:ring-amber-500/30"
+                    />
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          );
+        })}
+    </div>
   );
 }
 
@@ -1005,7 +1145,7 @@ export function ConfigPanel({ onClose }: { onClose: () => void }) {
       {/* Content */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
         {activeTab === "connection" && <ConnectionTab />}
-        {activeTab === "boot" && <BootNotificationTab />}
+        {activeTab === "vendor" && <VendorTab />}
         {activeTab === "station" && <StationConfigTab />}
         {activeTab === "simulation" && <SimulationTab />}
         {activeTab === "composer" && <MessageComposerTab />}

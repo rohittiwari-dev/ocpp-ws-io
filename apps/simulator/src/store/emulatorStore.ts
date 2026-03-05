@@ -119,6 +119,12 @@ export interface StationConfigKey {
   value: string;
 }
 
+export interface VendorConfig {
+  vendorId: string;
+  vendorErrorCode: string;
+  customDataStr: string;
+}
+
 // ─── OCPP 2.x Types ──────────────────────────────────────────────────────────
 
 export interface ComponentVariable {
@@ -181,6 +187,8 @@ export interface EmulatorConfig {
   // Connector defaults
   rfidTag: string;
   numberOfConnectors: 1 | 2;
+  // Vendor Extensions
+  vendorConfig: VendorConfig;
 }
 
 export interface ConfigProfile {
@@ -238,6 +246,7 @@ export interface EmulatorStore {
   ) => void;
   updateStationConfigKey: (id: string, key: string, value: string) => void;
   updateSimulation: (id: string, fields: Partial<SimulationConfig>) => void;
+  updateVendorConfig: (id: string, fields: Partial<VendorConfig>) => void;
 
   // ── Per-charger runtime ──
   setStatus: (id: string, status: ConnectionStatus) => void;
@@ -340,44 +349,61 @@ export const DEFAULT_MEASURANDS: MeasurandsConfig = {
 };
 
 const DEFAULT_STATION_CONFIG: StationConfigKey[] = [
+  // ── Core & Security ──
   { key: "AuthorizeRemoteTxRequests", readonly: true, value: "false" },
-  { key: "ClockAlignedDataInterval", readonly: true, value: "0" },
+  { key: "SecurityProfile", readonly: false, value: "0" },
+  { key: "AuthorizationKey", readonly: false, value: "" },
+  { key: "CpoName", readonly: false, value: "ocpp-ws-io" },
+  { key: "ResetRetries", readonly: false, value: "3" },
+  { key: "WebSocketPingInterval", readonly: false, value: "600" },
+
+  // ── Connection Diagnostics ──
   { key: "ConnectionTimeOut", readonly: false, value: "60" },
-  { key: "GetConfigurationMaxKeys", readonly: true, value: "0" },
   { key: "HeartbeatInterval", readonly: false, value: "300" },
-  { key: "LocalAuthorizeOffline", readonly: true, value: "false" },
-  { key: "LocalPreAuthorize", readonly: true, value: "false" },
+  { key: "TransactionMessageAttempts", readonly: false, value: "3" },
+  { key: "TransactionMessageRetryInterval", readonly: false, value: "60" },
+
+  // ── Smart Charging ──
+  { key: "ChargeProfileMaxStackLevel", readonly: true, value: "1" },
+  { key: "MaxChargingProfilesInstalled", readonly: true, value: "10" },
+  {
+    key: "ChargingScheduleAllowedChargingRateUnit",
+    readonly: true,
+    value: "Current,Power",
+  },
+  { key: "ChargingScheduleMaxPeriods", readonly: true, value: "1" },
+
+  // ── Telemetry & Meter Values ──
+  { key: "MeterValueSampleInterval", readonly: false, value: "60" },
+  { key: "ClockAlignedDataInterval", readonly: true, value: "0" },
   { key: "MeterValuesAlignedData", readonly: true, value: "0" },
   {
     key: "MeterValuesSampledData",
     readonly: true,
     value: "Energy.Active.Import.Register,Power.Active.Import",
   },
-  { key: "MeterValueSampleInterval", readonly: false, value: "60" },
+
+  // ── Local Authorization ──
+  { key: "LocalAuthListMaxLength", readonly: true, value: "100" },
+  { key: "SendLocalListMaxLength", readonly: true, value: "10" },
+  { key: "LocalAuthorizeOffline", readonly: true, value: "false" },
+  { key: "LocalPreAuthorize", readonly: true, value: "false" },
+
+  // ── Transaction & Feature Discovery ──
+  { key: "GetConfigurationMaxKeys", readonly: true, value: "20" },
   { key: "NumberOfConnectors", readonly: true, value: "1" },
   { key: "ConnectorPhaseRotation", readonly: true, value: "Unknown" },
   {
     key: "SupportedFeatureProfiles",
     readonly: true,
-    value: "Core,Reservation,SmartCharging,RemoteTrigger",
+    value:
+      "Core,Reservation,SmartCharging,RemoteTrigger,LocalAuthListManagement",
   },
-  { key: "ResetRetries", readonly: false, value: "3" },
-  { key: "TransactionMessageAttempts", readonly: false, value: "3" },
-  { key: "TransactionMessageRetryInterval", readonly: false, value: "60" },
   { key: "StopTransactionOnEVSideDisconnect", readonly: true, value: "true" },
   { key: "StopTransactionOnInvalidId", readonly: true, value: "true" },
   { key: "StopTxnAlignedData", readonly: true, value: " " },
   { key: "StopTxnSampledData", readonly: true, value: " " },
   { key: "UnlockConnectorOnEVSideDisconnect", readonly: true, value: "true" },
-  { key: "ChargeProfileMaxStackLevel", readonly: true, value: "1" },
-  {
-    key: "ChargingScheduleAllowedChargingRateUnit",
-    readonly: true,
-    value: "Current",
-  },
-  { key: "ChargingScheduleMaxPeriods", readonly: true, value: "1" },
-  { key: "MaxChargingProfilesInstalled", readonly: true, value: "1" },
-  { key: "WebSocketPingInterval", readonly: false, value: "600" },
 ];
 
 const DEFAULT_SIMULATION: SimulationConfig = {
@@ -403,6 +429,11 @@ const makeDefaultConfig = (index: number): EmulatorConfig => ({
   simulation: { ...DEFAULT_SIMULATION, measurands: { ...DEFAULT_MEASURANDS } },
   rfidTag: "DEADBEEF",
   numberOfConnectors: 1,
+  vendorConfig: {
+    vendorId: "VirtualVendor",
+    vendorErrorCode: "",
+    customDataStr: "{}",
+  },
 });
 
 const makeDefaultConnector = (
@@ -436,6 +467,7 @@ const makeDefaultRuntime = (rfidTag: string): ChargerRuntimeState => ({
   connectedAt: null,
   // ── OCPP 2.x runtime defaults ──
   deviceModel: [
+    // ── ChargingStation (Identity) ──
     {
       component: "ChargingStation",
       variable: "Model",
@@ -461,21 +493,105 @@ const makeDefaultRuntime = (rfidTag: string): ChargerRuntimeState => ({
       mutability: "ReadOnly",
     },
     {
-      component: "HeartbeatInterval",
-      variable: "Interval",
+      component: "ChargingStation",
+      variable: "ChargeBoxSerialNumber",
+      value: "elm.001.00.01",
+      mutability: "ReadOnly",
+    },
+
+    // ── OCPPCommCtrlr (Networking) ──
+    {
+      component: "OCPPCommCtrlr",
+      variable: "HeartbeatInterval",
       value: "300",
       mutability: "ReadWrite",
     },
     {
-      component: "ClockAlignedDataInterval",
-      variable: "Interval",
-      value: "0",
+      component: "OCPPCommCtrlr",
+      variable: "MessageTimeout",
+      value: "60",
       mutability: "ReadWrite",
     },
     {
-      component: "SampledDataInterval",
-      variable: "Interval",
+      component: "OCPPCommCtrlr",
+      variable: "RetryBackOffRepeatTimes",
+      value: "3",
+      mutability: "ReadWrite",
+    },
+    {
+      component: "OCPPCommCtrlr",
+      variable: "WebSocketPingInterval",
+      value: "600",
+      mutability: "ReadWrite",
+    },
+
+    // ── AuthCtrlr (Authorization) ──
+    {
+      component: "AuthCtrlr",
+      variable: "AuthorizeRemoteStart",
+      value: "false",
+      mutability: "ReadWrite",
+    },
+    {
+      component: "AuthCtrlr",
+      variable: "LocalAuthorizeOffline",
+      value: "false",
+      mutability: "ReadWrite",
+    },
+    {
+      component: "AuthCtrlr",
+      variable: "LocalPreAuthorize",
+      value: "false",
+      mutability: "ReadWrite",
+    },
+
+    // ── TxCtrlr (Transactions) ──
+    {
+      component: "TxCtrlr",
+      variable: "EVConnectionTimeOut",
       value: "60",
+      mutability: "ReadWrite",
+    },
+    {
+      component: "TxCtrlr",
+      variable: "StopTxOnEVSideDisconnect",
+      value: "true",
+      mutability: "ReadWrite",
+    },
+    {
+      component: "TxCtrlr",
+      variable: "StopTxOnInvalidId",
+      value: "true",
+      mutability: "ReadWrite",
+    },
+
+    // ── SampledDataCtrlr (Telemetry) ──
+    {
+      component: "SampledDataCtrlr",
+      variable: "TxUpdatedInterval",
+      value: "60",
+      mutability: "ReadWrite",
+    },
+    {
+      component: "SampledDataCtrlr",
+      variable: "TxEndedInterval",
+      value: "60",
+      mutability: "ReadWrite",
+    },
+
+    // ── SecurityCtrlr (Basic Auth & TLS) ──
+    {
+      component: "SecurityCtrlr",
+      variable: "BasicAuthPassword",
+      value: "",
+      mutability: "ReadWrite",
+    },
+
+    // ── Miscellaneous ──
+    {
+      component: "ClockAlignedDataInterval", // Legacy mapped
+      variable: "Interval",
+      value: "0",
       mutability: "ReadWrite",
     },
     {
@@ -631,6 +747,17 @@ export const useEmulatorStore = create<EmulatorStore>()(
             config: {
               ...slot.config,
               simulation: { ...slot.config.simulation, ...fields },
+            },
+          })),
+        })),
+
+      updateVendorConfig: (id, fields) =>
+        set((s) => ({
+          chargers: updateSlot(s.chargers, id, (slot) => ({
+            ...slot,
+            config: {
+              ...slot.config,
+              vendorConfig: { ...slot.config.vendorConfig, ...fields },
             },
           })),
         })),
@@ -862,6 +989,12 @@ export const useEmulatorStore = create<EmulatorStore>()(
                   ...(legacyConfig.simulation?.measurands ?? {}),
                 },
               },
+              vendorConfig: {
+                vendorId: "VirtualVendor",
+                vendorErrorCode: "",
+                customDataStr: "{}",
+                ...(legacyConfig.vendorConfig ?? {}),
+              },
             };
             slot.savedProfiles = Array.isArray(persisted.savedProfiles)
               ? persisted.savedProfiles
@@ -903,6 +1036,12 @@ export const useEmulatorStore = create<EmulatorStore>()(
                   ...DEFAULT_MEASURANDS,
                   ...(c.config?.simulation?.measurands ?? {}),
                 },
+              },
+              vendorConfig: {
+                vendorId: "VirtualVendor",
+                vendorErrorCode: "",
+                customDataStr: "{}",
+                ...(c.config?.vendorConfig ?? {}),
               },
             };
             return {

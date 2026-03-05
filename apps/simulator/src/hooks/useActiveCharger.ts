@@ -12,6 +12,7 @@ import {
   type OCPPLog,
   type SimulationConfig,
   useEmulatorStore,
+  type VendorConfig,
 } from "@/store/emulatorStore";
 
 /**
@@ -44,6 +45,10 @@ export function useActiveCharger() {
   );
   const updateSimulation = useCallback(
     (fields: Partial<SimulationConfig>) => store.updateSimulation(id, fields),
+    [id, store],
+  );
+  const updateVendorConfig = useCallback(
+    (fields: Partial<VendorConfig>) => store.updateVendorConfig(id, fields),
     [id, store],
   );
   const setStatus = useCallback(
@@ -124,6 +129,7 @@ export function useActiveCharger() {
     updateBootNotification,
     updateStationConfigKey,
     updateSimulation,
+    updateVendorConfig,
     setStatus,
     updateConnector,
     resetConnector,

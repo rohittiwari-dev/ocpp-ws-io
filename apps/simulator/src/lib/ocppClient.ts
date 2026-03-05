@@ -331,7 +331,17 @@ class OCPPService {
       );
       if (!found) return { status: "NotSupported" };
       if (found.readonly) return { status: "Rejected" };
+
       s.updateStationConfigKey(cid, payload.key, payload.value);
+
+      // Reactivity Engine: Apply changes immediately
+      if (payload.key === "HeartbeatInterval") {
+        const interval = Number(payload.value);
+        if (!Number.isNaN(interval) && interval > 0) {
+          this.startHeartbeatTimer(interval);
+        }
+      }
+
       return { status: "Accepted" };
     });
 
@@ -973,6 +983,21 @@ class OCPPService {
           req.variable.name,
           req.attributeValue,
         );
+
+        // Reactivity Engine: Apply changes immediately
+        if (
+          req.variable.name === "HeartbeatInterval" ||
+          (req.component.name === "OCPPCommCtrlr" &&
+            req.variable.name === "HeartbeatInterval") ||
+          (req.component.name === "HeartbeatInterval" &&
+            req.variable.name === "Interval")
+        ) {
+          const interval = Number(req.attributeValue);
+          if (!Number.isNaN(interval) && interval > 0) {
+            this.startHeartbeatTimer(interval);
+          }
+        }
+
         return {
           component: req.component,
           variable: req.variable,
@@ -1284,6 +1309,18 @@ class OCPPService {
             : undefined,
       },
     };
+
+    try {
+      if (slot.config.vendorConfig?.customDataStr) {
+        const parsed = JSON.parse(slot.config.vendorConfig.customDataStr);
+        if (Object.keys(parsed).length > 0) {
+          (payload as any).customData = {
+            vendorId: slot.config.vendorConfig.vendorId,
+            ...parsed,
+          };
+        }
+      }
+    } catch (_) {}
     const msgId = nanoid(8);
     store.addLog(this.chargerId, {
       direction: "Tx",
@@ -1425,6 +1462,11 @@ class OCPPService {
       evseId,
       connectorId,
     };
+
+    const { vendorConfig } = store.getSlot(this.chargerId)?.config ?? {};
+    if (vendorConfig?.vendorErrorCode) {
+      (payload as any).vendorErrorCode = vendorConfig.vendorErrorCode;
+    }
     const msgId = nanoid(8);
     store.addLog(this.chargerId, {
       direction: "Tx",
@@ -1631,9 +1673,12 @@ class OCPPService {
   ) {
     if (!this.client) return;
     const s = useEmulatorStore.getState();
+    const vendorError = s.getSlot(this.chargerId)?.config.vendorConfig
+      ?.vendorErrorCode;
+
     const payload = {
       connectorId,
-      errorCode,
+      errorCode: vendorError || errorCode,
       status,
       timestamp: new Date().toISOString(),
     };
@@ -2019,14 +2064,28 @@ class OCPPService {
   }
 
   // ─── DataTransfer (CP → CSMS) ─────────────────────────────────────────────
-  async sendDataTransfer(vendorId: string, messageId?: string, data?: string) {
+  async sendDataTransfer(vendorId?: string, messageId?: string, data?: string) {
     if (!this.client) return;
     const s = useEmulatorStore.getState();
+    const config = s.getSlot(this.chargerId)?.config.vendorConfig;
+
     const payload: { vendorId: string; messageId?: string; data?: string } = {
-      vendorId,
+      vendorId: vendorId || config?.vendorId || "UnknownVendor",
     };
     if (messageId) payload.messageId = messageId;
-    if (data) payload.data = data;
+
+    // Use explicitly passed data, OR fallback to vendorConfig custom data
+    if (data) {
+      payload.data = data;
+    } else if (config?.customDataStr) {
+      try {
+        JSON.parse(config.customDataStr);
+        payload.data = config.customDataStr;
+      } catch (_) {
+        payload.data = config.customDataStr;
+      }
+    }
+
     const msgId = nanoid(8);
     s.addLog(this.chargerId, {
       direction: "Tx",

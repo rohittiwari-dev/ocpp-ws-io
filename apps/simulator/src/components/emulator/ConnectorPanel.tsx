@@ -390,7 +390,6 @@ export function ConnectorPanel({ connectorId }: { connectorId: number }) {
             <div className="flex items-end gap-3 mb-1">
               <div className="flex items-baseline flex-1 min-w-0 border-b border-[#232636] pb-1">
                 <Input
-                  type="number"
                   value={connector.currentMeterValue}
                   disabled={!inTx}
                   onChange={(e) =>
@@ -418,7 +417,6 @@ export function ConnectorPanel({ connectorId }: { connectorId: number }) {
                 Set&nbsp;→
               </span>
               <input
-                type="number"
                 value={meterSetInput}
                 placeholder="e.g. 5000"
                 onChange={(e) => setMeterSetInput(e.target.value)}
@@ -440,7 +438,6 @@ export function ConnectorPanel({ connectorId }: { connectorId: number }) {
                   Add&nbsp;+
                 </span>
                 <Input
-                  type="number"
                   value={customMeterStep}
                   onChange={(e) =>
                     setCustomMeterStep(Number(e.target.value) || 0)

@@ -89,11 +89,8 @@ h6 {
 body {
   background-color: var(--color-fd-background);
   /* Light Mode: Soft pastel gradient blobs */
-  background-image: radial-gradient(
-      ellipse at 15% 15%,
-      hsl(252 80% 96%) 0%,
-      transparent 50%
-    ),
+  background-image:
+    radial-gradient(ellipse at 15% 15%, hsl(252 80% 96%) 0%, transparent 50%),
     radial-gradient(ellipse at 80% 20%, hsl(210 80% 96%) 0%, transparent 40%),
     radial-gradient(ellipse at 50% 80%, hsl(330 60% 97%) 0%, transparent 40%);
   background-attachment: fixed;
@@ -101,7 +98,8 @@ body {
 
 .dark body {
   /* Dark Mode Gradient (Deep/Glowing) */
-  background-image: radial-gradient(
+  background-image:
+    radial-gradient(
       circle at 15% 50%,
       hsla(221, 59%, 20%, 0.5),
       transparent 25%
