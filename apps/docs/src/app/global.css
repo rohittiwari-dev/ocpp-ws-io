@@ -89,8 +89,11 @@ h6 {
 body {
   background-color: var(--color-fd-background);
   /* Light Mode: Soft pastel gradient blobs */
-  background-image:
-    radial-gradient(ellipse at 15% 15%, hsl(252 80% 96%) 0%, transparent 50%),
+  background-image: radial-gradient(
+      ellipse at 15% 15%,
+      hsl(252 80% 96%) 0%,
+      transparent 50%
+    ),
     radial-gradient(ellipse at 80% 20%, hsl(210 80% 96%) 0%, transparent 40%),
     radial-gradient(ellipse at 50% 80%, hsl(330 60% 97%) 0%, transparent 40%);
   background-attachment: fixed;
@@ -98,8 +101,7 @@ body {
 
 .dark body {
   /* Dark Mode Gradient (Deep/Glowing) */
-  background-image:
-    radial-gradient(
+  background-image: radial-gradient(
       circle at 15% 50%,
       hsla(221, 59%, 20%, 0.5),
       transparent 25%
@@ -201,4 +203,48 @@ header {
 
 .scrollbar-thin:hover::-webkit-scrollbar-thumb:hover {
   background: var(--color-fd-muted-foreground);
+}
+
+/* =========================================
+   FUMADOCS UI OVERRIDES FOR DOCS REDESIGN
+   ========================================= */
+
+/* Transparent / Glass Nav & Sidebar base */
+.fd-nav {
+  @apply backdrop-blur-xl bg-transparent! border-b border-fd-border/30!;
+}
+
+.fd-sidebar,
+.fd-toc {
+  @apply bg-transparent! border-fd-border/30!;
+}
+
+.fd-sidebar {
+  @apply border-r;
+}
+
+/* Sidebar Active Item Glows */
+.fd-sidebar [data-active="true"] {
+  @apply bg-violet-500/10! text-violet-500! font-medium border border-violet-500/20! shadow-sm shadow-violet-500/5 relative;
+}
+
+/* Add a mini indicator dot for active sidebar links */
+.fd-sidebar [data-active="true"]::before {
+  content: "";
+  @apply absolute left-1 top-1/2 -translate-y-1/2 w-1 h-1 rounded-full bg-violet-500;
+}
+
+/* Fix text colors inside active items */
+.fd-sidebar [data-active="true"] * {
+  @apply text-violet-500/90!;
+}
+
+/* Hover effects for inactive sidebar items */
+.fd-sidebar a:not([data-active="true"]):hover {
+  @apply bg-fd-card text-fd-foreground shadow-sm border border-fd-border/50;
+}
+
+/* TOC active item */
+.fd-toc [data-active="true"] {
+  @apply text-violet-500! font-semibold;
 }

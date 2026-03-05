@@ -12,6 +12,10 @@ export default function Layout({ children }: LayoutProps<"/docs">) {
         enabled: true,
         collapsible: true,
       }}
+      nav={{
+        ...options.nav,
+        transparentMode: "always",
+      }}
       githubUrl="https://github.com/rohittiwari-dev/ocpp-ws-io"
     >
       {children}
