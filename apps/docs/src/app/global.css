@@ -121,9 +121,10 @@ aside {
 }
 
 header {
-  position: sticky;
+  /* position: sticky; */
   top: 0;
   z-index: 50;
+  @apply bg-transparent! backdrop-blur-none! shadow-none! border-none! fixed! w-full!;
 }
 
 /* Themed Scrollbar */

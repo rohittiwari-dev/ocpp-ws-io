@@ -88,7 +88,7 @@ export const metadata = {
     card: "summary_large_image",
     title: "OCPP WS IO",
     description: "Type-safe OCPP WebSocket RPC client & server for Node.js",
-    creator: "@rohittiwari",
+    creator: "@rohittiwari_dev",
     images: ["/og.png"],
   },
 };

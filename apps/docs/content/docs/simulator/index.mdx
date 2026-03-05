@@ -13,6 +13,22 @@ import { Mermaid } from "@/components/mermaid";
   any OCPP-compliant Central System over WebSocket — no proxy or backend needed.
 </Callout>
 
+<Callout type="tip">
+  **Live demo:** Try the simulator now at
+  [ocpp.rohittiwari.me](https://ocpp.rohittiwari.me) — no install required.
+</Callout>
+
+<img
+  src="/images/simulator-ui.png"
+  alt="OCPP WS Simulator — full UI showing connector panel, log stream, and config panel"
+  style={{
+    width: "100%",
+    borderRadius: 12,
+    border: "1px solid #282b3a",
+    marginBottom: 24,
+  }}
+/>
+
 ## What Is It?
 
 The **OCPP Simulator** is a visual, zero-install charge point emulator that runs entirely in the browser. It uses the `BrowserOCPPClient` from `ocpp-ws-io/browser` to establish real WebSocket connections to a Central System (CSMS) and emulate the full OCPP message lifecycle — from `BootNotification` all the way through `StartTransaction`, `MeterValues`, and `StopTransaction`.

@@ -1,6 +1,7 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { motion } from "framer-motion";
+import { ArrowRight, BookOpen, Search } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -9,17 +10,31 @@ interface BlogPost {
   url: string;
   title: string;
   description: string;
-  date: Date;
-  image: string;
-  tags: string[];
+  date: Date | string;
+  image?: string;
+  tags?: string[];
 }
+
+const containerVariants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.1 } },
+};
+
+const cardVariants = {
+  hidden: { opacity: 0, y: 30 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.5, ease: "easeOut" as const },
+  },
+};
 
 export function BlogPostsList({ posts }: { posts: BlogPost[] }) {
   const [search, setSearch] = useState("");
   const [activeTag, setActiveTag] = useState<string | null>(null);
 
   const allTags = useMemo(
-    () => Array.from(new Set(posts.flatMap((p) => p.tags))),
+    () => Array.from(new Set(posts.flatMap((p) => p.tags || []))),
     [posts],
   );
 
@@ -29,24 +44,23 @@ export function BlogPostsList({ posts }: { posts: BlogPost[] }) {
         !search ||
         post.title.toLowerCase().includes(search.toLowerCase()) ||
         post.description.toLowerCase().includes(search.toLowerCase());
-      const matchesTag = !activeTag || post.tags.includes(activeTag);
+      const matchesTag = !activeTag || post.tags?.includes(activeTag);
       return matchesSearch && matchesTag;
     });
   }, [posts, search, activeTag]);
 
   return (
     <>
-      {/* Search + Tag Filters */}
-      <div className="mb-8 space-y-4">
+      <div className="mb-12">
         {/* Search */}
-        <div className="relative">
-          <Search className="absolute z-10 left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-fd-foreground" />
+        <div className="relative max-w-xl mb-6 group">
+          <Search className="absolute z-10 left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-fd-muted-foreground transition-colors group-focus-within:text-violet-500" />
           <input
             type="text"
-            placeholder="Search posts..."
+            placeholder="Search all posts..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-fd-border bg-fd-card/50 py-2.5 pl-10 pr-4 text-sm text-fd-foreground placeholder:text-fd-muted-foreground outline-none transition-all focus:border-fd-primary/50 focus:ring-2 focus:ring-fd-primary/20 backdrop-blur-sm"
+            className="w-full rounded-2xl border border-fd-border bg-fd-card/50 py-3 pl-11 pr-4 text-sm text-fd-foreground placeholder:text-fd-muted-foreground outline-none transition-all focus:border-violet-500/50 focus:ring-4 focus:ring-violet-500/10 focus:bg-fd-card shadow-sm"
           />
         </div>
 
@@ -55,10 +69,10 @@ export function BlogPostsList({ posts }: { posts: BlogPost[] }) {
           <button
             type="button"
             onClick={() => setActiveTag(null)}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
+            className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
               activeTag === null
-                ? "bg-fd-primary text-fd-primary-foreground shadow-sm"
-                : "bg-fd-card/50 text-fd-muted-foreground border border-fd-border hover:bg-fd-card hover:text-fd-foreground"
+                ? "bg-violet-500 text-white shadow-md shadow-violet-500/20"
+                : "bg-fd-card/50 text-fd-muted-foreground border border-fd-border hover:bg-fd-card hover:text-fd-foreground hover:shadow-sm"
             }`}
           >
             All
@@ -68,10 +82,10 @@ export function BlogPostsList({ posts }: { posts: BlogPost[] }) {
               type="button"
               key={tag}
               onClick={() => setActiveTag(activeTag === tag ? null : tag)}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
+              className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
                 activeTag === tag
-                  ? "bg-fd-primary text-fd-primary-foreground shadow-sm"
-                  : "bg-fd-primary/10 text-fd-primary hover:bg-fd-primary/20"
+                  ? "bg-violet-500 text-white shadow-md shadow-violet-500/20"
+                  : "bg-violet-500/10 text-violet-500 hover:bg-violet-500/20 border border-transparent"
               }`}
             >
               {tag}
@@ -80,79 +94,118 @@ export function BlogPostsList({ posts }: { posts: BlogPost[] }) {
         </div>
       </div>
 
-      {/* Results Count */}
+      {/* Results Count Meta */}
       {(search || activeTag) && (
-        <p className="mb-4 text-sm text-fd-muted-foreground">
+        <motion.p
+          initial={{ opacity: 0, y: -5 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-6 text-sm text-fd-muted-foreground"
+        >
           {filtered.length} {filtered.length === 1 ? "post" : "posts"} found
           {activeTag && (
             <>
               {" "}
               in{" "}
-              <span className="font-medium text-fd-primary">{activeTag}</span>
+              <span className="font-semibold text-violet-400">{activeTag}</span>
             </>
           )}
           {search && (
             <>
               {" "}
               for &quot;
-              <span className="font-medium text-fd-foreground">{search}</span>
+              <span className="font-semibold text-fd-foreground">{search}</span>
               &quot;
             </>
           )}
-        </p>
+        </motion.p>
       )}
 
       {/* Posts Grid */}
-      <div className="grid gap-8 md:grid-cols-2 w-full place-items-stretch lg:grid-cols-3">
+      <motion.div
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
+      >
         {filtered.map((post) => (
-          <Link
-            key={post.url}
-            href={post.url}
-            className="flex flex-col overflow-hidden w-full rounded-lg border bg-fd-card text-fd-card-foreground shadow-sm transition-all hover:shadow-md"
-          >
-            {post.image && (
-              <Image
-                src={post.image}
-                alt={post.title}
-                className="aspect-video w-full object-cover"
-                width={500}
-                height={500}
-              />
-            )}
-            <div className="flex flex-1 flex-col p-6">
-              <h2 className="mb-2 text-xl font-semibold">{post.title}</h2>
-              <p className="mb-4 text-sm text-fd-muted-foreground line-clamp-3">
-                {post.description}
-              </p>
-              <div className="mt-auto flex items-center text-xs text-fd-muted-foreground">
-                <span>{new Date(post.date).toLocaleDateString()}</span>
-                {post.tags && (
-                  <div className="ml-auto flex gap-2">
-                    {post.tags.slice(0, 2).map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-full bg-fd-primary/10 px-2.5 py-0.5 text-fd-primary font-medium"
-                      >
-                        {tag}
-                      </span>
-                    ))}
+          <motion.div key={post.url} variants={cardVariants}>
+            <Link
+              href={post.url}
+              className="group relative flex flex-col h-full overflow-hidden rounded-2xl border border-fd-border bg-fd-card transition-all duration-300 hover:shadow-xl hover:shadow-violet-500/5 hover:-translate-y-1"
+            >
+              {/* Glow on hover */}
+              <div className="absolute inset-0 rounded-2xl bg-linear-to-b from-transparent to-violet-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+
+              {/* Hero Image */}
+              <div className="relative aspect-video w-full overflow-hidden border-b border-fd-border/50 bg-fd-muted/50">
+                {post.image ? (
+                  <Image
+                    src={post.image}
+                    alt={post.title}
+                    fill
+                    className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-linear-to-br from-violet-500/10 to-blue-500/10">
+                    <BookOpen className="h-8 w-8 text-violet-400/50" />
                   </div>
                 )}
+                {/* Image overlay gradient for text legibility */}
+                <div className="absolute inset-0 bg-linear-to-t from-black/20 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
               </div>
-            </div>
-          </Link>
+
+              {/* Content */}
+              <div className="flex flex-1 flex-col p-6 relative z-10">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-y-2 text-xs font-semibold text-fd-muted-foreground uppercase tracking-wider">
+                  {post.tags?.[0] ? (
+                    <span className="text-violet-400">{post.tags[0]}</span>
+                  ) : (
+                    <span className="text-violet-400">Article</span>
+                  )}
+                  <span>
+                    {new Date(post.date).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </span>
+                </div>
+
+                <h3 className="mb-3 text-xl font-bold leading-tight text-fd-foreground transition-colors group-hover:text-violet-400">
+                  {post.title}
+                </h3>
+
+                <p className="mb-6 line-clamp-2 text-sm text-fd-muted-foreground leading-relaxed flex-1">
+                  {post.description}
+                </p>
+
+                <div className="mt-auto flex items-center gap-1.5 text-sm font-semibold text-fd-foreground transition-colors group-hover:text-violet-400">
+                  Read article
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                </div>
+              </div>
+            </Link>
+          </motion.div>
         ))}
+
         {filtered.length === 0 && (
-          <div className="col-span-full py-16 text-center">
-            <p className="text-lg font-medium text-fd-muted-foreground">
-              No posts found
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="col-span-full py-20 text-center"
+          >
+            <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-fd-muted mb-4">
+              <Search className="h-6 w-6 text-fd-muted-foreground/50" />
+            </div>
+            <p className="text-lg font-bold text-fd-foreground">
+              No matching posts
             </p>
-            <p className="mt-1 text-sm text-fd-muted-foreground/70">
-              Try adjusting your search or filter
+            <p className="mt-1 text-sm text-fd-muted-foreground">
+              Try adjusting your search criteria or clearing filters.
             </p>
-          </div>
+          </motion.div>
         )}
-      </div>
+      </motion.div>
     </>
   );
 }

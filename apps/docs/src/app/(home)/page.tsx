@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { BlogSection } from "@/components/landing/blog-section";
+import { Ecosystem } from "@/components/landing/ecosystem";
 import { Features } from "@/components/landing/features";
 import { Footer } from "@/components/landing/footer";
 import { Hero } from "@/components/landing/hero";
@@ -86,72 +87,18 @@ export default function HomePage() {
       <Stats />
       <Showcase />
       <Features />
+      <Ecosystem />
 
       {/* Blog Section */}
-      <section className="container max-w-7xl mx-auto px-4 py-18 border-t border-fd-border/50">
-        <div className="mb-12 flex items-center justify-between">
-          <div className="space-y-1">
-            <h2 className="text-3xl font-bold tracking-tight text-fd-foreground">
-              Latest from the Blog
-            </h2>
-            <p className="text-fd-muted-foreground">
-              Updates, guides, and technical deep dives.
-            </p>
-          </div>
-          <Link
-            href="/blog"
-            className="hidden text-sm font-medium text-fd-primary hover:underline md:block"
-          >
-            View all posts →
-          </Link>
-        </div>
-
-        <div className="grid gap-8 md:grid-cols-3">
-          {posts.map((post) => (
-            <Link
-              key={post.url}
-              href={post.url}
-              className="group flex flex-col overflow-hidden rounded-2xl border border-fd-border bg-fd-card transition-all hover:shadow-lg hover:-translate-y-0.5"
-            >
-              <div className="aspect-video w-full overflow-hidden bg-fd-muted">
-                {post.image ? (
-                  // biome-ignore lint/performance/noImgElement: support external images without next.config.js changes
-                  <img
-                    src={post.image}
-                    alt={post.title}
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-fd-muted-foreground">
-                    No Image
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-1 flex-col p-6">
-                <h3 className="mb-2 text-xl font-bold bg-clip-text text-transparent bg-linear-to-br from-fd-foreground to-fd-muted-foreground group-hover:to-fd-foreground transition-all">
-                  {post.title}
-                </h3>
-                <p className="mb-4 line-clamp-2 text-sm text-fd-muted-foreground">
-                  {post.description}
-                </p>
-                <div className="mt-auto flex items-center justify-between text-xs text-fd-muted-foreground">
-                  <span>{new Date(post.date).toLocaleDateString()}</span>
-                  <span className="font-medium text-fd-primary">Read more</span>
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
-
-        <div className="mt-8 text-center md:hidden">
-          <Link
-            href="/blog"
-            className="text-sm font-medium text-fd-primary hover:underline"
-          >
-            View all posts →
-          </Link>
-        </div>
-      </section>
+      <BlogSection
+        posts={posts.map((post) => ({
+          title: post.title,
+          description: post.description || "",
+          url: post.url,
+          date: post.date,
+          image: post.image,
+        }))}
+      />
       <Footer />
     </div>
   );

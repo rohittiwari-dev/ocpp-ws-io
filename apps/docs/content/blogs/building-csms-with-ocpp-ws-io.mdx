@@ -22,7 +22,7 @@ A production CSMS typically consists of several layers:
 2.  **Logic Layer**: Validates rules (e.g., "Can this user charge here?", "Is this station licensed?").
 3.  **Data Layer**: Stores persistent state (Sessions, Meter Values, CDRs).
 
-```mermaid
+<Mermaid chart={`
 graph TD
     CP[Charging Station] -->|WebSocket / OCPP| LB[Load Balancer]
     LB -->|Disconnect/Connect| Node1[CSMS Node 1]
@@ -35,7 +35,8 @@ graph TD
 
     Node1 --> DB[(PostgreSQL)]
     Node2 --> DB
-```
+
+`} />
 
 ## 2. Project Setup
 

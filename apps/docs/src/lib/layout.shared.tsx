@@ -12,26 +12,39 @@ export function baseOptions(): BaseLayoutProps {
   return {
     nav: {
       title: (
-        <>
-          <Image src="/logo.svg" alt="OCPP WS IO" width={28} height={28} />
-          <span style={{ fontWeight: 700 }}>OCPP WS IO</span>
-        </>
+        <span className="flex items-center gap-2 group">
+          <Image
+            src="/logo.svg"
+            alt="OCPP WS IO"
+            width={28}
+            height={28}
+            className="transition-transform group-hover:scale-105"
+          />
+          <span className="font-bold tracking-tight text-fd-foreground">
+            ocpp-ws-io
+          </span>
+        </span>
       ),
     },
     links: [
-      {
-        text: "Home",
-        url: "/",
-        active: "nested-url",
-      },
       {
         text: "Documentation",
         url: "/docs",
         active: "nested-url",
       },
       {
+        text: "Simulator",
+        url: "https://ocpp.rohittiwari.me",
+        active: "nested-url",
+      },
+      {
         text: "Blog",
         url: "/blog",
+        active: "nested-url",
+      },
+      {
+        text: "NPM API",
+        url: "/docs/api-reference",
         active: "nested-url",
       },
     ],
