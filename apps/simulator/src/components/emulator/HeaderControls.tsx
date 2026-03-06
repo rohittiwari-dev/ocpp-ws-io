@@ -19,7 +19,7 @@ export function HeaderControls() {
             size="sm"
             variant="ghost"
             onClick={() => ocppService.sendBootNotification()}
-            className="h-8 gap-1.5 text-slate-400 hover:text-white hover:bg-white/10 text-xs hidden sm:flex"
+            className="h-8 gap-1.5 text-t-secondary hover:text-white hover:bg-surface-hover text-xs hidden sm:flex"
           >
             <RefreshCw className="h-3.5 w-3.5 text-blue-400" />
             Boot
@@ -28,12 +28,12 @@ export function HeaderControls() {
             size="sm"
             variant="ghost"
             onClick={() => ocppService.sendHeartbeat()}
-            className="h-8 gap-1.5 text-slate-400 hover:text-white hover:bg-white/10 text-xs hidden sm:flex"
+            className="h-8 gap-1.5 text-t-secondary hover:text-white hover:bg-surface-hover text-xs hidden sm:flex"
           >
             <Zap className="h-3.5 w-3.5 text-pink-400" />
             Heartbeat
           </Button>
-          <div className="h-5 w-px bg-white/10" />
+          <div className="h-5 w-px bg-b-strong" />
         </>
       )}
 

@@ -152,9 +152,9 @@ function LogEntry({ log, isNew }: { log: OCPPLog; isNew: boolean }) {
         </span>
 
         {/* Timestamp */}
-        <span className="shrink-0 font-mono text-[10px] text-[#434b5e] tabular-nums">
+        <span className="shrink-0 font-mono text-[10px] text-t-muted tabular-nums">
           {time}
-          <span className="text-[#2e3445]">.{ms}</span>
+          <span className="text-t-faint">.{ms}</span>
         </span>
 
         {/* Action name */}
@@ -179,7 +179,7 @@ function LogEntry({ log, isNew }: { log: OCPPLog; isNew: boolean }) {
                 className={`px-2 py-0.5 rounded text-[9px] font-bold cursor-pointer transition-colors ${
                   viewMode === m
                     ? "bg-[#1e1535] text-[#c4b5fd]"
-                    : "text-[#4a5568] hover:text-[#a0a8b8]"
+                    : "text-t-faint hover:text-t-secondary"
                 }`}
               >
                 {m === "parsed" ? (
@@ -203,7 +203,7 @@ function LogEntry({ log, isNew }: { log: OCPPLog; isNew: boolean }) {
           <button
             onClick={copyFull}
             title="Copy full"
-            className="p-1 rounded text-[#4a5568] hover:text-white hover:bg-[#1d1f2b] transition-colors cursor-pointer"
+            className="p-1 rounded text-t-faint hover:text-white hover:bg-[#1d1f2b] transition-colors cursor-pointer"
           >
             {copied ? (
               <CheckCheck className="h-3 w-3 text-[#22c55e]" />
@@ -214,7 +214,7 @@ function LogEntry({ log, isNew }: { log: OCPPLog; isNew: boolean }) {
           <button
             onClick={download}
             title="Download"
-            className="p-1 rounded text-[#4a5568] hover:text-white hover:bg-[#1d1f2b] transition-colors cursor-pointer"
+            className="p-1 rounded text-t-faint hover:text-white hover:bg-[#1d1f2b] transition-colors cursor-pointer"
           >
             <Download className="h-3 w-3" />
           </button>
@@ -223,8 +223,8 @@ function LogEntry({ log, isNew }: { log: OCPPLog; isNew: boolean }) {
         {/* Chevron */}
         {hasPayload ? (
           <ChevronRight
-            className={`shrink-0 h-3 w-3 text-[#2e3445] transition-transform duration-150 ${
-              expanded ? "rotate-90 text-[#5d6577]!" : ""
+            className={`shrink-0 h-3 w-3 text-t-faint transition-transform duration-150 ${
+              expanded ? "rotate-90 text-t-muted!" : ""
             }`}
           />
         ) : (
@@ -245,7 +245,7 @@ function LogEntry({ log, isNew }: { log: OCPPLog; isNew: boolean }) {
                   className={`flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold cursor-pointer transition-colors ${
                     viewMode === m
                       ? "bg-[#1e1535] text-[#c4b5fd]"
-                      : "text-[#4a5568] hover:text-[#a0a8b8]"
+                      : "text-t-faint hover:text-t-secondary"
                   }`}
                 >
                   {m === "parsed" ? (
@@ -264,7 +264,7 @@ function LogEntry({ log, isNew }: { log: OCPPLog; isNew: boolean }) {
             </div>
             <button
               onClick={copyPayload}
-              className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold text-[#4a5568] hover:text-white border border-[#23253a] hover:border-[#383e50] hover:bg-[#1d1f2b] transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold text-t-faint hover:text-white border border-[#23253a] hover:border-[#383e50] hover:bg-[#1d1f2b] transition-colors cursor-pointer"
             >
               {copiedPayload ? (
                 <CheckCheck className="h-2.5 w-2.5 text-[#22c55e]" />
@@ -420,7 +420,7 @@ export function LogsPanel({ onHide }: { onHide?: () => void }) {
             <span className="animate-ping absolute inset-0 rounded-full bg-[#22c55e] opacity-50" />
             <span className="relative rounded-full h-1.5 w-1.5 bg-[#22c55e]" />
           </span>
-          <span className="text-[10px] font-mono text-[#4a5568] tabular-nums">
+          <span className="text-[10px] font-mono text-t-muted tabular-nums">
             {logs.length}
           </span>
 
@@ -444,17 +444,15 @@ export function LogsPanel({ onHide }: { onHide?: () => void }) {
                   onClick={() => setFilter(f)}
                   className={`flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0 border ${
                     active
-                      ? `bg-[#0f1117] border-[#23253a] ${color}`
-                      : "text-[#3d4459] border-transparent hover:text-[#6b7898] hover:bg-[#0f1117]"
+                      ? `bg-[#0f1117] border-b-strong ${color}`
+                      : "text-t-faint border-transparent hover:text-t-muted hover:bg-surface-hover"
                   }`}
                 >
                   {f}
                   {counts[f] > 0 && (
                     <span
                       className={`text-[8px] font-mono px-1 py-px rounded ${
-                        active
-                          ? "bg-[#0f1117] text-[#4a5568]"
-                          : "text-[#2e3445]"
+                        active ? "bg-[#0f1117] text-t-muted" : "text-t-faint"
                       }`}
                     >
                       {counts[f]}
@@ -474,7 +472,7 @@ export function LogsPanel({ onHide }: { onHide?: () => void }) {
             className={`flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border transition-all cursor-pointer shrink-0 ${
               autoScroll
                 ? "bg-[#091a0d] text-[#4ade80] border-[#175228]"
-                : "text-[#3d4459] border-[#23253a] hover:text-[#6b7898]"
+                : "text-t-faint border-[#23253a] hover:text-t-muted"
             }`}
           >
             <ArrowUpToLine className="h-2.5 w-2.5" />
@@ -490,7 +488,7 @@ export function LogsPanel({ onHide }: { onHide?: () => void }) {
             className={`p-1 rounded cursor-pointer transition-colors ${
               showSearch
                 ? "text-[#c4b5fd] bg-[#1e1535]"
-                : "text-[#3d4459] hover:text-white hover:bg-[#1d1f2b]"
+                : "text-t-faint hover:text-white hover:bg-[#1d1f2b]"
             }`}
           >
             <Search className="h-3.5 w-3.5" />
@@ -502,7 +500,7 @@ export function LogsPanel({ onHide }: { onHide?: () => void }) {
               setTimeout(() => setCopiedAll(false), 1800);
             }}
             title="Copy all"
-            className="p-1 rounded transition-colors cursor-pointer text-[#3d4459] hover:text-white hover:bg-[#1d1f2b]"
+            className="p-1 rounded transition-colors cursor-pointer text-t-faint hover:text-white hover:bg-surface-hover"
           >
             {copiedAll ? (
               <CheckCheck className="h-3.5 w-3.5 text-[#22c55e]" />
@@ -537,7 +535,7 @@ export function LogsPanel({ onHide }: { onHide?: () => void }) {
               <button
                 onClick={onHide}
                 title="Hide log panel"
-                className="p-1 rounded text-[#3d4459] hover:text-[#c4b5fd] hover:bg-[#1e1535] transition-colors cursor-pointer"
+                className="p-1 rounded text-t-faint hover:text-[#c4b5fd] hover:bg-[#1e1535] transition-colors cursor-pointer"
               >
                 <PanelBottomClose className="h-3.5 w-3.5" />
               </button>
@@ -568,7 +566,7 @@ export function LogsPanel({ onHide }: { onHide?: () => void }) {
               )}
             </div>
             {search && (
-              <span className="shrink-0 text-[9px] font-mono text-[#4a5568]">
+              <span className="shrink-0 text-[9px] font-mono text-t-faint">
                 {displayLogs.length} match{displayLogs.length !== 1 ? "es" : ""}
               </span>
             )}

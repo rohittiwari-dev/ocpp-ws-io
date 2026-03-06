@@ -26,7 +26,7 @@ const STATUS_MAP: Record<
   disconnected: {
     label: "Disconnected",
     icon: <WifiOff className="h-3 w-3" />,
-    cls: "bg-slate-700/50 text-slate-400 border-slate-600/50",
+    cls: "bg-surface-hover text-t-muted border-b-default",
   },
 };
 
@@ -37,7 +37,7 @@ export function StatusIndicator() {
   return (
     <div className="flex items-center gap-2">
       {status === "connected" && (
-        <span className="text-xs text-slate-400 font-mono hidden sm:block">
+        <span className="text-xs text-t-muted font-mono hidden sm:block">
           {config.chargePointId}
         </span>
       )}

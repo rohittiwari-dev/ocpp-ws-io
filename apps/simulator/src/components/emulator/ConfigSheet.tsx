@@ -234,7 +234,7 @@ function BootNotificationTab() {
       <p className="text-xs font-semibold text-cyan-300 uppercase tracking-wider flex items-center gap-2">
         <Cpu className="h-3.5 w-3.5" /> Hardware Identity
       </p>
-      <p className="text-[11px] text-slate-500 -mt-2">
+      <p className="text-[11px] text-t-muted -mt-2">
         These fields are sent to the CSMS on connection via{" "}
         <code className="text-cyan-400/80 font-mono">BootNotification</code>.
       </p>
@@ -268,7 +268,7 @@ function StationConfigTab() {
         <p className="text-xs font-semibold text-amber-300 uppercase tracking-wider flex items-center gap-2 mb-1">
           <SlidersHorizontal className="h-3.5 w-3.5" /> Configuration Keys
         </p>
-        <p className="text-[11px] text-slate-500 mb-4">
+        <p className="text-[11px] text-t-muted mb-4">
           {keys.length} total keys · {editableCount} editable · Returned by{" "}
           <code className="text-amber-400/80 font-mono">GetConfiguration</code>
         </p>
@@ -277,13 +277,13 @@ function StationConfigTab() {
           {keys.map((k) => (
             <div
               key={k.key}
-              className="flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-white/5 transition-colors group"
+              className="flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-surface-hover transition-colors group"
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span
                     className={`text-xs font-mono truncate ${
-                      k.readonly ? "text-slate-500" : "text-slate-300"
+                      k.readonly ? "text-t-faint" : "text-t-secondary"
                     }`}
                   >
                     {k.key}
@@ -453,9 +453,9 @@ export function ConfigSheet({ open, onOpenChange }: ConfigSheetProps) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="min-w-[560px] max-w-[90vw] p-0 border-l border-white/8 bg-[oklch(0.07_0.015_270/0.98)] backdrop-blur-3xl text-white flex flex-col"
+        className="min-w-[560px] max-w-[90vw] p-0 border-l border-b-default bg-[oklch(0.07_0.015_270/0.98)] backdrop-blur-3xl text-white flex flex-col"
       >
-        <SheetHeader className="px-6 py-4 border-b border-white/5 shrink-0">
+        <SheetHeader className="px-6 py-4 border-b border-b-default shrink-0">
           <SheetTitle className="text-white flex items-center gap-2.5 text-lg font-bold">
             <div className="h-7 w-7 rounded-lg bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
               <Settings2 className="h-4 w-4 text-white" />
@@ -469,28 +469,28 @@ export function ConfigSheet({ open, onOpenChange }: ConfigSheetProps) {
           className="flex flex-col flex-1 overflow-hidden"
         >
           <div className="px-6 pt-4 shrink-0">
-            <TabsList className="w-full grid grid-cols-4 bg-white/5 border border-white/8 rounded-2xl p-1.5 min-h-fit">
+            <TabsList className="w-full grid grid-cols-4 bg-surface-inset border border-b-default rounded-2xl p-1.5 min-h-fit">
               <TabsTrigger
                 value="connection"
-                className="rounded-xl flex items-center cursor-pointer gap-2 py-2.5 data-[state=active]:bg-blue-500/15 data-[state=active]:text-blue-300 data-[state=active]:shadow-[0_0_10px_rgba(59,130,246,0.1)] text-slate-500 text-xs font-medium transition-all"
+                className="rounded-xl flex items-center cursor-pointer gap-2 py-2.5 data-[state=active]:bg-blue-500/15 data-[state=active]:text-blue-300 data-[state=active]:shadow-[0_0_10px_rgba(59,130,246,0.1)] text-t-muted text-xs font-medium transition-all"
               >
                 <Plug className="h-3.5 w-3.5" /> Connect
               </TabsTrigger>
               <TabsTrigger
                 value="boot"
-                className="rounded-xl flex items-center cursor-pointer gap-2 py-2.5 data-[state=active]:bg-cyan-500/15 data-[state=active]:text-cyan-300 data-[state=active]:shadow-[0_0_10px_rgba(6,182,212,0.1)] text-slate-500 text-xs font-medium transition-all"
+                className="rounded-xl flex items-center cursor-pointer gap-2 py-2.5 data-[state=active]:bg-cyan-500/15 data-[state=active]:text-cyan-300 data-[state=active]:shadow-[0_0_10px_rgba(6,182,212,0.1)] text-t-muted text-xs font-medium transition-all"
               >
                 <Cpu className="h-3.5 w-3.5" /> Boot
               </TabsTrigger>
               <TabsTrigger
                 value="station"
-                className="rounded-xl flex items-center cursor-pointer gap-2 py-2.5 data-[state=active]:bg-amber-500/15 data-[state=active]:text-amber-300 data-[state=active]:shadow-[0_0_10px_rgba(245,158,11,0.1)] text-slate-500 text-xs font-medium transition-all"
+                className="rounded-xl flex items-center cursor-pointer gap-2 py-2.5 data-[state=active]:bg-amber-500/15 data-[state=active]:text-amber-300 data-[state=active]:shadow-[0_0_10px_rgba(245,158,11,0.1)] text-t-muted text-xs font-medium transition-all"
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" /> Config
               </TabsTrigger>
               <TabsTrigger
                 value="simulation"
-                className="rounded-xl flex items-center cursor-pointer gap-2 py-2.5 data-[state=active]:bg-pink-500/15 data-[state=active]:text-pink-300 data-[state=active]:shadow-[0_0_10px_rgba(236,72,153,0.1)] text-slate-500 text-xs font-medium transition-all"
+                className="rounded-xl flex items-center cursor-pointer gap-2 py-2.5 data-[state=active]:bg-pink-500/15 data-[state=active]:text-pink-300 data-[state=active]:shadow-[0_0_10px_rgba(236,72,153,0.1)] text-t-muted text-xs font-medium transition-all"
               >
                 <FlaskConical className="h-3.5 w-3.5" /> Simulate
               </TabsTrigger>

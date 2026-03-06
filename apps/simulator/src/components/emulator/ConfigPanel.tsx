@@ -75,7 +75,7 @@ function Dropdown({
       >
         <span className="truncate">{selected?.label ?? value}</span>
         <ChevronDown
-          className={`h-3 w-3 text-slate-500 shrink-0 transition-transform duration-200 ${
+          className={`h-3 w-3 text-t-muted shrink-0 transition-transform duration-200 ${
             open ? "rotate-180" : ""
           }`}
         />
@@ -235,7 +235,7 @@ function ProfilesSection() {
           value={profileName}
           onChange={(e) => setProfileName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSave()}
-          className="h-8 flex-1 bg-white/3 border-white/8 text-white text-[11px] rounded-lg focus-visible:ring-cyan-500/30"
+          className="h-8 flex-1 bg-surface-inset border-b-default text-white text-[11px] rounded-lg focus-visible:ring-cyan-500/30"
           placeholder="Profile name…"
         />
         <Button
@@ -257,7 +257,7 @@ function ProfilesSection() {
                 <span className="text-[11px] font-medium text-slate-300 truncate block">
                   {p.name}
                 </span>
-                <span className="text-[9px] font-mono text-slate-600">
+                <span className="text-[9px] font-mono text-t-faint">
                   {new Date(p.createdAt).toLocaleDateString()}
                 </span>
               </div>
@@ -270,7 +270,7 @@ function ProfilesSection() {
                 </button>
                 <button
                   onClick={() => deleteProfile(p.name)}
-                  className="p-1 rounded text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer transition-colors"
+                  className="p-1 rounded text-t-muted hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer transition-colors"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -306,7 +306,7 @@ function ConnectionTab() {
             value={config.endpoint}
             disabled={locked}
             onChange={(e) => updateConfig({ endpoint: e.target.value })}
-            className="h-9 bg-white/3 border-white/8 text-white text-[12px] rounded-lg focus-visible:ring-blue-500/30"
+            className="h-9 bg-surface-inset border-b-default text-white text-[12px] rounded-lg focus-visible:ring-blue-500/30"
             placeholder="ws://localhost:9000"
           />
         </Field>
@@ -326,7 +326,7 @@ function ConnectionTab() {
               value={config.chargePointId}
               disabled={locked}
               onChange={(e) => updateConfig({ chargePointId: e.target.value })}
-              className="h-9 bg-white/3 border-white/8 text-white text-[12px] rounded-lg focus-visible:ring-violet-500/30"
+              className="h-9 bg-surface-inset border-b-default text-white text-[12px] rounded-lg focus-visible:ring-violet-500/30"
             />
           </Field>
           <Field
@@ -351,7 +351,7 @@ function ConnectionTab() {
             <Input
               value={config.rfidTag}
               onChange={(e) => updateConfig({ rfidTag: e.target.value })}
-              className="h-9 bg-white/3 border-white/8 text-white text-[12px] rounded-lg focus-visible:ring-violet-500/30"
+              className="h-9 bg-surface-inset border-b-default text-white text-[12px] rounded-lg focus-visible:ring-violet-500/30"
             />
           </Field>
           <Field
@@ -408,7 +408,7 @@ function ConnectionTab() {
               onChange={(e) =>
                 updateConfig({ basicAuthPassword: e.target.value })
               }
-              className="h-9 bg-white/3 border-white/8 text-white text-[12px] rounded-lg focus-visible:ring-rose-500/30"
+              className="h-9 bg-surface-inset border-b-default text-white text-[12px] rounded-lg focus-visible:ring-rose-500/30"
               placeholder="Password..."
             />
           </Field>
@@ -504,7 +504,7 @@ function VendorTab() {
                 onChange={(e) =>
                   updateBootNotification({ [key]: e.target.value } as any)
                 }
-                className="h-9 bg-white/3 border-white/8 text-white text-[12px] font-mono rounded-lg focus-visible:ring-cyan-500/30"
+                className="h-9 bg-surface-inset border-b-default text-white text-[12px] font-mono rounded-lg focus-visible:ring-cyan-500/30"
               />
             </Field>
           ))}
@@ -525,7 +525,7 @@ function VendorTab() {
             <Input
               value={vendor?.vendorId ?? ""}
               onChange={(e) => updateVendorConfig({ vendorId: e.target.value })}
-              className="h-9 bg-white/3 border-white/8 text-white text-[12px] font-mono rounded-lg focus-visible:ring-indigo-500/30"
+              className="h-9 bg-surface-inset border-b-default text-white text-[12px] font-mono rounded-lg focus-visible:ring-indigo-500/30"
               placeholder="e.g. com.elmo.virtual"
             />
           </Field>
@@ -576,7 +576,7 @@ function VendorTab() {
             onChange={(e) =>
               updateVendorConfig({ vendorErrorCode: e.target.value })
             }
-            className="h-9 bg-white/3 border-white/8 text-white text-[12px] font-mono rounded-lg focus-visible:ring-rose-500/30"
+            className="h-9 bg-surface-inset border-b-default text-white text-[12px] font-mono rounded-lg focus-visible:ring-rose-500/30"
             placeholder="e.g. 0x01B (Optional)"
           />
         </Field>
@@ -644,8 +644,8 @@ function StationConfigTab() {
                       <span
                         className={`text-[11px] font-mono truncate ${
                           v.mutability === "ReadOnly"
-                            ? "text-slate-500"
-                            : "text-slate-300 font-medium"
+                            ? "text-t-faint"
+                            : "text-t-secondary font-medium"
                         }`}
                         title={v.variable}
                       >
@@ -670,7 +670,7 @@ function StationConfigTab() {
                           e.target.value,
                         )
                       }
-                      className="h-7 text-[10px] w-32 shrink-0 font-mono bg-white/3 border-white/8 text-white rounded-md focus-visible:ring-amber-500/30"
+                      className="h-7 text-[10px] w-32 shrink-0 font-mono bg-surface-inset border-b-default text-white rounded-md focus-visible:ring-amber-500/30"
                     />
                   </div>
                 ))}
@@ -727,8 +727,8 @@ function StationConfigTab() {
                       <span
                         className={`text-[11px] font-mono truncate ${
                           k.readonly
-                            ? "text-slate-500"
-                            : "text-slate-300 font-medium"
+                            ? "text-t-faint"
+                            : "text-t-secondary font-medium"
                         }`}
                         title={k.key}
                       >
@@ -749,7 +749,7 @@ function StationConfigTab() {
                       onChange={(e) =>
                         updateStationConfigKey(k.key, e.target.value)
                       }
-                      className="h-7 text-[10px] w-32 shrink-0 font-mono bg-white/3 border-white/8 text-white rounded-md focus-visible:ring-amber-500/30"
+                      className="h-7 text-[10px] w-32 shrink-0 font-mono bg-surface-inset border-b-default text-white rounded-md focus-visible:ring-amber-500/30"
                     />
                   </div>
                 ))}
@@ -801,7 +801,7 @@ function SimulationTab() {
               onChange={(e) =>
                 updateSimulation({ diagnosticFileName: e.target.value })
               }
-              className="h-9 bg-white/3 border-white/8 text-white text-[12px] rounded-lg focus-visible:ring-pink-500/30"
+              className="h-9 bg-surface-inset border-b-default text-white text-[12px] rounded-lg focus-visible:ring-pink-500/30"
             />
           </Field>
           <Field
@@ -816,7 +816,7 @@ function SimulationTab() {
                   diagnosticUploadTime: Number(e.target.value),
                 })
               }
-              className="h-9 bg-white/3 border-white/8 text-white text-[12px] rounded-lg focus-visible:ring-pink-500/30"
+              className="h-9 bg-surface-inset border-b-default text-white text-[12px] rounded-lg focus-visible:ring-pink-500/30"
             />
           </Field>
         </div>
@@ -904,7 +904,7 @@ function SimulationTab() {
                   autoChargeTargetKWh: Number(e.target.value),
                 })
               }
-              className="h-9 bg-white/3 border-white/8 text-white text-[12px] rounded-lg focus-visible:ring-violet-500/30"
+              className="h-9 bg-surface-inset border-b-default text-white text-[12px] rounded-lg focus-visible:ring-violet-500/30"
             />
           </Field>
           <Field
@@ -919,7 +919,7 @@ function SimulationTab() {
                   autoChargeDurationSec: Number(e.target.value),
                 })
               }
-              className="h-9 bg-white/3 border-white/8 text-white text-[12px] rounded-lg focus-visible:ring-violet-500/30"
+              className="h-9 bg-surface-inset border-b-default text-white text-[12px] rounded-lg focus-visible:ring-violet-500/30"
             />
           </Field>
         </div>
@@ -935,7 +935,7 @@ function SimulationTab() {
                 autoChargeMeterIncrement: Number(e.target.value),
               })
             }
-            className="h-9 bg-white/3 border-white/8 text-white text-[12px] rounded-lg focus-visible:ring-violet-500/30"
+            className="h-9 bg-surface-inset border-b-default text-white text-[12px] rounded-lg focus-visible:ring-violet-500/30"
           />
         </Field>
         <label className="flex items-center gap-2 cursor-pointer">
@@ -1046,7 +1046,7 @@ function MessageComposerTab() {
             }}
             rows={6}
             spellCheck={false}
-            className="w-full bg-black/30 border border-white/8 rounded-lg p-3 font-mono text-[11px] text-slate-300 resize-y focus:outline-none focus:ring-1 focus:ring-orange-500/40 placeholder:text-slate-700"
+            className="w-full bg-black/30 border border-b-default rounded-lg p-3 font-mono text-[11px] text-t-secondary resize-y focus:outline-none focus:ring-1 focus:ring-orange-500/40 placeholder:text-t-faint"
             placeholder='{ "key": "value" }'
           />
           {jsonError && (
@@ -1071,7 +1071,7 @@ function MessageComposerTab() {
         <SectionCard
           title="History"
           icon={<Clock className="h-3.5 w-3.5" />}
-          color="text-slate-500"
+          color="text-t-muted"
         >
           <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
             {history.map((h, i) => (
@@ -1083,7 +1083,7 @@ function MessageComposerTab() {
                 <span className="text-[11px] font-medium text-slate-300 truncate">
                   {h.action}
                 </span>
-                <span className="text-[9px] font-mono text-slate-600 shrink-0">
+                <span className="text-[9px] font-mono text-t-faint shrink-0">
                   {h.timestamp}
                 </span>
               </button>
@@ -1114,7 +1114,7 @@ export function ConfigPanel({ onClose }: { onClose: () => void }) {
         </div>
         <button
           onClick={onClose}
-          className="h-6 w-6 rounded-md flex items-center justify-center text-slate-600 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+          className="h-6 w-6 rounded-md flex items-center justify-center text-t-muted hover:text-white hover:bg-surface-hover transition-colors cursor-pointer"
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -1131,8 +1131,8 @@ export function ConfigPanel({ onClose }: { onClose: () => void }) {
               onClick={() => setActiveTab(tab.id)}
               className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-semibold transition-all cursor-pointer ${
                 active
-                  ? `bg-white/5 ${tab.color} border border-white/8`
-                  : "text-slate-600 hover:text-slate-400 hover:bg-white/3 border border-transparent"
+                  ? `bg-surface-inset ${tab.color} border border-b-default`
+                  : "text-t-muted hover:text-t-secondary hover:bg-surface-hover border border-transparent"
               }`}
             >
               <Icon className="h-3 w-3" />

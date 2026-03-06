@@ -14,12 +14,12 @@ const colors = {
   string: "text-emerald-400",
   number: "text-amber-400",
   boolean: "text-sky-400",
-  null: "text-slate-500",
-  brace: "text-slate-400",
-  comma: "text-slate-600",
-  dots: "text-slate-500",
-  count: "text-slate-600",
-  guide: "border-white/6",
+  null: "text-t-faint",
+  brace: "text-t-muted",
+  comma: "text-t-faint",
+  dots: "text-t-faint",
+  count: "text-t-faint",
+  guide: "border-b-subtle",
 } as const;
 
 export function JsonViewer({
@@ -74,7 +74,7 @@ export function JsonViewer({
     <div className="font-mono text-[11px] leading-[1.7]">
       {/* ── Toggle line: ▸ { ... } 5 items ── */}
       <span
-        className="inline-flex items-center cursor-pointer hover:bg-white/5 rounded -ml-0.5 px-0.5 transition-colors"
+        className="inline-flex items-center cursor-pointer hover:bg-surface-hover rounded -ml-0.5 px-0.5 transition-colors"
         onClick={(e) => {
           e.stopPropagation();
           setExpanded(!expanded);

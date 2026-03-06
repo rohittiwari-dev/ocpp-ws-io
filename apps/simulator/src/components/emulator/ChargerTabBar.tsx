@@ -36,7 +36,7 @@ export function ChargerTabBar() {
             className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer select-none transition-all duration-150 text-[12px] font-medium whitespace-nowrap min-w-[120px] max-w-[200px] border ${
               isActive
                 ? "bg-[#1e2235] border-[#8b5cf6]/40 text-white shadow-[0_0_12px_rgba(139,92,246,0.12)]"
-                : "bg-transparent border-transparent text-slate-500 hover:bg-[#181a27] hover:text-slate-300"
+                : "bg-transparent border-transparent text-t-muted hover:bg-surface-inset hover:text-t-primary"
             }`}
             onClick={() => setActiveCharger(slot.id)}
           >
@@ -52,7 +52,7 @@ export function ChargerTabBar() {
 
             {/* CPID (only when active) */}
             {isActive && (
-              <span className="hidden sm:block text-[9px] font-mono text-slate-600 truncate max-w-[60px]">
+              <span className="hidden sm:block text-[9px] font-mono text-t-faint truncate max-w-[60px]">
                 {slot.config.chargePointId}
               </span>
             )}
@@ -64,7 +64,7 @@ export function ChargerTabBar() {
               ) : slot.runtime.status === "connecting" ? (
                 <Loader2 className="h-3 w-3 text-amber-400 animate-spin" />
               ) : (
-                <WifiOff className="h-3 w-3 text-slate-600" />
+                <WifiOff className="h-3 w-3 text-t-faint" />
               )}
             </span>
 
@@ -77,7 +77,7 @@ export function ChargerTabBar() {
                     duplicateCharger(slot.id);
                   }}
                   title="Duplicate charger"
-                  className="p-0.5 rounded text-slate-600 hover:text-slate-300 hover:bg-white/5 transition-colors cursor-pointer"
+                  className="p-0.5 rounded text-t-muted hover:text-t-primary hover:bg-surface-hover transition-colors cursor-pointer"
                 >
                   <Copy className="h-2.5 w-2.5" />
                 </button>
@@ -87,7 +87,7 @@ export function ChargerTabBar() {
                     removeCharger(slot.id);
                   }}
                   title="Remove charger"
-                  className="p-0.5 rounded text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                  className="p-0.5 rounded text-t-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
                 >
                   <X className="h-2.5 w-2.5" />
                 </button>
@@ -101,7 +101,7 @@ export function ChargerTabBar() {
       <button
         onClick={() => addCharger()}
         title="Add charger"
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-slate-600 hover:text-white hover:bg-[#1e2235] border border-transparent hover:border-[#282b3a] transition-all cursor-pointer shrink-0"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-t-muted hover:text-white hover:bg-surface-hover border border-transparent hover:border-b-default transition-all cursor-pointer shrink-0"
       >
         <Plus className="h-3.5 w-3.5" />
         <span className="hidden sm:block">Add</span>
