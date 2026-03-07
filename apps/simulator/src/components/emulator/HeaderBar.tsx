@@ -8,6 +8,7 @@ import {
   PowerOff,
   RefreshCw,
   Settings,
+  WifiOff,
   Zap,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -16,7 +17,7 @@ import { useAuth } from "@/components/emulator/AuthGate";
 import { LocalhostGuideDialog } from "@/components/emulator/LocalhostGuideDialog";
 import { ShortcutsDialog } from "@/components/emulator/ShortcutsDialog";
 import { useActiveCharger } from "@/hooks/useActiveCharger";
-import type { ConnectionStatus } from "@/store/emulatorStore";
+import { type ConnectionStatus, useEmulatorStore } from "@/store/emulatorStore";
 
 /* ── Status config ── */
 type StCfg = { dot: string; text: string; label: string };
@@ -37,7 +38,9 @@ function formatUptime(ms: number) {
 
 /* ── Header ── */
 export function HeaderBar({ onSettingsOpen }: { onSettingsOpen: () => void }) {
-  const { status, config, connectedAt, updateConfig } = useActiveCharger();
+  const { status, config, connectedAt, updateConfig, id, offlineMode } =
+    useActiveCharger();
+  const store = useEmulatorStore();
   const auth = useAuth();
   const isConnected = status === "connected";
   const isConnecting = status === "connecting";
@@ -250,6 +253,22 @@ export function HeaderBar({ onSettingsOpen }: { onSettingsOpen: () => void }) {
             >
               <Zap className="h-3 w-3" /> Heartbeat
             </button>
+            <button
+              onClick={() => store.toggleOfflineMode(id)}
+              title={
+                offlineMode
+                  ? "Go back online — flush queued messages"
+                  : "Simulate network drop"
+              }
+              className={`h-7 px-2.5 rounded-md flex items-center gap-1.5 text-[10px] font-semibold transition-all cursor-pointer ${
+                offlineMode
+                  ? "text-red-400 bg-red-500/15 border border-red-500/30 animate-pulse"
+                  : "text-[#4a5568] hover:text-amber-400 hover:bg-amber-500/10"
+              }`}
+            >
+              <WifiOff className="h-3 w-3" />
+              {offlineMode ? "Offline" : "Go Offline"}
+            </button>
           </div>
         </>
       )}
@@ -264,8 +283,8 @@ export function HeaderBar({ onSettingsOpen }: { onSettingsOpen: () => void }) {
           isConnected
             ? "bg-[#1c0f13] border border-[#5c1c28] text-[#fda4af] hover:bg-[#26101a] hover:border-[#8b2838]"
             : isConnecting
-            ? "bg-[#0f1117] border border-[#232636] text-[#4a5568]"
-            : "bg-linear-to-r from-[#7C3AED] to-[#9333ea] text-white shadow-[0_0_14px_rgba(124,58,237,0.3)] hover:shadow-[0_0_20px_rgba(124,58,237,0.5)]"
+              ? "bg-[#0f1117] border border-[#232636] text-[#4a5568]"
+              : "bg-linear-to-r from-[#7C3AED] to-[#9333ea] text-white shadow-[0_0_14px_rgba(124,58,237,0.3)] hover:shadow-[0_0_20px_rgba(124,58,237,0.5)]"
         }`}
       >
         {isConnecting ? (

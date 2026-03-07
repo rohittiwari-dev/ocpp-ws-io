@@ -13,9 +13,11 @@ import {
   Globe,
   HardDrive,
   Hash,
+  KeyRound,
   Layers,
   MessageSquare,
   Plug,
+  Search,
   Send,
   Server,
   Settings2,
@@ -199,6 +201,12 @@ const TABS = [
     label: "Simulate",
     icon: FlaskConical,
     color: "text-pink-400",
+  },
+  {
+    id: "auth",
+    label: "Auth",
+    icon: KeyRound,
+    color: "text-emerald-400",
   },
   {
     id: "composer",
@@ -614,11 +622,14 @@ function StationConfigTab() {
 
   if (is2x) {
     // ── OCPP 2.x Device Model view ──
-    const grouped = deviceModel.reduce((acc, v) => {
-      if (!acc[v.component]) acc[v.component] = [];
-      acc[v.component].push(v);
-      return acc;
-    }, {} as Record<string, typeof deviceModel>);
+    const grouped = deviceModel.reduce(
+      (acc, v) => {
+        if (!acc[v.component]) acc[v.component] = [];
+        acc[v.component].push(v);
+        return acc;
+      },
+      {} as Record<string, typeof deviceModel>,
+    );
 
     return (
       <div className="space-y-4">
@@ -839,9 +850,7 @@ function SimulationTab() {
           <div className="flex items-center gap-2 p-2.5 rounded-lg bg-cyan-500/8 border border-cyan-500/15 text-cyan-300 text-[11px] animate-pulse">
             <Upload className="h-3.5 w-3.5 animate-bounce shrink-0" />
             Uploading…{" "}
-            <span className="font-mono font-bold">
-              {uploadSecondsLeft}s
-            </span>{" "}
+            <span className="font-mono font-bold">{uploadSecondsLeft}s</span>{" "}
             left
           </div>
         )}
@@ -1148,6 +1157,110 @@ function RawPayloadSection() {
     </SectionCard>
   );
 }
+/* ═══════════════════════════════════════════
+   LOCAL AUTH LIST TAB
+   ═══════════════════════════════════════════ */
+
+const STATUS_COLORS: Record<string, string> = {
+  Accepted: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+  Blocked: "text-red-400 bg-red-500/10 border-red-500/20",
+  Expired: "text-amber-400 bg-amber-500/10 border-amber-500/20",
+  Invalid: "text-rose-400 bg-rose-500/10 border-rose-500/20",
+  ConcurrentTx: "text-violet-400 bg-violet-500/10 border-violet-500/20",
+};
+
+function LocalAuthListTab() {
+  const { localAuthList, localAuthListVersion } = useActiveCharger();
+  const [search, setSearch] = useState("");
+
+  const filtered = search.trim()
+    ? localAuthList.filter(
+        (e) =>
+          e.idTag.toLowerCase().includes(search.toLowerCase()) ||
+          (e.idTagInfo?.status ?? "")
+            .toLowerCase()
+            .includes(search.toLowerCase()),
+      )
+    : localAuthList;
+
+  return (
+    <div className="space-y-4">
+      <SectionCard
+        title="Local Authorization List"
+        icon={<KeyRound className="h-3.5 w-3.5" />}
+        color="text-emerald-400"
+        description={`List version: ${localAuthListVersion} · ${localAuthList.length} entries`}
+      >
+        {/* Search */}
+        {localAuthList.length > 0 && (
+          <div className="relative mb-3">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-t-faint" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search idTag or status..."
+              className="h-8 pl-8 bg-surface-inset border-b-default text-white text-[11px] rounded-lg focus-visible:ring-emerald-500/30"
+            />
+          </div>
+        )}
+
+        {/* Table */}
+        {filtered.length > 0 ? (
+          <div className="rounded-lg border border-b-default overflow-hidden">
+            {/* Header */}
+            <div className="grid grid-cols-[1fr_80px_90px] gap-2 px-3 py-1.5 bg-surface-inset text-[9px] font-bold text-t-faint uppercase tracking-wider">
+              <span>ID Tag</span>
+              <span>Status</span>
+              <span>Expiry</span>
+            </div>
+            {/* Rows */}
+            <div className="divide-y divide-white/5 max-h-[400px] overflow-y-auto custom-scrollbar">
+              {filtered.map((entry) => {
+                const status = entry.idTagInfo?.status ?? "Unknown";
+                const expiry = entry.idTagInfo?.expiryDate;
+                return (
+                  <div
+                    key={entry.idTag}
+                    className="grid grid-cols-[1fr_80px_90px] gap-2 px-3 py-2 text-[11px] hover:bg-surface-hover transition-colors"
+                  >
+                    <span className="font-mono text-t-secondary truncate">
+                      {entry.idTag}
+                    </span>
+                    <span
+                      className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[9px] font-bold border ${
+                        STATUS_COLORS[status] ??
+                        "text-t-faint bg-white/5 border-white/10"
+                      }`}
+                    >
+                      {status}
+                    </span>
+                    <span className="text-[9px] text-t-faint font-mono truncate">
+                      {expiry ? new Date(expiry).toLocaleDateString() : "—"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <KeyRound className="h-8 w-8 text-[#232636] mb-3" />
+            <p className="text-[11px] text-t-muted font-semibold">
+              {localAuthList.length === 0
+                ? "No entries yet"
+                : "No matching entries"}
+            </p>
+            <p className="text-[9px] text-t-faint mt-1">
+              {localAuthList.length === 0
+                ? "Connect to a CSMS and wait for a SendLocalList command"
+                : "Try a different search term"}
+            </p>
+          </div>
+        )}
+      </SectionCard>
+    </div>
+  );
+}
 
 /* ═══════════════════════════════════════════
    MESSAGE COMPOSER TAB
@@ -1341,6 +1454,7 @@ export function ConfigPanel({ onClose }: { onClose: () => void }) {
         {activeTab === "vendor" && <VendorTab />}
         {activeTab === "station" && <StationConfigTab />}
         {activeTab === "simulation" && <SimulationTab />}
+        {activeTab === "auth" && <LocalAuthListTab />}
         {activeTab === "composer" && <MessageComposerTab />}
       </div>
     </div>

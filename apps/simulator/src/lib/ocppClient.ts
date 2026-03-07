@@ -159,6 +159,8 @@ class OCPPService {
    * Wraps handler registration with configurable response delay.
    * If responseDelayMs > 0, the handler response is held for that duration.
    */
+
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: may be we require later
   private handleWithDelay(action: string, handler: (ctx: any) => any) {
     if (!this.client) return;
     this.client.handle(action, async (ctx: any) => {

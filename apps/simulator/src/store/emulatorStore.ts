@@ -210,10 +210,13 @@ export interface ChargerRuntimeState {
   localAuthList: LocalAuthEntry[];
   localAuthListVersion: number;
   connectedAt: number | null;
+  // Offline simulation
+  offlineMode: boolean;
+  offlineQueue: { action: string; payload: unknown; timestamp: string }[];
   // ── OCPP 2.x runtime ──
   deviceModel: ComponentVariable[];
   evse: EVSEState[];
-  transactionSeq: number; // monotonically increasing 2.x sequence number
+  transactionSeq: number;
 }
 
 // ─── Charger Slot (one per tab) ───────────────────────────────────────────────
@@ -268,6 +271,14 @@ export interface EmulatorStore {
     version: number,
   ) => void;
   setConnectedAt: (id: string, ts: number | null) => void;
+
+  // ── Offline queueing ──
+  toggleOfflineMode: (id: string) => void;
+  addToOfflineQueue: (
+    id: string,
+    entry: { action: string; payload: unknown; timestamp: string },
+  ) => void;
+  clearOfflineQueue: (id: string) => void;
 
   // ── Per-charger profiles ──
   saveProfile: (id: string, name: string) => void;
@@ -468,6 +479,8 @@ const makeDefaultRuntime = (rfidTag: string): ChargerRuntimeState => ({
   localAuthList: [],
   localAuthListVersion: 0,
   connectedAt: null,
+  offlineMode: false,
+  offlineQueue: [],
   // ── OCPP 2.x runtime defaults ──
   deviceModel: [
     // ── ChargingStation (Identity) ──
@@ -670,7 +683,7 @@ export const useEmulatorStore = create<EmulatorStore>()(
           const filtered = s.chargers.filter((c) => c.id !== id);
           const activeId =
             s.activeChargerId === id
-              ? filtered[filtered.length - 1]?.id ?? ""
+              ? (filtered[filtered.length - 1]?.id ?? "")
               : s.activeChargerId;
           return { chargers: filtered, activeChargerId: activeId };
         }),
@@ -808,8 +821,8 @@ export const useEmulatorStore = create<EmulatorStore>()(
               typeId > 0 && log.ocppMessageId
                 ? [typeId, log.ocppMessageId, log.action, log.payload ?? {}]
                 : typeId > 0
-                ? [typeId, log.action, log.payload ?? {}]
-                : [log.action, log.payload ?? {}],
+                  ? [typeId, log.action, log.payload ?? {}]
+                  : [log.action, log.payload ?? {}],
             );
           const entry: OCPPLog = {
             ...log,
@@ -860,6 +873,32 @@ export const useEmulatorStore = create<EmulatorStore>()(
           chargers: updateRuntime(s.chargers, id, (r) => ({
             ...r,
             connectedAt: ts,
+          })),
+        })),
+
+      // ── Offline queueing ────────────────────────────────────────────────────
+
+      toggleOfflineMode: (id) =>
+        set((s) => ({
+          chargers: updateRuntime(s.chargers, id, (r) => ({
+            ...r,
+            offlineMode: !r.offlineMode,
+          })),
+        })),
+
+      addToOfflineQueue: (id, entry) =>
+        set((s) => ({
+          chargers: updateRuntime(s.chargers, id, (r) => ({
+            ...r,
+            offlineQueue: [...r.offlineQueue, entry],
+          })),
+        })),
+
+      clearOfflineQueue: (id) =>
+        set((s) => ({
+          chargers: updateRuntime(s.chargers, id, (r) => ({
+            ...r,
+            offlineQueue: [],
           })),
         })),
 
@@ -974,7 +1013,7 @@ export const useEmulatorStore = create<EmulatorStore>()(
               securityProfile:
                 legacyConfig.securityProfile > 1
                   ? 0
-                  : legacyConfig.securityProfile ?? 0,
+                  : (legacyConfig.securityProfile ?? 0),
               bootNotification: {
                 ...DEFAULT_BOOT_NOTIFICATION,
                 ...(legacyConfig.bootNotification ?? {}),
@@ -1022,7 +1061,7 @@ export const useEmulatorStore = create<EmulatorStore>()(
               securityProfile:
                 (c.config?.securityProfile ?? 0) > 1
                   ? 0
-                  : c.config?.securityProfile ?? 0,
+                  : (c.config?.securityProfile ?? 0),
               bootNotification: {
                 ...DEFAULT_BOOT_NOTIFICATION,
                 ...(c.config?.bootNotification ?? {}),
