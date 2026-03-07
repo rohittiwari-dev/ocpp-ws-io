@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangle,
   Check,
   ChevronDown,
   Clock,
@@ -22,9 +23,11 @@ import {
   SlidersHorizontal,
   Smartphone,
   Tag,
+  Terminal,
   Upload,
   Wrench,
   X,
+  Zap,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -611,14 +614,11 @@ function StationConfigTab() {
 
   if (is2x) {
     // ── OCPP 2.x Device Model view ──
-    const grouped = deviceModel.reduce(
-      (acc, v) => {
-        if (!acc[v.component]) acc[v.component] = [];
-        acc[v.component].push(v);
-        return acc;
-      },
-      {} as Record<string, typeof deviceModel>,
-    );
+    const grouped = deviceModel.reduce((acc, v) => {
+      if (!acc[v.component]) acc[v.component] = [];
+      acc[v.component].push(v);
+      return acc;
+    }, {} as Record<string, typeof deviceModel>);
 
     return (
       <div className="space-y-4">
@@ -839,7 +839,9 @@ function SimulationTab() {
           <div className="flex items-center gap-2 p-2.5 rounded-lg bg-cyan-500/8 border border-cyan-500/15 text-cyan-300 text-[11px] animate-pulse">
             <Upload className="h-3.5 w-3.5 animate-bounce shrink-0" />
             Uploading…{" "}
-            <span className="font-mono font-bold">{uploadSecondsLeft}s</span>{" "}
+            <span className="font-mono font-bold">
+              {uploadSecondsLeft}s
+            </span>{" "}
             left
           </div>
         )}
@@ -947,12 +949,203 @@ function SimulationTab() {
             }
             className="accent-violet-500 h-3.5 w-3.5 rounded"
           />
-          <span className="text-[11px] text-slate-400">
-            Include SoC & Temperature in MeterValues
+          <span className="text-[11px] text-t-muted">
+            Include SoC &amp; Temperature in MeterValues
           </span>
         </label>
       </SectionCard>
+
+      {/* Response Latency */}
+      <SectionCard
+        title="Response Latency"
+        icon={<Clock className="h-3.5 w-3.5" />}
+        color="text-amber-400"
+        description="Add artificial delay to all OCPP responses to test CSMS timeouts"
+      >
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={0}
+            max={30000}
+            step={500}
+            value={simulation.responseDelayMs}
+            onChange={(e) =>
+              updateSimulation({ responseDelayMs: Number(e.target.value) })
+            }
+            className="flex-1 accent-amber-500 h-1.5 cursor-pointer"
+          />
+          <span className="shrink-0 text-[11px] font-mono text-t-secondary tabular-nums w-14 text-right">
+            {simulation.responseDelayMs >= 1000
+              ? `${(simulation.responseDelayMs / 1000).toFixed(1)}s`
+              : `${simulation.responseDelayMs}ms`}
+          </span>
+        </div>
+        {simulation.responseDelayMs > 0 && (
+          <p className="text-[10px] text-amber-400/60 mt-1">
+            ⏱ All handler responses will be delayed by{" "}
+            {simulation.responseDelayMs >= 1000
+              ? `${(simulation.responseDelayMs / 1000).toFixed(1)}s`
+              : `${simulation.responseDelayMs}ms`}
+          </p>
+        )}
+      </SectionCard>
+
+      {/* Fault Injection */}
+      <FaultInjectionSection />
+
+      {/* Raw Payload Injection */}
+      <RawPayloadSection />
     </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   FAULT INJECTION SECTION
+   ═══════════════════════════════════════════ */
+
+const FAULTS = [
+  {
+    code: "GroundFailure",
+    label: "Ground Fault",
+    color: "text-red-400 bg-red-500/10 border-red-500/20 hover:bg-red-500/20",
+  },
+  {
+    code: "OverVoltage",
+    label: "Over Voltage",
+    color:
+      "text-amber-400 bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20",
+  },
+  {
+    code: "PowerMeterFailure",
+    label: "Meter Fail",
+    color:
+      "text-orange-400 bg-orange-500/10 border-orange-500/20 hover:bg-orange-500/20",
+  },
+  {
+    code: "EVCommunicationError",
+    label: "EV Comm Error",
+    color:
+      "text-pink-400 bg-pink-500/10 border-pink-500/20 hover:bg-pink-500/20",
+  },
+  {
+    code: "ReaderFailure",
+    label: "Reader Fail",
+    color:
+      "text-violet-400 bg-violet-500/10 border-violet-500/20 hover:bg-violet-500/20",
+  },
+  {
+    code: "InternalError",
+    label: "Internal Error",
+    color:
+      "text-rose-400 bg-rose-500/10 border-rose-500/20 hover:bg-rose-500/20",
+  },
+] as const;
+
+function FaultInjectionSection() {
+  const { status, config } = useActiveCharger();
+  const isConnected = status === "connected";
+  const [lastFault, setLastFault] = useState("");
+
+  const inject = (code: string) => {
+    for (let i = 1; i <= config.numberOfConnectors; i++) {
+      ocppService.triggerFault(i, code);
+    }
+    setLastFault(code);
+    setTimeout(() => setLastFault(""), 2000);
+  };
+
+  return (
+    <SectionCard
+      title="Fault Injection"
+      icon={<AlertTriangle className="h-3.5 w-3.5" />}
+      color="text-red-400"
+      description="Simulate hardware faults — stops active transactions and sends Faulted status"
+    >
+      <div className="grid grid-cols-2 gap-2">
+        {FAULTS.map((f) => (
+          <button
+            key={f.code}
+            disabled={!isConnected}
+            onClick={() => inject(f.code)}
+            className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+              f.color
+            } ${lastFault === f.code ? "ring-1 ring-white/30 scale-95" : ""}`}
+          >
+            <Zap className="h-3 w-3" />
+            {f.label}
+          </button>
+        ))}
+      </div>
+      {lastFault && (
+        <p className="text-[10px] text-red-400/80 mt-2 animate-pulse">
+          ⚡ Injected fault:{" "}
+          <span className="font-mono font-bold">{lastFault}</span>
+        </p>
+      )}
+    </SectionCard>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   RAW PAYLOAD INJECTION
+   ═══════════════════════════════════════════ */
+
+function RawPayloadSection() {
+  const { status } = useActiveCharger();
+  const isConnected = status === "connected";
+  const [raw, setRaw] = useState('[2,"test-123","Heartbeat",{}]');
+  const [sent, setSent] = useState(false);
+
+  const handleSend = () => {
+    if (!raw.trim()) return;
+    ocppService.sendRawString(raw);
+    setSent(true);
+    setTimeout(() => setSent(false), 1500);
+  };
+
+  return (
+    <SectionCard
+      title="Raw Payload Injection"
+      icon={<Terminal className="h-3.5 w-3.5" />}
+      color="text-rose-400"
+      description="Send arbitrary strings directly over the WebSocket — bypasses OCPP validation"
+    >
+      <textarea
+        value={raw}
+        onChange={(e) => setRaw(e.target.value)}
+        rows={3}
+        spellCheck={false}
+        className="w-full bg-black/30 border border-b-default rounded-lg p-3 font-mono text-[11px] text-t-secondary resize-y focus:outline-none focus:ring-1 focus:ring-rose-500/40 placeholder:text-t-faint"
+        placeholder='[2,"uuid","Action",{...}]'
+      />
+      <Button
+        size="sm"
+        disabled={!isConnected || !raw.trim()}
+        onClick={handleSend}
+        className={`w-full h-8 text-[10px] font-bold uppercase tracking-wider rounded-lg cursor-pointer transition-all ${
+          sent
+            ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+            : "bg-rose-500/10 hover:bg-rose-500/18 text-rose-300 border border-rose-500/15"
+        }`}
+      >
+        {sent ? (
+          <>
+            <Check className="mr-1.5 h-3 w-3" /> Sent!
+          </>
+        ) : (
+          <>
+            <Send className="mr-1.5 h-3 w-3" /> Inject Raw Payload
+          </>
+        )}
+      </Button>
+      <p className="text-[9px] text-t-faint mt-1">
+        Tip: Use OCPP Call format{" "}
+        <code className="text-rose-400/60">
+          [2, &quot;id&quot;, &quot;Action&quot;, &#123;&#125;]
+        </code>{" "}
+        or send completely malformed data to test error handling.
+      </p>
+    </SectionCard>
   );
 }
 

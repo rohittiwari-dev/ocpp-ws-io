@@ -155,6 +155,23 @@ class OCPPService {
 
   // ─── Incoming CSMS Handlers ───────────────────────────────────────────────
 
+  /**
+   * Wraps handler registration with configurable response delay.
+   * If responseDelayMs > 0, the handler response is held for that duration.
+   */
+  private handleWithDelay(action: string, handler: (ctx: any) => any) {
+    if (!this.client) return;
+    this.client.handle(action, async (ctx: any) => {
+      const { config } = getSlotState(this.chargerId);
+      const delay = config.simulation.responseDelayMs;
+      const result = handler(ctx);
+      if (delay > 0) {
+        await new Promise((r) => setTimeout(r, delay));
+      }
+      return result;
+    });
+  }
+
   /** Dispatch to the right handler set based on configured OCPP version */
   private registerHandlers() {
     if (!this.client) return;
@@ -1394,16 +1411,16 @@ class OCPPService {
         (trigger === "Started"
           ? "Authorized"
           : trigger === "Ended"
-            ? "Local"
-            : "ChargingRateChanged"),
+          ? "Local"
+          : "ChargingRateChanged"),
       transactionInfo: {
         transactionId: String(connector?.transactionId ?? `TXN-${nanoid(6)}`),
         chargingState:
           trigger === "Ended"
             ? "SuspendedEVSE"
             : trigger === "Started"
-              ? "Charging"
-              : "Charging",
+            ? "Charging"
+            : "Charging",
       },
       evse: { id: evseId, connectorId: 1 },
       idToken: connector?.idTag
@@ -2295,6 +2312,81 @@ class OCPPService {
         action,
         payload: { message: String(err) },
       });
+    }
+  }
+
+  // ─── Raw String Injection (Chaos Monkey) ─────────────────────────────────
+  sendRawString(raw: string) {
+    if (!this.client) return;
+    const s = useEmulatorStore.getState();
+    s.addLog(this.chargerId, {
+      direction: "Tx",
+      action: "RawInjection",
+      payload: { raw },
+    });
+    try {
+      // Access the underlying WebSocket and send the raw string directly
+      (this.client as any).ws?.send?.(raw);
+    } catch (err) {
+      s.addLog(this.chargerId, {
+        direction: "Error",
+        action: "RawInjection",
+        payload: { message: String(err) },
+      });
+    }
+  }
+
+  // ─── Hardware Fault Injection ────────────────────────────────────────────
+  async triggerFault(connectorId: number, errorCode: string) {
+    const s = useEmulatorStore.getState();
+    const slot = s.chargers.find((c) => c.id === this.chargerId);
+    const connector = slot?.runtime.connectors[connectorId];
+
+    // If there's an active transaction, stop it with reason "Other"
+    if (connector?.inTransaction) {
+      s.updateConnector(this.chargerId, connectorId, { stopReason: "Other" });
+      await this.stopTransaction(connectorId);
+    }
+
+    // Set connector to Faulted
+    s.updateConnector(this.chargerId, connectorId, { status: "Faulted" });
+
+    // Send StatusNotification with the error code
+    const { config } = getSlotState(this.chargerId);
+    if (config.ocppVersion === "ocpp1.6") {
+      await this.sendStatusNotification(connectorId, "Faulted", errorCode);
+    } else {
+      // OCPP 2.x
+      if (this.client) {
+        const payload = {
+          timestamp: new Date().toISOString(),
+          connectorStatus: "Faulted",
+          evseId: connectorId,
+          connectorId: 1,
+        };
+        s.addLog(this.chargerId, {
+          direction: "Tx",
+          action: "StatusNotification",
+          payload: { ...payload, errorCode },
+        });
+        try {
+          const res = await this.client.call(
+            "StatusNotification" as any,
+            payload as any,
+          );
+          s.addLog(this.chargerId, {
+            direction: "Rx",
+            action: "StatusNotificationConf",
+            payload: res,
+          });
+        } catch (err) {
+          s.addLog(this.chargerId, {
+            direction: "Error",
+            action: "StatusNotification",
+            payload: { message: String(err) },
+          });
+        }
+      }
     }
   }
 }

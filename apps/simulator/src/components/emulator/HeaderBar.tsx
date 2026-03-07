@@ -13,6 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/components/emulator/AuthGate";
+import { LocalhostGuideDialog } from "@/components/emulator/LocalhostGuideDialog";
 import { ShortcutsDialog } from "@/components/emulator/ShortcutsDialog";
 import { useActiveCharger } from "@/hooks/useActiveCharger";
 import type { ConnectionStatus } from "@/store/emulatorStore";
@@ -263,8 +264,8 @@ export function HeaderBar({ onSettingsOpen }: { onSettingsOpen: () => void }) {
           isConnected
             ? "bg-[#1c0f13] border border-[#5c1c28] text-[#fda4af] hover:bg-[#26101a] hover:border-[#8b2838]"
             : isConnecting
-              ? "bg-[#0f1117] border border-[#232636] text-[#4a5568]"
-              : "bg-linear-to-r from-[#7C3AED] to-[#9333ea] text-white shadow-[0_0_14px_rgba(124,58,237,0.3)] hover:shadow-[0_0_20px_rgba(124,58,237,0.5)]"
+            ? "bg-[#0f1117] border border-[#232636] text-[#4a5568]"
+            : "bg-linear-to-r from-[#7C3AED] to-[#9333ea] text-white shadow-[0_0_14px_rgba(124,58,237,0.3)] hover:shadow-[0_0_20px_rgba(124,58,237,0.5)]"
         }`}
       >
         {isConnecting ? (
@@ -298,6 +299,9 @@ export function HeaderBar({ onSettingsOpen }: { onSettingsOpen: () => void }) {
           <LogOut className="h-3.5 w-3.5" />
         </button>
       )}
+
+      {/* ── Localhost Guide ── */}
+      <LocalhostGuideDialog />
 
       {/* ── Settings ── */}
       <button

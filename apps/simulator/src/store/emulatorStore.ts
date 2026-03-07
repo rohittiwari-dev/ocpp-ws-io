@@ -168,6 +168,8 @@ export interface SimulationConfig {
   autoChargeSocEnabled: boolean;
   // Measurands
   measurands: MeasurandsConfig;
+  // Response latency simulation
+  responseDelayMs: number;
 }
 
 export interface EmulatorConfig {
@@ -416,6 +418,7 @@ const DEFAULT_SIMULATION: SimulationConfig = {
   autoChargeMeterIncrement: 250,
   autoChargeSocEnabled: true,
   measurands: DEFAULT_MEASURANDS,
+  responseDelayMs: 0,
 };
 
 const makeDefaultConfig = (index: number): EmulatorConfig => ({
@@ -667,7 +670,7 @@ export const useEmulatorStore = create<EmulatorStore>()(
           const filtered = s.chargers.filter((c) => c.id !== id);
           const activeId =
             s.activeChargerId === id
-              ? (filtered[filtered.length - 1]?.id ?? "")
+              ? filtered[filtered.length - 1]?.id ?? ""
               : s.activeChargerId;
           return { chargers: filtered, activeChargerId: activeId };
         }),
@@ -805,8 +808,8 @@ export const useEmulatorStore = create<EmulatorStore>()(
               typeId > 0 && log.ocppMessageId
                 ? [typeId, log.ocppMessageId, log.action, log.payload ?? {}]
                 : typeId > 0
-                  ? [typeId, log.action, log.payload ?? {}]
-                  : [log.action, log.payload ?? {}],
+                ? [typeId, log.action, log.payload ?? {}]
+                : [log.action, log.payload ?? {}],
             );
           const entry: OCPPLog = {
             ...log,
@@ -971,7 +974,7 @@ export const useEmulatorStore = create<EmulatorStore>()(
               securityProfile:
                 legacyConfig.securityProfile > 1
                   ? 0
-                  : (legacyConfig.securityProfile ?? 0),
+                  : legacyConfig.securityProfile ?? 0,
               bootNotification: {
                 ...DEFAULT_BOOT_NOTIFICATION,
                 ...(legacyConfig.bootNotification ?? {}),
@@ -1019,7 +1022,7 @@ export const useEmulatorStore = create<EmulatorStore>()(
               securityProfile:
                 (c.config?.securityProfile ?? 0) > 1
                   ? 0
-                  : (c.config?.securityProfile ?? 0),
+                  : c.config?.securityProfile ?? 0,
               bootNotification: {
                 ...DEFAULT_BOOT_NOTIFICATION,
                 ...(c.config?.bootNotification ?? {}),
