@@ -3,12 +3,14 @@
 import {
   Activity,
   AlertTriangle,
+  Banknote,
   Battery,
   Bolt,
   CalendarCheck,
   ChevronDown,
   Clock,
   Gauge,
+  MessageSquare,
   Play,
   PlugZap,
   PowerOff,
@@ -19,6 +21,7 @@ import {
   Square,
   Unlock,
   Wrench,
+  X,
   Zap,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -255,6 +258,9 @@ export function ConnectorPanel({ connectorId }: { connectorId: number }) {
     config,
     connectors,
     updateConnector,
+    costInfo,
+    displayMessages,
+    clearDisplayMessage,
   } = useActiveCharger();
   const connector = connectors[connectorId];
   const is2x = config.ocppVersion !== "ocpp1.6";
@@ -506,6 +512,53 @@ export function ConnectorPanel({ connectorId }: { connectorId: number }) {
                 }}
               />
             </div>
+
+            {/* Live Tariff / Cost */}
+            {costInfo && (
+              <div className="mt-3 bg-[#181a24] p-2 rounded-lg border border-emerald-500/20">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-widest text-emerald-400">
+                    <Banknote className="w-3 h-3" /> Latest Session Cost
+                  </span>
+                  <span className="text-[12px] font-mono font-bold text-white">
+                    {costInfo.totalCost} {costInfo.currency}
+                  </span>
+                </div>
+                {costInfo.message && (
+                  <div className="text-[9px] text-[#a0a8b8] mt-1 italic">
+                    {costInfo.message}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Display Messages */}
+            {displayMessages.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                {displayMessages.slice(0, 3).map((msg) => (
+                  <div
+                    key={msg.id}
+                    className="flex flex-col gap-1 p-2 rounded-md bg-[#1d1f2b] border border-[#282b3a] group relative"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="flex flex-1 items-center gap-1 text-[8px] font-bold uppercase tracking-widest text-[#8b5cf6]">
+                        <MessageSquare className="w-2.5 h-2.5" />
+                        {msg.priority} MSG
+                      </span>
+                      <button
+                        onClick={() => clearDisplayMessage(msg.id)}
+                        className="text-[#5d6577] hover:text-[#fda4af] transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-white wrap-break-word">
+                      {msg.message}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Testing & Diagnostics — combined */}

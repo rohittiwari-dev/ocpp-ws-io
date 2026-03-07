@@ -15,7 +15,9 @@ import {
   Hash,
   KeyRound,
   Layers,
+  ListVideo,
   MessageSquare,
+  Play,
   Plug,
   Search,
   Send,
@@ -24,6 +26,7 @@ import {
   Shield,
   SlidersHorizontal,
   Smartphone,
+  Square,
   Tag,
   Terminal,
   Upload,
@@ -32,11 +35,12 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useActiveCharger } from "@/hooks/useActiveCharger";
-import { ocppService } from "@/lib/ocppClient";
+import { getService, ocppService } from "@/lib/ocppClient";
+import { type ScenarioMacro, useEmulatorStore } from "@/store/emulatorStore";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
 
 /* ═══════════════════════════════════════════
    CUSTOM DROPDOWN (replaces Select)
@@ -214,6 +218,12 @@ const TABS = [
     icon: MessageSquare,
     color: "text-orange-400",
   },
+  {
+    id: "macro",
+    label: "Macro",
+    icon: ListVideo,
+    color: "text-indigo-400",
+  },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -290,6 +300,105 @@ function ProfilesSection() {
           ))}
         </div>
       )}
+    </SectionCard>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   FLEET SPAWN SECTION
+   ═══════════════════════════════════════════ */
+
+function FleetSpawnSection() {
+  const { spawnFleet } = useActiveCharger();
+  const [count, setCount] = useState("5");
+  const [prefix, setPrefix] = useState("CP-Fleet");
+  const [endpoint, setEndpoint] = useState("ws://localhost:9000");
+  const [isSpawning, setIsSpawning] = useState(false);
+
+  const handleSpawn = () => {
+    if (isSpawning) return;
+    setIsSpawning(true);
+    const numCount = parseInt(count, 10) || 1;
+    spawnFleet(numCount, endpoint, prefix);
+
+    // Auto connect all fleet chargers staggered
+    setTimeout(() => {
+      const store = useEmulatorStore.getState();
+      const newFleet = store.chargers.filter((c) => c.label.startsWith(prefix));
+      newFleet.forEach((c, i) => {
+        setTimeout(() => getService(c.id).connect(), i * 500);
+      });
+      setIsSpawning(false);
+    }, 100);
+  };
+
+  const handleDisconnectAll = () => {
+    const store = useEmulatorStore.getState();
+    const fleet = store.chargers.filter((c) => c.label.startsWith(prefix));
+    fleet.forEach((c) => {
+      getService(c.id).disconnect();
+    });
+  };
+
+  return (
+    <SectionCard
+      title="Fleet Spawn"
+      icon={<Layers className="h-3.5 w-3.5" />}
+      color="text-emerald-400"
+      description="Bulk create and connect multiple chargers for load testing"
+    >
+      <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-3 gap-2">
+          <Field
+            label="Count"
+            icon={<Hash className="h-3 w-3 text-emerald-400/60" />}
+          >
+            <Input
+              type="number"
+              min="1"
+              max="50"
+              value={count}
+              onChange={(e) => setCount(e.target.value)}
+              className="h-9 bg-surface-inset border-b-default text-white text-[12px] rounded-lg focus-visible:ring-emerald-500/30"
+            />
+          </Field>
+          <Field
+            label="Prefix"
+            icon={<Tag className="h-3 w-3 text-emerald-400/60" />}
+          >
+            <Input
+              value={prefix}
+              onChange={(e) => setPrefix(e.target.value)}
+              className="h-9 bg-surface-inset border-b-default text-white text-[12px] rounded-lg focus-visible:ring-emerald-500/30"
+            />
+          </Field>
+          <Field
+            label="Target CSMS"
+            icon={<Globe className="h-3 w-3 text-emerald-400/60" />}
+          >
+            <Input
+              value={endpoint}
+              onChange={(e) => setEndpoint(e.target.value)}
+              className="h-9 bg-surface-inset border-b-default text-white text-[12px] rounded-lg focus-visible:ring-emerald-500/30"
+            />
+          </Field>
+        </div>
+        <div className="flex gap-2 mt-1">
+          <button
+            onClick={handleSpawn}
+            disabled={isSpawning}
+            className="flex-1 h-9 rounded-md bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 text-[11px] font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
+          >
+            <Zap className="h-3.5 w-3.5" /> Spawn & Connect
+          </button>
+          <button
+            onClick={handleDisconnectAll}
+            className="h-9 px-4 rounded-md bg-red-500/10 hover:bg-red-500 text-red-400 hover:text-white border border-red-500/20 text-[11px] font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
+          >
+            <Plug className="h-3.5 w-3.5" /> Disconnect All
+          </button>
+        </div>
+      </div>
     </SectionCard>
   );
 }
@@ -428,6 +537,9 @@ function ConnectionTab() {
 
       {/* Config Profiles */}
       <ProfilesSection />
+
+      {/* Fleet Spawn */}
+      <FleetSpawnSection />
     </div>
   );
 }
@@ -1402,6 +1514,192 @@ function MessageComposerTab() {
 }
 
 /* ═══════════════════════════════════════════
+   MACRO TAB
+   ═══════════════════════════════════════════ */
+
+const getPrebuiltMacros = (rfidTag: string): ScenarioMacro[] => [
+  {
+    name: "Full Charge Cycle",
+    description:
+      "Plug in, authorize, start Tx, send 2 meter values, stop Tx, unplug",
+    steps: [
+      { action: "plugIn", delayMs: 500 },
+      { action: "authorize", params: { idTag: rfidTag }, delayMs: 1500 },
+      {
+        action: "startTransaction",
+        params: { idTag: rfidTag },
+        delayMs: 1500,
+      },
+      { action: "sendMeterValues", delayMs: 3000 },
+      { action: "sendMeterValues", delayMs: 3000 },
+      { action: "stopTransaction", delayMs: 1500 },
+      { action: "unplug", delayMs: 1000 },
+    ],
+  },
+  {
+    name: "Auth Failure & Unplug",
+    description: "Plug in, send invalid RFID, unplug after failure",
+    steps: [
+      { action: "plugIn", delayMs: 500 },
+      { action: "authorize", params: { idTag: "INVALID_TAG" }, delayMs: 2000 },
+      { action: "unplug", delayMs: 1000 },
+    ],
+  },
+  {
+    name: "Fault Recovery",
+    description: "Trip a hardware fault, wait 5s, auto-recover to Available",
+    steps: [
+      {
+        action: "triggerFault",
+        params: { errorCode: "GroundFailure" },
+        delayMs: 1000,
+      },
+      { action: "wait", delayMs: 5000 },
+      { action: "sendStatus", params: { status: "Available" }, delayMs: 500 },
+    ],
+  },
+];
+
+function MacroTab() {
+  const { id, scenarioState, setScenarioState, config } = useActiveCharger();
+  const [selectedMacroIdx, setSelectedMacroIdx] = useState(0);
+
+  const scenario = scenarioState;
+  const isRunning = scenario.running;
+  const prebuiltMacros = getPrebuiltMacros(config.rfidTag || "DEADBEEF");
+  const activeMacro = prebuiltMacros[selectedMacroIdx];
+
+  const macroToDisplay = isRunning
+    ? prebuiltMacros.find((m) => m.name === scenario.macroName) || activeMacro
+    : activeMacro;
+
+  const handleRun = () => {
+    getService(id).runScenario(activeMacro.name, activeMacro.steps);
+  };
+
+  const handleRunAll = () => {
+    const store = useEmulatorStore.getState();
+    store.chargers.forEach((c) => {
+      if (c.runtime.status === "connected") {
+        const macrosForC = getPrebuiltMacros(c.config.rfidTag || "DEADBEEF");
+        const macroToRun = macrosForC[selectedMacroIdx];
+        getService(c.id).runScenario(macroToRun.name, macroToRun.steps);
+      }
+    });
+  };
+
+  const handleStop = () => {
+    setScenarioState({ running: false });
+  };
+
+  const handleStopAll = () => {
+    const store = useEmulatorStore.getState();
+    store.chargers.forEach((c) => {
+      store.setScenarioState(c.id, { running: false });
+    });
+  };
+
+  return (
+    <div className="flex flex-col h-full gap-4">
+      <SectionCard
+        title="Automated Scenarios"
+        icon={<ListVideo className="h-4 w-4" />}
+        color="text-indigo-400"
+        description="Run pre-recorded sequences of OCPP operations"
+      >
+        <div className="flex flex-col gap-4">
+          <Dropdown
+            value={String(selectedMacroIdx)}
+            options={prebuiltMacros.map((m, i) => ({
+              label: m.name,
+              value: String(i),
+            }))}
+            onChange={(v) => setSelectedMacroIdx(Number(v))}
+            disabled={isRunning}
+          />
+          <div className="text-xs text-t-muted italic -mt-2">
+            {macroToDisplay.description}
+          </div>
+
+          <div className="p-3 bg-surface-inset rounded-lg border border-b-default space-y-2">
+            <h4 className="text-[10px] uppercase tracking-widest text-[#5d6577] mb-3">
+              Scenario Steps
+            </h4>
+            <div className="flex flex-col gap-1.5 max-h-[250px] overflow-y-auto custom-scrollbar">
+              {macroToDisplay.steps.map((step, idx) => {
+                const isActive = isRunning && scenario.currentStep === idx;
+                const isPast = isRunning && scenario.currentStep > idx;
+                return (
+                  <div
+                    key={`${activeMacro.name}-step-${idx}`}
+                    className={`flex items-center gap-3 p-2 rounded text-[11px] border ${
+                      isActive
+                        ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-300"
+                        : isPast
+                          ? "bg-emerald-500/5 border-transparent text-[#5d6577]"
+                          : "bg-[#181a24] border-transparent text-[#8a91a6]"
+                    }`}
+                  >
+                    <span className="w-4 font-mono select-none opacity-50">
+                      {idx + 1}.
+                    </span>
+                    <span className="font-bold uppercase tracking-wider w-28 shrink-0">
+                      {step.action}
+                    </span>
+                    <span className="text-[10px] opacity-70 font-mono truncate">
+                      {step.params ? JSON.stringify(step.params) : ""}
+                    </span>
+                    <span className="ml-auto opacity-50 font-mono">
+                      {step.delayMs}ms
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            {!isRunning ? (
+              <>
+                <button
+                  onClick={handleRun}
+                  className="flex-1 h-10 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
+                >
+                  <Play className="h-4 w-4" /> Run Macro
+                </button>
+                <button
+                  onClick={handleRunAll}
+                  className="flex-[0.5] h-10 rounded-md bg-[#252836] border border-indigo-500/30 hover:bg-indigo-500/20 text-indigo-400 font-bold uppercase tracking-widest transition-colors flex items-center justify-center"
+                  title="Run on ALL active chargers"
+                >
+                  Run on All
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={handleStop}
+                  className="flex-1 h-10 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2 animate-pulse"
+                >
+                  <Square className="h-4 w-4" fill="currentColor" /> Stop
+                </button>
+                <button
+                  onClick={handleStopAll}
+                  className="flex-[0.5] h-10 rounded-md bg-[#252836] border border-rose-500/30 hover:bg-rose-500/20 text-rose-400 font-bold uppercase tracking-widest transition-colors flex items-center justify-center"
+                  title="Stop on ALL active chargers"
+                >
+                  Stop All
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
    CONFIG PANEL
    ═══════════════════════════════════════════ */
 
@@ -1456,6 +1754,7 @@ export function ConfigPanel({ onClose }: { onClose: () => void }) {
         {activeTab === "simulation" && <SimulationTab />}
         {activeTab === "auth" && <LocalAuthListTab />}
         {activeTab === "composer" && <MessageComposerTab />}
+        {activeTab === "macro" && <MacroTab />}
       </div>
     </div>
   );

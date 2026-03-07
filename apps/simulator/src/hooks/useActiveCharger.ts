@@ -10,6 +10,7 @@ import {
   type LocalAuthEntry,
   makeDefaultSlot,
   type OCPPLog,
+  type ScenarioState,
   type SimulationConfig,
   useEmulatorStore,
   type VendorConfig,
@@ -115,6 +116,39 @@ export function useActiveCharger() {
     [id, store],
   );
 
+  const setScenarioState = useCallback(
+    (state: Partial<ScenarioState>) => store.setScenarioState(id, state),
+    [id, store],
+  );
+
+  const setCostInfo = useCallback(
+    (
+      costInfo: {
+        totalCost: number;
+        currency: string;
+        message?: string;
+      } | null,
+    ) => store.setCostInfo(id, costInfo),
+    [id, store],
+  );
+
+  const addDisplayMessage = useCallback(
+    (msg: {
+      id: number;
+      priority: string;
+      message: string;
+      timestamp: number;
+    }) => store.addDisplayMessage(id, msg),
+    [id, store],
+  );
+
+  const clearDisplayMessage = useCallback(
+    (msgId: number) => store.clearDisplayMessage(id, msgId),
+    [id, store],
+  );
+
+  const spawnFleet = store.spawnFleet;
+
   return {
     // Slot identity
     id: slot.id,
@@ -145,5 +179,10 @@ export function useActiveCharger() {
     updateEVSE,
     setDeviceVariable,
     bumpTransactionSeq,
+    setScenarioState,
+    setCostInfo,
+    addDisplayMessage,
+    clearDisplayMessage,
+    spawnFleet,
   };
 }

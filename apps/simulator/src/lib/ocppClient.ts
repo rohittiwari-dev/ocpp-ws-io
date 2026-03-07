@@ -3,6 +3,7 @@ import { BrowserOCPPClient } from "ocpp-ws-io/browser";
 import {
   type ChargingProfile,
   type LocalAuthEntry,
+  type ScenarioStep,
   type StationConfigKey,
   useEmulatorStore,
 } from "../store/emulatorStore";
@@ -1519,6 +1520,54 @@ class OCPPService {
       });
       return { status: "Accepted" };
     });
+
+    // ── CostUpdated ──
+    this.client.handle("CostUpdated", (ctx) => {
+      const params = ctx.params as any;
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "CostUpdated",
+        payload: params,
+        ocppMessageId: ctx.messageId,
+      });
+      useEmulatorStore.getState().setCostInfo(cid, {
+        totalCost: params.totalCost,
+        currency: "USD",
+        message: "Session cost updated",
+      });
+      return {};
+    });
+
+    // ── DisplayMessage ──
+    this.client.handle("DisplayMessage", (ctx) => {
+      const params = ctx.params as any;
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "DisplayMessage",
+        payload: params,
+        ocppMessageId: ctx.messageId,
+      });
+      useEmulatorStore.getState().addDisplayMessage(cid, {
+        id: params.id || Date.now(),
+        priority: params.priority || "Normal",
+        message: params.message?.content || JSON.stringify(params.message),
+        timestamp: Date.now(),
+      });
+      return { status: "Accepted" };
+    });
+
+    // ── ClearDisplayMessage ──
+    this.client.handle("ClearDisplayMessage", (ctx) => {
+      const params = ctx.params as any;
+      useEmulatorStore.getState().addLog(cid, {
+        direction: "Rx",
+        action: "ClearDisplayMessage",
+        payload: params,
+        ocppMessageId: ctx.messageId,
+      });
+      useEmulatorStore.getState().clearDisplayMessage(cid, params.id);
+      return { status: "Accepted" };
+    });
   }
 
   // ─── OCPP 2.x Outgoing Methods ────────────────────────────────────────────
@@ -2602,6 +2651,139 @@ class OCPPService {
         }
       }
     }
+  }
+
+  // ─── Scenario Macros ────────────────────────────────────────────────────────
+
+  async runScenario(macroName: string, steps: ScenarioStep[]) {
+    const { store } = getSlotState(this.chargerId);
+    store.setScenarioState(this.chargerId, {
+      running: true,
+      currentStep: 0,
+      macroName,
+    });
+
+    for (let i = 0; i < steps.length; i++) {
+      // Check if we've been stopped mid-run
+      const state = store.getSlot(this.chargerId)?.runtime?.scenarioState;
+      if (!state?.running || state.macroName !== macroName) {
+        break; // aborted
+      }
+
+      store.setScenarioState(this.chargerId, { currentStep: i });
+      const step = steps[i];
+
+      // Delay
+      if (step.delayMs > 0) {
+        await new Promise((r) => setTimeout(r, step.delayMs));
+      }
+
+      // Execute action
+      const p = step.params || {};
+      const cid = Number(p.connectorId || 1);
+      const is2x =
+        store.getSlot(this.chargerId)?.config.ocppVersion === "ocpp2.0.1";
+
+      try {
+        const currentStatus = store.chargers.find(
+          (c) => c.id === this.chargerId,
+        )?.runtime.status;
+        if (currentStatus !== "connected") {
+          throw new Error(`WebSocket disconnected (Status: ${currentStatus})`);
+        }
+
+        switch (step.action) {
+          case "plugIn":
+            if (is2x) this.sendStatusNotification201(cid, 1, "Occupied");
+            else this.sendStatusNotification(cid, "Preparing");
+            store.updateConnector(this.chargerId, cid, {
+              cablePluggedIn: true,
+            });
+            break;
+
+          case "authorize": {
+            let authOk = false;
+            if (is2x) {
+              const res2 = (await this.sendAuthorize201(
+                String(p.idTag),
+              )) as any;
+              authOk = res2 && res2.idTokenInfo?.status === "Accepted";
+            } else {
+              authOk = await this.authorize(cid, String(p.idTag));
+            }
+            if (!authOk && p.idTag !== "INVALID_TAG") {
+              throw new Error("Authorization rejected by CSMS");
+            }
+            break;
+          }
+
+          case "startTransaction": {
+            if (is2x) await this.startTransaction201(cid, String(p.idTag));
+            else await this.startTransaction(cid, String(p.idTag));
+
+            const conn = useEmulatorStore
+              .getState()
+              .chargers.find((c) => c.id === this.chargerId)?.runtime
+              .connectors[cid];
+            if (!conn?.inTransaction) {
+              throw new Error("StartTransaction was rejected or failed");
+            }
+            break;
+          }
+
+          case "sendMeterValues":
+            await this.sendMeterValues(cid);
+            break;
+
+          case "stopTransaction":
+            if (is2x) await this.stopTransaction201(cid);
+            else await this.stopTransaction(cid);
+            break;
+
+          case "unplug":
+            if (is2x) this.sendStatusNotification201(cid, 1, "Available");
+            else this.sendStatusNotification(cid, "Available");
+            store.updateConnector(this.chargerId, cid, {
+              cablePluggedIn: false,
+            });
+            break;
+
+          case "sendStatus":
+            if (is2x) this.sendStatusNotification201(cid, 1, String(p.status));
+            else this.sendStatusNotification(cid, String(p.status));
+            break;
+
+          case "triggerFault":
+            if (is2x) this.sendStatusNotification201(cid, 1, "Faulted");
+            else
+              this.sendStatusNotification(
+                cid,
+                "Faulted",
+                String(p.errorCode || "InternalError"),
+              );
+            break;
+
+          case "wait":
+            // just a delay, handled above
+            break;
+        }
+      } catch (err: any) {
+        console.warn(`[Scenario] Step ${i} (${step.action}) failed:`, err);
+        store.addLog(this.chargerId, {
+          direction: "System",
+          action: "ScenarioError",
+          payload: {
+            step: i,
+            action: step.action,
+            error: err?.message || String(err),
+          },
+          ocppMessageId: "",
+        });
+      }
+    }
+
+    // Reset state when done
+    store.setScenarioState(this.chargerId, { running: false });
   }
 }
 

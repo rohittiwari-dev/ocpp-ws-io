@@ -103,6 +103,37 @@ export interface OCPPLog {
   rawMessage?: string;
 }
 
+// ─── Scenario Macros ────────────────────────────────────────────────────────────────────────
+
+export type ScenarioAction =
+  | "plugIn"
+  | "authorize"
+  | "startTransaction"
+  | "sendMeterValues"
+  | "stopTransaction"
+  | "unplug"
+  | "sendStatus"
+  | "triggerFault"
+  | "wait";
+
+export interface ScenarioStep {
+  action: ScenarioAction;
+  params?: Record<string, unknown>;
+  delayMs: number;
+}
+
+export interface ScenarioMacro {
+  name: string;
+  description: string;
+  steps: ScenarioStep[];
+}
+
+export interface ScenarioState {
+  running: boolean;
+  currentStep: number;
+  macroName: string;
+}
+
 export interface BootNotificationConfig {
   chargePointVendor: string;
   chargePointModel: string;
@@ -219,6 +250,16 @@ export interface ChargerRuntimeState {
   deviceModel: ComponentVariable[];
   evse: EVSEState[];
   transactionSeq: number;
+  // ── Scenario Macros ──
+  scenarioState: ScenarioState;
+  // ── Live Tariff / Cost ──
+  costInfo: { totalCost: number; currency: string; message?: string } | null;
+  displayMessages: {
+    id: number;
+    priority: string;
+    message: string;
+    timestamp: number;
+  }[];
 }
 
 // ─── Charger Slot (one per tab) ───────────────────────────────────────────────
@@ -300,6 +341,23 @@ export interface EmulatorStore {
     value: string,
   ) => void;
   bumpTransactionSeq: (id: string) => number;
+
+  // ── Scenario Macros ──
+  setScenarioState: (id: string, state: Partial<ScenarioState>) => void;
+
+  // ── Live Tariff / Cost ──
+  setCostInfo: (
+    id: string,
+    costInfo: { totalCost: number; currency: string; message?: string } | null,
+  ) => void;
+  addDisplayMessage: (
+    id: string,
+    msg: { id: number; priority: string; message: string; timestamp: number },
+  ) => void;
+  clearDisplayMessage: (id: string, msgId: number) => void;
+
+  // ── Fleet Spawn ──
+  spawnFleet: (count: number, endpoint: string, prefix: string) => void;
 
   // ── Selector helper ──
   getSlot: (id: string) => ChargerSlot | undefined;
@@ -485,6 +543,11 @@ const makeDefaultRuntime = (rfidTag: string): ChargerRuntimeState => ({
   connectedAt: null,
   offlineMode: false,
   offlineQueue: [],
+  // ── Scenario ──
+  scenarioState: { running: false, currentStep: 0, macroName: "" },
+  // ── Live Tariff ──
+  costInfo: null,
+  displayMessages: [],
   // ── OCPP 2.x runtime defaults ──
   deviceModel: [
     // ── ChargingStation (Identity) ──
@@ -727,10 +790,33 @@ export const useEmulatorStore = create<EmulatorStore>()(
 
       updateConfig: (id, cfg) =>
         set((s) => ({
-          chargers: updateSlot(s.chargers, id, (slot) => ({
-            ...slot,
-            config: { ...slot.config, ...cfg },
-          })),
+          chargers: updateSlot(s.chargers, id, (slot) => {
+            const newConfig = { ...slot.config, ...cfg };
+            let newRuntime = slot.runtime;
+
+            // Sync rfidTag changes to all connectors
+            if (
+              cfg.rfidTag !== undefined &&
+              cfg.rfidTag !== slot.config.rfidTag
+            ) {
+              const rfid = cfg.rfidTag;
+              newRuntime = {
+                ...newRuntime,
+                connectors: Object.fromEntries(
+                  Object.entries(newRuntime.connectors).map(([cId, conn]) => [
+                    cId,
+                    { ...conn, idTag: rfid },
+                  ]),
+                ),
+              };
+            }
+
+            return {
+              ...slot,
+              config: newConfig,
+              runtime: newRuntime,
+            };
+          }),
         })),
 
       updateBootNotification: (id, fields) =>
@@ -987,6 +1073,60 @@ export const useEmulatorStore = create<EmulatorStore>()(
         }));
         return seq;
       },
+
+      // ── Scenario Macros ──────────────────────────────────────────────────
+      setScenarioState: (id, state) =>
+        set((s) => ({
+          chargers: updateRuntime(s.chargers, id, (r) => ({
+            ...r,
+            scenarioState: { ...r.scenarioState, ...state },
+          })),
+        })),
+
+      // ── Live Tariff / Cost ───────────────────────────────────────────────
+      setCostInfo: (id, costInfo) =>
+        set((s) => ({
+          chargers: updateRuntime(s.chargers, id, (r) => ({ ...r, costInfo })),
+        })),
+
+      addDisplayMessage: (id, msg) =>
+        set((s) => ({
+          chargers: updateRuntime(s.chargers, id, (r) => ({
+            ...r,
+            displayMessages: [msg, ...r.displayMessages].slice(0, 10), // keep last 10
+          })),
+        })),
+
+      clearDisplayMessage: (id, msgId) =>
+        set((s) => ({
+          chargers: updateRuntime(s.chargers, id, (r) => ({
+            ...r,
+            displayMessages: r.displayMessages.filter((m) => m.id !== msgId),
+          })),
+        })),
+
+      // ── Fleet Spawn ──────────────────────────────────────────────────────
+      spawnFleet: (count, endpoint, prefix) =>
+        set((s) => {
+          const newChargers: ChargerSlot[] = [];
+          for (let i = 0; i < count; i++) {
+            const id = nanoid(6);
+            const label = `${prefix}-${String(i + 1).padStart(2, "0")}`;
+            const config = {
+              ...makeDefaultConfig(s.chargers.length + i + 1),
+              endpoint,
+              chargePointId: label,
+            };
+            newChargers.push({
+              id,
+              label,
+              config,
+              savedProfiles: [],
+              runtime: makeDefaultRuntime(config.rfidTag),
+            });
+          }
+          return { chargers: [...s.chargers, ...newChargers] };
+        }),
     }),
     {
       name: "ocpp-emulator-storage",
