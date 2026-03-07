@@ -6,7 +6,15 @@
     "ocpp",
     "documentation",
     "fumadocs",
-    "nextjs"
+    "nextjs",
+    "simulator",
+    "ocpp-simulator",
+    "nodejs-library",
+    "testing-cli",
+    "ocpp-testing",
+    "charge-point-simulator",
+    "ocpp-implementation",
+    "ocpp-docs"
   ],
   "scripts": {
     "build": "next build",

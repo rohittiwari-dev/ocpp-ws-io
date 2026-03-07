@@ -76,7 +76,13 @@
     "clustering",
     "pubsub",
     "browser",
-    "react-native"
+    "simulator",
+    "ocpp-simulator",
+    "nodejs-library",
+    "testing-cli",
+    "ocpp-testing",
+    "ocpp-implementation",
+    "ocpp-docs"
   ],
   "author": "Rohit Tiwari <rohit@rohittiwari.me>",
   "homepage": "https://ocpp-ws-io.rohittiwari.me",

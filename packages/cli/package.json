@@ -12,6 +12,20 @@
     "ocpp-ws-cli": "./dist/index.js"
   },
   "type": "module",
+  "keywords": [
+    "ocpp",
+    "ocpp-j",
+    "ocpp1.6",
+    "ocpp2.0.1",
+    "simulator",
+    "ocpp-simulator",
+    "nodejs-library",
+    "testing-cli",
+    "ocpp-testing",
+    "charge-point-simulator",
+    "ocpp-implementation",
+    "ocpp-docs"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch"

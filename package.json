@@ -56,7 +56,13 @@
     "clustering",
     "pubsub",
     "browser",
-    "react-native"
+    "simulator",
+    "ocpp-simulator",
+    "nodejs-library",
+    "testing-cli",
+    "ocpp-testing",
+    "ocpp-implementation",
+    "ocpp-docs"
   ],
   "devDependencies": {
     "@biomejs/biome": "^2.4.4",

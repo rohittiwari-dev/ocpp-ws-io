@@ -8,6 +8,20 @@
     "start": "next start",
     "lint": "eslint"
   },
+  "keywords": [
+    "ocpp",
+    "ocpp-j",
+    "ocpp1.6",
+    "ocpp2.0.1",
+    "simulator",
+    "ocpp-simulator",
+    "nodejs-library",
+    "testing-cli",
+    "ocpp-testing",
+    "charge-point-simulator",
+    "ocpp-implementation",
+    "ocpp-docs"
+  ],
   "dependencies": {
     "@base-ui/react": "^1.2.0",
     "@hugeicons/core-free-icons": "^3.3.0",
