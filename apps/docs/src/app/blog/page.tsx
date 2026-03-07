@@ -29,6 +29,9 @@ export const metadata: Metadata = {
     description:
       "Latest updates, guides, and deep dives into OCPP and EV charging infrastructure.",
   },
+  alternates: {
+    canonical: "/blog",
+  },
 };
 
 export default function BlogPage() {

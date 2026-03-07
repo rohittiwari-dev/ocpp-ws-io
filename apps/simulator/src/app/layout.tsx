@@ -23,9 +23,9 @@ export const metadata: Metadata = {
     "OCPP Simulator",
     "OCPP Emulator",
     "Charge Point Emulator",
-    "OCPP 1.6",
-    "OCPP 2.0.1",
-    "OCPP 2.1",
+    "OCPP 1.6 Simulator",
+    "OCPP 2.0.1 Emulator",
+    "Open Charge Point Protocol Simulator",
     "CSMS Testing",
     "EV Charging Simulator",
     "EVSE Emulator",
@@ -36,6 +36,15 @@ export const metadata: Metadata = {
     "EV Charging",
     "TypeScript",
     "Next.js",
+    "OCPP Server",
+    "OCPP Library Node.js",
+    "Open Charge Point Protocol Docs",
+    "CSMS Framework",
+    "Test CSMS",
+    "Test OCPP Server",
+    "WebSocket Testing",
+    "ocpp-ws-io Docs",
+    "OCPP Documentation",
   ],
   authors: [{ name: "Rohit Tiwari", url: "https://rohittiwari.me" }],
   creator: "Rohit Tiwari",
@@ -53,43 +62,24 @@ export const metadata: Metadata = {
     },
   },
 
-  /* ── Icons ── */
-  icons: {
-    icon: [
-      { url: "/favicon.ico", sizes: "48x48" },
-      { url: "/icon.svg", type: "image/svg+xml" },
-    ],
-    apple: "/apple-icon.png",
-    shortcut: "/favicon.ico",
-  },
-
   /* ── Open Graph ── */
   openGraph: {
     type: "website",
     locale: "en_US",
     url: BASE_URL,
     siteName: "ocpp-ws-simulator",
-    title: "ocpp-ws-simulator | OCPP Charge Point Emulator",
+    title: "OCPP WS Simulator | Real-Time Charge Point Emulator",
     description:
       "Test your CSMS with a realistic OCPP charge point emulator. Supports OCPP 1.6, 2.0.1, 2.1 — built on ocpp-ws-io.",
-    images: [
-      {
-        url: "/og.png",
-        width: 1200,
-        height: 630,
-        alt: "OCPP Charge Point Simulator",
-      },
-    ],
   },
 
   /* ── Twitter / X ── */
   twitter: {
     card: "summary_large_image",
-    title: "ocpp-ws-simulator | OCPP Charge Point Emulator",
+    title: "OCPP WS Simulator | Real-Time Charge Point Emulator",
     description:
       "An open-source OCPP 1.6/2.0.1/2.1 charge point emulator for testing CSMS backends.",
     creator: "@rohittiwari_dev",
-    images: ["/og.png"],
   },
 
   /* ── Canonical ── */

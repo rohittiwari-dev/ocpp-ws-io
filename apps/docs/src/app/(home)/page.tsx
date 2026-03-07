@@ -9,42 +9,38 @@ import { Stats } from "@/components/landing/stats";
 import { blogSource } from "@/lib/blog";
 
 export const metadata: Metadata = {
-  title: "Type-Safe OCPP WebSocket Library for Node.js",
+  title: {
+    absolute: "OCPP WS IO — Type-Safe OCPP WebSocket Library",
+  },
   description:
     "Build scalable CSMS and Charging Stations with ocpp-ws-io. Supports OCPP 1.6, 2.0.1, 2.1, strict validation, and clustering.",
   keywords: [
-    "OCPP",
-    "WebSocket",
-    "RPC",
-    "CSMS",
-    "Charging Station",
-    "Ev Charging",
-    "Node.js",
-    "TypeScript",
+    "OCPP Library Node.js",
+    "Typescript OCPP WebSocket",
+    "OCPP Server Implementation",
+    "CSMS Framework",
+    "EV Charging Software",
+    "Open Charge Point Protocol Server",
+    "OCPP 1.6 Server Setup",
+    "OCPP 2.0.1 Library",
+    "OCPP TypeScript Server",
+    "OCPP Node.js Example",
   ],
   openGraph: {
+    siteName: "OCPP WS IO",
     title: "OCPP WS IO — Type-Safe OCPP WebSocket Library",
     description:
       "Build scalable CSMS and Charging Stations with ocpp-ws-io. Type-safe OCPP WebSocket library for Node.js.",
     url: "https://ocpp-ws-io.rohittiwari.me",
     type: "website",
-    images: [
-      {
-        url: "/og.png",
-        width: 1200,
-        height: 630,
-        alt: "OCPP WS IO",
-      },
-    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "OCPP WS IO — Type-Safe OCPP WebSocket Library",
     description: "Type-safe OCPP WebSocket RPC client & server for Node.js",
-    images: ["/og.png"],
   },
   alternates: {
-    canonical: "./",
+    canonical: "/",
   },
 };
 
@@ -58,6 +54,7 @@ export default function HomePage() {
     "@type": "WebSite",
     url: "https://ocpp-ws-io.rohittiwari.me",
     name: "OCPP WS IO",
+    alternateName: ["OCPP-WS-IO"],
     description:
       "Type-safe OCPP WebSocket RPC client & server for Node.js. Supports OCPP 1.6, 2.0.1, 2.1.",
     publisher: {

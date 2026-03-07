@@ -1,6 +1,7 @@
 "use client";
 
 import { PanelBottomOpen } from "lucide-react";
+
 import { useEffect, useState } from "react";
 import { AuthGate } from "@/components/emulator/AuthGate";
 import { ChargerTabBar } from "@/components/emulator/ChargerTabBar";
@@ -16,6 +17,16 @@ import {
 import { cn } from "@/lib/utils";
 
 export default function Home() {
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    url: "https://ocpp.rohittiwari.me",
+    name: "OCPP WS Simulator",
+    alternateName: ["ocpp-ws-simulator", "OCPP Emulator", "OCPP Simulator"],
+    description:
+      "An open-source OCPP 1.6/2.0.1/2.1 charge point emulator for testing CSMS backends.",
+    applicationCategory: "DeveloperApplication",
+  };
   const [configOpen, setConfigOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(true);
 
@@ -138,6 +149,10 @@ export default function Home() {
   return (
     <AuthGate>
       <main className="h-screen w-screen flex flex-col overflow-hidden">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
         {/* ── Header ── */}
         <HeaderBar onSettingsOpen={toggleConfig} />
 

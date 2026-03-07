@@ -16,19 +16,19 @@ export default function sitemap(): MetadataRoute.Sitemap {
       url: `${url}/blog`,
       lastModified: new Date(),
       changeFrequency: "daily",
-      priority: 1,
+      priority: 0.9,
     },
     ...source.getPages().map((page) => ({
       url: `${url}${page.url}`,
       lastModified: new Date(),
-      changeFrequency: "daily" as const,
-      priority: 1,
+      changeFrequency: "weekly" as const,
+      priority: 0.8,
     })),
     ...blogSource.getPages().map((page) => ({
       url: `${url}${page.url}`,
       lastModified: new Date(),
-      changeFrequency: "daily" as const,
-      priority: 1,
+      changeFrequency: "monthly" as const,
+      priority: 0.7,
     })),
   ];
 }
