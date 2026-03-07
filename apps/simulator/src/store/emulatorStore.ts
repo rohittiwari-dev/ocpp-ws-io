@@ -89,6 +89,8 @@ export interface ConnectorState {
   unlockStatus: "Unlocked" | "UnlockFailed";
   reservation: Reservation | null;
   chargingProfiles: ChargingProfile[];
+  cablePluggedIn: boolean;
+  cableLocked: boolean;
 }
 
 export interface OCPPLog {
@@ -465,6 +467,8 @@ const makeDefaultConnector = (
   unlockStatus: "Unlocked",
   reservation: null,
   chargingProfiles: [],
+  cablePluggedIn: false,
+  cableLocked: false,
 });
 
 const makeDefaultRuntime = (rfidTag: string): ChargerRuntimeState => ({

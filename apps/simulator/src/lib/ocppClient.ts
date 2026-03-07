@@ -860,6 +860,218 @@ class OCPPService {
       });
       return { status: "Accepted" };
     });
+
+    // ── UnlockConnector ──
+    this.client.handle("UnlockConnector", (ctx) => {
+      const payload = ctx.params as { connectorId: number };
+      const s = useEmulatorStore.getState();
+      const connId = payload.connectorId ?? 1;
+      s.addLog(cid, {
+        direction: "Rx",
+        action: "UnlockConnector",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      const slot = s.chargers.find((c) => c.id === cid);
+      const conn = slot?.runtime.connectors[connId];
+      if (!conn) return { status: "NotSupported" };
+
+      // Unlock the cable
+      s.updateConnector(cid, connId, {
+        cableLocked: false,
+        cablePluggedIn: false,
+        unlockStatus: "Unlocked",
+      });
+
+      // If there's a transaction, stop it with EVDisconnected
+      if (conn.inTransaction) {
+        s.updateConnector(cid, connId, { stopReason: "EVDisconnected" });
+        this.stopTransaction(connId);
+      }
+
+      // Send status Available
+      this.sendStatusNotification(connId, "Available");
+
+      return { status: "Unlocked" };
+    });
+
+    // ── SetChargingProfile ──
+    this.client.handle("SetChargingProfile", (ctx) => {
+      const payload = ctx.params as {
+        connectorId: number;
+        csChargingProfiles: ChargingProfile;
+      };
+      const s = useEmulatorStore.getState();
+      s.addLog(cid, {
+        direction: "Rx",
+        action: "SetChargingProfile",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      const connId = payload.connectorId ?? 1;
+      const slot = s.chargers.find((c) => c.id === cid);
+      const existing = slot?.runtime.connectors[connId]?.chargingProfiles ?? [];
+      // Replace profile with same ID or append
+      const filtered = existing.filter(
+        (p) =>
+          p.chargingProfileId !== payload.csChargingProfiles.chargingProfileId,
+      );
+      filtered.push(payload.csChargingProfiles);
+      s.updateConnector(cid, connId, { chargingProfiles: filtered });
+      return { status: "Accepted" };
+    });
+
+    // ── ClearChargingProfile ──
+    this.client.handle("ClearChargingProfile", (ctx) => {
+      const payload = ctx.params as {
+        id?: number;
+        connectorId?: number;
+        chargingProfilePurpose?: string;
+        stackLevel?: number;
+      };
+      const s = useEmulatorStore.getState();
+      s.addLog(cid, {
+        direction: "Rx",
+        action: "ClearChargingProfile",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      const slot = s.chargers.find((c) => c.id === cid);
+      if (!slot) return { status: "Unknown" };
+      let found = false;
+      for (const [connIdStr, conn] of Object.entries(slot.runtime.connectors)) {
+        const connId = Number(connIdStr);
+        if (payload.connectorId != null && payload.connectorId !== connId)
+          continue;
+        const before = conn.chargingProfiles.length;
+        const after = conn.chargingProfiles.filter((p) => {
+          if (payload.id != null && p.chargingProfileId === payload.id)
+            return false;
+          if (
+            payload.chargingProfilePurpose &&
+            p.chargingProfilePurpose === payload.chargingProfilePurpose
+          )
+            return false;
+          if (payload.stackLevel != null && p.stackLevel === payload.stackLevel)
+            return false;
+          return true;
+        });
+        if (after.length !== before) {
+          s.updateConnector(cid, connId, { chargingProfiles: after });
+          found = true;
+        }
+      }
+      return { status: found ? "Accepted" : "Unknown" };
+    });
+
+    // ── ReserveNow ──
+    this.client.handle("ReserveNow", (ctx) => {
+      const payload = ctx.params as {
+        connectorId: number;
+        expiryDate: string;
+        idTag: string;
+        parentIdTag?: string;
+        reservationId: number;
+      };
+      const s = useEmulatorStore.getState();
+      s.addLog(cid, {
+        direction: "Rx",
+        action: "ReserveNow",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      const slot = s.chargers.find((c) => c.id === cid);
+      const conn = slot?.runtime.connectors[payload.connectorId];
+      if (!conn) return { status: "Rejected" };
+      if (conn.inTransaction) return { status: "Occupied" };
+      if (conn.reservation) return { status: "Rejected" };
+      s.updateConnector(cid, payload.connectorId, {
+        status: "Reserved",
+        reservation: {
+          reservationId: payload.reservationId,
+          idTag: payload.idTag,
+          expiryDate: payload.expiryDate,
+          parentIdTag: payload.parentIdTag,
+        },
+      });
+      // Auto-expire
+      const expiresIn = new Date(payload.expiryDate).getTime() - Date.now();
+      if (expiresIn > 0) {
+        setTimeout(() => {
+          const cur = useEmulatorStore.getState();
+          const sl = cur.chargers.find((c) => c.id === cid);
+          const cn = sl?.runtime.connectors[payload.connectorId];
+          if (cn?.reservation?.reservationId === payload.reservationId) {
+            cur.updateConnector(cid, payload.connectorId, {
+              status: "Available",
+              reservation: null,
+            });
+            cur.addLog(cid, {
+              direction: "System",
+              action: "ReservationExpired",
+              payload: { reservationId: payload.reservationId },
+            });
+          }
+        }, expiresIn);
+      }
+      return { status: "Accepted" };
+    });
+
+    // ── CancelReservation ──
+    this.client.handle("CancelReservation", (ctx) => {
+      const payload = ctx.params as { reservationId: number };
+      const s = useEmulatorStore.getState();
+      s.addLog(cid, {
+        direction: "Rx",
+        action: "CancelReservation",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      const slot = s.chargers.find((c) => c.id === cid);
+      if (!slot) return { status: "Rejected" };
+      for (const [connIdStr, conn] of Object.entries(slot.runtime.connectors)) {
+        if (conn.reservation?.reservationId === payload.reservationId) {
+          s.updateConnector(cid, Number(connIdStr), {
+            status: "Available",
+            reservation: null,
+          });
+          return { status: "Accepted" };
+        }
+      }
+      return { status: "Rejected" };
+    });
+
+    // ── UpdateFirmware ──
+    this.client.handle("UpdateFirmware", (ctx) => {
+      const payload = ctx.params as {
+        location: string;
+        retrieveDate: string;
+        retries?: number;
+        retryInterval?: number;
+      };
+      const s = useEmulatorStore.getState();
+      s.addLog(cid, {
+        direction: "Rx",
+        action: "UpdateFirmware",
+        payload,
+        ocppMessageId: ctx.messageId,
+      });
+      // Simulate the firmware update lifecycle
+      const steps = [
+        { status: "Downloading", delay: 2000 },
+        { status: "Downloaded", delay: 3000 },
+        { status: "Installing", delay: 3000 },
+        { status: "Installed", delay: 2000 },
+      ];
+      let cumulative = 0;
+      for (const step of steps) {
+        cumulative += step.delay;
+        setTimeout(() => {
+          this.sendFirmwareStatus(step.status);
+        }, cumulative);
+      }
+      return {};
+    });
   }
 
   // ─── OCPP 2.x Incoming Handlers ───────────────────────────────────────────
@@ -1413,16 +1625,16 @@ class OCPPService {
         (trigger === "Started"
           ? "Authorized"
           : trigger === "Ended"
-          ? "Local"
-          : "ChargingRateChanged"),
+            ? "Local"
+            : "ChargingRateChanged"),
       transactionInfo: {
         transactionId: String(connector?.transactionId ?? `TXN-${nanoid(6)}`),
         chargingState:
           trigger === "Ended"
             ? "SuspendedEVSE"
             : trigger === "Started"
-            ? "Charging"
-            : "Charging",
+              ? "Charging"
+              : "Charging",
       },
       evse: { id: evseId, connectorId: 1 },
       idToken: connector?.idTag
