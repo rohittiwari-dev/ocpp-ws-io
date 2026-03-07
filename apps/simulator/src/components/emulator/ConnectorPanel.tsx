@@ -508,73 +508,92 @@ export function ConnectorPanel({ connectorId }: { connectorId: number }) {
             </div>
           </div>
 
-          {/* Transaction Controls */}
-          <div className="p-3 border-b border-[#232636]">
-            <span className="block mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#5d6577]">
-              Transaction Control
-            </span>
-            <div className="grid grid-cols-2 gap-2">
-              {!inTx ? (
-                <button
-                  disabled={!isConnected}
-                  onClick={() =>
-                    is2x
-                      ? ocppService.startTransaction201(
-                          connectorId,
-                          connector.idTag,
-                        )
-                      : ocppService.startTransaction(connectorId)
-                  }
-                  className="h-10 rounded-md btn-success text-[12px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
-                >
-                  <Play className="h-4 w-4" /> Start Tx
-                </button>
-              ) : (
-                <button
-                  disabled={!isConnected}
-                  onClick={() =>
-                    is2x
-                      ? ocppService.stopTransaction201(connectorId)
-                      : ocppService.stopTransaction(connectorId)
-                  }
-                  className="h-10 rounded-md btn-danger text-[12px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
-                >
-                  <Square className="h-4 w-4" /> Stop Tx
-                </button>
-              )}
+          {/* Testing & Diagnostics — combined */}
+          <div className="p-3 flex-1 bg-[#121420]">
+            <div className="flex items-center justify-between mb-2 border-b border-[#282b3a] pb-2">
+              <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#8b5cf6]">
+                <AlertTriangle className="w-3.5 h-3.5" /> Testing & Diagnostics
+              </span>
+              <Settings className="h-3 w-3 text-[#5d6577]" />
+            </div>
+
+            {/* Quick actions row */}
+            <div className="grid grid-cols-2 gap-1.5 mb-3">
               <button
                 disabled={!isConnected}
                 onClick={() =>
-                  inTx
-                    ? ocppService.stopAutoCharge(connectorId)
-                    : ocppService.startAutoCharge(connectorId)
+                  ocppService.sendStatusNotification(
+                    connectorId,
+                    connector.status,
+                  )
                 }
-                className={`h-10 rounded-md text-[12px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 ${
-                  inTx
-                    ? "btn-warning bg-opacity-20 border-[#f59e0b]"
-                    : "btn-ghost"
-                }`}
+                className="h-7 rounded bg-[#1f2231] hover:bg-[#282b3a] border border-[#282b3a] text-[#a0a8b8] hover:text-white text-[9px] font-bold uppercase tracking-widest flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 transition-colors"
               >
-                <Bolt className={`h-4 w-4 ${inTx ? "animate-pulse" : ""}`} />{" "}
-                {inTx ? "Auto: ON" : "Auto Charge"}
+                <Activity className="h-3 w-3" /> Ping Status
+              </button>
+              <button
+                disabled={!isConnected}
+                onClick={() =>
+                  ocppService.sendStatusNotification(connectorId, "Unavailable")
+                }
+                className="h-7 rounded bg-[#1f2231] hover:bg-[#282b3a] border border-[#282b3a] text-[#a0a8b8] hover:text-white text-[9px] font-bold uppercase tracking-widest flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 transition-colors"
+              >
+                <PowerOff className="h-3 w-3" /> Offline
               </button>
             </div>
-            {inTx && (
-              <div className="mt-2">
+            <div className="grid grid-cols-2 gap-2">
+              {/* Status override */}
+              <div className="flex flex-col gap-2 mb-3">
                 <MiniSelect
-                  label="Transaction Stop Reason"
-                  value={connector.stopReason}
-                  options={STOP_REASONS}
-                  onChange={(v) =>
-                    updateConnector(connectorId, {
-                      stopReason: v as StopReason,
-                    })
-                  }
+                  label="Override Status"
+                  value={selectedStatus}
+                  options={ALL_STATUSES}
+                  onChange={(v) => setSelectedStatus(v as ConnectorStatus)}
+                  icon={<Activity className="h-3 w-3 text-[#5d6577]" />}
                 />
+                <button
+                  disabled={!isConnected}
+                  onClick={() =>
+                    ocppService.sendStatusNotification(
+                      connectorId,
+                      selectedStatus,
+                    )
+                  }
+                  className="h-8 w-full rounded-md btn-ghost border-[#282b3a] bg-[#1d1f2b] text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 text-[#a0a8b8] hover:text-[#c4b5fd] hover:border-[#c4b5fd] transition-colors"
+                >
+                  <Send className="h-3 w-3" /> Push Status
+                </button>
               </div>
-            )}
-          </div>
 
+              {/* Fault injection */}
+              <div className="flex flex-col gap-2">
+                <MiniSelect
+                  label="Inject Fault Code"
+                  value={selectedErrorCode}
+                  options={ERROR_CODES}
+                  onChange={(v) => setSelectedErrorCode(v)}
+                  icon={<AlertTriangle className="h-3 w-3 text-[#5d6577]" />}
+                />
+                <button
+                  disabled={!isConnected}
+                  onClick={() =>
+                    ocppService.sendStatusNotification(
+                      connectorId,
+                      "Faulted",
+                      selectedErrorCode,
+                    )
+                  }
+                  className="h-8 w-full rounded-md bg-[#2a0f15] hover:bg-[#3a1520] border border-[#7f2030] text-[#fda4af] text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 transition-colors"
+                >
+                  <AlertTriangle className="h-3 w-3" /> Trip Fault
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT PANE: Reservation → Charging Profiles → Diagnostics */}
+        <div className="flex flex-col bg-[#181a24]">
           {/* Auth + Cable — compact top row */}
           <div className="p-3 border-b border-[#232636]">
             <span className="block mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#5d6577]">
@@ -715,10 +734,74 @@ export function ConnectorPanel({ connectorId }: { connectorId: number }) {
               </button>
             </div>
           </div>
-        </div>
 
-        {/* RIGHT PANE: Reservation → Charging Profiles → Diagnostics */}
-        <div className="flex flex-col bg-[#181a24]">
+          {/* Transaction Controls */}
+          <div className="p-3 border-b border-[#232636]">
+            <span className="block mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#5d6577]">
+              Transaction Control
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              {!inTx ? (
+                <button
+                  disabled={!isConnected}
+                  onClick={() =>
+                    is2x
+                      ? ocppService.startTransaction201(
+                          connectorId,
+                          connector.idTag,
+                        )
+                      : ocppService.startTransaction(connectorId)
+                  }
+                  className="h-10 rounded-md btn-success text-[12px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
+                >
+                  <Play className="h-4 w-4" /> Start Tx
+                </button>
+              ) : (
+                <button
+                  disabled={!isConnected}
+                  onClick={() =>
+                    is2x
+                      ? ocppService.stopTransaction201(connectorId)
+                      : ocppService.stopTransaction(connectorId)
+                  }
+                  className="h-10 rounded-md btn-danger text-[12px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40"
+                >
+                  <Square className="h-4 w-4" /> Stop Tx
+                </button>
+              )}
+              <button
+                disabled={!isConnected}
+                onClick={() =>
+                  inTx
+                    ? ocppService.stopAutoCharge(connectorId)
+                    : ocppService.startAutoCharge(connectorId)
+                }
+                className={`h-10 rounded-md text-[12px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer disabled:opacity-40 ${
+                  inTx
+                    ? "btn-warning bg-opacity-20 border-[#f59e0b]"
+                    : "btn-ghost"
+                }`}
+              >
+                <Bolt className={`h-4 w-4 ${inTx ? "animate-pulse" : ""}`} />{" "}
+                {inTx ? "Auto: ON" : "Auto Charge"}
+              </button>
+            </div>
+            {inTx && (
+              <div className="mt-2">
+                <MiniSelect
+                  label="Transaction Stop Reason"
+                  value={connector.stopReason}
+                  options={STOP_REASONS}
+                  onChange={(v) =>
+                    updateConnector(connectorId, {
+                      stopReason: v as StopReason,
+                    })
+                  }
+                />
+              </div>
+            )}
+          </div>
+
           {/* Charging Profiles — conditional */}
           {connector.chargingProfiles.length > 0 && (
             <div className="p-3 border-b border-[#282b3a]">
@@ -786,87 +869,6 @@ export function ConnectorPanel({ connectorId }: { connectorId: number }) {
             </div>
           )}
 
-          {/* Testing & Diagnostics — combined */}
-          <div className="p-3 flex-1 bg-[#121420]">
-            <div className="flex items-center justify-between mb-2 border-b border-[#282b3a] pb-2">
-              <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#8b5cf6]">
-                <AlertTriangle className="w-3.5 h-3.5" /> Testing & Diagnostics
-              </span>
-              <Settings className="h-3 w-3 text-[#5d6577]" />
-            </div>
-
-            {/* Quick actions row */}
-            <div className="grid grid-cols-2 gap-1.5 mb-3">
-              <button
-                disabled={!isConnected}
-                onClick={() =>
-                  ocppService.sendStatusNotification(
-                    connectorId,
-                    connector.status,
-                  )
-                }
-                className="h-7 rounded bg-[#1f2231] hover:bg-[#282b3a] border border-[#282b3a] text-[#a0a8b8] hover:text-white text-[9px] font-bold uppercase tracking-widest flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 transition-colors"
-              >
-                <Activity className="h-3 w-3" /> Ping Status
-              </button>
-              <button
-                disabled={!isConnected}
-                onClick={() =>
-                  ocppService.sendStatusNotification(connectorId, "Unavailable")
-                }
-                className="h-7 rounded bg-[#1f2231] hover:bg-[#282b3a] border border-[#282b3a] text-[#a0a8b8] hover:text-white text-[9px] font-bold uppercase tracking-widest flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 transition-colors"
-              >
-                <PowerOff className="h-3 w-3" /> Offline
-              </button>
-            </div>
-
-            {/* Status override */}
-            <div className="flex flex-col gap-2 mb-3">
-              <MiniSelect
-                label="Override Status"
-                value={selectedStatus}
-                options={ALL_STATUSES}
-                onChange={(v) => setSelectedStatus(v as ConnectorStatus)}
-                icon={<Activity className="h-3 w-3 text-[#5d6577]" />}
-              />
-              <button
-                disabled={!isConnected}
-                onClick={() =>
-                  ocppService.sendStatusNotification(
-                    connectorId,
-                    selectedStatus,
-                  )
-                }
-                className="h-8 w-full rounded-md btn-ghost border-[#282b3a] bg-[#1d1f2b] text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 text-[#a0a8b8] hover:text-[#c4b5fd] hover:border-[#c4b5fd] transition-colors"
-              >
-                <Send className="h-3 w-3" /> Push Status
-              </button>
-            </div>
-
-            {/* Fault injection */}
-            <div className="flex flex-col gap-2">
-              <MiniSelect
-                label="Inject Fault Code"
-                value={selectedErrorCode}
-                options={ERROR_CODES}
-                onChange={(v) => setSelectedErrorCode(v)}
-                icon={<AlertTriangle className="h-3 w-3 text-[#5d6577]" />}
-              />
-              <button
-                disabled={!isConnected}
-                onClick={() =>
-                  ocppService.sendStatusNotification(
-                    connectorId,
-                    "Faulted",
-                    selectedErrorCode,
-                  )
-                }
-                className="h-8 w-full rounded-md bg-[#2a0f15] hover:bg-[#3a1520] border border-[#7f2030] text-[#fda4af] text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 transition-colors"
-              >
-                <AlertTriangle className="h-3 w-3" /> Trip Fault
-              </button>
-            </div>
-          </div>
           {/* Reservation */}
           <div className="p-3 border-b border-[#232636]">
             <div className="flex items-center justify-between mb-2">
