@@ -361,7 +361,7 @@ export function PageBreadcrumb({
         );
 
         return (
-          <Fragment key={`${item.name}-${i}`}>
+          <Fragment key={`${item.name}-${i?.toString()}`}>
             {i !== 0 && <ChevronRight className="size-3.5 shrink-0" />}
             {item.url ? (
               <Link

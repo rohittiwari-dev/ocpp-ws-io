@@ -146,7 +146,7 @@ export function LayoutHeaderTabs({
 
         return (
           <Link
-            key={`${i}-${title}`}
+            key={`${i?.toString()}-${title}`}
             href={url}
             className={cn(
               "inline-flex border-b-2 border-transparent transition-colors items-center pb-1.5 font-medium gap-2 text-fd-muted-foreground text-sm text-nowrap hover:text-fd-accent-foreground",
@@ -254,12 +254,14 @@ function NavbarLinkItemMenu({
         {item.items.map((child, i) => {
           if (child.type === "custom")
             return (
-              <Fragment key={`${i}-${child.type}`}>{child.children}</Fragment>
+              <Fragment key={`${i?.toString()}-${child.type}`}>
+                {child.children}
+              </Fragment>
             );
 
           return (
             <LinkItem
-              key={`${i}-${child.text}`}
+              key={`${i?.toString()}-${child.text}`}
               item={child}
               className="inline-flex items-center gap-2 rounded-md p-2 transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground data-[active=true]:text-fd-primary [&_svg]:size-4"
               onClick={() => {

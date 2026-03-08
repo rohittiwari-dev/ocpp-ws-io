@@ -192,7 +192,7 @@ export default async function BlogPostPage({
                   <nav className="space-y-1">
                     {toc.map((item, i) => (
                       <a
-                        key={`${item.title}-${i}`}
+                        key={`${item.title}-${i?.toString()}`}
                         href={item.url}
                         className="block text-sm text-fd-muted-foreground hover:text-fd-foreground transition-colors py-1"
                         style={{ paddingLeft: `${(item.depth - 2) * 12}px` }}

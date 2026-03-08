@@ -220,7 +220,7 @@ function CodeLine({ tokens }: { tokens: LineToken[] }) {
       lineIndex++;
     } else {
       currentLine.push(
-        <span key={`${i}-${token.text}`} className={token.cls}>
+        <span key={`${i?.toString()}-${token.text}`} className={token.cls}>
           {token.text}
         </span>,
       );

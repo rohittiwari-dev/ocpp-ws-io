@@ -51,7 +51,10 @@ export function createLinkItemRenderer({
           )}
           <SidebarFolderContent>
             {item.items.map((child, i) => (
-              <SidebarLinkItem key={`${i}-${child.type}`} item={child} />
+              <SidebarLinkItem
+                key={`${i?.toString()}-${child.type}`}
+                item={child}
+              />
             ))}
           </SidebarFolderContent>
         </SidebarFolder>

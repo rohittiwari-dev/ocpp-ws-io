@@ -364,7 +364,7 @@ export function Showcase() {
                 <AnimatePresence initial={false}>
                   {LOG_STREAM.slice(0, visibleCount).map((log, i) => (
                     <motion.div
-                      key={`${i}-${log.action}`}
+                      key={`${i?.toString()}-${log.action}`}
                       initial={{ opacity: 0, x: -8 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ duration: 0.25 }}
@@ -529,7 +529,7 @@ export function Showcase() {
                         ? "\u00A0"
                         : tokens.map((tok, ti) => (
                             <span
-                              key={`${li}-${ti?.toString()}`}
+                              key={`${li?.toString()}-${ti?.toString()}`}
                               style={{ color: tok.c }}
                             >
                               {tok.t}

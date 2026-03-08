@@ -1494,7 +1494,7 @@ function MessageComposerTab() {
           <div className="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
             {history.map((h, i) => (
               <button
-                key={`${i}-${h.action}`}
+                key={`${i?.toString()}-${h.action}`}
                 onClick={() => loadFromHistory(h)}
                 className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white/2 hover:bg-white/5 border border-white/5 transition-colors cursor-pointer text-left"
               >
@@ -1631,7 +1631,7 @@ function MacroTab() {
                 const isPast = isRunning && scenario.currentStep > idx;
                 return (
                   <div
-                    key={`${activeMacro.name}-step-${idx}`}
+                    key={`${activeMacro.name}-step-${idx?.toString()}`}
                     className={`flex items-center gap-3 p-2 rounded text-[11px] border ${
                       isActive
                         ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-300"

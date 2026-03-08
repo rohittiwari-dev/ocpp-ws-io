@@ -153,7 +153,7 @@ export function DocsLayout(props: DocsLayoutProps) {
           .filter((item) => item.type !== "icon")
           .map((item, i, arr) => (
             <SidebarLinkItem
-              key={`${item.type}-${i}`}
+              key={`${item.type}-${i?.toString()}`}
               item={item}
               className={cn("lg:hidden", i === arr.length - 1 && "mb-4")}
             />
@@ -198,7 +198,7 @@ export function DocsLayout(props: DocsLayoutProps) {
           <Footer>
             {iconLinks.map((item, i) => (
               <LinkItem
-                key={`${item.text}-${i}`}
+                key={`${item.text}-${i?.toString()}`}
                 item={item}
                 className={cn(
                   buttonVariants({
@@ -239,7 +239,7 @@ export function DocsLayout(props: DocsLayoutProps) {
           >
             {iconLinks.map((item, i) => (
               <LinkItem
-                key={`${item.text}-${i}`}
+                key={`${item.text}-${i?.toString()}`}
                 item={item}
                 className={cn(
                   buttonVariants({
@@ -371,14 +371,17 @@ function DocsNavbar({
             {links
               .filter((item) => item.type !== "icon")
               .map((item, i) => (
-                <NavbarLinkItem key={`${item.type}-${i}`} item={item} />
+                <NavbarLinkItem
+                  key={`${item.type}-${i?.toString()}`}
+                  item={item}
+                />
               ))}
           </div>
           {links
             .filter((item) => item.type === "icon")
             .map((item, i) => (
               <LinkItem
-                key={`${item.text}-${i}`}
+                key={`${item.text}-${i?.toString()}`}
                 item={item}
                 className={cn(
                   buttonVariants({ size: "icon-sm", color: "ghost" }),

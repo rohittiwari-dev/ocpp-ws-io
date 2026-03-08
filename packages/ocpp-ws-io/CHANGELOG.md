@@ -1,5 +1,12 @@
 # ocpp-ws-io
 
+## 2.1.14
+
+### Patch Changes
+
+- Bump `voltlog-io` to v1.0.7
+- Disable source maps in build output for improved debugging and stack trace readability
+
 ## 2.1.13
 
 ### Patch Changes

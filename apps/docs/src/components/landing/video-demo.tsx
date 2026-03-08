@@ -69,7 +69,7 @@ export function VideoDemo() {
           <div className="flex-1 overflow-hidden space-y-3">
             {logs.map((log, i) => (
               <motion.div
-                key={`${i}-${log.time}-${log.type}-${log.msg}`}
+                key={`${i?.toString()}-${log.time}-${log.type}-${log.msg}`}
                 initial={{ opacity: 0, x: -10 }}
                 animate={{
                   opacity: i <= activeLogIndex ? 1 : 0.1,
