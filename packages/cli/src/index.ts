@@ -10,6 +10,7 @@ import { runGenerate } from "./commands/generate.js";
 import { runLoadTest } from "./commands/load-test.js";
 import { runMock } from "./commands/mock.js";
 import { runSimulate } from "./commands/simulate.js";
+import { runStudio } from "./commands/studio.js";
 import { runTest } from "./commands/test.js";
 import { printBanner } from "./lib/banner.js";
 
@@ -57,8 +58,13 @@ cli.command("", "Interactive Menu").action(async () => {
           },
           {
             value: "simulate",
-            label: "Run Stateful Charge Point Simulator",
+            label: "Run Stateful Charge Point Simulator (Terminal)",
             hint: "ocpp simulate",
+          },
+          {
+            value: "studio",
+            label: "Launch Visual Web Simulator (ocpp-ws-simulator)",
+            hint: "ocpp studio",
           },
           {
             value: "load-test",
@@ -97,6 +103,8 @@ cli.command("", "Interactive Menu").action(async () => {
         await runCerts();
       } else if (command === "simulate") {
         await runSimulate({});
+      } else if (command === "studio") {
+        await runStudio({});
       } else if (command === "load-test") {
         await runLoadTest({});
       } else if (command === "bench") {
@@ -242,6 +250,37 @@ cli
         type: options.type,
         identity: options.identity,
         out: options.out,
+      });
+    },
+  );
+
+// ── Studio Command ────────────────────────────────────────────
+
+cli
+  .command(
+    "studio",
+    "Clone & launch the OCPP visual web simulator (ocpp-ws-simulator)",
+  )
+  .option(
+    "-d, --dir <path>",
+    "Directory to clone the simulator into (default: ./ocpp-ws-simulator)",
+  )
+  .option("--skip-install", "Skip running npm install after cloning")
+  .option("--skip-dev", "Clone and install only, do not start the dev server")
+  .example("  ocpp studio")
+  .example("  ocpp studio --dir ./my-sim")
+  .example("  ocpp studio --dir ./my-sim --skip-dev")
+  .action(
+    async (options: {
+      dir?: string;
+      skipInstall?: boolean;
+      skipDev?: boolean;
+    }) => {
+      printBanner(pkg.version);
+      await runStudio({
+        dir: options.dir,
+        skipInstall: options.skipInstall,
+        skipDev: options.skipDev,
       });
     },
   );

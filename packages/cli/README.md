@@ -35,7 +35,7 @@ _Running without arguments launches the **Interactive Main Menu**._
 
 Boot a fully interactive, terminal-based Virtual Charge Point directly from your CLI.
 
-> **Prefer a visual UI?** The **[ocpp-ws-simulator](https://github.com/rohittiwaridev/ocpp-ws-simulator)** is a standalone Next.js web app maintained separately for easy cloning and self-hosting — no monorepo needed. See the [Web Simulator](#-web-ui-simulator-ocpp-ws-simulator) section below.
+> **Prefer a visual UI?** The **[ocpp-ws-simulator](https://github.com/rohittiwari-dev/ocpp-ws-simulator)** is a standalone Next.js web app maintained separately for easy cloning and self-hosting — no monorepo needed. See the [Web Simulator](#-web-ui-simulator-ocpp-ws-simulator) section below.
 
 - **Automated Boot Sequence**: Automatically connects, sends `BootNotification`, negotiates the `interval`, and manages the WebSocket `Heartbeat` loop.
 - **Real-Time Hardware Dashboard**: Watch a beautiful, auto-refreshing ASCII interface updating every second with live physical metrics:
@@ -52,6 +52,34 @@ Boot a fully interactive, terminal-based Virtual Charge Point directly from your
   - `[S]` **State**: Toggle between `Available` and `Faulted` states to test CSMS alarms.
 - **Protocol-Aware Dispatching**: Automatically upgrades from flat OCPP 1.6 structures to modern `TransactionEvent` loop frameworks when connected as OCPP 2.0.1+.
 - **Reverse RPC Ready**: Actively listens and reacts to CSMS `RemoteStartTransaction`, `RemoteStopTransaction`, `UnlockConnector`, `Reset`, and more.
+
+### `ocpp studio` : Visual Web Simulator
+
+Clone and launch the **[ocpp-ws-simulator](https://github.com/rohittiwari-dev/ocpp-ws-simulator)** — a full-featured browser-based charge point emulator — in one command.
+
+```bash
+# Interactive (recommended)
+ocpp studio
+
+# Clone to a specific directory, then start
+ocpp studio --dir ./my-simulator
+
+# Clone and install only (no dev server)
+ocpp studio --dir ./my-simulator --skip-dev
+```
+
+What it does:
+
+1. ✅ Checks that Git is installed
+2. 📦 Clones `rohittiwari-dev/ocpp-ws-simulator` with `--depth 1` (fast, no history)
+3. 📥 Runs `npm install`
+4. 🚀 Starts the Next.js dev server — open `http://localhost:3000`
+
+| Flag               | Description                                       |
+| ------------------ | ------------------------------------------------- |
+| `-d, --dir <path>` | Target directory (default: `./ocpp-ws-simulator`) |
+| `--skip-install`   | Skip `npm install`                                |
+| `--skip-dev`       | Clone + install only, don't start the server      |
 
 ### `ocpp mock` : Server-Sent Events (SSE) Mock Server
 
