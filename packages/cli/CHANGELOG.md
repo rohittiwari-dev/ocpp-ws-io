@@ -1,5 +1,12 @@
 # ocpp-ws-cli
 
+## 1.0.4
+
+### Patch Changes
+
+- update: readme docs for simulator ui addition to ecosystem
+-
+
 ## 1.0.3
 
 ### Patch Changes

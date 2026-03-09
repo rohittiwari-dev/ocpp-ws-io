@@ -35,6 +35,8 @@ _Running without arguments launches the **Interactive Main Menu**._
 
 Boot a fully interactive, terminal-based Virtual Charge Point directly from your CLI.
 
+> **Prefer a visual UI?** The **[ocpp-ws-simulator](https://github.com/rohittiwaridev/ocpp-ws-simulator)** is a standalone Next.js web app maintained separately for easy cloning and self-hosting — no monorepo needed. See the [Web Simulator](#-web-ui-simulator-ocpp-ws-simulator) section below.
+
 - **Automated Boot Sequence**: Automatically connects, sends `BootNotification`, negotiates the `interval`, and manages the WebSocket `Heartbeat` loop.
 - **Real-Time Hardware Dashboard**: Watch a beautiful, auto-refreshing ASCII interface updating every second with live physical metrics:
   - 🔌 **Voltage (V)** & ⚡ **Current (A)**
@@ -118,6 +120,24 @@ A protocol fuzzer that sends malformed, invalid, or unexpected payloads.
 
 - Floods the server with protocol anomalies using multiple concurrent worker threads.
 - Validates that strict-mode schema enforcement and error handling are robust.
+
+---
+
+## 🖥️ Web UI Simulator (`ocpp-ws-simulator`)
+
+For a **visual, browser-based** charge point simulator, use the standalone [`ocpp-ws-simulator`](https://github.com/rohittiwaridev/ocpp-ws-simulator) repo — maintained separately from this monorepo for easy distribution and self-hosting.
+
+```bash
+git clone https://github.com/rohittiwaridev/ocpp-ws-simulator.git
+cd ocpp-ws-simulator && npm install && npm run dev
+```
+
+| Mode     | Tool                                                                       | Best For                                       |
+| -------- | -------------------------------------------------------------------------- | ---------------------------------------------- |
+| Terminal | `ocpp simulate` (this CLI)                                                 | Scripting, CI, quick charge point testing      |
+| Browser  | [`ocpp-ws-simulator`](https://github.com/rohittiwaridev/ocpp-ws-simulator) | Visual debugging, demos, multi-connector flows |
+
+Live at: **[ocpp.rohittiwari.me](https://ocpp.rohittiwari.me)**
 
 ---
 
