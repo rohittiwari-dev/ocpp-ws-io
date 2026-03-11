@@ -1,5 +1,11 @@
 # ocpp-ws-io
 
+## 2.1.15
+
+### Patch Changes
+
+- Documentation update not core or breaking changes
+
 ## 2.1.14
 
 ### Patch Changes
