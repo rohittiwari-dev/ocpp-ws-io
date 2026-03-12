@@ -146,18 +146,20 @@ export async function runSimulate(
     energy: 0,
   };
 
+  let isDashboardPaused = false;
+
   const addLog = (msg: string, type: string) => {
     const logEntry = { msg, type, timestamp: new Date().toLocaleTimeString() };
     allLogs.push(logEntry);
     logs.unshift(logEntry);
     if (logs.length > 5) logs.pop();
-    renderDashboard();
+    if (!isDashboardPaused) renderDashboard();
   };
 
   engine.on("log", addLog);
   engine.on("metrics", (m) => {
     metrics = m;
-    renderDashboard();
+    if (!isDashboardPaused) renderDashboard();
   });
 
   const renderDashboard = () => {
@@ -281,27 +283,31 @@ ${logs
       cleanup();
     };
 
-    const handleKeypress = async (str: string, key: readline.Key) => {
+    let handleKeypress: (str: string, key: readline.Key) => Promise<void>;
+
+    // Temporarily pause UI rendering and TTY if we need to prompt
+    const pauseDashboard = () => {
+      isDashboardPaused = true;
+      if (process.stdin.isTTY) process.stdin.setRawMode(false);
+      process.stdin.pause();
+      process.stdin.removeListener("keypress", handleKeypress);
+    };
+
+    const resumeDashboard = () => {
+      isDashboardPaused = false;
+      if (process.stdin.isTTY) process.stdin.setRawMode(true);
+      process.stdin.resume();
+      process.stdin.on("keypress", handleKeypress);
+      renderDashboard();
+    };
+
+    handleKeypress = async (str: string, key: readline.Key) => {
       if (key.ctrl && key.name === "c") {
         cleanup();
         return;
       }
 
       const lower = str?.toLowerCase();
-
-      // Temporarily pause UI rendering and TTY if we need to prompt
-      const pauseDashboard = () => {
-        if (process.stdin.isTTY) process.stdin.setRawMode(false);
-        process.stdin.pause();
-        process.stdin.removeListener("keypress", handleKeypress);
-      };
-
-      const resumeDashboard = () => {
-        if (process.stdin.isTTY) process.stdin.setRawMode(true);
-        process.stdin.resume();
-        process.stdin.on("keypress", handleKeypress);
-        renderDashboard();
-      };
 
       try {
         if (lower === "q") {

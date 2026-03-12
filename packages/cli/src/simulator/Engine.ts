@@ -31,9 +31,12 @@ export class SimulatorEngine extends EventEmitter {
     | "Preparing"
     | "Charging"
     | "Finishing"
+    | "Unavailable"
     | "Faulted" = "Available";
   public activeTransactionId: number | null = null;
   public activeIdTag: string | null = null;
+  private reservationId: number | null = null;
+  private txSeqNo: number = 0; // monotonically incrementing per OCPP 2.0.1
 
   // Live Hardware Metrics
   public meterWh: number = 0;
@@ -154,7 +157,16 @@ export class SimulatorEngine extends EventEmitter {
         this.engineState = "IDLE";
         this.emit("log", "Entering IDLE state...", "info");
 
-        // Initial Status Notification
+        // Per OCPP spec: send StatusNotification for connector 0 (the charge point itself)
+        if (!this.config.protocol.startsWith("ocpp2")) {
+          await this.sendCall("StatusNotification", {
+            connectorId: 0,
+            errorCode: "NoError",
+            status: "Available",
+          }).catch(() => {});
+        }
+
+        // Initial Status Notification for connector 1
         await this.updateConnectorState("Available");
 
         // TODO: Send StatusNotification loop here.
@@ -292,7 +304,8 @@ export class SimulatorEngine extends EventEmitter {
         );
         this.sendCallResult(messageId, { status: "Accepted" });
         if (payload.type === "Inoperative") {
-          this.updateConnectorState("Faulted").catch(() => {});
+          // Per OCPP spec: Inoperative maps to Unavailable, NOT Faulted
+          this.updateConnectorState("Unavailable").catch(() => {});
         } else {
           this.updateConnectorState("Available").catch(() => {});
         }
@@ -405,19 +418,157 @@ export class SimulatorEngine extends EventEmitter {
       case "SetChargingProfile":
       case "ClearChargingProfile":
       case "GetCompositeSchedule":
-      case "ReserveNow":
-      case "CancelReservation":
-      case "SendLocalList":
-      case "GetLocalListVersion":
       case "DataTransfer":
         this.emit(
           "log",
           `CSMS requested ${action}. Stubbing 'Accepted' response...`,
           "warn",
         );
-        // Generic Acceptance Stub for complex 1.6 flows
         this.sendCallResult(messageId, { status: "Accepted" });
         break;
+
+      case "ReserveNow": {
+        const reservationStatus =
+          this.connectorState !== "Available" ||
+          (this.reservationId !== null &&
+            this.reservationId !== Number(payload.reservationId))
+            ? "Occupied"
+            : "Accepted";
+        this.emit(
+          "log",
+          `CSMS requested ReserveNow → ${reservationStatus}`,
+          "info",
+        );
+        if (reservationStatus === "Accepted") {
+          this.reservationId = Number(payload.reservationId);
+          this.updateConnectorState("Preparing").catch(() => {}); // closest valid pre-reserved state
+        }
+        this.sendCallResult(messageId, { status: reservationStatus });
+        break;
+      }
+
+      case "CancelReservation": {
+        const cancelStatus =
+          this.reservationId === Number(payload.reservationId)
+            ? "Accepted"
+            : "Rejected";
+        this.emit(
+          "log",
+          `CSMS requested CancelReservation → ${cancelStatus}`,
+          "info",
+        );
+        if (cancelStatus === "Accepted") {
+          this.reservationId = null;
+          this.updateConnectorState("Available").catch(() => {});
+        }
+        this.sendCallResult(messageId, { status: cancelStatus });
+        break;
+      }
+
+      case "SendLocalList":
+      case "GetLocalListVersion":
+        this.emit(
+          "log",
+          `CSMS requested ${action}. Stubbing response...`,
+          "warn",
+        );
+        this.sendCallResult(
+          messageId,
+          action === "GetLocalListVersion"
+            ? { listVersion: 1 }
+            : { status: "Accepted" },
+        );
+        break;
+
+      // ── OCPP 2.0.1 specific CSMS requests ──────────────────────
+      case "RequestStartTransaction": {
+        const p2payload = payload as unknown as {
+          idToken?: { idToken: string };
+          idTag?: string;
+        };
+        const remoteIdTag = p2payload.idToken?.idToken || p2payload.idTag;
+        const canStart =
+          this.connectorState === "Available" ||
+          this.connectorState === "Preparing";
+        this.emit(
+          "log",
+          `CSMS requested RequestStartTransaction for tag ${remoteIdTag}`,
+          "info",
+        );
+        this.sendCallResult(messageId, {
+          status: canStart ? "Accepted" : "Rejected",
+        });
+        if (canStart) {
+          this.activeIdTag = remoteIdTag || null;
+          this.startTransaction().catch((e) =>
+            this.emit("log", e.message, "error"),
+          );
+        }
+        break;
+      }
+
+      case "RequestStopTransaction": {
+        const canStop = this.activeTransactionId !== null;
+        this.emit("log", `CSMS requested RequestStopTransaction`, "info");
+        this.sendCallResult(messageId, {
+          status: canStop ? "Accepted" : "Rejected",
+        });
+        if (canStop) {
+          this.stopTransaction().catch((e) =>
+            this.emit("log", e.message, "error"),
+          );
+        }
+        break;
+      }
+
+      case "GetVariables": {
+        this.emit("log", "CSMS requested GetVariables (OCPP 2.0.1)", "info");
+        const getResults = (
+          (payload as unknown as { getVariableData?: any[] }).getVariableData ||
+          []
+        ).map((req: any) => {
+          const key = req.variable?.name || req.key;
+          const val = this.configurations.get(key);
+          return {
+            attributeStatus: val !== undefined ? "Accepted" : "UnknownVariable",
+            component: req.component,
+            variable: req.variable,
+            attributeValue: val,
+          };
+        });
+        this.sendCallResult(messageId, { getVariableResult: getResults });
+        break;
+      }
+
+      case "SetVariables": {
+        this.emit("log", "CSMS requested SetVariables (OCPP 2.0.1)", "info");
+        const setResults = (
+          (payload as unknown as { setVariableData?: any[] }).setVariableData ||
+          []
+        ).map((req: any) => {
+          const key = req.variable?.name || req.key;
+          this.configurations.set(key, req.attributeValue);
+          return {
+            attributeStatus: "Accepted",
+            component: req.component,
+            variable: req.variable,
+          };
+        });
+        this.sendCallResult(messageId, { setVariableResult: setResults });
+        break;
+      }
+
+      case "GetReport": {
+        this.emit(
+          "log",
+          `CSMS requested GetReport (requestId: ${payload.requestId})`,
+          "info",
+        );
+        this.sendCallResult(messageId, { status: "Accepted" });
+        // Trigger NotifyReport after short delay
+        setTimeout(() => this.sendNotifyReport(), 1500);
+        break;
+      }
 
       default:
         this.emit("log", `Unhandled action from CSMS: ${action}`, "warn");
@@ -438,7 +589,13 @@ export class SimulatorEngine extends EventEmitter {
   // ── Dispatch Methods (Interactive UI hooks) ────────────────
 
   public async updateConnectorState(
-    status: "Available" | "Preparing" | "Charging" | "Finishing" | "Faulted",
+    status:
+      | "Available"
+      | "Preparing"
+      | "Charging"
+      | "Finishing"
+      | "Unavailable"
+      | "Faulted",
   ): Promise<void> {
     this.connectorState = status;
     try {
@@ -799,10 +956,13 @@ export class SimulatorEngine extends EventEmitter {
         ? response.idTokenInfo?.status
         : response.idTagInfo?.status;
 
-      this.emit("log", `Authorize Response: ${status}`, "success");
-      if (status === "Accepted") {
+      if (status === "Accepted" || status === "ConcurrentTx") {
+        this.emit("log", `Authorize Response: ${status}`, "success");
         this.activeIdTag = idTag;
         await this.updateConnectorState("Preparing");
+      } else {
+        this.emit("log", `Authorize rejected by CSMS: ${status}`, "error");
+        this.activeIdTag = null; // clear invalid tag
       }
     } catch (err) {
       this.emit("log", `Authorize failed: ${(err as Error).message}`, "error");
@@ -824,15 +984,16 @@ export class SimulatorEngine extends EventEmitter {
     const idTag = this.activeIdTag || "DEADBEEF";
     this.emit("log", `Starting Transaction for ${idTag}...`, "info");
     try {
+      this.txSeqNo = 0; // reset sequence counter for new transaction
       if (this.config.protocol.startsWith("ocpp2")) {
-        this.activeTransactionId = Math.floor(Math.random() * 1000000);
-        await this.sendCall("TransactionEvent", {
+        const tempTxId = Math.floor(Math.random() * 1000000);
+        const response = await this.sendCall("TransactionEvent", {
           eventType: "Started",
           timestamp: new Date().toISOString(),
           triggerReason: "CablePluggedIn",
-          seqNo: 1,
+          seqNo: ++this.txSeqNo,
           transactionInfo: {
-            transactionId: this.activeTransactionId.toString(),
+            transactionId: tempTxId.toString(),
           },
           idToken: { idToken: idTag, type: "ISO14443" },
           evse: { id: 1, connectorId: 1 },
@@ -843,6 +1004,36 @@ export class SimulatorEngine extends EventEmitter {
             },
           ],
         });
+
+        const status = response.idTokenInfo?.status;
+        if (status && status !== "Accepted") {
+          this.emit(
+            "log",
+            `StartTransaction rejected by CSMS: ${status}. Resetting to Available.`,
+            "error",
+          );
+          // Per OCPP 2.0.1 — send Ended event and reset connector
+          await this.sendCall("TransactionEvent", {
+            eventType: "Ended",
+            timestamp: new Date().toISOString(),
+            triggerReason: "DeAuthorized",
+            seqNo: ++this.txSeqNo,
+            transactionInfo: {
+              transactionId: tempTxId.toString(),
+              stoppedReason: "DeAuthorized",
+            },
+            evse: { id: 1, connectorId: 1 },
+            meterValue: [
+              {
+                timestamp: new Date().toISOString(),
+                sampledValue: [{ value: this.meterWh }],
+              },
+            ],
+          });
+          await this.updateConnectorState("Available");
+          return;
+        }
+        this.activeTransactionId = tempTxId;
       } else {
         const response = await this.sendCall("StartTransaction", {
           connectorId: 1,
@@ -850,6 +1041,27 @@ export class SimulatorEngine extends EventEmitter {
           meterStart: this.meterWh,
           timestamp: new Date().toISOString(),
         });
+
+        // Per OCPP 1.6 spec §3.15: CSMS always returns a transactionId even on rejection.
+        // The CP MUST send StopTransaction with that id and reset to Available.
+        const status = response.idTagInfo?.status;
+        if (status && status !== "Accepted" && status !== "ConcurrentTx") {
+          this.emit(
+            "log",
+            `StartTransaction rejected by CSMS: ${status}. Sending StopTransaction and resetting to Available.`,
+            "error",
+          );
+          await this.sendCall("StopTransaction", {
+            transactionId: response.transactionId,
+            idTag,
+            meterStop: this.meterWh,
+            timestamp: new Date().toISOString(),
+            reason: "DeAuthorized",
+          });
+          this.activeIdTag = null;
+          await this.updateConnectorState("Available");
+          return;
+        }
         this.activeTransactionId = response.transactionId;
       }
 
@@ -974,7 +1186,7 @@ export class SimulatorEngine extends EventEmitter {
           eventType: "Ended",
           timestamp: new Date().toISOString(),
           triggerReason: "RemoteStop",
-          seqNo: 3,
+          seqNo: ++this.txSeqNo,
           transactionInfo: {
             transactionId: this.activeTransactionId.toString(),
             stoppedReason: "Local",
