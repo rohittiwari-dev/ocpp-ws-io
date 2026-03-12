@@ -1,5 +1,11 @@
 # ocpp-ws-cli
 
+## 1.1.0
+
+### Minor Changes
+
+- add : simulator commands and more and also added idtag customization , meter value customization
+
 ## 1.0.4
 
 ### Patch Changes
