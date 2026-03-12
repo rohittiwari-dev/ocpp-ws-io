@@ -5,6 +5,7 @@ import WebSocket from "ws";
 export interface EngineConfig {
   endpoint: string;
   identity: string;
+  idTag?: string;
   protocol: string;
 }
 
@@ -49,6 +50,9 @@ export class SimulatorEngine extends EventEmitter {
   constructor(config: EngineConfig) {
     super();
     this.config = config;
+    if (config.idTag) {
+      this.activeIdTag = config.idTag;
+    }
   }
 
   public async start(): Promise<void> {
@@ -337,6 +341,34 @@ export class SimulatorEngine extends EventEmitter {
         break;
       }
 
+      case "UpdateFirmware":
+        this.emit("log", "CSMS requested UpdateFirmware. Simulating download and install sequence...", "info");
+        this.sendCallResult(messageId, { status: "Accepted" });
+        setTimeout(() => this.sendFirmwareStatusNotification("Downloading"), 2000);
+        setTimeout(() => this.sendFirmwareStatusNotification("Downloaded"), 5000);
+        setTimeout(() => this.sendFirmwareStatusNotification("Installing"), 8000);
+        setTimeout(() => this.sendFirmwareStatusNotification("Installed"), 12000);
+        break;
+
+      case "GetDiagnostics":
+        this.emit("log", "CSMS requested GetDiagnostics. Simulating upload sequence...", "info");
+        this.sendCallResult(messageId, { status: "Accepted" });
+        setTimeout(() => this.sendDiagnosticsStatusNotification("Uploading"), 2000);
+        setTimeout(() => this.sendDiagnosticsStatusNotification("Uploaded"), 5000);
+        break;
+
+      case "TriggerMessage":
+        this.emit("log", `CSMS requested TriggerMessage for ${payload.requestedMessage}`, "info");
+        this.sendCallResult(messageId, { status: "Accepted" });
+        // Execute trigger dynamically
+        setTimeout(() => {
+          if (payload.requestedMessage === "BootNotification") this.sendBootNotification();
+          if (payload.requestedMessage === "Heartbeat") this.sendHeartbeat();
+          if (payload.requestedMessage === "StatusNotification") this.updateConnectorState(this.connectorState);
+          if (payload.requestedMessage === "MeterValues") this.triggerMeterValues();
+        }, 1500);
+        break;
+
       case "SetChargingProfile":
       case "ClearChargingProfile":
       case "GetCompositeSchedule":
@@ -344,9 +376,6 @@ export class SimulatorEngine extends EventEmitter {
       case "CancelReservation":
       case "SendLocalList":
       case "GetLocalListVersion":
-      case "UpdateFirmware":
-      case "GetDiagnostics":
-      case "TriggerMessage":
       case "DataTransfer":
         this.emit(
           "log",
@@ -404,6 +433,139 @@ export class SimulatorEngine extends EventEmitter {
       this.emit("log", `StatusNotification (${status}) Accepted.`, "success");
     } catch (err: any) {
       this.emit("log", `StatusNotification failed: ${err.message}`, "error");
+    }
+  }
+
+  public async sendHeartbeat(): Promise<void> {
+    this.emit("log", "Sending manual Heartbeat...", "info");
+    try {
+      const response = await this.sendCall("Heartbeat", {});
+      this.emit("log", `Heartbeat Response: ${response.currentTime}`, "success");
+    } catch (err: any) {
+      this.emit("log", `Heartbeat failed: ${err.message}`, "error");
+    }
+  }
+
+  public async sendBootNotification(): Promise<void> {
+    this.emit("log", "Sending manual BootNotification...", "info");
+    try {
+      const response = await this.sendCall("BootNotification", {
+        chargePointVendor: "OCPP-WS-IO CLI",
+        chargePointModel: "VirtualSimulator-v1",
+        chargePointSerialNumber: "SIM-001",
+        firmwareVersion: "1.0.0-alpha",
+      });
+      this.emit("log", `BootNotification Response: ${response.status}`, "success");
+    } catch (err: any) {
+      this.emit("log", `BootNotification failed: ${err.message}`, "error");
+    }
+  }
+
+  public async sendDataTransfer(vendorId: string, messageId?: string, data?: string): Promise<void> {
+    this.emit("log", `Sending DataTransfer (Vendor: ${vendorId})...`, "info");
+    try {
+      const payload: Record<string, unknown> = { vendorId };
+      if (messageId) payload.messageId = messageId;
+      if (data) payload.data = data;
+      
+      const response = await this.sendCall("DataTransfer", payload);
+      this.emit("log", `DataTransfer Response: ${response.status}`, "success");
+    } catch (err: any) {
+      this.emit("log", `DataTransfer failed: ${err.message}`, "error");
+    }
+  }
+
+  public async sendFirmwareStatusNotification(status: string): Promise<void> {
+    this.emit("log", `Sending FirmwareStatusNotification (${status})...`, "info");
+    try {
+      if (this.config.protocol.startsWith("ocpp2")) {
+        await this.sendCall("FirmwareStatusNotification", { status });
+      } else {
+        await this.sendCall("FirmwareStatusNotification", { status });
+      }
+      this.emit("log", "FirmwareStatusNotification Accepted.", "success");
+    } catch (err: any) {
+      this.emit("log", `FirmwareStatusNotification failed: ${err.message}`, "error");
+    }
+  }
+
+  public async sendDiagnosticsStatusNotification(status: string): Promise<void> {
+    this.emit("log", `Sending DiagnosticsStatusNotification (${status})...`, "info");
+    try {
+      if (this.config.protocol.startsWith("ocpp2")) {
+        // In OCPP 2.0.1 it's LogStatusNotification
+        await this.sendCall("LogStatusNotification", { status });
+      } else {
+        await this.sendCall("DiagnosticsStatusNotification", { status });
+      }
+      this.emit("log", "Diagnostics/Log Status Notification Accepted.", "success");
+    } catch (err: any) {
+      this.emit("log", `DiagnosticsStatusNotification failed: ${err.message}`, "error");
+    }
+  }
+
+  public async triggerCustomMeterValues(powerW: number, energyWh: number): Promise<void> {
+    if (!this.activeTransactionId) {
+      this.emit("log", "No active transaction to send MeterValues for.", "warn");
+      return;
+    }
+    this.livePowerW = powerW;
+    this.meterWh = energyWh;
+    this.emit("log", `Sending Custom MeterValues (Power: ${powerW}W, Energy: ${energyWh}Wh)...`, "info");
+    
+    // We can reuse the internal logic of triggerMeterValues by resetting power/energy variables temporarily 
+    // and bypassing the randomized climb. However, copying the dispatch block is safer.
+    try {
+      if (this.config.protocol.startsWith("ocpp2")) {
+        await this.sendCall("TransactionEvent", {
+          eventType: "Updated",
+          timestamp: new Date().toISOString(),
+          triggerReason: "MeterValuePeriodic",
+          seqNo: 2,
+          transactionInfo: { transactionId: this.activeTransactionId.toString() },
+          evse: { id: 1, connectorId: 1 },
+          meterValue: [
+            {
+              timestamp: new Date().toISOString(),
+              sampledValue: [
+                { value: this.meterWh, context: "Sample.Periodic", measurand: "Energy.Active.Import.Register" },
+                { value: this.livePowerW, context: "Sample.Periodic", measurand: "Power.Active.Import" },
+              ],
+            },
+          ],
+        });
+      } else {
+         await this.sendCall("MeterValues", {
+          connectorId: 1,
+          transactionId: this.activeTransactionId,
+          meterValue: [
+            {
+              timestamp: new Date().toISOString(),
+              sampledValue: [
+                {
+                  value: this.meterWh.toFixed(2),
+                  context: "Sample.Periodic",
+                  format: "Raw",
+                  measurand: "Energy.Active.Import.Register",
+                  location: "Outlet",
+                  unit: "Wh",
+                },
+                {
+                  value: this.livePowerW.toFixed(2),
+                  context: "Sample.Periodic",
+                  format: "Raw",
+                  measurand: "Power.Active.Import",
+                  location: "Outlet",
+                  unit: "W",
+                },
+              ],
+            },
+          ],
+        });
+      }
+      this.emit("log", "Custom MeterValues transmitted", "info");
+    } catch (err: any) {
+      this.emit("log", `Custom MeterValues failed: ${err.message}`, "error");
     }
   }
 

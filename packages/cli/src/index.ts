@@ -297,14 +297,20 @@ cli
     "-i, --identity <id>",
     "Charge point identity (default: Simulator001)",
   )
+  .option(
+    "-t, --id-tag <tag>",
+    "Default idTag to use for authorization (default: SIM-USER-001)",
+  )
   .option("-p, --protocol <proto>", "OCPP subprotocol (default: ocpp1.6)")
   .option("--report <format>", "Export metrics on exit (json | md | txt)")
   .option("--report-dir <dir>", "Custom directory to save the report")
   .example("  ocpp simulate -e ws://localhost:5000/ocpp -i SIM001")
+  .example("  ocpp simulate -e ws://localhost:5000/ocpp -i SIM001 -t CUSTOM-TAG")
   .action(
     async (options: {
       endpoint?: string;
       identity?: string;
+      idTag?: string;
       protocol?: string;
       report?: "json" | "md" | "txt";
       reportDir?: string;
@@ -313,6 +319,7 @@ cli
       await runSimulate({
         endpoint: options.endpoint,
         identity: options.identity,
+        idTag: options.idTag,
         protocol: options.protocol,
         report: options.report,
         reportDir: options.reportDir,

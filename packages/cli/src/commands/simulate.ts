@@ -8,6 +8,7 @@ import { SimulatorEngine } from "../simulator/Engine.js";
 export interface SimulateOptions {
   endpoint?: string;
   identity?: string;
+  idTag?: string;
   protocol?: string;
   report?: "json" | "md" | "txt";
   reportDir?: string;
@@ -77,6 +78,24 @@ export async function runSimulate(
     protocol = result as string;
   }
 
+  let idTag: string;
+  if (options.idTag) {
+    idTag = options.idTag;
+  } else {
+    const result = await p.text({
+      message: "Default ID Tag to use for authorization",
+      initialValue: "SIM-USER-001",
+      validate: (val) => {
+        if (!val?.trim()) return "ID Tag is required";
+      },
+    });
+    if (p.isCancel(result)) {
+      p.cancel("Cancelled.");
+      return;
+    }
+    idTag = result as string;
+  }
+
   let reportFormat = options.report;
   if (!reportFormat) {
     const wantsReport = await p.confirm({
@@ -111,6 +130,7 @@ export async function runSimulate(
   const engine = new SimulatorEngine({
     endpoint,
     identity,
+    idTag,
     protocol,
   });
 
@@ -160,14 +180,19 @@ export async function runSimulate(
     const ui = `
 ${pc.bold(pc.bgMagenta(pc.white(" INTERACTIVE CONTROLS ")))}
 ${pc.magenta("  [A] ")} ${pc.dim("Authorize Badge")}    |  ${pc.magenta(
-      "  [T] ",
-    )} ${pc.dim("Start Transaction")}
-${pc.magenta("  [M] ")} ${pc.dim("Send MeterValues")}   |  ${pc.magenta(
+      "  [I] ",
+    )} ${pc.dim("Change ID Tag")}
+${pc.magenta("  [T] ")} ${pc.dim("Start Transaction")}  |  ${pc.magenta(
       "  [E] ",
     )} ${pc.dim("Stop/End Transaction")}
-${pc.magenta("  [S] ")} ${pc.dim("Toggle Faulted")}     |  ${pc.red(
-      "  [Q] ",
-    )} ${pc.dim("Quit Simulator")}
+${pc.magenta("  [B] ")} ${pc.dim("BootNotification")}   |  ${pc.magenta(
+      "  [H] ",
+    )} ${pc.dim("Heartbeat")}
+${pc.magenta("  [U] ")} ${pc.dim("Update Status")}      |  ${pc.magenta("  [X] ")} ${pc.dim("Extended Events")}
+${pc.magenta("  [D] ")} ${pc.dim("DataTransfer")}       |  ${pc.magenta(
+      "  [S] ",
+    )} ${pc.dim("Toggle Faulted")}
+${pc.red("  [Q] ")} ${pc.dim("Quit Simulator")}
 
 ${pc.bold("  HARDWARE METRICS ")} ${pc.dim("─────────────────────────")}
   ⚡ Power:   ${pc.yellow(
@@ -264,21 +289,135 @@ ${logs
 
       const lower = str?.toLowerCase();
 
+      // Temporarily pause UI rendering and TTY if we need to prompt
+      const pauseDashboard = () => {
+        if (process.stdin.isTTY) process.stdin.setRawMode(false);
+        process.stdin.pause();
+        process.stdin.removeListener("keypress", handleKeypress);
+      };
+
+      const resumeDashboard = () => {
+        if (process.stdin.isTTY) process.stdin.setRawMode(true);
+        process.stdin.resume();
+        process.stdin.on("keypress", handleKeypress);
+        renderDashboard();
+      };
+
       try {
         if (lower === "q") {
           cleanup();
         } else if (lower === "a") {
-          await engine.authorize("SIM-USER-001");
+          await engine.authorize(engine.activeIdTag || idTag);
         } else if (lower === "t") {
           await engine.startTransaction();
         } else if (lower === "e") {
           await engine.stopTransaction();
         } else if (lower === "m") {
           await engine.triggerMeterValues();
+        } else if (lower === "h") {
+          await engine.sendHeartbeat();
+        } else if (lower === "b") {
+          await engine.sendBootNotification();
         } else if (lower === "s") {
           const nextState =
             engine.connectorState === "Available" ? "Faulted" : "Available";
           await engine.updateConnectorState(nextState);
+        } else if (lower === "i") {
+          pauseDashboard();
+          const pTag = await p.text({
+            message: "Enter new ID Tag to use for Auth and Transactions",
+            initialValue: engine.activeIdTag || idTag,
+          });
+          if (!p.isCancel(pTag) && pTag) {
+            engine.activeIdTag = pTag as string;
+            addLog(`Active ID Tag changed to ${pTag}`, "info");
+          }
+          resumeDashboard();
+        } else if (lower === "u") {
+          pauseDashboard();
+          const pStatus = await p.select({
+            message: "Select new Connector Status",
+            options: [
+              { value: "Available", label: "Available" },
+              { value: "Preparing", label: "Preparing" },
+              { value: "Charging", label: "Charging" },
+              { value: "SuspendedEV", label: "SuspendedEV" },
+              { value: "SuspendedEVSE", label: "SuspendedEVSE" },
+              { value: "Finishing", label: "Finishing" },
+              { value: "Reserved", label: "Reserved" },
+              { value: "Unavailable", label: "Unavailable" },
+              { value: "Faulted", label: "Faulted" },
+            ],
+          });
+          if (!p.isCancel(pStatus) && pStatus) {
+            await engine.updateConnectorState(pStatus as any);
+          }
+          resumeDashboard();
+        } else if (lower === "d") {
+          pauseDashboard();
+          const pVendorId = await p.text({ message: "VendorId", initialValue: "OCPP-WS-IO" });
+          if (!p.isCancel(pVendorId)) {
+            const pMessageId = await p.text({ message: "MessageId (Optional)" });
+            const pData = await p.text({ message: "Data Payload (Optional String JSON)" });
+            if (!p.isCancel(pMessageId) && !p.isCancel(pData)) {
+              await engine.sendDataTransfer(
+                pVendorId as string,
+                pMessageId ? (pMessageId as string) : undefined,
+                pData ? (pData as string) : undefined
+              );
+            }
+          }
+          resumeDashboard();
+        } else if (lower === "x") {
+          pauseDashboard();
+          const eventType = await p.select({
+            message: "Select an Extended Event to dispatch globally",
+            options: [
+              { value: "FirmwareStatusNotification", label: "FirmwareStatusNotification" },
+              { value: "DiagnosticsStatusNotification", label: "DiagnosticsStatusNotification" },
+              { value: "CustomMeterValues", label: "Send Custom MeterValues" }
+            ],
+          });
+
+          if (!p.isCancel(eventType)) {
+            if (eventType === "FirmwareStatusNotification") {
+              const fStatus = await p.select({
+                message: "Select Firmware Status",
+                options: [
+                  { value: "Downloaded", label: "Downloaded" },
+                  { value: "DownloadFailed", label: "DownloadFailed" },
+                  { value: "Downloading", label: "Downloading" },
+                  { value: "Idle", label: "Idle" },
+                  { value: "InstallationFailed", label: "InstallationFailed" },
+                  { value: "Installing", label: "Installing" },
+                  { value: "Installed", label: "Installed" }
+                ]
+              });
+              if (!p.isCancel(fStatus) && fStatus) {
+                await engine.sendFirmwareStatusNotification(fStatus as string);
+              }
+            } else if (eventType === "DiagnosticsStatusNotification") {
+              const dStatus = await p.select({
+                message: "Select Diagnostics Status",
+                options: [
+                  { value: "Idle", label: "Idle" },
+                  { value: "Uploaded", label: "Uploaded" },
+                  { value: "UploadFailed", label: "UploadFailed" },
+                  { value: "Uploading", label: "Uploading" }
+                ]
+              });
+              if (!p.isCancel(dStatus) && dStatus) {
+                await engine.sendDiagnosticsStatusNotification(dStatus as string);
+              }
+            } else if (eventType === "CustomMeterValues") {
+               const pValW = await p.text({ message: "Enter Custom Active Power (W) to emit", initialValue: "5000" });
+               const pValWh = await p.text({ message: "Enter Custom Energy (Wh) to emit", initialValue: engine.meterWh.toString() });
+               if (!p.isCancel(pValW) && !p.isCancel(pValWh)) {
+                 await engine.triggerCustomMeterValues(Number(pValW), Number(pValWh));
+               }
+            }
+          }
+          resumeDashboard();
         }
       } catch (e) {
         addLog(`Action failed: ${(e as { message: string }).message}`, "error");
