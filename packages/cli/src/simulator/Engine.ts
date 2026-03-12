@@ -342,30 +342,63 @@ export class SimulatorEngine extends EventEmitter {
       }
 
       case "UpdateFirmware":
-        this.emit("log", "CSMS requested UpdateFirmware. Simulating download and install sequence...", "info");
+        this.emit(
+          "log",
+          "CSMS requested UpdateFirmware. Simulating download and install sequence...",
+          "info",
+        );
         this.sendCallResult(messageId, { status: "Accepted" });
-        setTimeout(() => this.sendFirmwareStatusNotification("Downloading"), 2000);
-        setTimeout(() => this.sendFirmwareStatusNotification("Downloaded"), 5000);
-        setTimeout(() => this.sendFirmwareStatusNotification("Installing"), 8000);
-        setTimeout(() => this.sendFirmwareStatusNotification("Installed"), 12000);
+        setTimeout(
+          () => this.sendFirmwareStatusNotification("Downloading"),
+          2000,
+        );
+        setTimeout(
+          () => this.sendFirmwareStatusNotification("Downloaded"),
+          5000,
+        );
+        setTimeout(
+          () => this.sendFirmwareStatusNotification("Installing"),
+          8000,
+        );
+        setTimeout(
+          () => this.sendFirmwareStatusNotification("Installed"),
+          12000,
+        );
         break;
 
       case "GetDiagnostics":
-        this.emit("log", "CSMS requested GetDiagnostics. Simulating upload sequence...", "info");
+        this.emit(
+          "log",
+          "CSMS requested GetDiagnostics. Simulating upload sequence...",
+          "info",
+        );
         this.sendCallResult(messageId, { status: "Accepted" });
-        setTimeout(() => this.sendDiagnosticsStatusNotification("Uploading"), 2000);
-        setTimeout(() => this.sendDiagnosticsStatusNotification("Uploaded"), 5000);
+        setTimeout(
+          () => this.sendDiagnosticsStatusNotification("Uploading"),
+          2000,
+        );
+        setTimeout(
+          () => this.sendDiagnosticsStatusNotification("Uploaded"),
+          5000,
+        );
         break;
 
       case "TriggerMessage":
-        this.emit("log", `CSMS requested TriggerMessage for ${payload.requestedMessage}`, "info");
+        this.emit(
+          "log",
+          `CSMS requested TriggerMessage for ${payload.requestedMessage}`,
+          "info",
+        );
         this.sendCallResult(messageId, { status: "Accepted" });
         // Execute trigger dynamically
         setTimeout(() => {
-          if (payload.requestedMessage === "BootNotification") this.sendBootNotification();
+          if (payload.requestedMessage === "BootNotification")
+            this.sendBootNotification();
           if (payload.requestedMessage === "Heartbeat") this.sendHeartbeat();
-          if (payload.requestedMessage === "StatusNotification") this.updateConnectorState(this.connectorState);
-          if (payload.requestedMessage === "MeterValues") this.triggerMeterValues();
+          if (payload.requestedMessage === "StatusNotification")
+            this.updateConnectorState(this.connectorState);
+          if (payload.requestedMessage === "MeterValues")
+            this.triggerMeterValues();
         }, 1500);
         break;
 
@@ -440,7 +473,11 @@ export class SimulatorEngine extends EventEmitter {
     this.emit("log", "Sending manual Heartbeat...", "info");
     try {
       const response = await this.sendCall("Heartbeat", {});
-      this.emit("log", `Heartbeat Response: ${response.currentTime}`, "success");
+      this.emit(
+        "log",
+        `Heartbeat Response: ${response.currentTime}`,
+        "success",
+      );
     } catch (err: any) {
       this.emit("log", `Heartbeat failed: ${err.message}`, "error");
     }
@@ -455,19 +492,27 @@ export class SimulatorEngine extends EventEmitter {
         chargePointSerialNumber: "SIM-001",
         firmwareVersion: "1.0.0-alpha",
       });
-      this.emit("log", `BootNotification Response: ${response.status}`, "success");
+      this.emit(
+        "log",
+        `BootNotification Response: ${response.status}`,
+        "success",
+      );
     } catch (err: any) {
       this.emit("log", `BootNotification failed: ${err.message}`, "error");
     }
   }
 
-  public async sendDataTransfer(vendorId: string, messageId?: string, data?: string): Promise<void> {
+  public async sendDataTransfer(
+    vendorId: string,
+    messageId?: string,
+    data?: string,
+  ): Promise<void> {
     this.emit("log", `Sending DataTransfer (Vendor: ${vendorId})...`, "info");
     try {
       const payload: Record<string, unknown> = { vendorId };
       if (messageId) payload.messageId = messageId;
       if (data) payload.data = data;
-      
+
       const response = await this.sendCall("DataTransfer", payload);
       this.emit("log", `DataTransfer Response: ${response.status}`, "success");
     } catch (err: any) {
@@ -476,7 +521,11 @@ export class SimulatorEngine extends EventEmitter {
   }
 
   public async sendFirmwareStatusNotification(status: string): Promise<void> {
-    this.emit("log", `Sending FirmwareStatusNotification (${status})...`, "info");
+    this.emit(
+      "log",
+      `Sending FirmwareStatusNotification (${status})...`,
+      "info",
+    );
     try {
       if (this.config.protocol.startsWith("ocpp2")) {
         await this.sendCall("FirmwareStatusNotification", { status });
@@ -485,12 +534,22 @@ export class SimulatorEngine extends EventEmitter {
       }
       this.emit("log", "FirmwareStatusNotification Accepted.", "success");
     } catch (err: any) {
-      this.emit("log", `FirmwareStatusNotification failed: ${err.message}`, "error");
+      this.emit(
+        "log",
+        `FirmwareStatusNotification failed: ${err.message}`,
+        "error",
+      );
     }
   }
 
-  public async sendDiagnosticsStatusNotification(status: string): Promise<void> {
-    this.emit("log", `Sending DiagnosticsStatusNotification (${status})...`, "info");
+  public async sendDiagnosticsStatusNotification(
+    status: string,
+  ): Promise<void> {
+    this.emit(
+      "log",
+      `Sending DiagnosticsStatusNotification (${status})...`,
+      "info",
+    );
     try {
       if (this.config.protocol.startsWith("ocpp2")) {
         // In OCPP 2.0.1 it's LogStatusNotification
@@ -498,22 +557,41 @@ export class SimulatorEngine extends EventEmitter {
       } else {
         await this.sendCall("DiagnosticsStatusNotification", { status });
       }
-      this.emit("log", "Diagnostics/Log Status Notification Accepted.", "success");
+      this.emit(
+        "log",
+        "Diagnostics/Log Status Notification Accepted.",
+        "success",
+      );
     } catch (err: any) {
-      this.emit("log", `DiagnosticsStatusNotification failed: ${err.message}`, "error");
+      this.emit(
+        "log",
+        `DiagnosticsStatusNotification failed: ${err.message}`,
+        "error",
+      );
     }
   }
 
-  public async triggerCustomMeterValues(powerW: number, energyWh: number): Promise<void> {
+  public async triggerCustomMeterValues(
+    powerW: number,
+    energyWh: number,
+  ): Promise<void> {
     if (!this.activeTransactionId) {
-      this.emit("log", "No active transaction to send MeterValues for.", "warn");
+      this.emit(
+        "log",
+        "No active transaction to send MeterValues for.",
+        "warn",
+      );
       return;
     }
     this.livePowerW = powerW;
     this.meterWh = energyWh;
-    this.emit("log", `Sending Custom MeterValues (Power: ${powerW}W, Energy: ${energyWh}Wh)...`, "info");
-    
-    // We can reuse the internal logic of triggerMeterValues by resetting power/energy variables temporarily 
+    this.emit(
+      "log",
+      `Sending Custom MeterValues (Power: ${powerW}W, Energy: ${energyWh}Wh)...`,
+      "info",
+    );
+
+    // We can reuse the internal logic of triggerMeterValues by resetting power/energy variables temporarily
     // and bypassing the randomized climb. However, copying the dispatch block is safer.
     try {
       if (this.config.protocol.startsWith("ocpp2")) {
@@ -522,20 +600,30 @@ export class SimulatorEngine extends EventEmitter {
           timestamp: new Date().toISOString(),
           triggerReason: "MeterValuePeriodic",
           seqNo: 2,
-          transactionInfo: { transactionId: this.activeTransactionId.toString() },
+          transactionInfo: {
+            transactionId: this.activeTransactionId.toString(),
+          },
           evse: { id: 1, connectorId: 1 },
           meterValue: [
             {
               timestamp: new Date().toISOString(),
               sampledValue: [
-                { value: this.meterWh, context: "Sample.Periodic", measurand: "Energy.Active.Import.Register" },
-                { value: this.livePowerW, context: "Sample.Periodic", measurand: "Power.Active.Import" },
+                {
+                  value: this.meterWh,
+                  context: "Sample.Periodic",
+                  measurand: "Energy.Active.Import.Register",
+                },
+                {
+                  value: this.livePowerW,
+                  context: "Sample.Periodic",
+                  measurand: "Power.Active.Import",
+                },
               ],
             },
           ],
         });
       } else {
-         await this.sendCall("MeterValues", {
+        await this.sendCall("MeterValues", {
           connectorId: 1,
           transactionId: this.activeTransactionId,
           meterValue: [
@@ -566,6 +654,123 @@ export class SimulatorEngine extends EventEmitter {
       this.emit("log", "Custom MeterValues transmitted", "info");
     } catch (err: any) {
       this.emit("log", `Custom MeterValues failed: ${err.message}`, "error");
+    }
+  }
+
+  // ── OCPP 2.0.1 Specific Dispatches ───────────────────────────────
+
+  public async sendNotifyEvent(): Promise<void> {
+    if (!this.config.protocol.startsWith("ocpp2")) {
+      this.emit("log", "NotifyEvent is only supported in OCPP 2.0.1", "warn");
+      return;
+    }
+    this.emit("log", "Sending NotifyEvent...", "info");
+    try {
+      await this.sendCall("NotifyEvent", {
+        generatedAt: new Date().toISOString(),
+        seqNo: 1,
+        eventData: [
+          {
+            eventId: Math.floor(Math.random() * 10000),
+            timestamp: new Date().toISOString(),
+            trigger: "Alerting",
+            actualValue: "High Temperature Warning",
+            eventNotificationType: "HardWiredMonitor",
+            component: { name: "EVSE" },
+            variable: { name: "Temp" },
+          },
+        ],
+      });
+      this.emit("log", "NotifyEvent Accepted.", "success");
+    } catch (err: any) {
+      this.emit("log", `NotifyEvent failed: ${err.message}`, "error");
+    }
+  }
+
+  public async sendNotifyReport(): Promise<void> {
+    if (!this.config.protocol.startsWith("ocpp2")) {
+      this.emit("log", "NotifyReport is only supported in OCPP 2.0.1", "warn");
+      return;
+    }
+    this.emit("log", "Sending NotifyReport...", "info");
+    try {
+      await this.sendCall("NotifyReport", {
+        requestId: Math.floor(Math.random() * 1000),
+        generatedAt: new Date().toISOString(),
+        seqNo: 1,
+        reportData: [
+          {
+            component: { name: "Controller" },
+            variable: { name: "HeartbeatInterval" },
+            variableAttribute: [
+              {
+                type: "Actual",
+                value: "60",
+                mutability: "ReadWrite",
+                persistent: true,
+                constant: false,
+              },
+            ],
+          },
+        ],
+      });
+      this.emit("log", "NotifyReport Accepted.", "success");
+    } catch (err: any) {
+      this.emit("log", `NotifyReport failed: ${err.message}`, "error");
+    }
+  }
+
+  public async sendNotifyDisplayMessages(): Promise<void> {
+    if (!this.config.protocol.startsWith("ocpp2")) {
+      this.emit("log", "NotifyDisplayMessages is only supported in OCPP 2.0.1", "warn");
+      return;
+    }
+    this.emit("log", "Sending NotifyDisplayMessages...", "info");
+    try {
+      await this.sendCall("NotifyDisplayMessages", {
+        requestId: Math.floor(Math.random() * 1000),
+        messageFormat: "UTF8",
+        messageInfo: [
+          {
+            id: 1,
+            priority: "Normal",
+            message: {
+              format: "UTF8",
+              content: "Welcome to Virtual CP",
+            },
+          },
+        ],
+      });
+      this.emit("log", "NotifyDisplayMessages Accepted.", "success");
+    } catch (err: any) {
+      this.emit("log", `NotifyDisplayMessages failed: ${err.message}`, "error");
+    }
+  }
+
+  public async sendNotifyEVChargingNeeds(): Promise<void> {
+    if (!this.config.protocol.startsWith("ocpp2")) {
+      this.emit("log", "NotifyEVChargingNeeds is only supported in OCPP 2.0.1", "warn");
+      return;
+    }
+    this.emit("log", "Sending NotifyEVChargingNeeds...", "info");
+    try {
+      const payload = {
+        chargingNeeds: {
+          requestedEnergyTransfer: "DC",
+          acChargingParameters: {
+            energyAmount: 50000,
+            evMinCurrent: 6,
+            evMaxCurrent: 32,
+            evMaxVoltage: 240,
+          },
+        },
+        evseId: 1,
+      };
+      
+      const response = await this.sendCall("NotifyEVChargingNeeds", payload);
+      this.emit("log", `NotifyEVChargingNeeds Response: ${response.status}`, "success");
+    } catch (err: any) {
+      this.emit("log", `NotifyEVChargingNeeds failed: ${err.message}`, "error");
     }
   }
 

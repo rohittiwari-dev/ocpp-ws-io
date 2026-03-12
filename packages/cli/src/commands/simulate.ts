@@ -355,28 +355,50 @@ ${logs
           resumeDashboard();
         } else if (lower === "d") {
           pauseDashboard();
-          const pVendorId = await p.text({ message: "VendorId", initialValue: "OCPP-WS-IO" });
+          const pVendorId = await p.text({
+            message: "VendorId",
+            initialValue: "OCPP-WS-IO",
+          });
           if (!p.isCancel(pVendorId)) {
-            const pMessageId = await p.text({ message: "MessageId (Optional)" });
-            const pData = await p.text({ message: "Data Payload (Optional String JSON)" });
+            const pMessageId = await p.text({
+              message: "MessageId (Optional)",
+            });
+            const pData = await p.text({
+              message: "Data Payload (Optional String JSON)",
+            });
             if (!p.isCancel(pMessageId) && !p.isCancel(pData)) {
               await engine.sendDataTransfer(
                 pVendorId as string,
                 pMessageId ? (pMessageId as string) : undefined,
-                pData ? (pData as string) : undefined
+                pData ? (pData as string) : undefined,
               );
             }
           }
           resumeDashboard();
         } else if (lower === "x") {
           pauseDashboard();
+          const extendedOptions = [
+            {
+              value: "FirmwareStatusNotification",
+              label: "FirmwareStatusNotification",
+            },
+            {
+              value: "DiagnosticsStatusNotification",
+              label: "DiagnosticsStatusNotification",
+            },
+            { value: "CustomMeterValues", label: "Send Custom MeterValues" },
+          ];
+
+          if (protocol.startsWith("ocpp2")) {
+            extendedOptions.push({ value: "NotifyEvent", label: "NotifyEvent (OCPP 2.0.1)" });
+            extendedOptions.push({ value: "NotifyReport", label: "NotifyReport (OCPP 2.0.1)" });
+            extendedOptions.push({ value: "NotifyDisplayMessages", label: "NotifyDisplayMessages (OCPP 2.0.1)" });
+            extendedOptions.push({ value: "NotifyEVChargingNeeds", label: "NotifyEVChargingNeeds (OCPP 2.0.1)" });
+          }
+
           const eventType = await p.select({
             message: "Select an Extended Event to dispatch globally",
-            options: [
-              { value: "FirmwareStatusNotification", label: "FirmwareStatusNotification" },
-              { value: "DiagnosticsStatusNotification", label: "DiagnosticsStatusNotification" },
-              { value: "CustomMeterValues", label: "Send Custom MeterValues" }
-            ],
+            options: extendedOptions,
           });
 
           if (!p.isCancel(eventType)) {
@@ -390,8 +412,8 @@ ${logs
                   { value: "Idle", label: "Idle" },
                   { value: "InstallationFailed", label: "InstallationFailed" },
                   { value: "Installing", label: "Installing" },
-                  { value: "Installed", label: "Installed" }
-                ]
+                  { value: "Installed", label: "Installed" },
+                ],
               });
               if (!p.isCancel(fStatus) && fStatus) {
                 await engine.sendFirmwareStatusNotification(fStatus as string);
@@ -403,18 +425,37 @@ ${logs
                   { value: "Idle", label: "Idle" },
                   { value: "Uploaded", label: "Uploaded" },
                   { value: "UploadFailed", label: "UploadFailed" },
-                  { value: "Uploading", label: "Uploading" }
-                ]
+                  { value: "Uploading", label: "Uploading" },
+                ],
               });
               if (!p.isCancel(dStatus) && dStatus) {
-                await engine.sendDiagnosticsStatusNotification(dStatus as string);
+                await engine.sendDiagnosticsStatusNotification(
+                  dStatus as string,
+                );
               }
             } else if (eventType === "CustomMeterValues") {
-               const pValW = await p.text({ message: "Enter Custom Active Power (W) to emit", initialValue: "5000" });
-               const pValWh = await p.text({ message: "Enter Custom Energy (Wh) to emit", initialValue: engine.meterWh.toString() });
-               if (!p.isCancel(pValW) && !p.isCancel(pValWh)) {
-                 await engine.triggerCustomMeterValues(Number(pValW), Number(pValWh));
-               }
+              const pValW = await p.text({
+                message: "Enter Custom Active Power (W) to emit",
+                initialValue: "5000",
+              });
+              const pValWh = await p.text({
+                message: "Enter Custom Energy (Wh) to emit",
+                initialValue: engine.meterWh.toString(),
+              });
+              if (!p.isCancel(pValW) && !p.isCancel(pValWh)) {
+                await engine.triggerCustomMeterValues(
+                  Number(pValW),
+                  Number(pValWh),
+                );
+              }
+            } else if (eventType === "NotifyEvent") {
+              await engine.sendNotifyEvent();
+            } else if (eventType === "NotifyReport") {
+              await engine.sendNotifyReport();
+            } else if (eventType === "NotifyDisplayMessages") {
+              await engine.sendNotifyDisplayMessages();
+            } else if (eventType === "NotifyEVChargingNeeds") {
+              await engine.sendNotifyEVChargingNeeds();
             }
           }
           resumeDashboard();

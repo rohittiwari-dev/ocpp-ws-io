@@ -305,7 +305,9 @@ cli
   .option("--report <format>", "Export metrics on exit (json | md | txt)")
   .option("--report-dir <dir>", "Custom directory to save the report")
   .example("  ocpp simulate -e ws://localhost:5000/ocpp -i SIM001")
-  .example("  ocpp simulate -e ws://localhost:5000/ocpp -i SIM001 -t CUSTOM-TAG")
+  .example(
+    "  ocpp simulate -e ws://localhost:5000/ocpp -i SIM001 -t CUSTOM-TAG",
+  )
   .action(
     async (options: {
       endpoint?: string;
