@@ -390,10 +390,22 @@ ${logs
           ];
 
           if (protocol.startsWith("ocpp2")) {
-            extendedOptions.push({ value: "NotifyEvent", label: "NotifyEvent (OCPP 2.0.1)" });
-            extendedOptions.push({ value: "NotifyReport", label: "NotifyReport (OCPP 2.0.1)" });
-            extendedOptions.push({ value: "NotifyDisplayMessages", label: "NotifyDisplayMessages (OCPP 2.0.1)" });
-            extendedOptions.push({ value: "NotifyEVChargingNeeds", label: "NotifyEVChargingNeeds (OCPP 2.0.1)" });
+            extendedOptions.push({
+              value: "NotifyEvent",
+              label: "NotifyEvent (OCPP 2.0.1)",
+            });
+            extendedOptions.push({
+              value: "NotifyReport",
+              label: "NotifyReport (OCPP 2.0.1)",
+            });
+            extendedOptions.push({
+              value: "NotifyDisplayMessages",
+              label: "NotifyDisplayMessages (OCPP 2.0.1)",
+            });
+            extendedOptions.push({
+              value: "NotifyEVChargingNeeds",
+              label: "NotifyEVChargingNeeds (OCPP 2.0.1)",
+            });
           }
 
           const eventType = await p.select({

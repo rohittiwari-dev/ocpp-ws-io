@@ -722,7 +722,11 @@ export class SimulatorEngine extends EventEmitter {
 
   public async sendNotifyDisplayMessages(): Promise<void> {
     if (!this.config.protocol.startsWith("ocpp2")) {
-      this.emit("log", "NotifyDisplayMessages is only supported in OCPP 2.0.1", "warn");
+      this.emit(
+        "log",
+        "NotifyDisplayMessages is only supported in OCPP 2.0.1",
+        "warn",
+      );
       return;
     }
     this.emit("log", "Sending NotifyDisplayMessages...", "info");
@@ -749,7 +753,11 @@ export class SimulatorEngine extends EventEmitter {
 
   public async sendNotifyEVChargingNeeds(): Promise<void> {
     if (!this.config.protocol.startsWith("ocpp2")) {
-      this.emit("log", "NotifyEVChargingNeeds is only supported in OCPP 2.0.1", "warn");
+      this.emit(
+        "log",
+        "NotifyEVChargingNeeds is only supported in OCPP 2.0.1",
+        "warn",
+      );
       return;
     }
     this.emit("log", "Sending NotifyEVChargingNeeds...", "info");
@@ -766,9 +774,13 @@ export class SimulatorEngine extends EventEmitter {
         },
         evseId: 1,
       };
-      
+
       const response = await this.sendCall("NotifyEVChargingNeeds", payload);
-      this.emit("log", `NotifyEVChargingNeeds Response: ${response.status}`, "success");
+      this.emit(
+        "log",
+        `NotifyEVChargingNeeds Response: ${response.status}`,
+        "success",
+      );
     } catch (err: any) {
       this.emit("log", `NotifyEVChargingNeeds failed: ${err.message}`, "error");
     }
