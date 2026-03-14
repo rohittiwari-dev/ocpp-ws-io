@@ -35,7 +35,7 @@ const CollapsibleContent = forwardRef<
 
 CollapsibleContent.displayName = Primitive.CollapsibleContent.displayName;
 
-export { Collapsible, CollapsibleTrigger, CollapsibleContent };
+export { Collapsible, CollapsibleContent, CollapsibleTrigger };
 
 export type CollapsibleProps = Primitive.CollapsibleProps;
 export type CollapsibleContentProps = Primitive.CollapsibleContentProps;
