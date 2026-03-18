@@ -1,0 +1,28 @@
+{
+  "name": "ocpp-protocol-proxy",
+  "version": "0.1.0",
+  "description": "Any-to-any OCPP protocol translation proxy",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rohittiwari-dev/ocpp-ws-io"
+  },
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ocpp-ws-io": "*"
+  },
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.19.35",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
