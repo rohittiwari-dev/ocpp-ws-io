@@ -115,6 +115,7 @@ ocpp-ws-io/
 ├── packages/
 │   ├── ocpp-ws-io/              # Core OCPP WebSocket library (npm: ocpp-ws-io)
 │   ├── ocpp-protocol-proxy/     # OCPP version translation proxy
+│   ├── ocpp-smart-charge-engine/# Smart charging constraint solver
 │   └── cli/                     # The CLI ecosystem (npm: ocpp-ws-cli)
 ├── apps/
 │   └── docs/                    # Documentation site (ocpp-ws-io.rohittiwari.me)
@@ -126,6 +127,7 @@ ocpp-ws-io/
 | ---------------------------------------------------------- | ----------------------------------------- | ------------ |
 | [`ocpp-ws-io`](packages/ocpp-ws-io)                        | Core OCPP WebSocket RPC client & server   | ✅ Published |
 | [`ocpp-protocol-proxy`](packages/ocpp-protocol-proxy)      | OCPP version translation proxy            | 🚧 Pre-release |
+| [`ocpp-smart-charge-engine`](packages/ocpp-smart-charge-engine) | Smart charging constraint solver     | 🚧 Pre-release |
 | [`ocpp-ws-cli`](packages/cli)                              | CLI for generation, simulation & testing  | ✅ Published |
 | [`voltlog-io`](https://npmjs.com/voltlog-io)               | Structured Logger (Maintained Separately) | ✅ Published |
 

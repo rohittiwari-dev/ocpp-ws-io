@@ -1,0 +1,10 @@
+{
+  "title": "Smart Charge Engine",
+  "pages": [
+    "index",
+    "strategies",
+    "grid-and-load-management",
+    "express-integration",
+    "database-config"
+  ]
+}

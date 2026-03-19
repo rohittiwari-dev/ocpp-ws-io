@@ -7,7 +7,9 @@ import {
   ChevronRight,
   Cpu,
   Monitor,
+  Shuffle,
   Terminal,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -27,6 +29,38 @@ const ITEMS = [
     href: "/docs",
     cta: "Read the docs",
     tags: ["OCPP 1.6", "2.0.1", "2.1", "TypeScript", "Node.js"],
+  },
+  {
+    key: "proxy",
+    label: "Version Translation",
+    name: "Protocol Proxy",
+    description:
+      "Transport-agnostic OCPP version translation proxy. Translate any OCPP version (1.6 ↔ 2.1) dynamically with pluggable middleware and stateful sessions.",
+    icon: Shuffle,
+    badge: "new",
+    badgeColor: "bg-pink-500/10 text-pink-400 border-pink-500/20",
+    accentColor: "#ec4899",
+    glow: "from-pink-500/20 to-rose-600/5",
+    border: "border-pink-500/20 hover:border-pink-500/40",
+    href: "/docs/protocol-proxy",
+    cta: "View proxy",
+    tags: ["1.6 ↔ 2.1", "Middleware", "Stateful"],
+  },
+  {
+    key: "engine",
+    label: "Smart Charging",
+    name: "Smart Charge Engine",
+    description:
+      "Library-agnostic smart charging constraint solver. Distribute your site's grid power fairly and safely among EV chargers with built-in allocation algorithms.",
+    icon: Zap,
+    badge: "new",
+    badgeColor: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
+    accentColor: "#eab308",
+    glow: "from-yellow-500/20 to-amber-600/5",
+    border: "border-yellow-500/20 hover:border-yellow-500/40",
+    href: "/docs/smart-charge-engine",
+    cta: "View engine",
+    tags: ["Load balancing", "TOU Pricing", "Library-agnostic"],
   },
   {
     key: "simulator",
@@ -76,22 +110,6 @@ const ITEMS = [
     href: "/docs",
     cta: "Browse docs",
     tags: ["Quick start", "API reference", "Security", "Clustering"],
-  },
-  {
-    key: "browser-client",
-    label: "Browser Client",
-    name: "BrowserOCPPClient",
-    description:
-      "Zero-dependency browser WebSocket client built on the native WebSocket API. Same typed call/handle interface as the Node.js client.",
-    icon: Cpu,
-    badge: "pkg",
-    badgeColor: "bg-sky-500/10 text-sky-400 border-sky-500/20",
-    accentColor: "#0ea5e9",
-    glow: "from-sky-500/20 to-cyan-600/5",
-    border: "border-sky-500/20 hover:border-sky-500/40",
-    href: "/docs/browser-client",
-    cta: "View browser client",
-    tags: ["No dependencies", "Auto-reconnect", "Typed", "Browser-native"],
   },
 ] as const;
 

@@ -1,6 +1,6 @@
 {
   "name": "ocpp-smart-charge-engine",
-  "version": "0.1.0-alpha",
+  "version": "0.1.2",
   "description": "Library-agnostic OCPP smart charging constraint solver. Works with ocpp-ws-io, raw WebSocket, or any OCPP implementation.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -25,17 +25,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "prepublishOnly": "npm run build",
-    "changeset": "changeset",
-    "version": "changeset version",
-    "release": "npm run build && changeset publish",
-    "check": "biome check .",
-    "format": "biome format --write .",
-    "lint": "biome lint .",
-    "prepare": "husky"
+    "test": "vitest run"
   },
   "engines": {
     "node": ">=18.0.0"

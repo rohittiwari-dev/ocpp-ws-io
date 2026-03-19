@@ -1,0 +1,462 @@
+---
+title: Smart Charge Engine
+description: Library-agnostic OCPP smart charging constraint solver for EV charge point operators — distribute power fairly and safely across chargers.
+---
+
+import { Cards, Card } from "fumadocs-ui/components/card";
+import { Tab, Tabs } from "fumadocs-ui/components/tabs";
+import { Step, Steps } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+# Smart Charge Engine
+
+**`ocpp-smart-charge-engine`** solves one problem: **how to distribute your site's grid power fairly and safely among EV chargers** using OCPP's `SetChargingProfile` command.
+
+<Callout type="info">
+  This package is **completely library-agnostic**. It does not care whether you
+  use `ocpp-ws-io`, raw WebSockets, or any other OCPP implementation. You
+  supply a `dispatcher` callback — what you do inside it is entirely up to you.
+</Callout>
+
+---
+
+## How It Works
+
+<Mermaid chart={`
+graph TB
+    subgraph Site["Charging Site (100kW Grid)"]
+        direction TB
+        GR["Grid Connection<br/>100kW max"]
+        ENG["SmartChargingEngine<br/>Allocation Algorithm"]
+        GR --> ENG
+    end
+
+    subgraph Chargers["Connected EVSEs"]
+        CP1["CP-01 (22kW)"]
+        CP2["CP-02 (22kW)"]
+        CP3["CP-03 (50kW)"]
+    end
+
+    ENG -->|"SetChargingProfile<br/>22kW"| CP1
+    ENG -->|"SetChargingProfile<br/>22kW"| CP2
+    ENG -->|"SetChargingProfile<br/>50kW"| CP3
+`} />
+
+The engine:
+1. Accepts sessions when cars connect (`addSession()`)
+2. Runs an allocation algorithm (Equal Share, Priority, or Time-of-Use)
+3. Calls your `dispatcher` with the computed power limit for each session
+4. Your dispatcher sends `SetChargingProfile` via whatever OCPP library you use
+
+---
+
+## Features
+
+<Cards>
+  <Card
+    title="⚡ Library Agnostic"
+    description="Works with ocpp-ws-io, raw WebSockets, MQTT, or any OCPP implementation. You provide the dispatcher callback."
+  />
+  <Card
+    title="🔌 3 Built-in Strategies"
+    description="Equal Share (fairness), Priority (fleet preference), Time-of-Use (cost optimization). Hot-swap at runtime."
+  />
+  <Card
+    title="🔒 Safety Margins"
+    description="Configurable safety buffer prevents tripping breakers. Per-session minChargeRateKw prevents EV faults."
+  />
+  <Card
+    title="🏢 Multi-Panel Sites"
+    description="One engine per sub-panel. Hierarchical grid with master engine updating sub-panel budgets."
+  />
+  <Card
+    title="📊 Auto-Dispatch"
+    description="Periodic rebalancing on a timer — ideal for TOU tariffs that change power limits throughout the day."
+  />
+  <Card
+    title="🔧 OCPP Profile Builders"
+    description="Version-specific helpers for 1.6, 2.0.1, and 2.1 — including V2G discharge limits."
+  />
+</Cards>
+
+---
+
+## Install
+
+<Tabs items={["npm", "pnpm", "yarn", "bun"]}>
+  <Tab value="npm">```bash npm install ocpp-smart-charge-engine ```</Tab>
+  <Tab value="pnpm">```bash pnpm add ocpp-smart-charge-engine ```</Tab>
+  <Tab value="yarn">```bash yarn add ocpp-smart-charge-engine ```</Tab>
+  <Tab value="bun">```bash bun add ocpp-smart-charge-engine ```</Tab>
+</Tabs>
+
+<Callout type="warn">
+  **Charger Compatibility:** `SetChargingProfile` is part of the OCPP 1.6 Smart
+  Charging optional profile and is mandatory in OCPP 2.0.1+. If a charger
+  rejects the command, the engine emits a `dispatchError` event and **continues
+  dispatching to all other sessions**.
+</Callout>
+
+---
+
+## Quick Start
+
+<Steps>
+
+<Step>
+
+### Create the Engine
+
+```typescript title="engine.ts"
+import { SmartChargingEngine, Strategies } from "ocpp-smart-charge-engine";
+import { buildOcpp16Profile } from "ocpp-smart-charge-engine/builders";
+
+const engine = new SmartChargingEngine({
+  siteId: "SITE-HQ-001",
+  maxGridPowerKw: 100,     // 100kW grid connection
+  safetyMarginPct: 5,      // Use max 95kW, leave 5% buffer
+  algorithm: Strategies.EQUAL_SHARE,
+
+  // The ONLY integration point — use whatever OCPP library you have
+  dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
+    await yourOcppServer.sendToClient(clientId, "SetChargingProfile", {
+      connectorId,
+      csChargingProfiles: buildOcpp16Profile(sessionProfile),
+    });
+  },
+});
+```
+
+</Step>
+
+<Step>
+
+### Register Sessions When Cars Connect
+
+```typescript title="handlers.ts"
+// In your OCPP StartTransaction handler:
+engine.addSession({
+  transactionId: payload.transactionId,
+  clientId: client.identity,
+  connectorId: payload.connectorId,
+  maxHardwarePowerKw: 22,     // Charger hardware rating
+  minChargeRateKw: 1.4,       // IEC 61851 minimum (6A × 230V)
+});
+
+// Recalculate and dispatch profiles to all active chargers
+await engine.dispatch();
+```
+
+</Step>
+
+<Step>
+
+### Remove Sessions When Cars Leave
+
+```typescript title="handlers.ts"
+// In your OCPP StopTransaction handler:
+engine.removeSession(payload.transactionId);
+await engine.dispatch(); // Redistribute power to remaining sessions
+```
+
+</Step>
+
+<Step>
+
+### Enable Auto-Dispatch (Optional)
+
+```typescript title="engine.ts"
+// Recalculate every 60 seconds — useful for TOU tariffs
+engine.startAutoDispatch(60_000);
+```
+
+</Step>
+
+</Steps>
+
+---
+
+## Complete Example with `ocpp-ws-io`
+
+```typescript title="main.ts"
+import { OCPPServer } from "ocpp-ws-io";
+import { SmartChargingEngine, Strategies } from "ocpp-smart-charge-engine";
+import { buildOcpp16Profile } from "ocpp-smart-charge-engine/builders";
+
+const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+const clients = new Map();
+
+const engine = new SmartChargingEngine({
+  siteId: "MY-SITE",
+  maxGridPowerKw: 100,
+  safetyMarginPct: 5,
+  algorithm: Strategies.EQUAL_SHARE,
+  autoClearOnRemove: true,
+
+  dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
+    const client = clients.get(clientId);
+    if (!client) return;
+    await client.call("SetChargingProfile", {
+      connectorId,
+      csChargingProfiles: buildOcpp16Profile(sessionProfile),
+    });
+  },
+
+  clearDispatcher: async ({ clientId, connectorId }) => {
+    const client = clients.get(clientId);
+    if (!client) return;
+    await client.call("ClearChargingProfile", {
+      connectorId,
+      chargingProfilePurpose: "TxProfile",
+      stackLevel: 0,
+    });
+  },
+});
+
+server.on("client", (client) => {
+  clients.set(client.identity, client);
+  client.once("close", () => clients.delete(client.identity));
+
+  client.handle("ocpp1.6", "BootNotification", () => ({
+    currentTime: new Date().toISOString(),
+    interval: 30,
+    status: "Accepted",
+  }));
+
+  client.handle("ocpp1.6", "StartTransaction", async (ctx) => {
+    engine.addSession({
+      transactionId: ctx.payload.transactionId,
+      clientId: client.identity,
+      connectorId: ctx.payload.connectorId,
+      maxHardwarePowerKw: 22,
+      minChargeRateKw: 1.4,
+    });
+    await engine.dispatch();
+    return {
+      idTagInfo: { status: "Accepted" },
+      transactionId: ctx.payload.transactionId,
+    };
+  });
+
+  client.handle("ocpp1.6", "StopTransaction", async (ctx) => {
+    engine.safeRemoveSession(ctx.payload.transactionId);
+    await engine.dispatch();
+    return { idTagInfo: { status: "Accepted" } };
+  });
+});
+
+engine.startAutoDispatch(60_000);
+await server.listen(3000);
+```
+
+---
+
+## Dispatcher Examples
+
+The dispatcher is library-agnostic. Here's how to use it with different setups:
+
+### With `ocpp-ws-io` — OCPP 2.0.1
+
+```typescript
+import { buildOcpp201Profile } from "ocpp-smart-charge-engine/builders";
+
+dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
+  await client.call("SetChargingProfile", {
+    evseId: connectorId, // NOTE: connectorId → evseId in 2.0.1
+    chargingProfile: buildOcpp201Profile(sessionProfile),
+  });
+};
+```
+
+### Mixed Fleet (1.6 + 2.0.1)
+
+```typescript
+import { buildOcpp16Profile, buildOcpp201Profile } from "ocpp-smart-charge-engine/builders";
+
+dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
+  const client = clients.get(clientId);
+  const protocol = client.protocol;
+
+  if (protocol === "ocpp1.6") {
+    await client.call("SetChargingProfile", {
+      connectorId,
+      csChargingProfiles: buildOcpp16Profile(sessionProfile),
+    });
+  } else {
+    await client.call("SetChargingProfile", {
+      evseId: connectorId,
+      chargingProfile: buildOcpp201Profile(sessionProfile),
+    });
+  }
+};
+```
+
+### Raw WebSocket
+
+```typescript
+import { buildOcpp16Profile } from "ocpp-smart-charge-engine/builders";
+
+dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
+  const ws = wsMap.get(clientId);
+  ws?.send(JSON.stringify([
+    2, crypto.randomUUID(), "SetChargingProfile",
+    { connectorId, csChargingProfiles: buildOcpp16Profile(sessionProfile) },
+  ]));
+};
+```
+
+---
+
+## ClearChargingProfile
+
+When a car leaves, send `ClearChargingProfile` to remove throttling:
+
+```typescript
+const engine = new SmartChargingEngine({
+  // ...
+  clearDispatcher: async ({ clientId, connectorId }) => {
+    await client.call("ClearChargingProfile", {
+      connectorId,
+      chargingProfilePurpose: "TxProfile",
+      stackLevel: 0,
+    });
+  },
+  autoClearOnRemove: true, // auto-fires clearDispatcher on removeSession()
+});
+
+// Or manually:
+await engine.clearDispatch();      // clear ALL sessions
+await engine.clearDispatch(42);    // clear only transactionId 42
+```
+
+---
+
+## Profile Builders
+
+Version-specific helpers convert raw `SessionProfile` numbers into the correct OCPP shape:
+
+| Helper | OCPP Version | Payload Field | Schedule Shape |
+| :--- | :--- | :--- | :--- |
+| `buildOcpp16Profile()` | 1.6 | `csChargingProfiles` | Single object |
+| `buildOcpp201Profile()` | 2.0.1 | `chargingProfile` | **Array** |
+| `buildOcpp21Profile()` | 2.1 | `chargingProfile` | **Array** + V2G fields |
+
+### Builder Options
+
+```typescript
+buildOcpp16Profile(sessionProfile, {
+  stackLevel: 0,
+  purpose: "TxProfile",    // "TxProfile" | "TxDefaultProfile" | "ChargePointMaxProfile"
+  rateUnit: "W",            // "W" | "A"
+  numberPhases: 3,
+  periods: [                // Multi-period schedule
+    { startPeriod: 0, limit: 22000, numberPhases: 3 },
+    { startPeriod: 7200, limit: 7000, numberPhases: 3 },
+  ],
+});
+```
+
+### OCPP 2.1 V2G Discharge
+
+```typescript
+import { buildOcpp21Profile } from "ocpp-smart-charge-engine/builders";
+
+buildOcpp21Profile(sessionProfile, {
+  dischargeLimitW: 7400, // Allow 7.4kW V2G discharge (ISO 15118-20)
+});
+```
+
+---
+
+## API Reference
+
+### Constructor Options
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `siteId` | `string` | required | Human-readable site identifier |
+| `maxGridPowerKw` | `number` | required | Maximum site grid power in kW |
+| `dispatcher` | `ChargingProfileDispatcher` | required | Your OCPP send function |
+| `clearDispatcher` | `ClearProfileDispatcher` | — | Sends `ClearChargingProfile` |
+| `autoClearOnRemove` | `boolean` | `false` | Auto-clear profile on `removeSession()` |
+| `algorithm` | `Strategy` | `EQUAL_SHARE` | Allocation strategy |
+| `safetyMarginPct` | `number` | `5` | Power held in reserve (%) |
+| `phases` | `1 \| 3` | `3` | AC phase count |
+| `voltageV` | `number` | `230` | Grid voltage for amps calculation |
+| `timeOfUseWindows` | `TimeOfUseWindow[]` | `[]` | Peak windows (TIME_OF_USE only) |
+| `debug` | `boolean` | `false` | Verbose logging |
+
+### `addSession()` Options
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `transactionId` | `number \| string` | required | OCPP transaction ID |
+| `clientId` | `string` | required | Charging station identity |
+| `connectorId` | `number` | `1` | Connector / EVSE ID |
+| `maxHardwarePowerKw` | `number` | `∞` | Charger hardware limit |
+| `maxEvAcceptancePowerKw` | `number` | `∞` | EV acceptance limit |
+| `minChargeRateKw` | `number` | `0` | Minimum power floor |
+| `priority` | `number` | `1` | Priority (PRIORITY strategy) |
+| `phases` | `1 \| 3` | site default | Phase count for connector |
+| `metadata` | `object` | — | Arbitrary data (stored, not used) |
+
+### Methods
+
+| Method | Description |
+| :--- | :--- |
+| `addSession(session)` | Register a session. Throws `DuplicateSessionError` if exists |
+| `removeSession(txId)` | Remove a session. Throws `SessionNotFoundError` if not found |
+| `safeRemoveSession(txId)` | Remove without throwing |
+| `optimize()` | Calculate profiles without dispatching |
+| `dispatch()` | Calculate + dispatch to all active sessions |
+| `clearDispatch(txId?)` | Send `ClearChargingProfile` to one or all |
+| `startAutoDispatch(ms)` | Start periodic dispatch (min 1000ms) |
+| `stopAutoDispatch()` | Stop auto-dispatch |
+| `setGridLimit(kw)` | Update grid limit at runtime |
+| `setAlgorithm(strategy)` | Hot-swap algorithm at runtime |
+| `setSafetyMargin(pct)` | Update safety margin at runtime |
+| `getSessions()` | Read-only array of active sessions |
+| `isEmpty()` | `true` when no sessions registered |
+
+### Events
+
+| Event | Payload | When |
+| :--- | :--- | :--- |
+| `sessionAdded` | `ActiveSession` | Session registered |
+| `sessionRemoved` | `ActiveSession` | Session removed |
+| `optimized` | `SessionProfile[]` | After `optimize()` |
+| `dispatched` | `SessionProfile[]` | After all dispatchers settle |
+| `dispatchError` | `DispatchErrorEvent` | Dispatcher throws; engine continues |
+| `cleared` | `ClearDispatchPayload` | After `clearDispatcher` succeeds |
+| `clearError` | `ClearDispatchPayload & { error }` | `clearDispatcher` throws |
+| `autoDispatchStarted` | `number` (intervalMs) | After `startAutoDispatch()` |
+| `autoDispatchStopped` | — | After `stopAutoDispatch()` |
+| `error` | `Error` | Strategy function throws |
+
+---
+
+## What's Next?
+
+<Cards>
+  <Card
+    title="Charging Strategies"
+    href="/docs/smart-charge-engine/strategies"
+    description="Deep dive into Equal Share, Priority, Time-of-Use, and custom strategies."
+  />
+  <Card
+    title="Grid & Load Management"
+    href="/docs/smart-charge-engine/grid-and-load-management"
+    description="Multi-panel sites, hierarchical grids, VIP chargers, and OCPP profile types."
+  />
+  <Card
+    title="Express Integration"
+    href="/docs/smart-charge-engine/express-integration"
+    description="Complete CSMS example with ocpp-ws-io, Express, multi-panel setup, and REST admin API."
+  />
+  <Card
+    title="Database-Driven Config"
+    href="/docs/smart-charge-engine/database-config"
+    description="Store panel/charger config in DB with zero-DB hot path, admin API, and clustered deployment."
+  />
+</Cards>

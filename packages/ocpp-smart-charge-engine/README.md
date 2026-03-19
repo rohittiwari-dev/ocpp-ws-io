@@ -34,10 +34,10 @@ It is **completely library-agnostic**. It does not care whether you use `ocpp-ws
 
 | Guide | Description |
 |---|---|
-| [Grid & Load Management](./docs/grid-and-load-management.md) | Multi-panel sites, mixed fleets, hierarchical grid, OCPP profile types |
-| [ocpp-ws-io + Express Example](./docs/ocpp-ws-io-express-example.md) | Full CSMS integration — correct API usage, REST admin endpoints, auto-dispatch |
-| [Charging Strategies](./docs/strategies.md) | Equal Share, Priority, Time-of-Use, runtime swap, custom strategy |
-| [Database-Driven Config](./docs/database-driven-config.md) | Store panel/charger config in DB — engine registry, hot-reload, charger reassignment |
+| [Grid & Load Management](https://ocpp-ws-io.rohittiwari.me/docs/smart-charge-engine/grid-and-load-management) | Multi-panel sites, mixed fleets, hierarchical grid, OCPP profile types |
+| [ocpp-ws-io + Express Example](https://ocpp-ws-io.rohittiwari.me/docs/smart-charge-engine/express-integration) | Full CSMS integration — correct API usage, REST admin endpoints, auto-dispatch |
+| [Charging Strategies](https://ocpp-ws-io.rohittiwari.me/docs/smart-charge-engine/strategies) | Equal Share, Priority, Time-of-Use, runtime swap, custom strategy |
+| [Database-Driven Config](https://ocpp-ws-io.rohittiwari.me/docs/smart-charge-engine/database-config) | Store panel/charger config in DB — engine registry, hot-reload, charger reassignment |
 
 ---
 

@@ -1,23 +1,71 @@
 {
   "name": "ocpp-protocol-proxy",
-  "version": "0.1.0",
-  "description": "Any-to-any OCPP protocol translation proxy",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/rohittiwari-dev/ocpp-ws-io"
-  },
+  "version": "0.1.1",
+  "description": "Transport-agnostic OCPP version translation proxy — translate any OCPP version to any other with pluggable middleware, stateful sessions, and spec-compliant presets.",
   "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./presets": {
+      "types": "./dist/presets/index.d.ts",
+      "import": "./dist/presets/index.mjs",
+      "require": "./dist/presets/index.js"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/ocpp-ws-io.adapter.d.ts",
+      "import": "./dist/adapters/ocpp-ws-io.adapter.mjs",
+      "require": "./dist/adapters/ocpp-ws-io.adapter.js"
+    }
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run"
   },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "ocpp",
+    "ocpp1.6",
+    "ocpp2.0.1",
+    "ocpp2.1",
+    "protocol-proxy",
+    "protocol-translation",
+    "ev-charging",
+    "csms",
+    "evse",
+    "charge-point",
+    "middleware",
+    "version-translation",
+    "electric-vehicle",
+    "e-mobility",
+    "typescript"
+  ],
+  "author": "Rohit Tiwari <rohit@rohittiwari.me>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rohittiwari-dev/ocpp-ws-io.git",
+    "directory": "packages/ocpp-protocol-proxy"
+  },
+  "bugs": {
+    "url": "https://github.com/rohittiwari-dev/ocpp-ws-io/issues"
+  },
+  "homepage": "https://ocpp-ws-io.rohittiwari.me/docs/protocol-proxy",
   "dependencies": {
     "ocpp-ws-io": "*"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "devDependencies": {
     "@types/node": "^20.19.35",

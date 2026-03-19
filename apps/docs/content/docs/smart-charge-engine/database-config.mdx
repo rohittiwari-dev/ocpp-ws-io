@@ -1,7 +1,17 @@
-# Database-Driven Grid Configuration
-## `ocpp-smart-charge-engine`
+---
+title: Database-Driven Config
+description: Store panel and charger config in your database — zero-DB hot path, admin REST API, hot-reload, and clustered deployments.
+---
 
-> **Core principle:** The DB is the source of truth for configuration. The engine + in-memory registries are the runtime layer. **The DB is never touched during the transaction hot path.**
+import { Callout } from "fumadocs-ui/components/callout";
+
+# Database-Driven Grid Configuration
+
+<Callout type="important">
+  **Core principle:** The DB is the source of truth for configuration. The
+  engine + in-memory registries are the runtime layer. **The DB is never
+  touched during the transaction hot path.**
+</Callout>
 
 ---
 
@@ -25,7 +35,7 @@
 ┌─────────────────────────────────────────────────────────────┐
 │  SmartChargingEngine per panel                              │
 │  Stateless calculator — runs allocation algorithm           │
-│  Calls dispatcher → client.call('SetChargingProfile', ...)  │
+│  Calls dispatcher → client.call('SetChargingProfile', ...) │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -67,13 +77,12 @@ CREATE TABLE panel_config_history (
 
 ## Types
 
-```typescript
-// types/grid.ts
+```typescript title="types/grid.ts"
 export interface PanelConfig {
   id: string;
   name: string;
   maxKw: number;
-  algorithm: 'EQUAL_SHARE' | 'PRIORITY' | 'TIME_OF_USE';
+  algorithm: "EQUAL_SHARE" | "PRIORITY" | "TIME_OF_USE";
   safetyPct: number;
 }
 
@@ -93,12 +102,11 @@ export interface ChargerConfig {
 
 All DB data is loaded once and cached here. Zero DB access in the hot path.
 
-```typescript
-// grid/registry.ts
-import { SmartChargingEngine } from 'ocpp-smart-charge-engine';
-import type { ChargerConfig, PanelConfig } from '../types/grid.js';
-import type { OCPPServerClient } from 'ocpp-ws-io';
-import { makeDispatcher, makeClearDispatcher } from './dispatchers.js';
+```typescript title="grid/registry.ts"
+import { SmartChargingEngine } from "ocpp-smart-charge-engine";
+import type { ChargerConfig, PanelConfig } from "../types/grid.js";
+import type { OCPPServerClient } from "ocpp-ws-io";
+import { makeDispatcher, makeClearDispatcher } from "./dispatchers.js";
 
 export class GridRegistry {
   /** panelId → engine */
@@ -111,9 +119,8 @@ export class GridRegistry {
   // ── Bootstrap ──────────────────────────────────────────────
 
   async load(panels: PanelConfig[], chargers: ChargerConfig[]) {
-    // Build engines
     for (const panel of panels) {
-      if (!panel.maxKw || panel.maxKw <= 0) continue; // skip malformed rows
+      if (!panel.maxKw || panel.maxKw <= 0) continue;
 
       const engine = new SmartChargingEngine({
         siteId: panel.id,
@@ -125,16 +132,17 @@ export class GridRegistry {
         clearDispatcher: makeClearDispatcher(panel.id, this._clients),
       });
 
-      engine.on('dispatchError', (err, session) => {
-        console.error(`[${panel.id}] Dispatch failed for ${session.clientId}:`, err.message);
-        // emit to your monitoring/alerting system here
+      engine.on("dispatchError", (err, session) => {
+        console.error(
+          `[${panel.id}] Dispatch failed for ${session.clientId}:`,
+          err.message,
+        );
       });
 
       this._engines.set(panel.id, engine);
       engine.startAutoDispatch(60_000);
     }
 
-    // Cache charger config
     for (const charger of chargers) {
       this._chargers.set(charger.identity, charger);
     }
@@ -166,7 +174,7 @@ export class GridRegistry {
     return this._engines.get(cfg.panelId);
   }
 
-  // ── Config reload — called by admin API or event listener ──
+  // ── Config reload — called by admin API ────────────────────
 
   reloadPanel(panel: PanelConfig) {
     const engine = this._engines.get(panel.id);
@@ -178,7 +186,6 @@ export class GridRegistry {
 
   reloadCharger(charger: ChargerConfig) {
     this._chargers.set(charger.identity, charger);
-    // Active session picks up new values on next dispatch cycle automatically
   }
 
   // ── Graceful shutdown ──────────────────────────────────────
@@ -195,67 +202,13 @@ export const registry = new GridRegistry();
 
 ---
 
-## Dispatchers
-
-```typescript
-// grid/dispatchers.ts
-import type { OCPPServerClient } from 'ocpp-ws-io';
-import { buildOcpp16Profile, buildOcpp201Profile } from 'ocpp-smart-charge-engine/builders';
-import type { DispatchPayload, ClearDispatchPayload } from 'ocpp-smart-charge-engine';
-
-export function makeDispatcher(
-  panelId: string,
-  clients: Map<string, OCPPServerClient>,
-) {
-  return async ({ clientId, connectorId, sessionProfile }: DispatchPayload) => {
-    const client = clients.get(clientId);
-    if (!client) return; // charger disconnected between dispatch cycles — fine, skip
-
-    try {
-      const protocol = client.protocol as 'ocpp1.6' | 'ocpp2.0.1';
-
-      await client.call(
-        'SetChargingProfile',
-        protocol === 'ocpp1.6'
-          ? { connectorId, csChargingProfiles: buildOcpp16Profile(sessionProfile) }
-          : { evseId: connectorId, chargingProfile: buildOcpp201Profile(sessionProfile) },
-      );
-    } catch (err) {
-      // Throw so engine emits 'dispatchError' — logged in registry.load()
-      throw err;
-    }
-  };
-}
-
-export function makeClearDispatcher(
-  panelId: string,
-  clients: Map<string, OCPPServerClient>,
-) {
-  return async ({ clientId, connectorId }: ClearDispatchPayload) => {
-    const client = clients.get(clientId);
-    if (!client) return;
-
-    const protocol = client.protocol as 'ocpp1.6' | 'ocpp2.0.1';
-    await client.call(
-      'ClearChargingProfile',
-      protocol === 'ocpp1.6'
-        ? { connectorId, chargingProfilePurpose: 'TxProfile', stackLevel: 0 }
-        : { chargingProfileCriteria: { evseId: connectorId, chargingProfilePurpose: 'TxProfile' } },
-    ).catch(() => {}); // best-effort — charger may already be done
-  };
-}
-```
-
----
-
 ## Repository — DB Access Layer
 
 DB calls happen here only. Never called from the transaction path.
 
-```typescript
-// grid/repository.ts
-import type { Database } from 'your-db-client';
-import type { ChargerConfig, PanelConfig } from '../types/grid.js';
+```typescript title="grid/repository.ts"
+import type { Database } from "your-db-client";
+import type { ChargerConfig, PanelConfig } from "../types/grid.js";
 
 export class GridRepository {
   constructor(private readonly db: Database) {}
@@ -278,18 +231,25 @@ export class GridRepository {
     );
   }
 
-  async updatePanel(id: string, patch: Partial<PanelConfig>): Promise<PanelConfig> {
+  async updatePanel(
+    id: string,
+    patch: Partial<PanelConfig>,
+  ): Promise<PanelConfig> {
     return this.db.queryOne<PanelConfig>(
       `UPDATE panels
           SET max_kw = COALESCE($1, max_kw),
               algorithm = COALESCE($2, algorithm)
         WHERE id = $3
-      RETURNING id, name, max_kw as "maxKw", algorithm, safety_pct as "safetyPct"`,
+      RETURNING id, name, max_kw as "maxKw", algorithm,
+                safety_pct as "safetyPct"`,
       [patch.maxKw, patch.algorithm, id],
     );
   }
 
-  async updateCharger(identity: string, patch: Partial<ChargerConfig>): Promise<ChargerConfig> {
+  async updateCharger(
+    identity: string,
+    patch: Partial<ChargerConfig>,
+  ): Promise<ChargerConfig> {
     return this.db.queryOne<ChargerConfig>(
       `UPDATE chargers
           SET panel_id = COALESCE($1, panel_id),
@@ -307,22 +267,23 @@ export class GridRepository {
 
 ## App Startup
 
-```typescript
-// app.ts
-import { registry } from './grid/registry.js';
-import { GridRepository } from './grid/repository.js';
-import { db } from './db.js';
+```typescript title="app.ts"
+import { registry } from "./grid/registry.js";
+import { GridRepository } from "./grid/repository.js";
+import { db } from "./db.js";
 
 const repo = new GridRepository(db);
 
 async function bootstrap() {
-  // 1. Load all config from DB into the registry (one-time, at startup)
+  // 1. Load all config from DB into the registry (one-time)
   const [panels, chargers] = await Promise.all([
     repo.loadAllPanels(),
     repo.loadAllChargers(),
   ]);
   await registry.load(panels, chargers);
-  console.log(`Grid registry loaded: ${panels.length} panels, ${chargers.length} chargers`);
+  console.log(
+    `Grid registry loaded: ${panels.length} panels, ${chargers.length} chargers`,
+  );
 
   // 2. Start OCPP server and HTTP server
   // ...
@@ -333,50 +294,47 @@ bootstrap();
 
 ---
 
-## OCPP Message Handlers — Zero DB Calls
+## OCPP Handlers — Zero DB Calls
 
 All lookups are O(1) in-memory via the registry:
 
 ```typescript
-server.route('/ocpp/:identity')
-  .on('client', (client) => {
-    registry.registerClient(client);
-    client.once('close', () => registry.unregisterClient(client.identity));
+server.route("/ocpp/:identity").on("client", (client) => {
+  registry.registerClient(client);
+  client.once("close", () => registry.unregisterClient(client.identity));
 
-    client.handle('ocpp1.6', 'StartTransaction', async (ctx) => {
-      // O(1) in-memory lookup — no DB
-      const engine = registry.getEngineForCharger(client.identity);
-      const cfg = registry.getChargerConfig(client.identity);
+  client.handle("ocpp1.6", "StartTransaction", async (ctx) => {
+    // O(1) in-memory lookup — no DB
+    const engine = registry.getEngineForCharger(client.identity);
+    const cfg = registry.getChargerConfig(client.identity);
 
-      if (engine && cfg) {
-        engine.addSession({
-          transactionId: ctx.payload.transactionId,
-          clientId: client.identity,
-          connectorId: ctx.payload.connectorId,
-          maxHardwarePowerKw: cfg.maxHardwareKw,
-          minChargeRateKw: cfg.minChargeRateKw,
-          priority: cfg.priority,
-        });
-        await engine.dispatch();
-      }
-
-      return {
-        idTagInfo: { status: 'Accepted' },
+    if (engine && cfg) {
+      engine.addSession({
         transactionId: ctx.payload.transactionId,
-      };
-    });
+        clientId: client.identity,
+        connectorId: ctx.payload.connectorId,
+        maxHardwarePowerKw: cfg.maxHardwareKw,
+        minChargeRateKw: cfg.minChargeRateKw,
+        priority: cfg.priority,
+      });
+      await engine.dispatch();
+    }
 
-    client.handle('ocpp1.6', 'StopTransaction', async (ctx) => {
-      const engine = registry.getEngineForCharger(client.identity);
-      if (engine) {
-        engine.safeRemoveSession(ctx.payload.transactionId);
-        await engine.dispatch();
-      }
-      return { idTagInfo: { status: 'Accepted' } };
-    });
-
-    // ... BootNotification, Heartbeat, StatusNotification, etc.
+    return {
+      idTagInfo: { status: "Accepted" },
+      transactionId: ctx.payload.transactionId,
+    };
   });
+
+  client.handle("ocpp1.6", "StopTransaction", async (ctx) => {
+    const engine = registry.getEngineForCharger(client.identity);
+    if (engine) {
+      engine.safeRemoveSession(ctx.payload.transactionId);
+      await engine.dispatch();
+    }
+    return { idTagInfo: { status: "Accepted" } };
+  });
+});
 ```
 
 ---
@@ -387,15 +345,15 @@ server.route('/ocpp/:identity')
 // Write to DB first, then hot-reload the registry in-memory
 // Zero downtime, no restart required
 
-app.put('/api/panels/:id', async (req, res) => {
+app.put("/api/panels/:id", async (req, res) => {
   const updated = await repo.updatePanel(req.params.id, req.body);
-  registry.reloadPanel(updated);       // in-memory sync, triggers redispatch
+  registry.reloadPanel(updated); // in-memory sync, triggers redispatch
   res.json({ ok: true, panel: updated });
 });
 
-app.put('/api/chargers/:identity', async (req, res) => {
+app.put("/api/chargers/:identity", async (req, res) => {
   const updated = await repo.updateCharger(req.params.identity, req.body);
-  registry.reloadCharger(updated);     // in-memory sync
+  registry.reloadCharger(updated); // in-memory sync
   res.json({ ok: true, charger: updated });
 });
 ```
@@ -408,31 +366,39 @@ In a clustered CSMS, a charger connects to **one node**. Other nodes don't hold 
 
 ```typescript
 // On config change — publish to all nodes
-redis.publish('panel:config:updated', JSON.stringify(updatedPanel));
+redis.publish("panel:config:updated", JSON.stringify(updatedPanel));
 
 // Each node subscribes and reloads its own registry
-redis.subscribe('panel:config:updated', (msg) => {
+redis.subscribe("panel:config:updated", (msg) => {
   const panel = JSON.parse(msg) as PanelConfig;
   registry.reloadPanel(panel);
   // Only affects sessions the engine on THIS node holds
 });
 ```
 
-The engine itself remains **node-local** — it only knows about sessions connected to that node. This is correct: dispatching `SetChargingProfile` requires a live WebSocket, which only exists on the node the charger connected to.
+<Callout type="info">
+  The engine itself remains **node-local** — it only knows about sessions
+  connected to that node. This is correct: dispatching `SetChargingProfile`
+  requires a live WebSocket, which only exists on the node the charger
+  connected to.
+</Callout>
 
 ---
 
 ## What NOT to Do
 
 ```typescript
-// ❌ DB call in the hot path — per transaction query kills throughput at scale
-client.handle('ocpp1.6', 'StartTransaction', async (ctx) => {
-  const charger = await db.query('SELECT * FROM chargers WHERE identity = ?', [client.identity]);
-  // ^ This runs on every StartTransaction. Under load: connection pool exhaustion.
+// ❌ DB call in the hot path — per transaction query kills throughput
+client.handle("ocpp1.6", "StartTransaction", async (ctx) => {
+  const charger = await db.query(
+    "SELECT * FROM chargers WHERE identity = ?",
+    [client.identity],
+  );
+  // ^ Runs on every StartTransaction. Under load: connection pool exhaustion.
 });
 
 // ✅ Use the registry instead — O(1), no I/O
-client.handle('ocpp1.6', 'StartTransaction', async (ctx) => {
-  const cfg = registry.getChargerConfig(client.identity); // in-memory, instant
+client.handle("ocpp1.6", "StartTransaction", async (ctx) => {
+  const cfg = registry.getChargerConfig(client.identity); // instant
 });
 ```
