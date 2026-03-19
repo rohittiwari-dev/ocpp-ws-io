@@ -1,0 +1,160 @@
+# Grid & Load Management
+## `ocpp-smart-charge-engine`
+
+---
+
+## How Real Sites Are Structured
+
+A charging site is rarely one flat pool of power. Reality:
+
+```
+Utility Grid
+    │
+    ▼
+Main Site Breaker (e.g., 250kW)
+    │
+    ├──► Sub-panel A: Floor 1     (80kW) ──► CP-01, CP-02, CP-03, CP-04
+    ├──► Sub-panel B: Floor 2     (80kW) ──► CP-05, CP-06, CP-07, CP-08
+    ├──► Sub-panel C: VIP/Dedicated(50kW) ──► CP-09, CP-10  (NOT load-balanced)
+    └──► Sub-panel D: Employee Lot (40kW) ──► CP-11, CP-12
+```
+
+---
+
+## Rule 1 — Not in the Engine = Not Load Balanced
+
+The engine only manages sessions you explicitly register via `addSession()`. Simply skip `addSession()` for chargers you don't want managed.
+
+```typescript
+server.route('/ocpp/:identity').on('client', (client) => {
+  client.handle('ocpp1.6', 'StartTransaction', async (ctx) => {
+    if (!isVipCharger(client.identity)) {
+      engine.addSession({ ... });
+      await engine.dispatch();
+    }
+    // VIP chargers: no addSession → engine ignores, charger runs at full speed
+    return { idTagInfo: { status: 'Accepted' }, transactionId: ctx.payload.transactionId };
+  });
+});
+```
+
+---
+
+## Rule 2 — One Engine Per Sub-panel
+
+Each engine manages one independent power pool. Create one per sub-panel:
+
+```typescript
+const engineFloor1 = new SmartChargingEngine({ siteId: 'FLOOR-1', maxGridPowerKw: 80, dispatcher: ... });
+const engineFloor2 = new SmartChargingEngine({ siteId: 'FLOOR-2', maxGridPowerKw: 80, dispatcher: ... });
+const engineEmployee = new SmartChargingEngine({
+  siteId: 'EMPLOYEE', maxGridPowerKw: 40,
+  algorithm: Strategies.PRIORITY, dispatcher: ...
+});
+
+function getEngine(clientId: string) {
+  if (FLOOR1_CHARGERS.has(clientId)) return engineFloor1;
+  if (FLOOR2_CHARGERS.has(clientId)) return engineFloor2;
+  if (EMPLOYEE_CHARGERS.has(clientId)) return engineEmployee;
+  return null; // VIP — no engine
+}
+```
+
+---
+
+## Rule 3 — Hardware Caps Per Session
+
+The engine never assigns more than a charger can physically deliver:
+
+```typescript
+engine.addSession({
+  transactionId: tx.id,
+  clientId: 'CP-01',
+  maxHardwarePowerKw: 22,       // charger hardware limit
+  maxEvAcceptancePowerKw: 11,   // EV acceptance limit
+  minChargeRateKw: 1.4,         // IEC 61851 minimum (6A × 230V)
+  phases: 3,
+});
+```
+
+---
+
+## Rule 4 — OCPP Profile Types
+
+| Purpose | Scope | Use Case |
+|---|---|---|
+| `TxProfile` | Per transaction | Normal load balancing (engine default) |
+| `TxDefaultProfile` | All future transactions on connector | Pre-set cap before car connects |
+| `ChargePointMaxProfile` | Entire station | Hard limit regardless of any transaction |
+
+```typescript
+// Hard cap on a station (connectorId: 0 = whole station in OCPP 1.6)
+buildOcpp16Profile(sessionProfile, {
+  purpose: 'ChargePointMaxProfile',
+  stackLevel: 0,
+})
+```
+
+---
+
+## Rule 5 — Hierarchical Grid (Master + Sub-panels)
+
+A master engine enforces a site-wide limit. Its dispatcher updates sub-panel engine budgets instead of sending OCPP commands:
+
+```typescript
+const masterEngine = new SmartChargingEngine({
+  siteId: 'SITE-MASTER',
+  maxGridPowerKw: 200,
+  dispatcher: async ({ clientId, sessionProfile }) => {
+    const subEngine = subPanelEngines.get(clientId);
+    if (subEngine) {
+      subEngine.setGridLimit(sessionProfile.allocatedKw);
+      await subEngine.dispatch();
+    }
+  },
+});
+
+// Each sub-panel is a "session" in the master engine
+masterEngine.addSession({ transactionId: 'floor1', clientId: 'PANEL-FLOOR-1', maxHardwarePowerKw: 80 });
+masterEngine.addSession({ transactionId: 'floor2', clientId: 'PANEL-FLOOR-2', maxHardwarePowerKw: 80 });
+masterEngine.startAutoDispatch(60_000); // master rebalances every 60s
+```
+
+---
+
+## Scenario Reference
+
+| Site Layout | Solution |
+|---|---|
+| Single pool of chargers | 1 engine, all sessions registered |
+| Chargers on dedicated lines | Don't call `addSession()` for them |
+| Sub-panels with own breakers | 1 engine per sub-panel |
+| Mixed strategies | Different engine instances with different `algorithm` |
+| Site-wide + sub-panel limits | Master engine updates `setGridLimit()` on sub-engines |
+| Dynamic grid (utility DR signal) | `engine.setGridLimit(newKw)` at runtime |
+| VIP / priority chargers | `PRIORITY` strategy with `priority` per session |
+| EV minimum charge requirement | `minChargeRateKw` per session |
+| Time-based pricing | `TIME_OF_USE` strategy + `startAutoDispatch()` |
+
+---
+
+## OCPP Protocol Capabilities
+
+| Feature | OCPP 1.6 | OCPP 2.0.1 / 2.1 |
+|---|---|---|
+| Per-transaction profile (`TxProfile`) | ✅ | ✅ |
+| Station-wide hard cap | ✅ `ChargePointMaxProfile` | ✅ `ChargingStationMaxProfile` |
+| Per-connector default (`TxDefaultProfile`) | ✅ | ✅ |
+| Multiple schedule periods | ✅ | ✅ |
+| Multiple schedule arrays per profile | ❌ | ✅ |
+| V2G / discharge | ❌ | ✅ (2.1 only) |
+| Stack level profile ordering | ✅ | ✅ |
+| `connectorId: 0` (whole station) | ✅ | Replaced by `evseId` model |
+
+> **Stack levels**: A `ChargePointMaxProfile` at `stackLevel: 0` acts as a hard ceiling, and a `TxProfile` at `stackLevel: 1` operates within it. Both can coexist.
+
+---
+
+## Full Example
+
+See [ocpp-ws-io + Express Integration](./ocpp-ws-io-express-example.md) for a complete multi-sub-panel example with OCPP 1.6 and 2.0.1 handlers, a REST admin API, and auto-dispatch.

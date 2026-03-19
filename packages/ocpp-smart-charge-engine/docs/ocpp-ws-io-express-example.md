@@ -1,0 +1,357 @@
+# ocpp-ws-io + Express Integration Example
+## `ocpp-smart-charge-engine`
+
+A complete CSMS example with:
+- **Express** — REST admin API
+- **ocpp-ws-io** — OCPP WebSocket server
+- **2 sub-panels** (Floor 1 = 80kW EQUAL_SHARE, Floor 2 = 80kW PRIORITY)
+- **VIP chargers** on a dedicated circuit (not load-balanced)
+- **Auto-dispatch** every 60 seconds
+
+---
+
+## Installation
+
+```bash
+npm install ocpp-ws-io ocpp-smart-charge-engine express
+npm install -D @types/express
+```
+
+---
+
+## Full Code
+
+```typescript
+import express from 'express';
+import { createServer } from 'node:http';
+import { OCPPServer } from 'ocpp-ws-io';
+import { SmartChargingEngine, Strategies } from 'ocpp-smart-charge-engine';
+import {
+  buildOcpp16Profile,
+  buildOcpp201Profile,
+} from 'ocpp-smart-charge-engine/builders';
+
+// ─────────────────────────────────────────
+// 1. Site layout
+// ─────────────────────────────────────────
+
+const FLOOR1_CHARGERS = new Set(['CP-01', 'CP-02', 'CP-03', 'CP-04']);
+const FLOOR2_CHARGERS = new Set(['CP-05', 'CP-06', 'CP-07', 'CP-08']);
+// CP-09, CP-10 → dedicated VIP line, never added to any engine
+
+// Live client references for outbound calls (SetChargingProfile)
+const connectedClients = new Map<string, import('ocpp-ws-io').OCPPServerClient>();
+
+// ─────────────────────────────────────────
+// 2. OCPP server
+// ─────────────────────────────────────────
+
+const server = new OCPPServer({
+  protocols: ['ocpp1.6', 'ocpp2.0.1'],
+});
+
+// ─────────────────────────────────────────
+// 3. Dispatcher factories
+//    Use client.call() — not safeSendToClient()
+// ─────────────────────────────────────────
+
+function makeDispatcher(siteId: string) {
+  return async ({ clientId, connectorId, sessionProfile }) => {
+    const client = connectedClients.get(clientId);
+    if (!client) return;
+    const protocol = client.protocol as 'ocpp1.6' | 'ocpp2.0.1';
+
+    if (protocol === 'ocpp1.6') {
+      await client.call('SetChargingProfile', {
+        connectorId,
+        csChargingProfiles: buildOcpp16Profile(sessionProfile),
+      });
+    } else {
+      await client.call('SetChargingProfile', {
+        evseId: connectorId,
+        chargingProfile: buildOcpp201Profile(sessionProfile),
+      });
+    }
+    console.log(`[${siteId}] ✅ ${clientId} → ${sessionProfile.allocatedKw}kW`);
+  };
+}
+
+function makeClearDispatcher(siteId: string) {
+  return async ({ clientId, connectorId }) => {
+    const client = connectedClients.get(clientId);
+    if (!client) return;
+    const protocol = client.protocol as 'ocpp1.6' | 'ocpp2.0.1';
+
+    if (protocol === 'ocpp1.6') {
+      await client.call('ClearChargingProfile', {
+        connectorId,
+        chargingProfilePurpose: 'TxProfile',
+        stackLevel: 0,
+      });
+    } else {
+      await client.call('ClearChargingProfile', {
+        chargingProfileCriteria: {
+          evseId: connectorId,
+          chargingProfilePurpose: 'TxProfile',
+        },
+      });
+    }
+    console.log(`[${siteId}] 🧹 Cleared profile for ${clientId}`);
+  };
+}
+
+// ─────────────────────────────────────────
+// 4. One engine per sub-panel
+// ─────────────────────────────────────────
+
+const engineFloor1 = new SmartChargingEngine({
+  siteId: 'FLOOR-1',
+  maxGridPowerKw: 80,
+  safetyMarginPct: 5,
+  algorithm: Strategies.EQUAL_SHARE,
+  autoClearOnRemove: true,
+  dispatcher: makeDispatcher('FLOOR-1'),
+  clearDispatcher: makeClearDispatcher('FLOOR-1'),
+});
+
+const engineFloor2 = new SmartChargingEngine({
+  siteId: 'FLOOR-2',
+  maxGridPowerKw: 80,
+  safetyMarginPct: 5,
+  algorithm: Strategies.PRIORITY, // fleet vehicles get priority
+  autoClearOnRemove: true,
+  dispatcher: makeDispatcher('FLOOR-2'),
+  clearDispatcher: makeClearDispatcher('FLOOR-2'),
+});
+
+function getEngine(clientId: string) {
+  if (FLOOR1_CHARGERS.has(clientId)) return engineFloor1;
+  if (FLOOR2_CHARGERS.has(clientId)) return engineFloor2;
+  return null; // VIP / dedicated — not managed
+}
+
+// ─────────────────────────────────────────
+// 5. Auto-dispatch every 60s
+// ─────────────────────────────────────────
+
+engineFloor1.startAutoDispatch(60_000);
+engineFloor2.startAutoDispatch(60_000);
+
+engineFloor1.on('dispatched', (p) => console.log(`[FLOOR-1] ${p.length} profiles dispatched`));
+engineFloor2.on('dispatched', (p) => console.log(`[FLOOR-2] ${p.length} profiles dispatched`));
+engineFloor1.on('dispatchError', (e) => console.error(`[FLOOR-1] Dispatch error`, e));
+engineFloor2.on('dispatchError', (e) => console.error(`[FLOOR-2] Dispatch error`, e));
+
+// ─────────────────────────────────────────
+// 6. OCPP message handlers
+//
+//  ⚠  ocpp-ws-io API:
+//     server.route('/ocpp/:identity').on('client', client => {
+//       client.handle(version, method, ctx => returnResponse)
+//     })
+//
+//  The handler RETURNS the response — it does NOT call respond()
+// ─────────────────────────────────────────
+
+server.route('/ocpp/:identity')
+  .on('client', (client) => {
+    // Store client for outbound OCPP calls (SetChargingProfile)
+    connectedClients.set(client.identity, client);
+    client.once('close', () => connectedClients.delete(client.identity));
+
+    // ── OCPP 1.6 ──────────────────────────────────────────
+
+    client.handle('ocpp1.6', 'BootNotification', () => ({
+      currentTime: new Date().toISOString(),
+      interval: 30,
+      status: 'Accepted',
+    }));
+
+    client.handle('ocpp1.6', 'Heartbeat', () => ({
+      currentTime: new Date().toISOString(),
+    }));
+
+    client.handle('ocpp1.6', 'StatusNotification', () => ({}));
+
+    client.handle('ocpp1.6', 'StartTransaction', async (ctx) => {
+      const engine = getEngine(client.identity);
+
+      if (engine) {
+        engine.addSession({
+          transactionId: ctx.payload.transactionId,
+          clientId: client.identity,
+          connectorId: ctx.payload.connectorId,
+          maxHardwarePowerKw: getChargerMaxKw(client.identity),
+          minChargeRateKw: 1.4,           // IEC 61851 minimum
+          priority: getChargerPriority(client.identity),
+        });
+        await engine.dispatch(); // immediately rebalance
+      }
+      // VIP chargers: no engine → no profile sent → full speed
+
+      return {
+        idTagInfo: { status: 'Accepted' },
+        transactionId: ctx.payload.transactionId,
+      };
+    });
+
+    client.handle('ocpp1.6', 'StopTransaction', async (ctx) => {
+      const engine = getEngine(client.identity);
+      if (engine) {
+        // autoClearOnRemove: true → engine sends ClearChargingProfile automatically
+        engine.safeRemoveSession(ctx.payload.transactionId);
+        await engine.dispatch(); // rebalance remaining sessions
+      }
+      return { idTagInfo: { status: 'Accepted' } };
+    });
+
+    // ── OCPP 2.0.1 ──────────────────────────────────────────
+
+    client.handle('ocpp2.0.1', 'BootNotification', () => ({
+      currentTime: new Date().toISOString(),
+      interval: 30,
+      status: 'Accepted',
+    }));
+
+    client.handle('ocpp2.0.1', 'Heartbeat', () => ({
+      currentTime: new Date().toISOString(),
+    }));
+
+    client.handle('ocpp2.0.1', 'TransactionEvent', async (ctx) => {
+      const engine = getEngine(client.identity);
+      const { eventType, transactionInfo, evse } = ctx.payload;
+
+      if (eventType === 'Started' && engine) {
+        engine.addSession({
+          transactionId: transactionInfo.transactionId,
+          clientId: client.identity,
+          connectorId: evse?.id ?? 1,
+          maxHardwarePowerKw: getChargerMaxKw(client.identity),
+          minChargeRateKw: 1.4,
+        });
+        await engine.dispatch();
+      }
+
+      if (eventType === 'Ended' && engine) {
+        engine.safeRemoveSession(transactionInfo.transactionId);
+        await engine.dispatch();
+      }
+
+      return { idTokenInfo: { status: 'Accepted' } };
+    });
+  });
+
+// ─────────────────────────────────────────
+// 7. Express REST API — grid control
+// ─────────────────────────────────────────
+
+const app = express();
+app.use(express.json());
+
+// GET /api/grid/status — snapshot of all sessions and config
+app.get('/api/grid/status', (_req, res) => {
+  res.json({
+    floor1: { ...engineFloor1.config, sessions: engineFloor1.getSessions() },
+    floor2: { ...engineFloor2.config, sessions: engineFloor2.getSessions() },
+  });
+});
+
+// POST /api/grid/limit — utility demand response: instantly cap and rebalance
+// Body: { floor: 1 | 2, limitKw: number }
+app.post('/api/grid/limit', async (req, res) => {
+  const { floor, limitKw } = req.body as { floor: 1 | 2; limitKw: number };
+  const engine = floor === 1 ? engineFloor1 : engineFloor2;
+  engine.setGridLimit(limitKw);
+  const profiles = await engine.dispatch();
+  res.json({ ok: true, updatedProfiles: profiles.length });
+});
+
+// POST /api/grid/algorithm — hot-swap strategy at runtime
+// Body: { floor: 1 | 2, algorithm: 'EQUAL_SHARE' | 'PRIORITY' | 'TIME_OF_USE' }
+app.post('/api/grid/algorithm', (req, res) => {
+  const { floor, algorithm } = req.body;
+  (floor === 1 ? engineFloor1 : engineFloor2).setAlgorithm(algorithm);
+  res.json({ ok: true });
+});
+
+// POST /api/grid/emergency — cut all panels by N%
+// Body: { reductionPct: number }
+app.post('/api/grid/emergency', async (req, res) => {
+  const { reductionPct } = req.body as { reductionPct: number };
+  const factor = 1 - reductionPct / 100;
+  engineFloor1.setGridLimit(engineFloor1.config.gridLimitKw * factor);
+  engineFloor2.setGridLimit(engineFloor2.config.gridLimitKw * factor);
+  await Promise.all([engineFloor1.dispatch(), engineFloor2.dispatch()]);
+  res.json({ ok: true, message: `Reduced all panels by ${reductionPct}%` });
+});
+
+// POST /api/grid/dispatch — manually trigger a rebalance
+app.post('/api/grid/dispatch', async (_req, res) => {
+  const [p1, p2] = await Promise.all([
+    engineFloor1.dispatch(),
+    engineFloor2.dispatch(),
+  ]);
+  res.json({ floor1: p1.length, floor2: p2.length });
+});
+
+// ─────────────────────────────────────────
+// 8. Start — Express and ocpp-ws-io share the same HTTP server
+// ─────────────────────────────────────────
+
+const httpServer = createServer(app);
+await server.listen(3000, '0.0.0.0', { server: httpServer });
+console.log('Server running on :3000');
+console.log('OCPP WebSocket: ws://your-server:3000/ocpp/<station-identity>');
+
+// ─────────────────────────────────────────
+// Helpers — replace with your DB lookups
+// ─────────────────────────────────────────
+
+function getChargerMaxKw(clientId: string): number {
+  const ratings: Record<string, number> = {
+    'CP-01': 22, 'CP-02': 22, 'CP-03': 11, 'CP-04': 7.4,
+    'CP-05': 50, 'CP-06': 50, 'CP-07': 22, 'CP-08': 22,
+  };
+  return ratings[clientId] ?? 22;
+}
+
+function getChargerPriority(clientId: string): number {
+  const priorities: Record<string, number> = {
+    'CP-05': 10, 'CP-06': 10,
+    'CP-07': 5,  'CP-08': 5,
+  };
+  return priorities[clientId] ?? 1;
+}
+```
+
+---
+
+## What Happens at Runtime
+
+```
+CP-01 connects (OCPP 1.6, 22kW) → Floor 1: 1 session → allocated 76kW (capped to 22kW)
+CP-02 connects (OCPP 1.6, 22kW) → Floor 1: 2 sessions → 38kW each (capped to 22kW)
+CP-03 connects (OCPP 2.0.1, 11kW) → Floor 1: 3 sessions → third capped at 11kW
+
+Utility DR signal:
+POST /api/grid/limit { floor: 1, limitKw: 50 }
+→ Floor 1 redispatched at 50kW effective
+→ Each session gets ~16.7kW → SetChargingProfile sent to all 3
+
+CP-01 leaves:
+StopTransaction → safeRemoveSession (autoClearOnRemove → ClearChargingProfile sent)
+→ engine.dispatch() → remaining 2 sessions rebalanced
+```
+
+---
+
+## Key API Points
+
+| What | How |
+|---|---|
+| Register session | `engine.addSession({ transactionId, clientId, connectorId, ... })` |
+| Remove session | `engine.safeRemoveSession(transactionId)` → triggers auto-clear if configured |
+| Send profile to charger | `client.call('SetChargingProfile', payload)` (via `connectedClients` map) |
+| Dynamic grid limit | `engine.setGridLimit(kw)` then `engine.dispatch()` |
+| Auto-rebalance | `engine.startAutoDispatch(ms)` |
+| Manual rebalance | `await engine.dispatch()` |

@@ -1,0 +1,86 @@
+{
+  "name": "ocpp-smart-charge-engine",
+  "version": "0.1.0-alpha",
+  "description": "Library-agnostic OCPP smart charging constraint solver. Works with ocpp-ws-io, raw WebSocket, or any OCPP implementation.",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./strategies": {
+      "types": "./dist/strategies/index.d.ts",
+      "import": "./dist/strategies/index.mjs",
+      "require": "./dist/strategies/index.js"
+    },
+    "./builders": {
+      "types": "./dist/builders.d.ts",
+      "import": "./dist/builders.mjs",
+      "require": "./dist/builders.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run build",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "npm run build && changeset publish",
+    "check": "biome check .",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "prepare": "husky"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "ocpp",
+    "ocpp1.6",
+    "ocpp2.0.1",
+    "smart-charging",
+    "ev-charging",
+    "csms",
+    "cpo",
+    "load-balancing",
+    "charging-profile",
+    "electric-vehicle",
+    "e-mobility",
+    "SetChargingProfile",
+    "energy-management",
+    "typescript"
+  ],
+  "author": "Rohit Tiwari <rohit@rohittiwari.me>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rohittiwari-dev/ocpp-smart-charge-engine.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rohittiwari-dev/ocpp-smart-charge-engine/issues"
+  },
+  "homepage": "https://github.com/rohittiwari-dev/ocpp-smart-charge-engine#readme",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.6",
+    "@changesets/cli": "^2.30.0",
+    "@commitlint/cli": "^20.4.3",
+    "@commitlint/config-conventional": "^20.4.3",
+    "@vitest/coverage-v8": "^4.0.18",
+    "cz-conventional-changelog": "^3.3.0",
+    "husky": "^9.1.7",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

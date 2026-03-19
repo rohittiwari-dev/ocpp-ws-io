@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { OCPPServer, OCPPClient } from "ocpp-ws-io";
 import { OCPPProtocolProxy } from "../src/proxy.js";
 import { OcppWsIoAdapter } from "../src/adapters/ocpp-ws-io.adapter.js";
-import { presets } from "../src/presets.js";
+import { presets } from "../src/presets/index.js";
 
 // Utility to get dynamic port
 const getPort = (srv: import("node:http").Server): number => {

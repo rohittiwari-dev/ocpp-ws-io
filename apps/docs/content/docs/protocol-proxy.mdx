@@ -1,0 +1,656 @@
+---
+title: Protocol Proxy
+description: Transport-agnostic OCPP version translation proxy — bridge legacy 1.6 chargers to modern 2.1 central systems with zero firmware changes.
+---
+
+import { Cards, Card } from "fumadocs-ui/components/card";
+import { Tab, Tabs } from "fumadocs-ui/components/tabs";
+import { Step, Steps } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+import { Mermaid } from "@/components/mermaid";
+
+# Protocol Proxy
+
+**`ocpp-protocol-proxy`** is a standalone package that translates OCPP messages between any two protocol versions — 1.6, 2.0.1, and 2.1 — in both directions. It sits between your charging station (EVSE) and central system (CSMS), rewriting message payloads, action names, and data types on the fly.
+
+<Callout type="info">
+  This package is **transport-agnostic**. The core translation engine has zero
+  dependency on WebSockets, HTTP, or Node.js. You bring the transport — we
+  handle the protocol semantics.
+</Callout>
+
+---
+
+## How It Works
+
+<Mermaid chart={`
+graph LR
+    subgraph EVSE["EVSE (OCPP 1.6)"]
+        CP[Charge Point]
+    end
+
+    subgraph Proxy["ocpp-protocol-proxy"]
+        direction TB
+        MW1["Pre Middleware"] --> TR["Translation Engine"] --> MW2["Post Middleware"]
+        TR --> SS["Session Store"]
+    end
+
+    subgraph CSMS["CSMS (OCPP 2.1)"]
+        CS[Central System]
+    end
+
+    CP -->|"StartTransaction<br/>(1.6 JSON)"| MW1
+    MW2 -->|"TransactionEvent<br/>(2.1 JSON)"| CS
+    CS -->|"RequestStopTransaction<br/>(2.1 JSON)"| MW1
+    MW2 -->|"RemoteStopTransaction<br/>(1.6 JSON)"| CP
+`} />
+
+The proxy intercepts every OCPP message and runs it through a **translation pipeline**:
+
+1. **Pre-middleware** — inspect or mutate the raw message before translation
+2. **Translation engine** — rewrites action names, payload fields, data types, and error codes using your registered mappings
+3. **Session store** — maintains stateful correlation (e.g., mapping 1.6 integer `transactionId` to 2.1 UUID strings)
+4. **Post-middleware** — inspect or mutate the translated message before forwarding
+
+---
+
+## Installation
+
+<Tabs items={["npm", "pnpm", "yarn", "bun"]}>
+  <Tab value="npm">```bash npm install ocpp-protocol-proxy ```</Tab>
+  <Tab value="pnpm">```bash pnpm add ocpp-protocol-proxy ```</Tab>
+  <Tab value="yarn">```bash yarn add ocpp-protocol-proxy ```</Tab>
+  <Tab value="bun">```bash bun add ocpp-protocol-proxy ```</Tab>
+</Tabs>
+
+### Peer Dependencies
+
+`ocpp-protocol-proxy` uses [`ocpp-ws-io`](https://npmjs.com/ocpp-ws-io) for the built-in WebSocket transport adapter. If you only use the core translation engine with a custom transport, `ocpp-ws-io` is not required at runtime.
+
+```bash
+npm install ocpp-ws-io ocpp-protocol-proxy
+```
+
+### Requirements
+
+- **Node.js** ≥ 18.0.0
+- **TypeScript** ≥ 5.0 (recommended)
+
+---
+
+## Getting Started
+
+<Steps>
+
+<Step>
+
+### Create the Proxy Instance
+
+```typescript title="proxy.ts"
+import { OCPPProtocolProxy } from "ocpp-protocol-proxy";
+
+const proxy = new OCPPProtocolProxy({
+  // The CSMS WebSocket endpoint you're forwarding to
+  upstreamEndpoint: "ws://your-csms.example.com:9000/ocpp",
+
+  // The OCPP version your CSMS speaks
+  upstreamProtocol: "ocpp2.1",
+});
+```
+
+The `OCPPProtocolProxy` is an `EventEmitter`. It manages the lifecycle of connections, translation, and middleware execution.
+
+| Option | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `upstreamEndpoint` | `string` | ✅ | WebSocket URL of the target CSMS |
+| `upstreamProtocol` | `string` | ✅ | OCPP version the CSMS expects (e.g., `"ocpp2.1"`) |
+| `sessionStore` | `ISessionStore` | ❌ | Custom session store (defaults to `InMemorySessionStore`) |
+| `middlewares` | `ProxyMiddleware[]` | ❌ | Array of middleware functions |
+
+</Step>
+
+<Step>
+
+### Load Translation Presets
+
+```typescript title="proxy.ts"
+import { presets } from "ocpp-protocol-proxy";
+
+// Load all OCPP 1.6 → 2.1 mappings (all 28 messages, all 6 profiles)
+proxy.translate(presets.ocpp16_to_ocpp21);
+```
+
+The `presets.ocpp16_to_ocpp21` object includes translation mappings for:
+- **Upstream** (EVSE→CSMS): `BootNotification`, `Authorize`, `StartTransaction`→`TransactionEvent`, `StopTransaction`, `MeterValues`, `StatusNotification`, `Heartbeat`, and more
+- **Downstream** (CSMS→EVSE): `RemoteStartTransaction`←`RequestStartTransaction`, `RemoteStopTransaction`←`RequestStopTransaction`, `ChangeAvailability`, `Reset`, `UnlockConnector`, `TriggerMessage`, `SetChargingProfile`, and more
+- **Responses**: Maps 2.1 response payloads back to 1.6 format
+- **Errors**: Maps 2.1 error codes to 1.6 equivalents
+
+</Step>
+
+<Step>
+
+### Attach a Transport Adapter
+
+```typescript title="proxy.ts"
+import { OcppWsIoAdapter } from "ocpp-protocol-proxy";
+
+const adapter = new OcppWsIoAdapter({
+  port: 9001,
+  protocols: ["ocpp1.6"],
+});
+
+await proxy.listenOnAdapter(adapter);
+
+console.log("Proxy listening on port 9001");
+// 1.6 chargers connect to ws://proxy-host:9001
+// Proxy translates and forwards to CSMS at ws://your-csms:9000
+```
+
+</Step>
+
+<Step>
+
+### Listen for Events
+
+```typescript title="proxy.ts"
+proxy.on("connection", (identity, protocol) => {
+  console.log(`${identity} connected via ${protocol}`);
+});
+
+proxy.on("disconnect", (identity) => {
+  console.log(`${identity} disconnected`);
+});
+
+proxy.on("translationError", (err, message, context) => {
+  console.error(`Translation failed for ${context.identity}:`, err.message);
+});
+
+proxy.on("middlewareError", (err, message, context) => {
+  console.error(`Middleware error for ${context.identity}:`, err.message);
+});
+```
+
+</Step>
+
+</Steps>
+
+---
+
+## Complete Example
+
+Here's a full, copy-pasteable example that sets up a proxy translating 1.6 chargers to a 2.1 CSMS:
+
+```typescript title="main.ts"
+import {
+  OCPPProtocolProxy,
+  OcppWsIoAdapter,
+  presets,
+} from "ocpp-protocol-proxy";
+
+async function main() {
+  // 1. Create the proxy targeting your 2.1 CSMS
+  const proxy = new OCPPProtocolProxy({
+    upstreamEndpoint: "ws://csms.example.com:9000/ocpp",
+    upstreamProtocol: "ocpp2.1",
+  });
+
+  // 2. Load all built-in translation presets
+  proxy.translate(presets.ocpp16_to_ocpp21);
+
+  // 3. Create a transport adapter that accepts 1.6 chargers
+  const adapter = new OcppWsIoAdapter({
+    port: 9001,
+    protocols: ["ocpp1.6"],
+  });
+
+  // 4. Wire up event listeners
+  proxy.on("connection", (identity, protocol) => {
+    console.log(`✅ ${identity} connected (${protocol})`);
+  });
+
+  proxy.on("disconnect", (identity) => {
+    console.log(`❌ ${identity} disconnected`);
+  });
+
+  proxy.on("translationError", (err, _msg, ctx) => {
+    console.error(`⚠️ Translation error [${ctx.identity}]:`, err.message);
+  });
+
+  // 5. Start listening
+  await proxy.listenOnAdapter(adapter);
+  console.log("🔌 OCPP Protocol Proxy running on port 9001");
+}
+
+main().catch(console.error);
+```
+
+Run it:
+
+```bash
+npx tsx main.ts
+```
+
+---
+
+## Selective Presets
+
+Don't need all 6 OCPP profiles? Import only what you need for **tree-shaking**:
+
+```typescript
+import {
+  corePreset,         // Core profile (mandatory) — 16 messages
+  smartChargingPreset, // Smart Charging — 3 messages
+  firmwarePreset,      // Firmware Management — 4 messages
+  reservationPreset,   // Reservation — 2 messages
+  localAuthPreset,     // Local Auth List — 2 messages
+} from "ocpp-protocol-proxy";
+
+// Register only the profiles you need
+proxy.translate(corePreset);
+proxy.translate(smartChargingPreset);
+```
+
+### Preset Coverage Table
+
+| Preset | OCPP Profile | Upstream Messages (1.6→2.1) | Downstream Messages (2.1→1.6) |
+| :--- | :--- | :--- | :--- |
+| `corePreset` | Core (mandatory) | `BootNotification`, `Heartbeat`, `Authorize`, `StatusNotification`, `StartTransaction`→`TransactionEvent`, `StopTransaction`→`TransactionEvent`, `MeterValues`→`TransactionEvent` | `RemoteStartTransaction`←`RequestStartTransaction`, `RemoteStopTransaction`←`RequestStopTransaction`, `ChangeAvailability`, `Reset`, `UnlockConnector`, `TriggerMessage` |
+| `smartChargingPreset` | Smart Charging | — | `SetChargingProfile`, `ClearChargingProfile`, `GetCompositeSchedule` |
+| `firmwarePreset` | Firmware Mgmt | `FirmwareStatusNotification`, `DiagnosticsStatusNotification`→`LogStatusNotification` | `UpdateFirmware`, `GetLog`→`GetDiagnostics` |
+| `reservationPreset` | Reservation | — | `ReserveNow`, `CancelReservation` |
+| `localAuthPreset` | Local Auth List | — | `GetLocalListVersion`, `SendLocalList` |
+
+---
+
+## Custom Translation Overrides
+
+Use presets as a base and override specific action mappings with your own business logic:
+
+```typescript
+proxy.translate({
+  // Spread all preset mappings
+  ...presets.ocpp16_to_ocpp21,
+
+  // Override specific upstream actions
+  upstream: {
+    ...presets.ocpp16_to_ocpp21.upstream,
+
+    // Custom StartTransaction handler with business logic
+    "ocpp1.6:StartTransaction": async (params, ctx) => {
+      // Access the session store for stateful logic
+      const customData = await ctx.session.get(ctx.identity, "myCustomKey");
+
+      console.log(`Custom StartTx for ${ctx.identity}`, params);
+
+      return {
+        action: "TransactionEvent",
+        payload: {
+          eventType: "Started",
+          timestamp: new Date().toISOString(),
+          triggerReason: "Authorized",
+          seqNo: 0,
+          transactionInfo: {
+            transactionId: crypto.randomUUID(),
+          },
+          // ... your custom field mapping
+        },
+      };
+    },
+  },
+});
+```
+
+### Writing a Translation Mapper
+
+Every mapper function receives two arguments:
+
+| Argument | Type | Description |
+| :--- | :--- | :--- |
+| `params` | `any` | The source message payload (e.g., OCPP 1.6 `StartTransaction` fields) |
+| `ctx` | `TranslationContext` | Context with `identity`, `sourceProtocol`, `targetProtocol`, and `session` |
+
+And returns a `TranslationResult`:
+
+```typescript
+type TranslationResult = {
+  action?: string; // Target action name (optional — keeps original if omitted)
+  payload: any;    // Translated payload
+};
+```
+
+Mappers can be **synchronous** or **async** — use async when you need to look up state from the session store.
+
+---
+
+## Middleware
+
+Middleware functions intercept messages at 4 lifecycle points. Use them for logging, validation, rate limiting, metrics, or custom mutations.
+
+### Middleware Lifecycle
+
+<Mermaid chart={`
+sequenceDiagram
+    participant EVSE
+    participant Pre as Pre Middleware
+    participant Engine as Translation Engine
+    participant Post as Post Middleware
+    participant CSMS
+
+    EVSE->>Pre: Raw 1.6 message
+    Pre->>Engine: (possibly mutated)
+    Engine->>Post: Translated 2.1 message
+    Post->>CSMS: (possibly mutated)
+
+    CSMS->>Pre: Raw 2.1 response
+    Pre->>Engine: (possibly mutated)
+    Engine->>Post: Translated 1.6 response
+    Post->>EVSE: (possibly mutated)
+`} />
+
+| Phase | Direction | When It Runs |
+| :--- | :--- | :--- |
+| `pre` | `upstream` | Before translating EVSE→CSMS calls |
+| `post` | `upstream` | After translating, before forwarding to CSMS |
+| `pre` | `response` | Before translating CSMS→EVSE responses |
+| `post` | `response` | After translating, before returning to EVSE |
+| `pre` | `downstream` | Before translating CSMS→EVSE calls |
+| `post` | `downstream` | After translating, before forwarding to EVSE |
+| `pre` | `error` | Before translating error responses |
+| `post` | `error` | After translating error responses |
+
+### Example: Logging Middleware
+
+```typescript
+import type { ProxyMiddleware } from "ocpp-protocol-proxy";
+
+const loggingMiddleware: ProxyMiddleware = async (
+  message,
+  context,
+  direction,
+  phase,
+) => {
+  console.log(
+    `[${new Date().toISOString()}] [${phase}] [${direction}] ` +
+    `[${context.identity}] ` +
+    `${context.sourceProtocol} → ${context.targetProtocol}`,
+    JSON.stringify(message, null, 2),
+  );
+
+  // Return undefined to pass the message through unchanged
+  return undefined;
+};
+
+const proxy = new OCPPProtocolProxy({
+  upstreamEndpoint: "ws://csms:9000",
+  upstreamProtocol: "ocpp2.1",
+  middlewares: [loggingMiddleware],
+});
+```
+
+### Example: Validation Middleware
+
+```typescript
+const validationMiddleware: ProxyMiddleware = async (
+  message,
+  context,
+  direction,
+  phase,
+) => {
+  if (phase !== "post") return undefined; // only validate after translation
+
+  // Reject messages missing required fields
+  if (message.type === 2 && !message.action) {
+    throw new Error(`Translated message for ${context.identity} has no action`);
+  }
+
+  return undefined;
+};
+```
+
+### Built-in Telemetry Middleware
+
+The package includes a `TelemetryMiddleware` that tracks translation latency via the session store:
+
+```typescript
+import { TelemetryMiddleware } from "ocpp-protocol-proxy";
+
+const proxy = new OCPPProtocolProxy({
+  upstreamEndpoint: "ws://csms:9000",
+  upstreamProtocol: "ocpp2.1",
+  middlewares: [TelemetryMiddleware],
+});
+```
+
+---
+
+## Session Store
+
+The proxy uses an `ISessionStore` to maintain state across correlated messages. This is critical for:
+
+- **Transaction ID mapping** — OCPP 1.6 uses auto-incrementing integers, OCPP 2.1 uses UUID strings
+- **Pending call correlation** — Linking `StartTransaction` to its `TransactionEventResponse`
+- **Custom state** — Store anything you need for your translation logic
+
+### Interface
+
+```typescript
+interface ISessionStore {
+  set(identity: string, key: string, value: any): Promise<void>;
+  get<T = any>(identity: string, key: string): Promise<T | undefined>;
+  delete(identity: string, key: string): Promise<void>;
+  clear(identity: string): Promise<void>;
+}
+```
+
+### Default: InMemorySessionStore
+
+Works out of the box for single-instance deployments. Data is lost on restart.
+
+```typescript
+import { InMemorySessionStore } from "ocpp-protocol-proxy";
+
+// This is the default — you don't need to pass it explicitly
+const proxy = new OCPPProtocolProxy({
+  upstreamEndpoint: "ws://csms:9000",
+  upstreamProtocol: "ocpp2.1",
+  sessionStore: new InMemorySessionStore(),
+});
+```
+
+### Custom: Redis Session Store
+
+For clustered/multi-instance deployments, implement `ISessionStore` with Redis:
+
+```typescript
+import type { ISessionStore } from "ocpp-protocol-proxy";
+import Redis from "ioredis";
+
+class RedisSessionStore implements ISessionStore {
+  private redis = new Redis();
+
+  private key(identity: string, key: string) {
+    return `ocpp-proxy:${identity}:${key}`;
+  }
+
+  async set(identity: string, key: string, value: any): Promise<void> {
+    await this.redis.set(this.key(identity, key), JSON.stringify(value));
+  }
+
+  async get<T = any>(identity: string, key: string): Promise<T | undefined> {
+    const raw = await this.redis.get(this.key(identity, key));
+    return raw ? JSON.parse(raw) as T : undefined;
+  }
+
+  async delete(identity: string, key: string): Promise<void> {
+    await this.redis.del(this.key(identity, key));
+  }
+
+  async clear(identity: string): Promise<void> {
+    const keys = await this.redis.keys(`ocpp-proxy:${identity}:*`);
+    if (keys.length) await this.redis.del(...keys);
+  }
+}
+```
+
+---
+
+## Custom Transport Adapter
+
+The proxy doesn't care how messages arrive. Implement `ITransportAdapter` and `IConnection` to use any transport:
+
+```typescript
+import type { ITransportAdapter, IConnection, OCPPMessage } from "ocpp-protocol-proxy";
+
+class MyCustomAdapter implements ITransportAdapter {
+  async listen(onConnection: (connection: IConnection) => void): Promise<void> {
+    // Set up your transport (MQTT, HTTP polling, gRPC, etc.)
+    // When a new client connects, create an IConnection and call:
+    onConnection({
+      identity: "CP-001",
+      protocol: "ocpp1.6",
+      async send(message: OCPPMessage) {
+        // Send the translated message to the client
+        return undefined;
+      },
+      onMessage(handler) {
+        // Register the handler for incoming messages
+      },
+      onClose(handler) {
+        // Register the handler for disconnections
+      },
+    });
+  }
+
+  async close(): Promise<void> {
+    // Clean up transport resources
+  }
+}
+```
+
+---
+
+## Events Reference
+
+`OCPPProtocolProxy` extends `EventEmitter` with these typed events:
+
+| Event | Callback Signature | When |
+| :--- | :--- | :--- |
+| `connection` | `(identity: string, protocol: string) => void` | New EVSE connects |
+| `disconnect` | `(identity: string) => void` | EVSE disconnects |
+| `translationError` | `(error: Error, message: OCPPMessage, context: TranslationContext) => void` | Translation mapper threw |
+| `middlewareError` | `(error: Error, message: OCPPMessage, context: TranslationContext) => void` | Middleware threw |
+
+<Callout type="warn">
+  Unlike generic Node.js `EventEmitter`, the proxy uses **specific event
+  names** (`translationError`, `middlewareError`) instead of the generic
+  `error` event. This prevents unhandled exception crashes when no listener is
+  registered.
+</Callout>
+
+---
+
+## Graceful Shutdown
+
+```typescript
+process.on("SIGTERM", async () => {
+  console.log("Shutting down proxy...");
+
+  // Disconnects all clients and closes all transport adapters
+  await proxy.close();
+
+  console.log("Proxy shut down cleanly.");
+  process.exit(0);
+});
+```
+
+The `close()` method:
+1. Disconnects all connected EVSE clients
+2. Closes all registered transport adapters
+3. Releases session store resources
+
+---
+
+## Architecture
+
+```
+ocpp-protocol-proxy/
+├── src/
+│   ├── core/
+│   │   ├── types.ts          # OCPPMessage, TranslationMap, ITransportAdapter, IConnection
+│   │   ├── translator.ts     # Pure translation engine (no side effects)
+│   │   └── session.ts        # ISessionStore interface + InMemorySessionStore
+│   ├── presets/
+│   │   ├── index.ts          # mergePresets() + combined presets.ocpp16_to_ocpp21
+│   │   ├── core.ts           # Core profile — 16 messages
+│   │   ├── smart-charging.ts # Smart Charging — 3 messages
+│   │   ├── firmware.ts       # Firmware Management — 4 messages
+│   │   ├── reservation.ts    # Reservation — 2 messages
+│   │   ├── local-auth.ts     # Local Auth List — 2 messages
+│   │   └── status-enums.ts   # StatusNotification enum mapping tables
+│   ├── adapters/
+│   │   └── ocpp-ws-io.adapter.ts  # WebSocket adapter via ocpp-ws-io
+│   ├── middlewares/
+│   │   └── telemetry.ts      # Latency tracking middleware
+│   ├── proxy.ts              # OCPPProtocolProxy orchestrator
+│   └── index.ts              # Public API exports
+└── test/
+    ├── proxy.test.ts         # Integration tests
+    └── presets/              # Unit tests for every preset module
+```
+
+---
+
+## OCPP Version Differences
+
+Understanding what the proxy translates:
+
+| Concept | OCPP 1.6 | OCPP 2.1 | Proxy Handles? |
+| :--- | :--- | :--- | :--- |
+| Transaction start | `StartTransaction` (CP→CS) | `TransactionEvent` (`eventType: "Started"`) | ✅ |
+| Transaction stop | `StopTransaction` (CP→CS) | `TransactionEvent` (`eventType: "Ended"`) | ✅ |
+| Meter readings | `MeterValues` (CP→CS) | `TransactionEvent` (`eventType: "Updated"`) | ✅ |
+| Transaction ID | Integer (assigned by CSMS) | UUID string (assigned by CP) | ✅ Bidirectional mapping |
+| Connector model | Flat `connectorId` | Hierarchical `evseId` + `connectorId` | ✅ |
+| Status values | 9 values (Available, Charging, etc.) | 5 values (Available, Occupied, etc.) | ✅ Enum mapping |
+| User identity | String `idTag` | Object `{idToken, type}` | ✅ |
+| Error codes | 10 codes | 7 codes (different names) | ✅ Full mapping |
+| Config management | Flat key-value | 3-tier Device Model | ❌ Not yet |
+| Security profiles | Basic | Certificate-based | ❌ Transport layer |
+
+---
+
+## What's Next?
+
+<Cards>
+  <Card
+    title="Quick Start Guide"
+    href="/docs/quick-start"
+    description="Set up your first OCPP client and server in under 5 minutes."
+  />
+  <Card
+    title="System Design"
+    href="/docs/system-design"
+    description="Understand the full architecture of the ocpp-ws-io ecosystem."
+  />
+  <Card
+    title="Middleware"
+    href="/docs/middleware"
+    description="Learn about the middleware pipeline in the core library."
+  />
+  <Card
+    title="Clustering"
+    href="/docs/clustering"
+    description="Scale with Redis-based multi-instance deployments."
+  />
+  <Card
+    title="Security Profiles"
+    href="/docs/security"
+    description="Configure TLS, Basic Auth, and Mutual TLS for production."
+  />
+  <Card
+    title="API Reference"
+    href="/docs/api-reference"
+    description="Complete API documentation for all classes and methods."
+  />
+</Cards>

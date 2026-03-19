@@ -113,19 +113,21 @@ await server.listen(3000);
 ```
 ocpp-ws-io/
 ├── packages/
-│   ├── ocpp-ws-io/          # Core OCPP WebSocket library (npm: ocpp-ws-io)
-│   └── cli/                 # The CLI ecosystem (npm: ocpp-ws-cli)
+│   ├── ocpp-ws-io/              # Core OCPP WebSocket library (npm: ocpp-ws-io)
+│   ├── ocpp-protocol-proxy/     # OCPP version translation proxy
+│   └── cli/                     # The CLI ecosystem (npm: ocpp-ws-cli)
 ├── apps/
-│   └── docs/                # Documentation site (ocpp-ws-io.rohittiwari.me)
+│   └── docs/                    # Documentation site (ocpp-ws-io.rohittiwari.me)
 └── .github/
-    └── workflows/           # CI/CD pipelines
+    └── workflows/               # CI/CD pipelines
 ```
 
-| Package                                      | Description                               | Status       |
-| -------------------------------------------- | ----------------------------------------- | ------------ |
-| [`ocpp-ws-io`](packages/ocpp-ws-io)          | Core OCPP WebSocket RPC client & server   | ✅ Published |
-| [`ocpp-ws-cli`](packages/cli)                | CLI for generation, simulation & testing  | ✅ Published |
-| [`voltlog-io`](https://npmjs.com/voltlog-io) | Structured Logger (Maintained Separately) | ✅ Published |
+| Package                                                    | Description                               | Status       |
+| ---------------------------------------------------------- | ----------------------------------------- | ------------ |
+| [`ocpp-ws-io`](packages/ocpp-ws-io)                        | Core OCPP WebSocket RPC client & server   | ✅ Published |
+| [`ocpp-protocol-proxy`](packages/ocpp-protocol-proxy)      | OCPP version translation proxy            | 🚧 Pre-release |
+| [`ocpp-ws-cli`](packages/cli)                              | CLI for generation, simulation & testing  | ✅ Published |
+| [`voltlog-io`](https://npmjs.com/voltlog-io)               | Structured Logger (Maintained Separately) | ✅ Published |
 
 ## Requirements
 

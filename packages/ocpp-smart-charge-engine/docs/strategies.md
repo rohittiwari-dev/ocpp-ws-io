@@ -1,0 +1,162 @@
+# Charging Strategies
+## `ocpp-smart-charge-engine`
+
+The engine ships with three built-in allocation strategies. Pass `algorithm` in the engine config, or swap it at runtime with `engine.setAlgorithm()`.
+
+---
+
+## Equal Share (default)
+
+**Best for:** Public parking, hospitality, retail — any site where fairness across all connected EVs matters.
+
+Every active session gets an equal slice of available grid power after hardware caps are applied. Sessions with lower hardware limits consume less; the surplus is redistributed to the remaining sessions.
+
+```typescript
+const engine = new SmartChargingEngine({
+  siteId: 'SITE-01',
+  maxGridPowerKw: 100,
+  algorithm: Strategies.EQUAL_SHARE, // default
+  dispatcher: ...,
+});
+```
+
+**Allocation example (100kW site, 5% safety margin → 95kW effective):**
+
+| Session | Hardware Cap | Allocated |
+|---|---|---|
+| CP-01 | 22 kW | 22 kW (capped) |
+| CP-02 | 22 kW | 22 kW (capped) |
+| CP-03 | 50 kW | 51 kW → capped to 50 kW |
+
+> After capping, unallocated surplus is redistributed across remaining eligible sessions in the same cycle.
+
+---
+
+## Priority
+
+**Best for:** Fleet depots, employee lots, subscription tiers — where some vehicles should always get more power.
+
+Sessions are ranked by `priority` (higher = more). Higher-priority sessions are allocated first. Lower-priority sessions receive leftover grid capacity. When grid is constrained, low-priority sessions may receive only `minChargeRateKw`.
+
+```typescript
+const engine = new SmartChargingEngine({
+  siteId: 'SITE-FLEET',
+  maxGridPowerKw: 80,
+  algorithm: Strategies.PRIORITY,
+  dispatcher: ...,
+});
+
+engine.addSession({
+  transactionId: 'tx-001',
+  clientId: 'CP-FLEET-01',
+  maxHardwarePowerKw: 50,
+  priority: 10,          // ← high: fleet truck, must be ready by 6 AM
+  minChargeRateKw: 3.7,
+});
+
+engine.addSession({
+  transactionId: 'tx-002',
+  clientId: 'CP-VISITOR-01',
+  maxHardwarePowerKw: 22,
+  priority: 1,           // ← low: public visitor, best-effort
+  minChargeRateKw: 1.4,
+});
+```
+
+---
+
+## Time-of-Use (TOU)
+
+**Best for:** Sites with time-of-day electricity pricing — charge faster during cheap off-peak hours, slower during expensive peak hours.
+
+Combines Equal Share allocation with a configurable schedule of power multipliers. During peak hours (e.g. 6 PM–10 PM), the effective grid limit is reduced by `peakMultiplier`. During off-peak hours (e.g. midnight–6 AM), it may be increased by `offPeakMultiplier`.
+
+```typescript
+const engine = new SmartChargingEngine({
+  siteId: 'SITE-TOU',
+  maxGridPowerKw: 100,
+  algorithm: Strategies.TIME_OF_USE,
+  touConfig: {
+    peakHours: { start: 18, end: 22 },     // 6 PM – 10 PM
+    offPeakHours: { start: 0, end: 6 },    // midnight – 6 AM
+    peakMultiplier: 0.4,                   // 40% of grid during peak
+    offPeakMultiplier: 1.0,                // 100% during off-peak
+    shoulderMultiplier: 0.75,              // 75% all other times
+  },
+  dispatcher: ...,
+});
+
+// Pair with auto-dispatch to continuously adjust as time changes
+engine.startAutoDispatch(60_000); // recalculate every 60s
+```
+
+**Power schedule example (100kW site):**
+
+| Time | Multiplier | Effective Grid |
+|---|---|---|
+| 00:00 – 06:00 (off-peak) | 1.0 | 100 kW |
+| 06:00 – 18:00 (shoulder) | 0.75 | 75 kW |
+| 18:00 – 22:00 (peak) | 0.4 | 40 kW |
+| 22:00 – 00:00 (shoulder) | 0.75 | 75 kW |
+
+---
+
+## Runtime Strategy Swap
+
+Switch strategy on a live engine without any downtime:
+
+```typescript
+// Evening peak — switch to TOU to reduce draw
+engine.setAlgorithm(Strategies.TIME_OF_USE);
+await engine.dispatch(); // immediately rebalance with new strategy
+
+// Fleet arrives overnight — switch to Priority
+engine.setAlgorithm(Strategies.PRIORITY);
+await engine.dispatch();
+```
+
+---
+
+## Minimum Charge Rate
+
+All strategies respect `minChargeRateKw` per session. Even when the grid is heavily constrained, a session will never drop below its minimum:
+
+```typescript
+engine.addSession({
+  transactionId: 'tx-xr5',
+  clientId: 'CP-01',
+  maxHardwarePowerKw: 22,
+  minChargeRateKw: 1.4,   // 6A × 230V — below this some EVs fault
+});
+```
+
+If the site is so constrained that even minimums cannot be satisfied, the engine respects priority to decide who gets their minimum first.
+
+---
+
+## Custom Strategy (Advanced)
+
+The engine accepts any function conforming to the `ChargingStrategy` type:
+
+```typescript
+import type { ChargingStrategy } from 'ocpp-smart-charge-engine/strategies';
+
+const myStrategy: ChargingStrategy = (sessions, availableKw) => {
+  // sessions: ChargingSession[]
+  // availableKw: effective grid budget after safety margin
+  // Return: SessionProfile[] with allocatedKw per session
+  return sessions.map((s) => ({
+    ...s,
+    allocatedKw: Math.min(s.maxHardwarePowerKw, availableKw / sessions.length),
+    allocatedW: ...,
+    allocatedAmps: ...,
+  }));
+};
+
+const engine = new SmartChargingEngine({
+  siteId: 'CUSTOM',
+  maxGridPowerKw: 100,
+  algorithm: myStrategy,
+  dispatcher: ...,
+});
+```
