@@ -5,7 +5,6 @@ import {
   BookOpen,
   Box,
   ChevronRight,
-  Cpu,
   Monitor,
   Shuffle,
   Terminal,

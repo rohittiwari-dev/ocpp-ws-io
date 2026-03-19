@@ -22,7 +22,7 @@ const BADGES = [
 const STATS = [
   { value: "3", label: "OCPP versions" },
   { value: "4", label: "Security profiles" },
-  { value: "0", label: "Runtime deps*" },
+  { value: "3", label: "Core packages" },
 ];
 
 export function Hero() {
@@ -133,16 +133,15 @@ export function Hero() {
             for Node.js
           </motion.h1>
 
-          {/* Sub */}
           <motion.p
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.2 }}
             className="max-w-lg text-lg text-fd-muted-foreground mb-10 leading-relaxed"
           >
-            Type-safe client &amp; server across OCPP 1.6, 2.0.1, and 2.1.
-            Schema validation, Redis clustering, all security profiles, and a
-            zero-dependency browser client — all in one package.
+            The complete OCPP ecosystem for Node.js. Type-safe client &amp;
+            server, version translation proxy, and smart charging constraint
+            solver — built from the ground up in pure TypeScript.
           </motion.p>
 
           {/* CTA buttons — two rows */}
@@ -218,17 +217,12 @@ export function Hero() {
             transition={{ delay: 0.6, duration: 0.5 }}
             className="mt-10 flex items-center gap-8"
           >
-            {STATS.map((s, i) => (
+            {STATS.map((s) => (
               <div key={s.label}>
                 <p className="text-2xl font-bold text-fd-foreground tabular-nums">
                   {s.value}
                 </p>
                 <p className="text-xs text-fd-muted-foreground">{s.label}</p>
-                {i === 2 && (
-                  <p className="text-[9px] text-fd-muted-foreground/50">
-                    *browser client
-                  </p>
-                )}
               </div>
             ))}
           </motion.div>
