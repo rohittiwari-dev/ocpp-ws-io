@@ -44,7 +44,7 @@ jobs:
       - name: Determine npm dist-tag
         id: dist-tag
         run: |
-          VERSION="${GITHUB_REF#refs/tags/ocpp-smart-charge-engine-v}"
+          VERSION="${GITHUB_REF#refs/tags/osce-v}"
           if [[ "$VERSION" == *"-beta"* ]]; then
             echo "tag=beta" >> $GITHUB_OUTPUT
           elif [[ "$VERSION" == *"-rc"* ]]; then
@@ -58,7 +58,7 @@ jobs:
 
       - name: Sync version from git tag to package.json
         run: |
-          VERSION="${GITHUB_REF#refs/tags/ocpp-smart-charge-engine-v}"
+          VERSION="${GITHUB_REF#refs/tags/osce-v}"
           npm version "$VERSION" --no-git-tag-version --allow-same-version -w packages/ocpp-smart-charge-engine
 
       - name: Ensure repository for provenance
