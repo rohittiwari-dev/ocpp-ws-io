@@ -23,7 +23,7 @@ export class OcppWsIoConnection implements IConnection {
     this.client.handle(async (action: string, ctx: any) => {
       const incomingMessage: OCPPMessage = {
         type: MessageType.CALL,
-        messageId: "auto-handled-by-lib",
+        messageId: ctx.messageId || `msg-${Date.now()}`,
         action: action,
         payload: ctx.params,
       };
@@ -36,11 +36,14 @@ export class OcppWsIoConnection implements IConnection {
       if (result) {
         if (result.type === MessageType.CALLRESULT) {
           return result.payload;
-        } else if (result.type === MessageType.CALLERROR) {
-          throw new Error(
+        }
+        if (result.type === MessageType.CALLERROR) {
+          const err = new Error(
             result.errorDescription ||
               "Unknown error occurred during proxy processing",
           );
+          (err as any).code = result.errorCode;
+          throw err;
         }
       }
       return {};
@@ -76,19 +79,23 @@ export interface WsAdapterOptions {
 }
 
 export class OcppWsIoAdapter implements ITransportAdapter {
-  private server: OCPPServer;
+  private server!: OCPPServer;
   private port: number;
+  private protocols: string[];
   public httpServer?: any;
 
   constructor(options: WsAdapterOptions) {
-    const { OCPPServer } = require("ocpp-ws-io");
-    this.server = new OCPPServer({ protocols: options.protocols });
     this.port = options.port;
+    this.protocols = options.protocols;
   }
 
   public async listen(
     onConnection: (connection: IConnection) => void,
   ): Promise<void> {
+    // Dynamic import for ESM consistency — avoids require() in ESM packages
+    const { OCPPServer } = await import("ocpp-ws-io");
+    this.server = new OCPPServer({ protocols: this.protocols });
+
     this.server.on("client", (client: OCPPClient) => {
       const conn = new OcppWsIoConnection(client);
       onConnection(conn);
@@ -97,6 +104,8 @@ export class OcppWsIoAdapter implements ITransportAdapter {
   }
 
   public async close(): Promise<void> {
-    await this.server.close();
+    if (this.server) {
+      await this.server.close();
+    }
   }
 }

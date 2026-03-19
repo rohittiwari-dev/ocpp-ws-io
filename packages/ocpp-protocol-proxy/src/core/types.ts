@@ -1,3 +1,5 @@
+import type { ISessionStore } from "./session.js";
+
 export enum MessageType {
   CALL = 2,
   CALLRESULT = 3,
@@ -19,12 +21,32 @@ export interface TranslationContext {
   identity: string;
   sourceProtocol: string;
   targetProtocol: string;
+  session: ISessionStore;
 }
 
 export type TranslationResult = { action?: string; payload: any };
 
+export type MiddlewarePhase = "pre" | "post";
+export type MiddlewareDirection =
+  | "upstream"
+  | "downstream"
+  | "response"
+  | "error";
+
+/**
+ * Middleware function signature.
+ * Return the (possibly mutated) message to pass it along,
+ * or return undefined to pass the original message unchanged.
+ */
+export type ProxyMiddleware = (
+  message: OCPPMessage,
+  context: TranslationContext,
+  direction: MiddlewareDirection,
+  phase: MiddlewarePhase,
+) => Promise<OCPPMessage | undefined>;
+
 export type TranslationMap = {
-  // EVSE -> CSMS
+  /** EVSE -> CSMS call mappers, keyed by `sourceProtocol:Action` */
   upstream: Record<
     string,
     (
@@ -33,7 +55,7 @@ export type TranslationMap = {
     ) => TranslationResult | Promise<TranslationResult>
   >;
 
-  // CSMS -> EVSE
+  /** CSMS -> EVSE call mappers, keyed by `targetProtocol:Action` */
   downstream: Record<
     string,
     (
@@ -42,13 +64,13 @@ export type TranslationMap = {
     ) => TranslationResult | Promise<TranslationResult>
   >;
 
-  // Responses map for specific mapping, if needed
+  /** Response payload mappers, keyed by `targetProtocol:ActionResponse` */
   responses?: Record<
     string,
     (params: any, context: TranslationContext) => any | Promise<any>
   >;
 
-  // Errors map to map an error code from one protocol to another
+  /** Error mappers, keyed by `sourceProtocol:Error` */
   errors?: Record<
     string,
     (
@@ -56,7 +78,13 @@ export type TranslationMap = {
       errorDescription: string,
       errorDetails: any,
       context: TranslationContext,
-    ) => { errorCode: string; errorDescription: string; errorDetails: any }
+    ) =>
+      | { errorCode: string; errorDescription: string; errorDetails: any }
+      | Promise<{
+          errorCode: string;
+          errorDescription: string;
+          errorDetails: any;
+        }>
   >;
 };
 

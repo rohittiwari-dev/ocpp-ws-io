@@ -39,7 +39,8 @@ export class OCPPTranslator {
     const mapper = this.translationMap.upstream[key];
 
     if (!mapper) {
-      throw new Error(`No upstream translation found for ${key}`);
+      // Passthrough if no mapper exists — don't crash on unknown actions
+      return message;
     }
 
     const translated = await mapper(message.payload, context);
@@ -59,7 +60,8 @@ export class OCPPTranslator {
     const mapper = this.translationMap.downstream[key];
 
     if (!mapper) {
-      throw new Error(`No downstream translation found for ${key}`);
+      // Passthrough if no mapper exists
+      return message;
     }
 
     const translated = await mapper(message.payload, context);
@@ -77,12 +79,6 @@ export class OCPPTranslator {
     context: TranslationContext,
   ): Promise<Extract<OCPPMessage, { type: MessageType.CALLRESULT }>> {
     const responseKey = `${context.targetProtocol}:${originalAction}Response`;
-    console.error(
-      "[DEBUG] translateCallResult resolving key:",
-      responseKey,
-      " available:",
-      Object.keys(this.translationMap.responses || {}),
-    );
     const responseMapper = this.translationMap.responses?.[responseKey];
 
     if (responseMapper) {
