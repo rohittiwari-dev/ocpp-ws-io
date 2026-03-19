@@ -9,8 +9,8 @@ import { ThemeToggle } from "../layout/theme-toggle";
 
 const NAV_LINKS = [
   { label: "Docs", href: "/docs" },
-  { label: "Simulator", href: "https://ocpp.rohittiwari.me" },
-  { label: "API", href: "/docs/api-reference" },
+  { label: "Packages", href: "/docs/packages" },
+  { label: "Simulator", href: "https://ocpp.rohittiwari.me", external: true },
   { label: "Blog", href: "/blog" },
 ];
 
@@ -57,6 +57,14 @@ export function LandingHeader() {
               <Link
                 key={link.label}
                 href={link.href}
+                target={
+                  "external" in link && link.external ? "_blank" : undefined
+                }
+                rel={
+                  "external" in link && link.external
+                    ? "noopener noreferrer"
+                    : undefined
+                }
                 className="px-4 py-2 text-sm font-medium text-fd-muted-foreground transition-colors hover:text-fd-foreground hover:bg-white/5 rounded-full"
               >
                 {link.label}

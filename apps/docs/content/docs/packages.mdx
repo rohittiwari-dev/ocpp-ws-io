@@ -1,0 +1,97 @@
+---
+title: Packages
+description: All packages in the ocpp-ws-io ecosystem — from the core RPC library to smart charging, version translation, CLI tooling, and the live browser simulator.
+---
+
+import { Cards, Card } from "fumadocs-ui/components/card";
+import { Callout } from "fumadocs-ui/components/callout";
+
+The **ocpp-ws-io** ecosystem is a modular suite of TypeScript packages, each solving a distinct challenge in EV charging infrastructure. Every package is designed to work independently _or_ seamlessly together.
+
+---
+
+## Core Packages
+
+<Cards>
+  <Card
+    title="ocpp-ws-io"
+    href="/docs/ocpp-ws-io/quick-start"
+    description="The foundational WebSocket RPC library. Unified client & server across OCPP 1.6, 2.0.1, and 2.1 with end-to-end type safety, JSON schema validation, Security Profiles 0–3 (mTLS), and Redis clustering."
+  />
+  <Card
+    title="ocpp-protocol-proxy"
+    href="/docs/protocol-proxy"
+    description="Transport-agnostic OCPP version translation proxy. Bridge legacy OCPP 1.6 chargers to modern 2.1 backends using pluggable middleware pipelines and pre-built translation presets."
+  />
+  <Card
+    title="ocpp-smart-charge-engine"
+    href="/docs/smart-charge-engine"
+    description="Library-agnostic mathematical solver that distributes constraint-limited grid power fairly across active EV charging sessions. Supports equal-share, priority, and TOU pricing strategies."
+  />
+</Cards>
+
+---
+
+## Developer Tools
+
+<Cards>
+  <Card
+    title="ocpp-ws-cli"
+    href="/docs/cli"
+    description="Command-line toolbox for OCPP development. Scaffold projects, spin up mock CSMS servers, send test messages, generate TLS certificates, and run load tests — all from your terminal."
+  />
+  <Card
+    title="ocpp-ws-simulator"
+    href="/docs/simulator"
+    description="Full-featured browser GUI for visual debugging and demos. Connect to any CSMS, inspect live OCPP frames in real time, and simulate complete multi-charger sessions."
+  />
+  <Card
+    title="voltlog-io"
+    href="/docs/voltlog-io"
+    description="High-performance structured logging layer powering the ecosystem's network diagnostics. Pluggable transports, correlation IDs, and OCPP-aware formatters."
+  />
+</Cards>
+
+---
+
+## Install at a Glance
+
+```bash
+# Core RPC — client & server
+npm install ocpp-ws-io
+
+# Version translation proxy
+npm install ocpp-protocol-proxy
+
+# Smart charging math
+npm install ocpp-smart-charge-engine
+
+# CLI tools (no install required)
+npx ocpp-ws-cli --help
+
+# Logging
+npm install voltlog-io
+```
+
+---
+
+## Choosing the Right Package
+
+| Need | Package |
+|------|---------|
+| Build a CSMS or charge point in Node.js | `ocpp-ws-io` |
+| Support legacy 1.6 hardware on a 2.1 backend | `ocpp-protocol-proxy` |
+| Distribute grid power across multiple chargers | `ocpp-smart-charge-engine` |
+| Test, mock, or debug OCPP traffic locally | `ocpp-ws-cli` |
+| Visualize OCPP sessions in the browser | `ocpp-ws-simulator` |
+| Structured, performant logging | `voltlog-io` |
+
+<Callout type="info">
+All packages are independently installable. You don't need the full ecosystem — pick only what your project requires.
+</Callout>
+
+---
+
+## Interoperability
+
+All packages share the same TypeScript type definitions for OCPP messages, meaning data flows between them without any manual type casting. See the [Architecture Overview](/docs#architecture-overview) for how they wire together.

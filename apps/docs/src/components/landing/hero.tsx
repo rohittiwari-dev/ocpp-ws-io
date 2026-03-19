@@ -14,15 +14,16 @@ import Link from "next/link";
 import { useState } from "react";
 
 const BADGES = [
-  { label: "OCPP 1.6 ✓", color: "#7c3aed", delay: 0 },
-  { label: "OCPP 2.0.1 ✓", color: "#3b82f6", delay: 0.15 },
-  { label: "OCPP 2.1 ✓", color: "#10b981", delay: 0.3 },
+  { label: "Core RPC", color: "#7c3aed", delay: 0 },
+  { label: "Protocol Proxy", color: "#ec4899", delay: 0.15 },
+  { label: "Smart Charging", color: "#eab308", delay: 0.3 },
+  { label: "CLI & Simulator", color: "#10b981", delay: 0.45 },
 ];
 
 const STATS = [
   { value: "3", label: "OCPP versions" },
+  { value: "6", label: "Ecosystem packages" },
   { value: "4", label: "Security profiles" },
-  { value: "3", label: "Core packages" },
 ];
 
 export function Hero() {
@@ -118,7 +119,7 @@ export function Hero() {
             transition={{ duration: 0.6, delay: 0.1 }}
             className="text-5xl font-extrabold tracking-tight text-fd-foreground sm:text-6xl lg:text-7xl mb-6 leading-[1.08]"
           >
-            OCPP
+            The Complete
             <br />
             <span
               className="bg-clip-text text-transparent"
@@ -127,7 +128,7 @@ export function Hero() {
                   "linear-gradient(135deg, #7c3aed 0%, #a855f7 40%, #3b82f6 100%)",
               }}
             >
-              WebSocket RPC
+              OCPP Ecosystem
             </span>
             <br />
             for Node.js
@@ -139,9 +140,9 @@ export function Hero() {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="max-w-lg text-lg text-fd-muted-foreground mb-10 leading-relaxed"
           >
-            The complete OCPP ecosystem for Node.js. Type-safe client &amp;
-            server, version translation proxy, and smart charging constraint
-            solver — built from the ground up in pure TypeScript.
+            A modular, plug-and-play suite of TypeScript tools. Type-safe
+            WebSocket RPC, version translation proxy, smart charging math, CLI
+            tooling, and a live browser simulator — everything in one ecosystem.
           </motion.p>
 
           {/* CTA buttons — two rows */}
@@ -157,14 +158,14 @@ export function Hero() {
                 className="group inline-flex h-12 items-center justify-center gap-2 rounded-full bg-fd-foreground px-7 text-sm font-semibold text-fd-background transition-all hover:opacity-90 shadow-lg shadow-fd-foreground/10"
               >
                 <BookOpen className="h-4 w-4" />
-                Get Started
+                Explore Ecosystem
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </Link>
               <Link
-                href="/docs/api-reference"
+                href="/docs/packages"
                 className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-fd-border bg-fd-card px-7 text-sm font-medium transition-all hover:bg-fd-accent hover:text-fd-accent-foreground shadow-sm"
               >
-                API Reference
+                Browse Packages
               </Link>
             </div>
             <div className="flex gap-3 flex-wrap">

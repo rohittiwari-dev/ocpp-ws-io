@@ -10,7 +10,7 @@ const LINKS = [
     title: "Product",
     links: [
       { label: "Documentation", href: "/docs" },
-      { label: "API Reference", href: "/docs/api-reference" },
+      { label: "Packages", href: "/docs/packages" },
       {
         label: "Simulator",
         href: "https://ocpp.rohittiwari.me",
@@ -22,12 +22,13 @@ const LINKS = [
   {
     title: "Ecosystem",
     links: [
-      { label: "Browser Client", href: "/docs/browser-client" },
+      { label: "ocpp-ws-io", href: "/docs" },
+      { label: "Protocol Proxy", href: "/docs/protocol-proxy" },
+      { label: "Smart Charge Engine", href: "/docs/smart-charge-engine" },
       { label: "CLI Toolbox", href: "/docs/cli" },
-      { label: "Redis Clustering", href: "/docs/clustering" },
       {
-        label: "NPM Package",
-        href: "https://www.npmjs.com/package/ocpp-ws-io",
+        label: "NPM",
+        href: "https://www.npmjs.com/~rohit-tiwari",
         external: true,
       },
     ],
@@ -75,8 +76,9 @@ export function Footer() {
             </Link>
 
             <p className="text-sm text-fd-muted-foreground leading-relaxed max-w-xs mb-8">
-              Type-safe OCPP WebSocket RPC for Node.js. Build scalable CSMS and
-              charging station infrastructure with zero headaches.
+              The complete OCPP ecosystem for Node.js. Type-safe RPC, version
+              translation, smart charging, CLI tooling, and a live browser
+              simulator — all in TypeScript.
             </p>
 
             <div className="flex gap-4">

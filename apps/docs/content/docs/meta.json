@@ -1,6 +1,7 @@
 {
   "pages": [
     "index",
+    "packages",
     "comparison",
     "ocpp-ws-io",
     "smart-charge-engine",

@@ -14,9 +14,9 @@ import {
 
 const FEATURED = [
   {
-    title: "Type-Safe Everything",
+    title: "Version-Agnostic Protocol Layer",
     description:
-      "End-to-end TypeScript with auto-generated types for OCPP 1.6, 2.0.1, and 2.1. Request params and responses are fully inferred — catch protocol errors at compile time.",
+      "End-to-end TypeScript with auto-generated types for OCPP 1.6, 2.0.1, and 2.1. Unified client & server API — request params and responses are fully inferred across all versions.",
     icon: Code2,
     accent: "#7c3aed",
     glow: "rgba(124,58,237,0.15)",
@@ -24,57 +24,57 @@ const FEATURED = [
     span: "lg:col-span-2",
   },
   {
-    title: "Security Profiles 0–3",
+    title: "OCPP Protocol Proxy",
     description:
-      "Plain WS, Basic Auth, TLS + Basic Auth, and Mutual TLS with client certificates — all four OCPP security profiles supported out of the box.",
+      "Seamlessly bridge legacy OCPP 1.6 chargers to your modern 2.1 CSMS. Pluggable middleware, stateful sessions, and pre-built translation presets.",
     icon: Shield,
-    accent: "#f43f5e",
-    glow: "rgba(244,63,94,0.15)",
-    tag: "Production-ready",
+    accent: "#ec4899",
+    glow: "rgba(236,72,153,0.15)",
+    tag: "Version translation",
     span: "lg:col-span-1",
   },
 ] as const;
 
 const MINOR = [
   {
-    title: "High Performance",
+    title: "Smart Charging Engine",
     description:
-      "Optimised for concurrent connections with configurable concurrency, timeouts, and queuing.",
+      "Distribute your grid's physical watt budget mathematically across chargers. Built-in OCPP-compliant load balancing and TOU pricing algorithms.",
     icon: Zap,
     accent: "#f59e0b",
   },
   {
-    title: "Multi-Version Support",
+    title: "Security Profiles 0–3",
     description:
-      "Unified API across OCPP 1.6, 2.0.1, and 2.1 — version context always available in handlers.",
-    icon: Globe,
-    accent: "#3b82f6",
-  },
-  {
-    title: "Schema Validation",
-    description:
-      "Optional strict mode validates every inbound and outbound message against official JSON schemas.",
+      "Plain WS, Basic Auth, TLS + Basic Auth, and Mutual TLS with client certificates — all four OCPP security profiles out of the box.",
     icon: CheckCircle2,
-    accent: "#10b981",
+    accent: "#f43f5e",
   },
   {
     title: "Framework Agnostic",
     description:
-      "Attach to Express, Fastify, NestJS, or any Node.js HTTP server with a single method call.",
+      "Attach to Express, Fastify, NestJS, or any Node.js HTTP server with a single method call. Works anywhere.",
     icon: Layers,
     accent: "#8b5cf6",
   },
   {
     title: "Redis Clustering",
     description:
-      "Optional Redis adapter for multi-instance deployments behind a load balancer.",
+      "Optional Redis Pub/Sub adapter for multi-instance deployments. Route messages across distributed nodes behind a load balancer.",
     icon: Cpu,
     accent: "#06b6d4",
   },
   {
-    title: "Browser Client",
+    title: "Multi-Version Support",
     description:
-      "Zero-dependency browser WebSocket client — same typed call/handle API as the Node.js client.",
+      "Unified API across OCPP 1.6, 2.0.1, and 2.1 — version context always available in handlers. No per-version forks needed.",
+    icon: Globe,
+    accent: "#3b82f6",
+  },
+  {
+    title: "Browser Simulator & CLI",
+    description:
+      "A zero-install Next.js GUI for live OCPP inspection, plus CLI tools to scaffold, mock, and debug — all from the terminal.",
     icon: MonitorSmartphone,
     accent: "#a855f7",
   },
@@ -113,7 +113,7 @@ export function Features() {
             className="inline-flex items-center gap-2 rounded-full border border-fd-border bg-fd-card px-4 py-1.5 text-xs font-semibold text-fd-muted-foreground mb-6"
           >
             <span className="flex h-1.5 w-1.5 rounded-full bg-purple-400 animate-pulse" />
-            Core library capabilities
+            What the ecosystem gives you
           </motion.div>
 
           <motion.h2
@@ -136,7 +136,7 @@ export function Features() {
             transition={{ delay: 0.1 }}
             className="text-lg text-fd-muted-foreground max-w-2xl mx-auto"
           >
-            A complete OCPP toolkit built from the ground up in TypeScript —
+            Six complementary packages. One cohesive TypeScript ecosystem —
             type-safe, tested, and open source.
           </motion.p>
         </div>

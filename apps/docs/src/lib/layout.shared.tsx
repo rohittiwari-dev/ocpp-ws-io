@@ -33,6 +33,11 @@ export function baseOptions(): BaseLayoutProps {
         active: "nested-url",
       },
       {
+        text: "Packages",
+        url: "/docs/packages",
+        active: "nested-url",
+      },
+      {
         text: "Simulator",
         url: "https://ocpp.rohittiwari.me",
         active: "nested-url",
@@ -40,11 +45,6 @@ export function baseOptions(): BaseLayoutProps {
       {
         text: "Blog",
         url: "/blog",
-        active: "nested-url",
-      },
-      {
-        text: "NPM API",
-        url: "/docs/api-reference",
         active: "nested-url",
       },
     ],

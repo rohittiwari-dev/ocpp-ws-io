@@ -9,35 +9,53 @@ import { Stats } from "@/components/landing/stats";
 import { blogSource } from "@/lib/blog";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://ocpp-ws-io.rohittiwari.me"),
   title: {
-    absolute: "OCPP WS IO — Type-Safe OCPP WebSocket Library",
+    absolute: "ocpp-ws-io — Complete OCPP Ecosystem for Node.js",
   },
   description:
-    "Build scalable CSMS and Charging Stations with ocpp-ws-io. Supports OCPP 1.6, 2.0.1, 2.1, strict validation, and clustering.",
+    "The complete, type-safe OCPP ecosystem for Node.js. Core RPC library, Protocol Proxy, Smart Charging Engine, CLI tooling, and Browser Simulator. Supports OCPP 1.6, 2.0.1, and 2.1.",
   keywords: [
+    // Core library
     "OCPP Library Node.js",
-    "Typescript OCPP WebSocket",
+    "TypeScript OCPP WebSocket",
     "OCPP Server Implementation",
-    "CSMS Framework",
-    "EV Charging Software",
-    "Open Charge Point Protocol Server",
-    "OCPP 1.6 Server Setup",
+    "OCPP Client Node.js",
+    "OCPP 1.6 Server",
     "OCPP 2.0.1 Library",
-    "OCPP TypeScript Server",
-    "OCPP Node.js Example",
+    "OCPP 2.1 TypeScript",
+    "ocpp-ws-io",
+    // Ecosystem packages
+    "OCPP Protocol Proxy",
+    "OCPP Version Translation",
+    "Smart Charging Engine",
+    "OCPP Smart Charging",
+    "EV Load Balancing",
+    "OCPP CLI",
+    "OCPP Simulator Browser",
+    // Use-cases
+    "CSMS Framework Node.js",
+    "EV Charging Software",
+    "Charge Point Management System",
+    "Open Charge Point Protocol",
+    "EV Infrastructure TypeScript",
+    "OCPP WebSocket RPC",
+    "OCPP Redis Clustering",
+    "OCPP Security Profiles mTLS",
   ],
   openGraph: {
-    siteName: "OCPP WS IO",
-    title: "OCPP WS IO — Type-Safe OCPP WebSocket Library",
+    siteName: "ocpp-ws-io ecosystem",
+    title: "ocpp-ws-io — Complete OCPP Ecosystem for Node.js",
     description:
-      "Build scalable CSMS and Charging Stations with ocpp-ws-io. Type-safe OCPP WebSocket library for Node.js.",
+      "Type-safe OCPP WebSocket RPC, Protocol Proxy, Smart Charging Engine, CLI tooling, and Browser Simulator — all in one TypeScript ecosystem.",
     url: "https://ocpp-ws-io.rohittiwari.me",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "OCPP WS IO — Type-Safe OCPP WebSocket Library",
-    description: "Type-safe OCPP WebSocket RPC client & server for Node.js",
+    title: "ocpp-ws-io — Complete OCPP Ecosystem for Node.js",
+    description:
+      "Type-safe OCPP 1.6/2.0.1/2.1 WebSocket RPC, Protocol Proxy, Smart Charging, CLI tools & Browser Simulator — all open source.",
   },
   alternates: {
     canonical: "/",

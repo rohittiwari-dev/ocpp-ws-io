@@ -32,15 +32,15 @@
     "@radix-ui/react-scroll-area": "^1.2.10",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "framer-motion": "^12.34.3",
+    "framer-motion": "^12.38.0",
     "fumadocs-core": "16.6.7",
     "fumadocs-mdx": "14.2.8",
     "fumadocs-typescript": "^5.1.4",
     "fumadocs-ui": "16.6.7",
     "gray-matter": "^4.0.3",
     "lucide-react": "^0.570.0",
-    "mermaid": "^11.12.3",
-    "next": "^16.1.6",
+    "mermaid": "^11.13.0",
+    "next": "^16.2.0",
     "next-mdx-remote": "^6.0.0",
     "next-themes": "^0.4.6",
     "react": "^19.2.4",
@@ -51,13 +51,13 @@
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.2.1",
+    "@tailwindcss/postcss": "^4.2.2",
     "@types/mdx": "^2.0.13",
-    "@types/node": "^25.3.2",
+    "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^4.2.1",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3"
   }
 }
