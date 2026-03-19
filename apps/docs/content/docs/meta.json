@@ -1,31 +1,14 @@
 {
   "pages": [
     "index",
-    "quick-start",
-    "routing",
-    "system-design",
-    "concepts/upgrades",
     "comparison",
-    "---Integrations---",
-    "frameworks",
-    "browser-client",
-    "---Implementations---",
-    "middleware",
-    "security",
-    "logging",
-    "clustering",
-    "plugins",
-    "type-safety",
-    "---System---",
-    "type-generation",
-    "api-reference",
-    "---Ecosystem---",
-    "protocol-proxy",
+    "ocpp-ws-io",
     "smart-charge-engine",
-    "voltlog-io",
+    "protocol-proxy",
+    "cli",
     "simulator",
-    "cli"
+    "voltlog-io"
   ],
-  "title": "Documentation",
-  "icon": "Pin"
+  "title": "ocpp-ws-io Ecosystem",
+  "icon": "Library"
 }

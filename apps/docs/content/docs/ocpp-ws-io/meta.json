@@ -1,0 +1,19 @@
+{
+  "title": "Core WebSocket RPC",
+  "pages": [
+    "quick-start",
+    "routing",
+    "system-design",
+    "frameworks",
+    "browser-client",
+    "middleware",
+    "security",
+    "logging",
+    "clustering",
+    "plugins",
+    "type-safety",
+    "type-generation",
+    "api-reference",
+    "concepts"
+  ]
+}

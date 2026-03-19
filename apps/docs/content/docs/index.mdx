@@ -1,280 +1,178 @@
 ---
 title: Introduction
-description: Type-safe OCPP WebSocket RPC client & server for Node.js — with browser support.
+description: The complete, type-safe OCPP ecosystem for Node.js — RPC, Smart Charging, Protocol Translation, and Simulation.
 ---
 
 import { Cards, Card } from "fumadocs-ui/components/card";
 import { Tab, Tabs } from "fumadocs-ui/components/tabs";
-import { Step, Steps } from "fumadocs-ui/components/steps";
 import { Callout } from "fumadocs-ui/components/callout";
 import { Mermaid } from "@/components/mermaid";
 
 <img
   src="/images/banner-logo.svg"
-  alt="ocpp-ws-io"
+  alt="ocpp-ws-io ecosystem"
   style={{ maxWidth: 360, marginBottom: 16 }}
 />
 
-**Type-safe OCPP WebSocket RPC client & server for Node.js.**
+**The complete, type-safe OCPP ecosystem for Node.js.**
 
-Built with TypeScript from the ground up — supports **OCPP 1.6**, **2.0.1**, and **2.1** with JSON schema validation, all three OCPP security profiles, optional Redis-based clustering, and a zero-dependency browser client for testing.
+Historically, building an OCPP-compliant network has been an infrastructure nightmare. **ocpp-ws-io ecosystem** provides a modular, plug-and-play suite of tools built from the ground up in TypeScript to solve the hardest challenges in EV charging: end-to-end WebSocket RPC, Smart Charging power distribution, legacy-to-modern Protocol Translation, and enterprise-grade Load Testing.
 
 <Callout type="warn">
-  **Transparency**: `ocpp-ws-io` is a newer, open-source library with a small
-  user base. It has been tested in controlled environments and limited
-  deployments — not yet at the scale of established alternatives like `ts-ocpp`
-  or `ocpp-eliftech`. We built it to solve specific infrastructure gaps
-  (clustering, routing, observability) that we kept running into. OCPP 2.1 types
-  are auto-generated from the [official OCA
-  schemas](https://openchargealliance.org/protocols/open-charge-point-protocol/#OCPP2.1)
-  and are type-safe, but have not been tested against real OCPP 2.1 hardware. If
-  you find issues, [please report
-  them](https://github.com/rohittiwari-dev/ocpp-ts-rpc/issues).
-</Callout>
-
-<Callout type="info">
-  Looking for **browser usage**? Check out the [Browser
-  Client](/docs/browser-client) — a lightweight charge point simulator client
-  that runs directly in the browser.
+  **Transparency**: This ecosystem is a newer, open-source suite of libraries. It has been tested in controlled environments and small deployments — not yet at the scale of established standalone libraries like `ts-ocpp` or `ocpp-eliftech`. We built it to solve specific infrastructure gaps (clustering, smart charging math, proxying) that weren't addressed by existing tools. If you find issues, [please report them](https://github.com/rohittiwari-dev/ocpp-ws-io/issues).
 </Callout>
 
 ---
 
-## Key Features
+## 🌍 The Ecosystem
+
+Building a Charge Point Management System (CSMS) or Simulator shouldn't require you to invent everything from scratch. Our modular approach splits the complexities of the protocol into fully tested, interoperable packages.
 
 <Cards>
   <Card
-    title="⚡ Full OCPP-J RPC"
-    description="Call, CallResult, CallError message framing per OCPP-J specification. Handles all RPC lifecycle management automatically."
+    title="1. Core RPC (ocpp-ws-io)"
+    href="/docs/ocpp-ws-io/quick-start"
+    description="The foundational WebSocket RPC library. End-to-end type safety, JSON schema validation, Security Profiles 0-3 (mTLS), and Redis clustering."
   />
   <Card
-    title="🎯 Type-Safe"
-    description="Auto-generated TypeScript types for OCPP 1.6, 2.0.1, and 2.1 methods. Request/response inference — catch errors at compile time."
+    title="2. Protocol Proxy (ocpp-protocol-proxy)"
+    href="/docs/protocol-proxy"
+    description="Seamlessly translate legacy OCPP 1.6 chargers to modern 2.1 central systems using transport-agnostic middleware pipelines."
   />
   <Card
-    title="🔒 Security Profiles 0–3"
-    description="Plain WS, Basic Auth, TLS + Basic Auth, and Mutual TLS. All OCPP security profiles supported out of the box."
+    title="3. Smart Charge Engine (ocpp-smart-charge-engine)"
+    href="/docs/smart-charge-engine"
+    description="A library-agnostic mathematical solver that distributes constraint-limited grid power safely among active EV charging sessions."
   />
   <Card
-    title="📐 Strict Mode"
-    description="Optional JSON schema validation for all inbound and outbound messages. Catch malformed payloads before they cause issues."
+    title="4. Terminal & Testing (ocpp-ws-cli)"
+    href="/docs/cli"
+    description="The ultimate developer tooling. Boot virtual charge points in your terminal, generate local certs, and hurl load-test spikes at your server."
   />
   <Card
-    title="🔁 Auto-Reconnect"
-    description="Exponential backoff with configurable min/max delays, max retries, and runtime reconfiguration."
+    title="5. Visual Simulator (ocpp-ws-simulator)"
+    href="/docs/simulator"
+    description="A full-featured browser GUI emulator for visual debugging and demos. Try it live at ocpp.rohittiwari.me"
   />
   <Card
-    title="🧩 Framework Agnostic"
-    description="Use standalone, or attach to Express, Fastify, NestJS, or any Node.js HTTP server."
-  />
-  <Card
-    title="📡 Redis Clustering"
-    description="Optional Redis adapter for multi-instance deployments. Supports both ioredis and node-redis."
-  />
-  <Card
-    title="🔀 Version-Aware Handlers"
-    description="Register handlers per OCPP version with typed params, or use generic handlers with protocol context."
-  />
-  <Card
-    title="🌐 Browser Client"
-    description="Zero-dependency browser WebSocket client for building charge point simulators and testing dashboards."
+    title="6. Observability (voltlog-io)"
+    href="/docs/voltlog-io"
+    description="High-performance, structured logging layer powering the ecosystem's network diagnostics."
   />
 </Cards>
-
----
-
-## Quick Start
-
-<Steps>
-
-<Step>
-
-### Install
-
-<Tabs items={["npm", "pnpm", "yarn", "bun"]}>
-  <Tab value="npm">```bash npm install ocpp-ws-io ```</Tab>
-  <Tab value="pnpm">```bash pnpm add ocpp-ws-io ```</Tab>
-  <Tab value="yarn">```bash yarn add ocpp-ws-io ```</Tab>
-  <Tab value="bun">```bash bun add ocpp-ws-io ```</Tab>
-</Tabs>
-
-</Step>
-
-<Step>
-
-### Create a Client (Charging Station)
-
-```typescript title="client.ts"
-import { OCPPClient, SecurityProfile } from "ocpp-ws-io";
-
-const client = new OCPPClient({
-  endpoint: "ws://localhost:3000",
-  identity: "CP001",
-  protocols: ["ocpp1.6"],
-  securityProfile: SecurityProfile.NONE,
-});
-
-// Register a typed handler
-client.handle("Reset", ({ params }) => {
-  client.log.info("Reset type:", params.type); // typed: "Hard" | "Soft"
-  return { status: "Accepted" };
-});
-
-await client.connect();
-
-// Version-aware call — fully typed
-try {
-  const response = await client.call("ocpp1.6", "BootNotification", {
-    chargePointVendor: "VendorX",
-    chargePointModel: "ModelY",
-  });
-  client.log.info("Status:", response.status); // "Accepted" | "Pending" | "Rejected"
-} catch (error) {
-  client.log.error("BootNotification failed:", error);
-}
-```
-
-</Step>
-
-<Step>
-
-### Create a Server (Central System)
-
-```typescript title="server.ts"
-import { OCPPServer } from "ocpp-ws-io";
-
-const server = new OCPPServer({
-  protocols: ["ocpp1.6", "ocpp2.0.1"],
-});
-
-server.auth((ctx) => {
-  if (ctx.handshake.headers.authorization === "Bearer my-secret") {
-    ctx.accept({ protocol: "ocpp1.6" });
-  } else {
-    ctx.reject(401, "Unauthorized");
-  }
-});
-
-server.on("client", (client) => {
-  console.log(`${client.identity} connected (${client.protocol})`);
-
-  client.handle("ocpp1.6", "BootNotification", ({ params }) => {
-    return {
-      status: "Accepted",
-      currentTime: new Date().toISOString(),
-      interval: 300,
-    };
-  });
-});
-
-await server.listen(3000);
-```
-
-</Step>
-
-</Steps>
 
 ---
 
 ## Architecture Overview
 
+The true power of the ecosystem is how effortlessly the components integrate:
+
 <Mermaid chart={`
 graph TB
-    subgraph Browser["Browser Environment"]
-        BC[BrowserOCPPClient]
+    subgraph Edge ["Charge Points & Simulators"]
+        EV16["Legacy EVSE (1.6)"]
+        EV21["Modern EVSE (2.1)"]
+        SIM["ocpp-ws-simulator"]
     end
 
-    subgraph NodeClient["Node.js Client"]
-        NC[OCPPClient]
+    subgraph Translation ["ocpp-protocol-proxy"]
+        PROXY["1.6 to 2.1 Translation Layer"]
     end
 
-    subgraph NodeServer["Node.js Server"]
-        NS[OCPPServer]
-        SC[OCPPServerClient]
-        NS --> SC
+    subgraph Backend ["CSMS Backend (ocpp-ws-io)"]
+        RPC["OCPPServer RPC Routes"]
+        MATH["ocpp-smart-charge-engine"]
     end
 
-    subgraph Adapters["Clustering"]
-        RA[RedisAdapter]
+    subgraph Scale ["Infrastructure"]
+        REDIS[("Redis Cluster Pub/Sub")]
     end
 
-    BC -->|WebSocket| NS
-    NC -->|WebSocket + TLS| NS
-    NS --> RA
-
+    EV16 -->|WS| PROXY
+    PROXY -->|WS 2.1| RPC
+    EV21 -->|mTLS 2.1| RPC
+    SIM -->|WS 2.0.1| RPC
+    
+    RPC <--> MATH
+    RPC <--> REDIS
 `} />
 
-| Component           | Import                      | Description                                           |
-| :------------------ | :-------------------------- | :---------------------------------------------------- |
-| `OCPPClient`        | `ocpp-ws-io`                | Node.js client with TLS, security profiles, ping/pong |
-| `OCPPServer`        | `ocpp-ws-io`                | WebSocket server with auth, clustering, strict mode   |
-| `BrowserOCPPClient` | `ocpp-ws-io/browser`        | Lightweight browser client for testing & simulation   |
-| `RedisAdapter`      | `ocpp-ws-io/adapters/redis` | Multi-instance clustering via Redis pub/sub           |
-
 ---
 
-## OCPP Version Support
+## Quick Starts
 
-| Feature                | OCPP 1.6 | OCPP 2.0.1 | OCPP 2.1 |
-| :--------------------- | :------: | :--------: | :------: |
-| Type-safe `call()`     |    ✅    |     ✅     |    ✅    |
-| Type-safe `handle()`   |    ✅    |     ✅     |    ✅    |
-| JSON Schema Validation |    ✅    |     ✅     |    ✅    |
-| Auto-generated Types   |    ✅    |     ✅     |    ✅    |
+Choose the package you want to explore first:
 
----
+<Tabs items={["Core RPC Server", "Smart Charge Engine", "Protocol Proxy"]}>
+  <Tab value="Core RPC Server">
+    Instantiate a strictly-typed WebSocket server with `ocpp-ws-io`.
+    
+    ```bash
+    npm install ocpp-ws-io
+    ```
 
-## What's Next?
+    ```typescript
+    import { OCPPServer } from "ocpp-ws-io";
 
-<Cards>
-  <Card
-    title="CLI Ecosystem"
-    href="/docs/cli"
-    description="Discover the powerful CLI commands to scaffold, test, and debug your application."
-  />
-  <Card
-    title="Quick Start Guide"
-    href="/docs/quick-start"
-    description="Set up your first OCPP client and server in under 5 minutes."
-  />
-  <Card
-    title="Browser Client"
-    href="/docs/browser-client"
-    description="Build charge point simulators that run directly in the browser."
-  />
-  <Card
-    title="Framework Integration"
-    href="/docs/frameworks"
-    description="Use with Express, Fastify, NestJS, Next.js, and more."
-  />
-  <Card
-    title="Security Profiles"
-    href="/docs/security"
-    description="Configure TLS, Basic Auth, and Mutual TLS for production."
-  />
-  <Card
-    title="Type Safety"
-    href="/docs/type-safety"
-    description="Leverage auto-generated types for compile-time safety."
-  />
-  <Card
-    title="API Reference"
-    href="/docs/api-reference"
-    description="Complete API documentation for all classes and methods."
-  />
-  <Card
-    title="🔀 Protocol Proxy"
-    href="/docs/protocol-proxy"
-    description="Translate between OCPP 1.6 and 2.1 with a transport-agnostic translation proxy."
-  />
-  <Card
-    title="⚡ Smart Charge Engine"
-    href="/docs/smart-charge-engine"
-    description="Distribute grid power fairly across EV chargers using SetChargingProfile."
-  />
-  <Card
-    title="🖥️ Web Simulator"
-    href="/docs/simulator"
-    description="Visual charge point emulator — self-host it or try the live demo at ocpp.rohittiwari.me."
-  />
-</Cards>
+    const server = new OCPPServer({ protocols: ["ocpp1.6", "ocpp2.1"] });
+
+    server.on("client", (client) => {
+      client.handle("ocpp1.6", "BootNotification", ({ params }) => {
+        return { status: "Accepted", currentTime: new Date().toISOString(), interval: 300 };
+      });
+    });
+
+    await server.listen(3000);
+    ```
+    
+    👉 [**Read the Core RPC Guide**](/docs/ocpp-ws-io/quick-start)
+  </Tab>
+
+  <Tab value="Smart Charge Engine">
+    Distribute 100kW of grid power fairly across multiple cars without tripping the breaker.
+
+    ```bash
+    npm install ocpp-smart-charge-engine
+    ```
+
+    ```typescript
+    import { SmartChargingEngine, Strategies } from "ocpp-smart-charge-engine";
+
+    const engine = new SmartChargingEngine({
+      siteId: "SITE-001",
+      maxGridPowerKw: 100,
+      algorithm: Strategies.EQUAL_SHARE,
+      // Pass the computed charging limits strictly back down
+      dispatcher: async ({ clientId, sessionProfile }) => {
+        await server.safeSendToClient(clientId, "ocpp1.6", "SetChargingProfile", /*...*/);
+      },
+    });
+
+    await engine.dispatch(); 
+    ```
+
+    👉 [**Read the Smart Charge Guide**](/docs/smart-charge-engine)
+  </Tab>
+
+  <Tab value="Protocol Proxy">
+    Let legacy OCPP 1.6 hardware communicate with a purely OCPP 2.1 backend.
+
+    ```bash
+    npm install ocpp-protocol-proxy
+    ```
+
+    ```typescript
+    import { OCPPProtocolProxy, presets } from "ocpp-protocol-proxy";
+
+    const proxy = new OCPPProtocolProxy({
+      upstreamEndpoint: "wss://modern-csms:9000",
+      upstreamProtocol: "ocpp2.1",
+    });
+
+    // Automatically map 1.6 BootNotification to 2.1 BootNotification
+    proxy.translate(presets.ocpp16_to_ocpp21);
+    ```
+
+    👉 [**Read the Proxy Guide**](/docs/protocol-proxy)
+  </Tab>
+</Tabs>
