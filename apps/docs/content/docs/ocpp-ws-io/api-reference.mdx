@@ -67,10 +67,10 @@ await client.connect();
 Make an RPC call. Throws a `TimeoutError` or protocol-level Error if the request fails.
 Make an RPC call. Throws a `TimeoutError` or protocol-level Error if the request fails.
 
-- `protocol`: Optional. e.g., "ocpp1.6". If omitted, generic type inference is used.
-- `method`: The OCPP method name (e.g., "BootNotification").
-- `params`: The request payload.
-- `options`: `{ timeoutMs?: number, retries?: number, idempotencyKey?: string }`
+-   `protocol`: Optional. e.g., "ocpp1.6". If omitted, generic type inference is used.
+-   `method`: The OCPP method name (e.g., "BootNotification").
+-   `params`: The request payload.
+-   `options`: `{ timeoutMs?: number, retries?: number, idempotencyKey?: string }`
 
 ```typescript
 // With manual idempotency key to prevent double execution on reconnections
@@ -83,14 +83,14 @@ Exactly like `call()`, except it catches all errors and returns the response pay
 
 ```typescript
 const result = await client.safeCall(
-  "ocpp1.6",
-  "ClearCache",
-  {},
-  { timeoutMs: 15000 },
+	"ocpp1.6",
+	"ClearCache",
+	{},
+	{ timeoutMs: 15000 },
 );
 
 if (result === undefined) {
-  client.logger.warn("Station failed to clear cache", { error });
+	client.logger.warn("Station failed to clear cache", { error });
 }
 ```
 
@@ -98,9 +98,9 @@ if (result === undefined) {
 
 Register an RPC handler.
 
-- `protocol`: Optional. If provided, handler only triggers for this protocol version.
-- `method`: The OCPP method name.
-- `handler`: `(context) => Response | Promise<Response>`
+-   `protocol`: Optional. If provided, handler only triggers for this protocol version.
+-   `method`: The OCPP method name.
+-   `handler`: `(context) => Response | Promise<Response>`
 
 ```typescript
 // Version specific
@@ -220,9 +220,9 @@ Apply CORS rules directly to the server or router levels. This protects endpoint
 
 ```typescript
 server.cors({
-  allowedOrigins: ["https://dashboard.example.com"],
-  allowedIPs: ["192.168.1.0/24", "10.0.0.5"],
-  allowedSchemes: ["wss"],
+	allowedOrigins: ["https://dashboard.example.com"],
+	allowedIPs: ["192.168.1.0/24", "10.0.0.5"],
+	allowedSchemes: ["wss"],
 });
 ```
 
@@ -232,8 +232,8 @@ Listen for new connections.
 
 ```typescript
 server.on("client", (client) => {
-  // client is an OCPPServerClient (extends OCPPClient)
-  console.log(client.session); // Access session data
+	// client is an OCPPServerClient (extends OCPPClient)
+	console.log(client.session); // Access session data
 });
 ```
 
@@ -244,8 +244,8 @@ Only valid when using `SecurityProfile.TLS_BASIC_AUTH` or `TLS_CLIENT_CERT`.
 
 ```typescript
 server.updateTLS({
-  cert: fs.readFileSync("./certs/server.crt"),
-  key: fs.readFileSync("./certs/server.key"),
+	cert: fs.readFileSync("./certs/server.crt"),
+	key: fs.readFileSync("./certs/server.key"),
 });
 ```
 
@@ -257,8 +257,8 @@ Emitted for every security-relevant action. Useful for SIEM, alerting, and audit
 
 ```typescript
 server.on("securityEvent", (event) => {
-  // event.type: "AUTH_FAILED" | "CONNECTION_RATE_LIMIT" | "UPGRADE_ABORTED"
-  siem.log(event);
+	// event.type: "AUTH_FAILED" | "CONNECTION_RATE_LIMIT" | "UPGRADE_ABORTED"
+	siem.log(event);
 });
 ```
 
@@ -270,13 +270,13 @@ Helper method to dispatch an outgoing RPC call to a specific connected client by
 
 ```typescript
 const result = await server.sendToClient(
-  "CP-001",
-  "ocpp1.6",
-  "Reset",
-  {
-    type: "Soft",
-  },
-  { timeoutMs: 10000 },
+	"CP-001",
+	"ocpp1.6",
+	"Reset",
+	{
+		type: "Soft",
+	},
+	{ timeoutMs: 10000 },
 );
 ```
 
@@ -286,15 +286,15 @@ Exactly like `sendToClient()`, but catches errors (and disconnected station erro
 
 ```typescript
 const result = await server.safeSendToClient(
-  "CP-001",
-  "ocpp1.6",
-  "UpdateFirmware",
-  { location: "..." },
-  { timeoutMs: 30000 },
+	"CP-001",
+	"ocpp1.6",
+	"UpdateFirmware",
+	{ location: "..." },
+	{ timeoutMs: 30000 },
 );
 
 if (result !== undefined) {
-  console.log("Firmware update accepted");
+	console.log("Firmware update accepted");
 }
 ```
 
@@ -318,7 +318,7 @@ const telemetry = server.stats();
 console.log(`Active Managed Sessions: ${telemetry.activeSessions}`);
 console.log(`Active Raw WebSockets: ${telemetry.webSockets?.total}`);
 console.log(
-  `Pending Network Flushes: ${telemetry.webSockets?.bufferedAmount} bytes`,
+	`Pending Network Flushes: ${telemetry.webSockets?.bufferedAmount} bytes`,
 );
 console.log(`Memory Used: ${telemetry.memoryUsage.heapUsed} bytes`);
 console.log(`Uptime: ${telemetry.uptimeSeconds}s`);
@@ -354,8 +354,8 @@ Return `NOREPLY` from a handler to suppress the automatic response. This is usef
 import { NOREPLY } from "ocpp-ws-io";
 
 client.handle("StatusNotification", ({ params }) => {
-  // Process the notification but don't send a response immediately
-  return NOREPLY;
+	// Process the notification but don't send a response immediately
+	return NOREPLY;
 });
 ```
 
@@ -469,34 +469,36 @@ client.logger.info("Retrying connection...");
 
 ```typescript
 client.on("open", (event) => {
-  /* connected */
+	/* connected */
 });
 client.on("close", ({ code, reason }) => {
-  /* disconnected */
+	/* disconnected */
 });
 client.on("error", (error) => {
-  /* error */
+	/* error */
 });
 client.on("connecting", ({ url }) => {
-  /* attempting */
+	/* attempting */
 });
 client.on("reconnect", ({ attempt, delay }) => {
-  /* reconnecting */
+	/* reconnecting */
 });
-client.on("message", (message) => {
-  /* OCPP message */
+client.on("message", ({ message, direction, ctx }) => {
+	/* OCPP message */
+	/* message direction */
+	/* ctx context form client */
 });
 client.on("call", (call) => {
-  /* incoming call */
+	/* incoming call */
 });
 client.on("callResult", (result) => {
-  /* result received */
+	/* result received */
 });
 client.on("callError", (error) => {
-  /* error received */
+	/* error received */
 });
 client.on("badMessage", ({ message, error }) => {
-  /* malformed */
+	/* malformed */
 });
 ```
 
@@ -506,22 +508,22 @@ All error classes are exported for `instanceof` checks:
 
 ```typescript
 import {
-  // Base errors
-  TimeoutError, // Call timeout
-  UnexpectedHttpResponse, // Non-101 upgrade response
-  WebsocketUpgradeError, // WebSocket upgrade failure
+	// Base errors
+	TimeoutError, // Call timeout
+	UnexpectedHttpResponse, // Non-101 upgrade response
+	WebsocketUpgradeError, // WebSocket upgrade failure
 
-  // RPC errors (OCPP-J spec Section 4.3)
-  RPCGenericError,
-  RPCNotImplementedError,
-  RPCNotSupportedError,
-  RPCInternalError,
-  RPCProtocolError,
-  RPCSecurityError,
-  RPCFormationViolationError,
-  RPCPropertyConstraintViolationError,
-  RPCOccurrenceConstraintViolationError,
-  RPCTypeConstraintViolationError,
-  RPCGenericTransportError,
+	// RPC errors (OCPP-J spec Section 4.3)
+	RPCGenericError,
+	RPCNotImplementedError,
+	RPCNotSupportedError,
+	RPCInternalError,
+	RPCProtocolError,
+	RPCSecurityError,
+	RPCFormationViolationError,
+	RPCPropertyConstraintViolationError,
+	RPCOccurrenceConstraintViolationError,
+	RPCTypeConstraintViolationError,
+	RPCGenericTransportError,
 } from "ocpp-ws-io";
 ```

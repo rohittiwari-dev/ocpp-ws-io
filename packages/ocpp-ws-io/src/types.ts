@@ -690,6 +690,35 @@ export interface AuthRoute {
   handler: AuthCallback<any>;
 }
 
+// ─── Message Direction & Payload Types ──────────────────────────
+
+/** Indicates whether a message is incoming (from peer) or outgoing (to peer) */
+export type MessageDirection = "IN" | "OUT";
+
+/**
+ * Enriched context for message events, combining metadata from middleware
+ * and message flow tracking. Uses type intersection since MiddlewareContext is a union.
+ */
+export type MessageEventContext = MiddlewareContext & {
+  /** Message timestamp (ISO 8601) */
+  timestamp: string;
+  /** Latency in milliseconds (only for responses/results) */
+  latencyMs?: number;
+};
+
+/**
+ * Enriched message event payload with direction and context.
+ * Replaces the simple OCPPMessage tuple for better observability.
+ */
+export interface MessageEventPayload {
+  /** The raw OCPP message */
+  message: OCPPMessage;
+  /** Direction of the message: IN (from peer) or OUT (to peer) */
+  direction: MessageDirection;
+  /** Enriched context with metadata */
+  ctx: MessageEventContext;
+}
+
 // ─── Event Types ─────────────────────────────────────────────────
 
 export interface ClientEvents {
@@ -699,7 +728,7 @@ export interface ClientEvents {
   error: [Error];
   connecting: [{ url: string }];
   reconnect: [{ attempt: number; delay: number }];
-  message: [OCPPMessage];
+  message: [MessageEventPayload];
   call: [OCPPCall];
   callResult: [OCPPCallResult];
   callError: [OCPPCallError];
@@ -749,6 +778,8 @@ export interface ServerEvents {
   close: [];
   /** I3: Structured security event for SIEM/audit pipelines */
   securityEvent: [SecurityEvent];
+  /** Enriched message event with direction and context */
+  message: [MessageEventPayload];
   // Native WebSocketServer events
   connection: [
     socket: import("ws").WebSocket,

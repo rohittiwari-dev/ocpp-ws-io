@@ -1,5 +1,49 @@
 # ocpp-ws-io
 
+## v2.2.0 - Message Event Observability (BREAKING CHANGE)
+
+### Major Changes
+
+- **BREAKING**: Unified message event API with direction tracking and enriched context
+  - New `message` event emits `{ message, direction, ctx }` payload instead of raw `OCPPMessage`
+  - Direction indicator: `"IN"` (from peer) | `"OUT"` (to peer)
+  - Enriched context includes: `timestamp`, `latencyMs`, `protocol`, `method`, `type`
+  - Applies to both `OCPPClient` and `OCPPServerClient` (server-side connections)
+  - See [MIGRATION_v3_MESSAGE_EVENTS.md](./MIGRATION_v3_MESSAGE_EVENTS.md) for detailed migration guide
+
+### Backward Compatibility Notes
+
+- Old `call`, `callResult`, `callError` events still emit (deprecated, for compatibility)
+- `badMessage` and other events unchanged
+- Middleware context handling unchanged (`MiddlewareContext` still used internally)
+- All 703 tests passing — comprehensive test coverage ensures stability
+
+### Related Files
+
+- New types: `MessageDirection`, `MessageEventPayload`, `MessageEventContext` in `src/types.ts`
+- Updated: Client event handling in `src/client.ts` with helper methods
+- Server-client inherits from client, automatically gets message event support
+- Enhanced README with observability section and examples
+
+### Examples
+
+**Before (v2.1.15):**
+
+```typescript
+client.on("call", (msg) => {
+ const [, id, method] = msg;
+ console.log(`Call: ${method}`);
+});
+```
+
+**After (v2.2.0):**
+
+```typescript
+client.on("message", ({ message, direction, ctx }) => {
+ console.log(`${direction} ${ctx.method} [latency: ${ctx.latencyMs}ms]`);
+});
+```
+
 ## 2.1.15
 
 ### Patch Changes
@@ -19,17 +63,17 @@
 
 - Bump `voltlog-io` to v1.0.6
 
-  v1.0.5 and earlier shipped `dist/chunk-DAFMRCAN.mjs` which unconditionally
-  executed `import { fileURLToPath } from "url"` (a Node.js built-in) as part of
-  tsup's ESM shim, crashing every browser bundler (Vite, Next.js/webpack, esbuild)
-  with `fileURLToPath is not a function`.
+    v1.0.5 and earlier shipped `dist/chunk-DAFMRCAN.mjs` which unconditionally
+    executed `import { fileURLToPath } from "url"` (a Node.js built-in) as part of
+    tsup's ESM shim, crashing every browser bundler (Vite, Next.js/webpack, esbuild)
+    with `fileURLToPath is not a function`.
 
-  v1.0.6 removes the shared chunk entirely and ships a clean browser-safe client
-  bundle — no Node.js shim, no `path`/`url` imports.
+    v1.0.6 removes the shared chunk entirely and ships a clean browser-safe client
+    bundle — no Node.js shim, no `path`/`url` imports.
 
-  This unblocks `voltlog-io/client` usage in `ocpp-ws-io/browser` (`browser/init-logger.ts`)
-  which was added in the previous patch to replace the root `init-logger.ts` that
-  imported from the Node.js-only full `voltlog-io` entry point.
+    This unblocks `voltlog-io/client` usage in `ocpp-ws-io/browser` (`browser/init-logger.ts`)
+    which was added in the previous patch to replace the root `init-logger.ts` that
+    imported from the Node.js-only full `voltlog-io` entry point.
 
 ## 2.1.12
 
@@ -63,7 +107,7 @@
 
 - fix: resolve CodeQL security vulnerabilities including dynamic method call invocation issues
 
-  fix: update CI/CD pipeline with Netlify build hooks for reliable monorepo deployments
+    fix: update CI/CD pipeline with Netlify build hooks for reliable monorepo deployments
 
 ## 2.1.8
 
@@ -183,7 +227,7 @@ This patch release encapsulates several major registry layout optimizations and 
   - **TypeScript Middleware Helpers**: Shipped typed utility functions `defineRpcMiddleware` for strict browser/node interceptors, `defineMiddleware` for node connections, and `defineAuth` / `combineAuth` for highly composable authentication logic.
   - **Structured Logging Configs**: Redesigned `LoggingConfig` interface using a clear `{ prettify, exchangeLog, level }` structure, standardizing real-time stream observability with `[IN]`, `[OUT]`, and `[RES]` log formatting.
 
-  ### 🩹 Fixes & Additions
+    ### 🩹 Fixes & Additions
 
   - **Handshake API Normalization**: Standardized legacy `endpoint` configurations by officially transitioning them to Node-native `pathname` properties inside `HandshakeInfo` and constructor objects.
   - **Duplicate Handler Collisions**: Protected `client.handle()` RPC registration tables from silently overriding each other by throwing explicit runtime errors when identical handlers are accidentally attached.
@@ -202,7 +246,7 @@ This patch release encapsulates several major registry layout optimizations and 
   - **Safe Calls**: Added `safeCall()` and `safeSendToClient()` methods for "fire-and-forget" operations that handle errors gracefully.
   - **Connection Upgrades**: Added `handshakeTimeoutMs` and `upgradeAborted` event to `OCPPServer` for better control over the WebSocket handshake pipeline.
 
-  ## 📚 Documentation
+    ## 📚 Documentation
 
   - Comprehensive updates to `README.md` and `apps/docs`.
   - New guides for **Middleware**, **Clustering (Redis Streams)**, **Logging**, and **Connection Upgrades**.

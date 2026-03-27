@@ -28,6 +28,9 @@ import {
   type HandlerContext,
   type LoggerLike,
   type LoggerLikeNotOptional,
+  type MessageDirection,
+  type MessageEventContext,
+  type MessageEventPayload,
   MessageType,
   type MiddlewareContext,
   NOREPLY,
@@ -284,7 +287,9 @@ export class OCPPClient<
    *
    * @returns A promise that resolves to an object containing the HTTP response from the upgrade request.
    */
-  async connect(): Promise<{ response: import("node:http").IncomingMessage }> {
+  async connect(): Promise<{
+    response: import("node:http").IncomingMessage;
+  }> {
     if (this._state !== CLOSED) {
       throw new Error(`Cannot connect: client is in state ${this._state}`);
     }
@@ -354,7 +359,9 @@ export class OCPPClient<
       const onError = (err: Error) => {
         cleanup();
         this._state = CLOSED;
-        this._logger?.error?.("Connection error", { error: err.message });
+        this._logger?.error?.("Connection error", {
+          error: err.message,
+        });
         this.emit("error", err);
         reject(err);
       };
@@ -469,7 +476,10 @@ export class OCPPClient<
         this._ws?.removeListener("close", onClose);
         this._state = CLOSED;
         this._cleanup();
-        const result = { code: closeCode, reason: closeReason.toString() };
+        const result = {
+          code: closeCode,
+          reason: closeReason.toString(),
+        };
         this.emit("close", result);
         resolve(result);
       };
@@ -710,7 +720,13 @@ export class OCPPClient<
               },
             );
           }
-          this._offlineQueue.push({ method, params, options, resolve, reject });
+          this._offlineQueue.push({
+            method,
+            params,
+            options,
+            resolve,
+            reject,
+          });
           this._logger?.debug?.("Call queued offline", {
             method,
             queueSize: this._offlineQueue.length,
@@ -872,7 +888,9 @@ export class OCPPClient<
           });
         } else if (this._state === CONNECTING) {
           // Buffer it
-          this._logger?.debug?.("Buffering call", { method: ctxvals.method });
+          this._logger?.debug?.("Buffering call", {
+            method: ctxvals.method,
+          });
           this._outboundBuffer.push(messageStr);
           // The promise remains pending until connected & flushed -> then response comes
         } else {
@@ -947,6 +965,43 @@ export class OCPPClient<
       this._recordActivity();
       this.emit("pong");
     });
+  }
+
+  // ─── Internal: Message event helpers ────────────────────────
+
+  /**
+   * Build an enriched message event context from middleware context.
+   * Adds timestamp and optional latency metadata.
+   */
+  private _buildMessageEventContext(
+    ctx: MiddlewareContext,
+    latencyMs?: number,
+  ): MessageEventContext {
+    const eventCtx: MessageEventContext = {
+      ...ctx,
+      timestamp: new Date().toISOString(),
+      latencyMs,
+    };
+    return eventCtx;
+  }
+
+  /**
+   * Emit a message event with enriched payload (direction + context).
+   * Replaces separate call/callResult/callError events for unified observability.
+   */
+  private _emitMessageEvent(
+    message: OCPPMessage,
+    direction: MessageDirection,
+    ctx: MiddlewareContext,
+    latencyMs?: number,
+  ): void {
+    const eventCtx = this._buildMessageEventContext(ctx, latencyMs);
+    const payload: MessageEventPayload = {
+      message,
+      direction,
+      ctx: eventCtx,
+    };
+    this.emit("message", payload);
   }
 
   // ─── Internal: Message handling ──────────────────────────────
@@ -1073,6 +1128,10 @@ export class OCPPClient<
           ctxvals.method,
           ctxvals.params,
         ];
+
+        // Emit enriched message event (replaces old "call" event)
+        this._emitMessageEvent(modifiedMessage, "IN", ctxvals);
+        // Keep backward-compatible "call" event
         this.emit("call", modifiedMessage);
 
         if (this._state !== OPEN) {
@@ -1198,7 +1257,11 @@ export class OCPPClient<
       if (!pendingCtx) return;
 
       // Handled by createLoggingMiddleware
+      const latencyMs = Date.now() - pendingCtx.sentAt;
 
+      // Emit enriched message event (replaces old "callResult" event)
+      this._emitMessageEvent(message, "IN", ctxvals, latencyMs);
+      // Keep backward-compatible "callResult" event
       this.emit("callResult", message);
 
       clearTimeout(pendingCtx.timeoutHandle);
@@ -1233,14 +1296,17 @@ export class OCPPClient<
         MiddlewareContext,
         { type: "incoming_error" }
       >;
-      const [, , code, msg, details] = ctxvals.error;
-
       const pendingCtx = this._pendingCalls.get(ctxvals.messageId);
       if (!pendingCtx) return;
 
-      // Handled by createLoggingMiddleware
+      const latencyMs = Date.now() - pendingCtx.sentAt;
 
-      this.emit("callError", ctxvals.error);
+      // Emit enriched message event (replaces old "callError" event)
+      this._emitMessageEvent(message, "IN", ctxvals, latencyMs);
+      // Keep backward-compatible "callError" event
+      this.emit("callError", message);
+
+      const [, , code, msg, details] = ctxvals.error;
 
       clearTimeout(pendingCtx.timeoutHandle);
       this._pendingCalls.delete(ctxvals.messageId);
@@ -1350,7 +1416,10 @@ export class OCPPClient<
       attempt: this._reconnectAttempt,
       delayMs: Math.round(delayMs),
     });
-    this.emit("reconnect", { attempt: this._reconnectAttempt, delay: delayMs });
+    this.emit("reconnect", {
+      attempt: this._reconnectAttempt,
+      delay: delayMs,
+    });
 
     this._reconnectTimer = setTimeout(async () => {
       this._reconnectTimer = null;
@@ -1397,7 +1466,9 @@ export class OCPPClient<
 
     // Atomic snapshot — clears queue before sending to prevent re-entry
     const snapshot = this._offlineQueue.splice(0, this._offlineQueue.length);
-    this._logger?.info?.("Flushing offline queue", { count: snapshot.length });
+    this._logger?.info?.("Flushing offline queue", {
+      count: snapshot.length,
+    });
 
     for (const entry of snapshot) {
       this._callQueue

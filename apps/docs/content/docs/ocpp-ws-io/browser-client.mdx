@@ -40,23 +40,23 @@ import { BrowserOCPPClient } from "ocpp-ws-io/browser";
 import { BrowserOCPPClient } from "ocpp-ws-io/browser";
 
 const client = new BrowserOCPPClient({
-  endpoint: "wss://csms.example.com/ocpp",
-  identity: "CP001",
-  protocols: ["ocpp1.6"],
+	endpoint: "wss://csms.example.com/ocpp",
+	identity: "CP001",
+	protocols: ["ocpp1.6"],
 });
 
 // Register a handler — params are auto-typed for OCPP 1.6 Reset
 client.handle("Reset", ({ params }) => {
-  console.log("Reset type:", params.type);
-  return { status: "Accepted" };
+	console.log("Reset type:", params.type);
+	return { status: "Accepted" };
 });
 
 // Connect and send a BootNotification
 await client.connect();
 
 const response = await client.call("ocpp1.6", "BootNotification", {
-  chargePointVendor: "VendorX",
-  chargePointModel: "ModelY",
+	chargePointVendor: "VendorX",
+	chargePointModel: "ModelY",
 });
 
 console.log("Status:", response.status); // typed: "Accepted" | "Pending" | "Rejected"
@@ -123,7 +123,7 @@ client.use(browserInterceptor);
 ## Connection Lifecycle
 
 <Mermaid
-  chart={`
+	chart={`
 stateDiagram-v2
     [*] --> CLOSED
     CLOSED --> CONNECTING: connect()
@@ -146,7 +146,7 @@ BrowserOCPPClient.CLOSED; // 3
 
 // Check current state
 if (client.state === BrowserOCPPClient.OPEN) {
-  await client.call("Heartbeat", {});
+	await client.call("Heartbeat", {});
 }
 ```
 
@@ -165,15 +165,15 @@ if (client.state === BrowserOCPPClient.OPEN) {
 ```typescript
 // Version-aware call — fully typed params and response
 const result = await client.call("ocpp1.6", "BootNotification", {
-  chargePointVendor: "VendorX",
-  chargePointModel: "ModelY",
+	chargePointVendor: "VendorX",
+	chargePointModel: "ModelY",
 });
 result.status; // typed: "Accepted" | "Pending" | "Rejected"
 
 // OCPP 2.0.1 — different shape, still fully typed
 const result201 = await client.call("ocpp2.0.1", "BootNotification", {
-  chargingStation: { model: "ModelX", vendorName: "VendorY" },
-  reason: "PowerUp",
+	chargingStation: { model: "ModelX", vendorName: "VendorY" },
+	reason: "PowerUp",
 });
 
 // Default protocol call (uses the client's type parameter P)
@@ -181,7 +181,7 @@ const res = await client.call("Heartbeat", {});
 
 // Explicit response type (for custom/vendor methods)
 const custom = await client.call<{ result: string }>("VendorAction", {
-  data: "hello",
+	data: "hello",
 });
 ```
 
@@ -190,21 +190,21 @@ const custom = await client.call<{ result: string }>("VendorAction", {
 ```typescript
 // Timeout
 const res = await client.call(
-  "Reset",
-  { type: "Soft" },
-  {
-    timeoutMs: 5000,
-  },
+	"Reset",
+	{ type: "Soft" },
+	{
+		timeoutMs: 5000,
+	},
 );
 
 // AbortSignal
 const controller = new AbortController();
 const res2 = await client.call(
-  "Heartbeat",
-  {},
-  {
-    signal: controller.signal,
-  },
+	"Heartbeat",
+	{},
+	{
+		signal: controller.signal,
+	},
 );
 
 // Cancel the call
@@ -220,20 +220,20 @@ Register handlers for incoming server-to-client calls. The API is identical to `
 ```typescript
 // Version-specific handler — only triggers for ocpp1.6
 client.handle("ocpp1.6", "Reset", ({ params }) => {
-  params.type; // typed: "Hard" | "Soft" (OCPP 1.6 shape)
-  return { status: "Accepted" };
+	params.type; // typed: "Hard" | "Soft" (OCPP 1.6 shape)
+	return { status: "Accepted" };
 });
 
 // Generic handler — triggers for any negotiated protocol
 client.handle("Reset", ({ params, protocol }) => {
-  console.log(`Reset via ${protocol}:`, params.type);
-  return { status: "Accepted" };
+	console.log(`Reset via ${protocol}:`, params.type);
+	return { status: "Accepted" };
 });
 
 // Wildcard handler — catches all unhandled methods
 client.handle((method, { params }) => {
-  console.log(`Unhandled method: ${method}`);
-  return {};
+	console.log(`Unhandled method: ${method}`);
+	return {};
 });
 ```
 
@@ -253,8 +253,8 @@ Return `NOREPLY` from a handler to suppress the automatic response:
 import { NOREPLY } from "ocpp-ws-io/browser";
 
 client.handle("StatusNotification", ({ params }) => {
-  // Process but don't send a response
-  return NOREPLY;
+	// Process but don't send a response
+	return NOREPLY;
 });
 ```
 
@@ -273,43 +273,45 @@ client.removeAllHandlers(); // remove all
 
 ```typescript
 client.on("open", (event) => {
-  /* WebSocket connected */
+	/* WebSocket connected */
 });
 
 client.on("close", ({ code, reason }) => {
-  /* WebSocket disconnected */
+	/* WebSocket disconnected */
 });
 
 client.on("error", (error) => {
-  /* Connection or WebSocket error */
+	/* Connection or WebSocket error */
 });
 
 client.on("connecting", ({ url }) => {
-  /* Attempting connection */
+	/* Attempting connection */
 });
 
 client.on("reconnect", ({ attempt, delay }) => {
-  /* Scheduled reconnection */
+	/* Scheduled reconnection */
 });
 
-client.on("message", (message) => {
-  /* Any parsed OCPP message */
+client.on("message", ({ message, direction, ctx }) => {
+	/* OCPP message */
+	/* message direction */
+	/* ctx context form client */
 });
 
 client.on("call", (call) => {
-  /* Incoming OCPP Call */
+	/* Incoming OCPP Call */
 });
 
 client.on("callResult", (result) => {
-  /* Received CallResult */
+	/* Received CallResult */
 });
 
 client.on("callError", (error) => {
-  /* Received CallError */
+	/* Received CallError */
 });
 
 client.on("badMessage", ({ message, error }) => {
-  /* Malformed message received */
+	/* Malformed message received */
 });
 ```
 
@@ -321,21 +323,21 @@ client.on("badMessage", ({ message, error }) => {
 
 ```typescript
 const client = new BrowserOCPPClient({
-  identity: "CP001",
-  endpoint: "wss://csms.example.com/ocpp",
-  protocols: ["ocpp1.6"],
-  reconnect: true, // default: true
-  maxReconnects: 10, // default: Infinity
-  backoffMin: 1000, // default: 1000ms
-  backoffMax: 30000, // default: 30000ms
+	identity: "CP001",
+	endpoint: "wss://csms.example.com/ocpp",
+	protocols: ["ocpp1.6"],
+	reconnect: true, // default: true
+	maxReconnects: 10, // default: Infinity
+	backoffMin: 1000, // default: 1000ms
+	backoffMax: 30000, // default: 30000ms
 });
 
 client.on("reconnect", ({ attempt, delay }) => {
-  console.log(`Reconnect attempt ${attempt} in ${delay}ms`);
+	console.log(`Reconnect attempt ${attempt} in ${delay}ms`);
 });
 
 client.on("close", ({ code, reason }) => {
-  console.log(`Disconnected: ${code} ${reason}`);
+	console.log(`Disconnected: ${code} ${reason}`);
 });
 ```
 
@@ -387,51 +389,54 @@ import { useEffect, useRef, useState } from "react";
 import { BrowserOCPPClient } from "ocpp-ws-io/browser";
 
 function useOCPP(identity: string, endpoint: string) {
-  const clientRef = useRef<BrowserOCPPClient | null>(null);
-  const [connected, setConnected] = useState(false);
+	const clientRef = useRef<BrowserOCPPClient | null>(null);
+	const [connected, setConnected] = useState(false);
 
-  useEffect(() => {
-    const client = new BrowserOCPPClient({
-      identity,
-      endpoint,
-      protocols: ["ocpp1.6"],
-    });
+	useEffect(() => {
+		const client = new BrowserOCPPClient({
+			identity,
+			endpoint,
+			protocols: ["ocpp1.6"],
+		});
 
-    client.on("open", () => setConnected(true));
-    client.on("close", () => setConnected(false));
+		client.on("open", () => setConnected(true));
+		client.on("close", () => setConnected(false));
 
-    client.connect();
-    clientRef.current = client;
+		client.connect();
+		clientRef.current = client;
 
-    return () => {
-      client.close();
-    };
-  }, [identity, endpoint]);
+		return () => {
+			client.close();
+		};
+	}, [identity, endpoint]);
 
-  return { client: clientRef.current, connected };
+	return { client: clientRef.current, connected };
 }
 
 // Usage
 function ChargingStation() {
-  const { client, connected } = useOCPP("CP001", "wss://csms.example.com/ocpp");
+	const { client, connected } = useOCPP(
+		"CP001",
+		"wss://csms.example.com/ocpp",
+	);
 
-  const sendBoot = async () => {
-    if (!client) return;
-    const res = await client.call("BootNotification", {
-      chargePointVendor: "VendorX",
-      chargePointModel: "ModelY",
-    });
-    console.log("Boot:", res.status);
-  };
+	const sendBoot = async () => {
+		if (!client) return;
+		const res = await client.call("BootNotification", {
+			chargePointVendor: "VendorX",
+			chargePointModel: "ModelY",
+		});
+		console.log("Boot:", res.status);
+	};
 
-  return (
-    <div>
-      <p>Status: {connected ? "Connected" : "Disconnected"}</p>
-      <button onClick={sendBoot} disabled={!connected}>
-        Send Boot
-      </button>
-    </div>
-  );
+	return (
+		<div>
+			<p>Status: {connected ? "Connected" : "Disconnected"}</p>
+			<button onClick={sendBoot} disabled={!connected}>
+				Send Boot
+			</button>
+		</div>
+	);
 }
 ```
 
@@ -443,9 +448,9 @@ import { BrowserOCPPClient } from "ocpp-ws-io/browser";
 
 // ✅ Works in client components — no Node.js dependencies
 const client = new BrowserOCPPClient({
-  identity: "CP001",
-  endpoint: "wss://csms.example.com/ocpp",
-  protocols: ["ocpp1.6"],
+	identity: "CP001",
+	endpoint: "wss://csms.example.com/ocpp",
+	protocols: ["ocpp1.6"],
 });
 ```
 
@@ -458,28 +463,28 @@ import { ref, onMounted, onUnmounted } from "vue";
 import { BrowserOCPPClient } from "ocpp-ws-io/browser";
 
 export function useOCPP(identity: string, endpoint: string) {
-  const client = ref<BrowserOCPPClient | null>(null);
-  const connected = ref(false);
+	const client = ref<BrowserOCPPClient | null>(null);
+	const connected = ref(false);
 
-  onMounted(() => {
-    const c = new BrowserOCPPClient({
-      identity,
-      endpoint,
-      protocols: ["ocpp1.6"],
-    });
+	onMounted(() => {
+		const c = new BrowserOCPPClient({
+			identity,
+			endpoint,
+			protocols: ["ocpp1.6"],
+		});
 
-    c.on("open", () => (connected.value = true));
-    c.on("close", () => (connected.value = false));
+		c.on("open", () => (connected.value = true));
+		c.on("close", () => (connected.value = false));
 
-    c.connect();
-    client.value = c;
-  });
+		c.connect();
+		client.value = c;
+	});
 
-  onUnmounted(() => {
-    client.value?.close();
-  });
+	onUnmounted(() => {
+		client.value?.close();
+	});
 
-  return { client, connected };
+	return { client, connected };
 }
 ```
 
@@ -491,37 +496,37 @@ All exports available from the `ocpp-ws-io/browser` subpath:
 
 ```typescript
 import {
-  // Client
-  BrowserOCPPClient,
+	// Client
+	BrowserOCPPClient,
 
-  // Error classes
-  RPCGenericError,
-  RPCNotImplementedError,
-  RPCNotSupportedError,
-  RPCInternalError,
-  RPCProtocolError,
-  RPCSecurityError,
-  RPCFormatViolationError,
-  RPCFormationViolationError,
-  RPCPropertyConstraintViolationError,
-  RPCOccurrenceConstraintViolationError,
-  RPCTypeConstraintViolationError,
-  RPCMessageTypeNotSupportedError,
-  RPCFrameworkError,
-  TimeoutError,
+	// Error classes
+	RPCGenericError,
+	RPCNotImplementedError,
+	RPCNotSupportedError,
+	RPCInternalError,
+	RPCProtocolError,
+	RPCSecurityError,
+	RPCFormatViolationError,
+	RPCFormationViolationError,
+	RPCPropertyConstraintViolationError,
+	RPCOccurrenceConstraintViolationError,
+	RPCTypeConstraintViolationError,
+	RPCMessageTypeNotSupportedError,
+	RPCFrameworkError,
+	TimeoutError,
 
-  // Utilities
-  createRPCError,
-  getErrorPlainObject,
+	// Utilities
+	createRPCError,
+	getErrorPlainObject,
 
-  // Middleware Helpers
-  defineRpcMiddleware,
-  createLoggingMiddleware,
+	// Middleware Helpers
+	defineRpcMiddleware,
+	createLoggingMiddleware,
 
-  // Constants
-  ConnectionState,
-  MessageType,
-  NOREPLY,
+	// Constants
+	ConnectionState,
+	MessageType,
+	NOREPLY,
 } from "ocpp-ws-io/browser";
 ```
 

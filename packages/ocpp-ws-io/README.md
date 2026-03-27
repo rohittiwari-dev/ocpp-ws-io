@@ -1,25 +1,32 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/rohittiwari-dev/ocpp-ws-io/main/assets/banner.svg" alt="ocpp-ws-io" width="420" />
+  <img src="https://raw.githubusercontent.com/rohittiwari-dev/ocpp-ws-io/main/assets/banner.svg" alt="ocpp-ws-io - OCPP RPC WebSocket Client and Server" width="420" />
 </p>
 
-> built with TypeScript — supports OCPP 1.6, 2.0.1, and 2.1 with optional JSON schema validation, all security profiles, clustering support, and structured logging powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io).
+# 🔌 OCPP RPC WebSocket Client & Server Library
+
+The **production-ready OCPP RPC implementation** for building type-safe EV charging platforms, CSMS backends, charge points, and simulators. Supports OCPP 1.6J, 2.0.1, and 2.1 with full protocol compliance, all security profiles, Redis clustering, strict JSON schema validation, and structured logging.
+
+> **Built with TypeScript** for EV charging, CSMS, CPO/EMSP platforms. Zero-dependency WebSocket RPC framework supporting OCPP versions 1.6, 2.0.1, and 2.1 with optional JSON schema validation, bidirectional messaging, all security profiles (0–3), Redis pub/sub clustering, and structured logging powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io).
 
 [![npm version](https://img.shields.io/npm/v/ocpp-ws-io.svg)](https://www.npmjs.com/package/ocpp-ws-io)
 [![License](https://img.shields.io/npm/l/ocpp-ws-io.svg)](https://github.com/rohittiwari-dev/ocpp-ws-io/blob/main/LICENSE)
 
-## 📚 Documentation
+## 📚 Full Documentation & API Reference
 
 For full API reference, advanced usage, and guides, visit the **[Official Documentation](https://ocpp-ws-io.rohittiwari.me)**.
 
-## ✨ Features
+## ✨ Key Features for OCPP RPC WebSocket Development
 
-- ⚡ **Full OCPP-J RPC** — Compliant message framing
-- 🔒 **Security Profiles 0–3** — Plain WS, Basic Auth, TLS, mTLS
-- 🎯 **Type-Safe** — Auto-generated types for all OCPP messages
-- 📐 **Strict Mode** — Optional JSON schema validation
-- 📡 **Clustering** — Redis adapter support
-- 🌐 **Browser Client** — Zero-dependency client for simulators
-- ⚡ **CLI Ecosystem** — Built-in `ocpp-ws-cli` for generating types, load testing, fuzzing, and simulating virtual charge points
+The library provides enterprise-grade features for building OCPP-compliant EV charging platforms:
+
+- ⚡ **Full OCPP-J RPC Support** — Complete JSON-RPC 2.0 OCPP message framing for 1.6J, 2.0.1, and 2.1
+- 🔒 **All Security Profiles** — Supports Plain WS, Basic Authentication, TLS/SSL, and mutual TLS (mTLS)
+- 🎯 **Type-Safe TypeScript** — Auto-generated, fully-typed interfaces for all OCPP versions and methods
+- 📐 **Strict Schema Validation** — Optional JSON schema validation with AJV for data integrity
+- 📡 **Redis Clustering & Pub/Sub** — Built-in Redis adapter for distributed CSMS deployments
+- 🌐 **Browser-Ready Client** — Zero-dependency WebSocket client for EV charging simulators
+- ⚡ **CLI Toolkit** — `ocpp-ws-cli` for type generation, load testing, fuzzing, and virtual charge point simulation
+- 🛡️ **DDoS & Rate Limiting** — Token bucket rate limiting and adaptive throttling for charging station protection
 
 ## 📦 Installation
 
@@ -27,68 +34,72 @@ For full API reference, advanced usage, and guides, visit the **[Official Docume
 npm install ocpp-ws-io
 ```
 
-## 🚀 Quick Start
+## 🚀 Quick Start: OCPP RPC Client & Server Examples
 
-### Client (Charging Station Simulator)
+Get up and running with OCPP WebSocket RPC in minutes. Choose your role: EV charging station (client) or CSMS backend (server).
+
+### OCPP RPC Client: Charge Point / Charging Station Simulator
 
 ```typescript
 import { OCPPClient } from "ocpp-ws-io";
 
 const client = new OCPPClient({
-  endpoint: "ws://localhost:3000",
-  identity: "CP001",
-  protocols: ["ocpp1.6"],
+ endpoint: "ws://localhost:3000",
+ identity: "CP001",
+ protocols: ["ocpp1.6"],
 });
 
 await client.connect();
 
 // Fully typed call
 const response = await client.call("ocpp1.6", "BootNotification", {
-  chargePointVendor: "VendorX",
-  chargePointModel: "ModelY",
+ chargePointVendor: "VendorX",
+ chargePointModel: "ModelY",
 });
 
 console.log("Status:", response.status);
 ```
 
-### Server (Central System)
+### OCPP RPC Server: Central System / CSMS Backend
 
 ```typescript
 import { OCPPServer } from "ocpp-ws-io";
 
 const server = new OCPPServer({
-  protocols: ["ocpp1.6", "ocpp2.0.1"],
-  logging: { prettify: true, exchangeLog: true, level: "info" },
+ protocols: ["ocpp1.6", "ocpp2.0.1"],
+ logging: { prettify: true, exchangeLog: true, level: "info" },
 });
 
 // Optional: Add authentication ringfence
 server.auth((ctx) => {
-  console.log(
-    `Connection from ${ctx.handshake.identity} at path ${ctx.handshake.pathname}`,
-  );
-  ctx.accept({ session: { authorized: true } });
+ console.log(
+  `Connection from ${ctx.handshake.identity} at path ${ctx.handshake.pathname}`,
+ );
+ ctx.accept({ session: { authorized: true } });
 });
 
 server.on("client", (client) => {
-  console.log(`${client.identity} connected`);
+ console.log(`${client.identity} connected`);
 
-  // Version-aware handler
-  client.handle("ocpp1.6", "BootNotification", ({ params }) => {
-    console.log("Boot from:", params.chargePointVendor);
-    return {
-      status: "Accepted",
-      currentTime: new Date().toISOString(),
-      interval: 300,
-    };
-  });
+ // Version-aware handler
+ client.handle("ocpp1.6", "BootNotification", ({ params }) => {
+  console.log("Boot from:", params.chargePointVendor);
+  return {
+   status: "Accepted",
+   currentTime: new Date().toISOString(),
+   interval: 300,
+  };
+ });
 });
 
 await server.listen(3000);
 ```
 
-## ⚙️ Configuration
+## ⚙️ OCPP RPC Configuration & Options
 
-### `OCPPClient` Options
+Configure your OCPP WebSocket RPC client and server with extensive options for protocol negotiation, security, validation, and performance.
+
+### OCPP WebSocket RPC Client Configuration
 
 | Option              | Type                  | Default    | Description                             |
 | ------------------- | --------------------- | ---------- | --------------------------------------- |
@@ -110,7 +121,7 @@ When invoking `client.call()` you can safely decouple dynamically generated mess
 await client.call("ocpp1.6", "BootNotification", { ... }, { idempotencyKey: "unique-boot-123" });
 ```
 
-### `OCPPServer` Options
+### OCPP WebSocket RPC Server Configuration
 
 | Option               | Type               | Default   | Description                                |
 | -------------------- | ------------------ | --------- | ------------------------------------------ |
@@ -123,28 +134,86 @@ await client.call("ocpp1.6", "BootNotification", { ... }, { idempotencyKey: "uni
 | `rateLimit`          | `RateLimitOptions` | —         | Token bucket socket & method rate-limiter  |
 | `healthEndpoint`     | `boolean`          | `false`   | Expose HTTP `/health` and `/metrics` APIs  |
 
-## 🛠️ Advanced Server Configuration
+## � Message Observability & Event Handling (v3.0.0+)
 
-### Handshake & Upgrades
+Unified message event API with direction tracking and rich contextual metadata for complete visibility into OCPP message flow.
+
+### Observe All Messages with Direction & Latency
+
+```typescript
+const client = new OCPPClient({ ... });
+
+// Single unified "message" event with direction, context, and metadata
+client.on("message", ({ message, direction, ctx }) => {
+  console.log({
+    direction,      // "IN" (from server) | "OUT" (to server)
+    method: ctx.method,       // "BootNotification", "MeterValues", etc.
+    type: ctx.type,           // "incoming_call", "outgoing_call", etc.
+    messageId: ctx.messageId, // Unique message ID
+    timestamp: ctx.timestamp, // ISO 8601 timestamp
+    latencyMs: ctx.latencyMs, // Response latency (if available)
+    protocol: ctx.protocol,   // "ocpp1.6", "ocpp2.0.1", etc.
+  });
+});
+
+// Server-side observation (for each connected client)
+const server = new OCPPServer({ ... });
+server.on("client", (client) => {
+  client.on("message", ({ direction, ctx }) => {
+    console.log(`[${client.identity}] ${direction} ${ctx.method} (${ctx.latencyMs}ms)`);
+  });
+});
+```
+
+### Message Event Payload Structure
+
+```typescript
+interface MessageEventPayload {
+ message: OCPPMessage; // Original OCPP message tuple
+ direction: "IN" | "OUT"; // Message direction
+ ctx: MessageEventContext; // Enriched context with metadata
+}
+
+interface MessageEventContext {
+ type:
+  | "incoming_call"
+  | "outgoing_call"
+  | "incoming_result"
+  | "incoming_error";
+ messageId: string;
+ method?: string;
+ params?: unknown;
+ payload?: unknown;
+ timestamp: string; // ISO 8601
+ latencyMs?: number; // Response latency
+ protocol?: string;
+}
+```
+
+## �🛠️ Advanced OCPP RPC Server Configuration & WebSocket Handshake
+
+Build sophisticated OCPP server implementations with fine-tuned WebSocket upgrade handling, authentication, and message routing.
+
+### OCPP WebSocket Handshake, Upgrade & Authentication
 
 You can fine-tune how the server handles the WebSocket upgrade process, including timeouts for custom auth logic.
 
 ```typescript
 const server = new OCPPServer({
-  // ...
-  handshakeTimeoutMs: 5000, // Timeout if auth callback takes too long (default 30s)
+ // ...
+ handshakeTimeoutMs: 5000, // Timeout if auth callback takes too long (default 30s)
 });
 
 server.on("upgradeAborted", ({ identity, reason, socket }) => {
-  console.warn(`Handshake aborted for ${identity}: ${reason}`);
+ console.warn(`Handshake aborted for ${identity}: ${reason}`);
 });
 
 server.on("upgradeError", ({ error, socket }) => {
-  console.error("Upgrade failed:", error);
+ console.error("Upgrade failed:", error);
 });
 ```
 
-### Server & Router Execution Flow
+### OCPP Server & Router Execution Flow (Connection & Message Phases)
 
 The `OCPPServer` and its internal `OCPPRouter` handle connections and messages in a strict, two-phase execution hierarchy:
 
@@ -160,7 +229,7 @@ Executes before the WebSocket connection is officially accepted.
 
 Executes after the connection is accepted and messages start flowing. 4. **Message Middleware (`client.use` / `server.use`)**: Intercepts every outgoing/incoming message for logging, schema validation, or metric tracking. 5. **Message Handlers (`client.handle` / `server.handle`)**: The **final piece of business logic** where the system reacts to a specific OCPP action (e.g., `BootNotification`).
 
-### NOREPLY Suppression
+### NOREPLY Suppression in OCPP RPC Message Handlers
 
 Return `NOREPLY` directly from any message handler to safely suppress the automatic outbound `CALLRESULT` without violating strict internal tracking specifications.
 
@@ -168,53 +237,53 @@ Return `NOREPLY` directly from any message handler to safely suppress the automa
 import { NOREPLY } from "ocpp-ws-io";
 
 client.handle("StatusNotification", ({ params }) => {
-  return NOREPLY;
+ return NOREPLY;
 });
 ```
 
-## 📝 Logging
+## 📝 Structured Logging for OCPP RPC WebSocket Applications
 
-`ocpp-ws-io` includes **built-in structured JSON logging** powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io), designed for high-throughput WebSocket environments.
+`ocpp-ws-io` provides **battle-tested structured JSON logging** optimized for high-throughput EV charging and OCPP WebSocket environments, powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io).
 
-### Default Behavior
+### Default JSON Logging Behavior
 
 By default (`logging: true`), logs are output as structured JSON to `stdout`.
 
 ```json
 {
-  "level": 30,
-  "time": 1678900000000,
-  "msg": "Client connected",
-  "component": "OCPPServer",
-  "identity": "CP001"
+ "level": 30,
+ "time": 1678900000000,
+ "msg": "Client connected",
+ "component": "OCPPServer",
+ "identity": "CP001"
 }
 ```
 
-### Pretty Printing & Exchange Logs
+### Pretty Printing & OCPP Message Exchange Logs (Development Mode)
 
 Enable `prettify` for development to see colored output with icons.
 Enable `exchangeLog` to log all OCPP messages with direction (`IN`/`OUT`) and metadata.
 
 ```typescript
 const client = new OCPPClient({
-  // ...
-  logging: {
-    enabled: true,
-    prettify: true, // 🌈 Colors & icons
-    exchangeLog: true, // ⚡ Log all OCPP messages
-    level: "debug", // Default: 'info'
-  },
+ // ...
+ logging: {
+  enabled: true,
+  prettify: true, // 🌈 Colors & icons
+  exchangeLog: true, // ⚡ Log all OCPP messages
+  level: "debug", // Default: 'info'
+ },
 });
 ```
 
 **Output:**
 
-```
+```sh
 ⚡ CP-101  →  BootNotification  [OUT]
 ✅ CP-101  ←  BootNotification  [IN]   { latencyMs: 45 }
 ```
 
-### Custom Logger
+### Custom Logger Integration (Pino, Winston, etc.)
 
 You can bring your own logger (Pino, Winston, etc.) by implementing `LoggerLike`:
 
@@ -222,31 +291,33 @@ You can bring your own logger (Pino, Winston, etc.) by implementing `LoggerLike`
 import pino from "pino";
 
 const client = new OCPPClient({
-  logging: {
-    handler: pino(), // Use existing logger instance
-  },
+ logging: {
+  handler: pino(), // Use existing logger instance
+ },
 });
 ```
 
-## 🛡️ Safety & Reliability
+## 🛡️ OCPP RPC Safety, Reliability & Error Handling
 
-### Safe Calls (`safeCall`)
+Build fault-tolerant EV charging applications with safe call patterns, automatic error handling, and idempotency support.
+
+### Safe RPC Calls (`safeCall`) - Error Handling Without Try/Catch
 
 Perform RPC calls without `try/catch` blocks. Returns the response data on success, or `undefined` on failure while automatically logging the error. You can also pass per-call config options like timeouts.
 
 ```typescript
 const result = await client.safeCall(
-  "ocpp1.6",
-  "Heartbeat",
-  {},
-  {
-    timeoutMs: 15000, // Finely control the timeout specifically for this request
-  },
+ "ocpp1.6",
+ "Heartbeat",
+ {},
+ {
+  timeoutMs: 15000, // Finely control the timeout specifically for this request
+ },
 );
 
 if (result) {
-  // Checked for undefined
-  console.log("Heartbeat accepted:", result.currentTime);
+ // Checked for undefined
+ console.log("Heartbeat accepted:", result.currentTime);
 }
 ```
 
@@ -262,16 +333,16 @@ Throws an error if the client responds with a `CALLERROR` or if the timeout is r
 
 ```typescript
 try {
-  const result = await server.sendToClient(
-    "CP001",
-    "ocpp1.6",
-    "GetConfiguration",
-    { key: ["ClockAlignedDataInterval"] },
-    { timeoutMs: 10000 },
-  );
-  console.log("Configuration:", result);
+ const result = await server.sendToClient(
+  "CP001",
+  "ocpp1.6",
+  "GetConfiguration",
+  { key: ["ClockAlignedDataInterval"] },
+  { timeoutMs: 10000 },
+ );
+ console.log("Configuration:", result);
 } catch (error) {
-  console.error("Failed to get configuration:", error);
+ console.error("Failed to get configuration:", error);
 }
 ```
 
@@ -281,15 +352,15 @@ Returns the response on success, or `undefined` on error, automatically logging 
 
 ```typescript
 const result = await server.safeSendToClient(
-  "CP001",
-  "ocpp1.6",
-  "GetConfiguration",
-  { key: ["ClockAlignedDataInterval"] },
-  { timeoutMs: 10000 },
+ "CP001",
+ "ocpp1.6",
+ "GetConfiguration",
+ { key: ["ClockAlignedDataInterval"] },
+ { timeoutMs: 10000 },
 );
 
 if (result) {
-  console.log("Configuration:", result);
+ console.log("Configuration:", result);
 }
 ```
 
@@ -299,15 +370,15 @@ For intercepting HTTP WebSocket Upgrade requests before they become an OCPP Clie
 
 ```typescript
 const rateLimiter = defineMiddleware(async (ctx) => {
-  const ip = ctx.handshake.remoteAddress;
-  if (isRateLimited(ip)) {
-    // Instantly aborts the WebSocket connection with an HTTP 429 status
-    ctx.reject(429, "Too Many Requests");
-  } else {
-    // Or proceed down the execution chain. You can optionally pass an object
-    // to next(), which will automatically be shallow-merged into `ctx.state`.
-    await ctx.next({ rateLimitRemaining: 99 });
-  }
+ const ip = ctx.handshake.remoteAddress;
+ if (isRateLimited(ip)) {
+  // Instantly aborts the WebSocket connection with an HTTP 429 status
+  ctx.reject(429, "Too Many Requests");
+ } else {
+  // Or proceed down the execution chain. You can optionally pass an object
+  // to next(), which will automatically be shallow-merged into `ctx.state`.
+  await ctx.next({ rateLimitRemaining: 99 });
+ }
 });
 
 server.use(rateLimiter);
@@ -321,101 +392,102 @@ The Rate Limiter safely throttles connections without dropping the connection im
 
 ```typescript
 const server = new OCPPServer({
-  protocols: ["ocpp1.6"],
-  rateLimit: {
-    limit: 100, // Global limit
-    windowMs: 60000, // per 60 seconds
-    onLimitExceeded: "disconnect", // or "ignore", or a Custom Callback
-    methods: {
-      MeterValues: { limit: 10, windowMs: 60000 },
-      Heartbeat: { limit: 2, windowMs: 60000 },
-    },
+ protocols: ["ocpp1.6"],
+ rateLimit: {
+  limit: 100, // Global limit
+  windowMs: 60000, // per 60 seconds
+  onLimitExceeded: "disconnect", // or "ignore", or a Custom Callback
+  methods: {
+   MeterValues: { limit: 10, windowMs: 60000 },
+   Heartbeat: { limit: 2, windowMs: 60000 },
   },
+ },
 });
 ```
 
-## 🧩 Middleware
+## 🧩 OCPP Message Middleware & Interceptor Pattern
 
-Intercept and modify OCPP messages using the middleware stack.
+Intercept, validate, and modify OCPP RPC messages across the middleware stack for logging, schema validation, and metric tracking.
 
 ```typescript
 // Add logging middleware (enabled by default)
 client.use(async (ctx, next) => {
-  console.log(`Processing ${ctx.method}`);
-  await next();
+ console.log(`Processing ${ctx.method}`);
+ await next();
 });
 ```
 
-## 📡 Clustering (Redis)
+## 📡 Redis Clustering & Distributed CSMS Architecture
 
-Scale your OCPP server across multiple nodes using Redis.
+Scale OCPP RPC servers across multiple nodes with Redis pub/sub, Streams, and presence tracking for enterprise CSMS deployments.
 
-1. **Install Adapter**:
+### Set Up Redis Clustering
 
-   ```bash
-   npm install ioredis
-   ```
+1. **Install Redis Adapter**:
 
-2. **Configure Server**:
+    ```bash
+    npm install ioredis
+    ```
 
-   ```typescript
-   import { OCPPServer } from "ocpp-ws-io";
-   import { RedisAdapter } from "ocpp-ws-io/adapters/redis";
-   import Redis from "ioredis";
+2. **Configure OCPP Server with Redis Adapter**:
 
-   const redis = new Redis(process.env.REDIS_URL);
-   const server = new OCPPServer({
+    ```typescript
+    import { OCPPServer } from "ocpp-ws-io";
+    import { RedisAdapter } from "ocpp-ws-io/adapters/redis";
+    import Redis from "ioredis";
+
+    const redis = new Redis(process.env.REDIS_URL);
+    const server = new OCPPServer({
      protocols: ["ocpp1.6"],
-   });
+    });
 
-   // Uses Redis Streams for clustering reliability
-   await server.setAdapter(new RedisAdapter(redis));
-   ```
+    // Uses Redis Streams for clustering reliability
+    await server.setAdapter(new RedisAdapter(redis));
+    ```
 
-**Features:**
+**OCPP Redis Clustering Features:**
 
-- **Unicast Routing**: Send messages to any client on any node.
-- **Presence**: Track connected clients across the cluster.
-- **Reliability**: Uses Redis Streams for durable message delivery.
-- **Batch Processing**: Use `server.broadcastBatch` to combine multi-node calls effortlessly.
+- **Unicast Routing**: Send OCPP RPC messages to any charge point on any cluster node.
+- **Presence Tracking**: Real-time discovery of connected clients across the cluster.
+- **Durability**: Redis Streams for guaranteed message delivery.
+- **Batch Operations**: Use `server.broadcastBatch` for efficient multi-node requests.
 
-### Custom Adapters (`EventAdapterInterface`)
+### Custom Clustering Adapters (RabbitMQ, Kafka, PubSub)
 
-You can build custom clustering adapters (e.g., RabbitMQ, Kafka, Postgres PUB/SUB) by implementing the exported `EventAdapterInterface`:
+Build custom OCPP clustering solutions beyond Redis by implementing the `EventAdapterInterface`. This enables distributed CSMS architectures with your preferred message broker or database backend.
 
 ```typescript
 import type { EventAdapterInterface } from "ocpp-ws-io";
 
 export class CustomAdapter implements EventAdapterInterface {
-  async publish(channel: string, data: unknown): Promise<void> {
-    /* ... */
-  }
-  async subscribe(
-    channel: string,
-    handler: (data: unknown) => void,
-  ): Promise<void> {
-    /* ... */
-  }
-  async unsubscribe(channel: string): Promise<void> {
-    /* ... */
-  }
-  async disconnect(): Promise<void> {
-    /* ... */
-  }
+ async publish(channel: string, data: unknown): Promise<void> {
+  /* ... */
+ }
+ async subscribe(
+  channel: string,
+  handler: (data: unknown) => void,
+ ): Promise<void> {
+  /* ... */
+ }
+ async unsubscribe(channel: string): Promise<void> {
+  /* ... */
+ }
+ async disconnect(): Promise<void> {
+  /* ... */
+ }
 
-  // Optional primitives for advanced routing:
-  async setPresence?(
-    identity: string,
-    nodeId: string,
-    ttl: number,
-  ): Promise<void>;
-  async getPresence?(identity: string): Promise<string | null>;
-  async removePresence?(identity: string): Promise<void>;
-  async getPresenceBatch?(identities: string[]): Promise<(string | null)[]>;
-  async publishBatch?(
-    messages: { channel: string; data: unknown }[],
-  ): Promise<void>;
-  async metrics?(): Promise<Record<string, unknown>>;
+ // Optional primitives for advanced routing:
+ async setPresence?(
+  identity: string,
+  nodeId: string,
+  ttl: number,
+ ): Promise<void>;
+ async getPresence?(identity: string): Promise<string | null>;
+ async removePresence?(identity: string): Promise<void>;
+ async getPresenceBatch?(identities: string[]): Promise<(string | null)[]>;
+ async publishBatch?(
+  messages: { channel: string; data: unknown }[],
+ ): Promise<void>;
+ async metrics?(): Promise<Record<string, unknown>>;
 }
 ```
-
