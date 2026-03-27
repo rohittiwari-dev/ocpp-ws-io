@@ -230,11 +230,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * Useful for tracking consumer backlog and enabling Horizontal Pod Autoscaling.
    */
   async adapterMetrics(): Promise<Record<string, unknown> | null> {
-    if (!this._adapter || !this._adapter.metrics) return null;
+    if (!this._adapter?.metrics) return null;
     try {
       return await this._adapter.metrics();
     } catch (err) {
-      this._logger?.warn?.("Failed to fetch adapter metrics", { error: err });
+      this._logger?.warn?.("Failed to fetch adapter metrics", {
+        error: err,
+      });
       return null;
     }
   }
@@ -975,7 +977,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
                     settled = true;
                     reject({ code, message });
                   }
-                  throw { code, message, _isMiddlewareReject: true };
+                  throw {
+                    code,
+                    message,
+                    _isMiddlewareReject: true,
+                  };
                 };
 
                 // Guard: already aborted before we even start
@@ -1028,7 +1034,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       } catch (err) {
         if (ac.signal.aborted) {
           const reason = err instanceof Error ? err.message : "Unknown abort";
-          this._logger?.warn?.("Handshake aborted", { identity, reason });
+          this._logger?.warn?.("Handshake aborted", {
+            identity,
+            reason,
+          });
           // Emit security event for upgrade aborts
           this.emit("securityEvent", {
             type: "UPGRADE_ABORTED",
@@ -1269,7 +1278,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
     this._state = "CLOSING";
     this.emit("closing");
-    this._logger?.info?.("Server closing", { clientCount: this._clients.size });
+    this._logger?.info?.("Server closing", {
+      clientCount: this._clients.size,
+    });
 
     if (this._gcInterval) {
       clearInterval(this._gcInterval);
@@ -1557,7 +1568,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
     const client = this._clientsByIdentity.get(identity);
     if (!client) {
-      this._logger?.warn?.("sendBatch: client not found locally", { identity });
+      this._logger?.warn?.("sendBatch: client not found locally", {
+        identity,
+      });
       // If adapter supports presence, attempt remote unicast batch (future enhancement)
       return calls.map(() => undefined);
     }

@@ -26,7 +26,7 @@ export async function generateReport(
   data: ReportData,
   config?: ReportConfig,
 ): Promise<string | null> {
-  if (!config || !config.format) return null;
+  if (!config?.format) return null;
 
   try {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
