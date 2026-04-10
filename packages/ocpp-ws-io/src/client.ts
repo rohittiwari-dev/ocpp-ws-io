@@ -842,6 +842,14 @@ export class OCPPClient<
         ctxvals.method,
         ctxvals.params,
       ];
+
+      const allowSend = this._invokeBeforeSend(message);
+      if (allowSend instanceof Promise) {
+        if ((await allowSend) === false) return;
+      } else if (allowSend === false) {
+        return;
+      }
+
       const messageStr = JSON.stringify(message);
 
       callResult = await new Promise<unknown>((resolve, reject) => {
@@ -883,7 +891,14 @@ export class OCPPClient<
               this._pendingCalls.delete(msgId);
               reject(err);
             } else {
-              // Handled by createLoggingMiddleware
+              // Emit outbound CALL message event for observability
+              this._emitMessageEvent(message, "OUT", {
+                type: "outgoing_call",
+                messageId: msgId,
+                method: ctxvals.method,
+                params: ctxvals.params,
+                options: options,
+              });
             }
           });
         } else if (this._state === CONNECTING) {
@@ -1192,7 +1207,22 @@ export class OCPPClient<
             ctxvals.messageId,
             result,
           ];
+
+          const allowSend = this._invokeBeforeSend(response);
+          if (allowSend instanceof Promise) {
+            if ((await allowSend) === false) return result;
+          } else if (allowSend === false) {
+            return result;
+          }
+
           this._ws?.send(JSON.stringify(response));
+          // Emit outbound CALLRESULT message event for observability
+          this._emitMessageEvent(response, "OUT", {
+            type: "outgoing_result",
+            messageId: ctxvals.messageId,
+            method: ctxvals.method,
+            payload: result,
+          });
           this.emit("callResult", response);
 
           return result;
@@ -1215,8 +1245,30 @@ export class OCPPClient<
             rpcErr.rpcErrorMessage || (err as Error).message || "",
             details,
           ];
+
+          const allowSend = this._invokeBeforeSend(errorResponse);
+          if (allowSend instanceof Promise) {
+            if ((await allowSend) === false) throw err;
+          } else if (allowSend === false) {
+            throw err;
+          }
+
           this._ws?.send(JSON.stringify(errorResponse));
+          // Emit outbound CALLERROR message event for observability
+          this._emitMessageEvent(errorResponse, "OUT", {
+            type: "outgoing_error",
+            messageId: ctxvals.messageId,
+            method: ctxvals.method,
+            errorCode: rpcErr.rpcErrorCode,
+            errorDescription:
+              rpcErr.rpcErrorMessage || (err as Error).message || "",
+          });
           this.emit("callError", errorResponse);
+          // Emit handler error event for plugin observability
+          this.emit("handlerError", {
+            method: ctxvals.method,
+            error: err as Error,
+          });
 
           throw err;
         }
@@ -1338,8 +1390,21 @@ export class OCPPClient<
         error.message || "Invalid message format",
         {},
       ];
-      this._ws.send(JSON.stringify(errorResponse));
-      this.emit("callError", errorResponse);
+
+      const allowSend = this._invokeBeforeSend(errorResponse);
+      if (allowSend instanceof Promise) {
+        allowSend
+          .then((allowed) => {
+            if (allowed !== false) {
+              this._ws?.send(JSON.stringify(errorResponse));
+              this.emit("callError", errorResponse);
+            }
+          })
+          .catch(() => {});
+      } else if (allowSend !== false) {
+        this._ws.send(JSON.stringify(errorResponse));
+        this.emit("callError", errorResponse);
+      }
     }
 
     if (this._badMessageCount >= this._options.maxBadMessages) {
@@ -1525,6 +1590,16 @@ export class OCPPClient<
   private static readonly _BACKPRESSURE_THRESHOLD = 512 * 1024;
 
   /**
+   * Protected hook for plugins to intercept outbound messages before serialization.
+   * Return `false` to suppress the message transmission.
+   */
+  protected _invokeBeforeSend(
+    _message: OCPPMessage,
+  ): boolean | Promise<boolean> {
+    return true; // Implemented by OCPPServerClient
+  }
+
+  /**
    * Wraps ws.send() with backpressure protection.
    * If bufferedAmount exceeds the threshold, waits for the buffer to drain
    * before sending. Prevents OOM on slow 2G/3G charger connections.
@@ -1546,7 +1621,7 @@ export class OCPPClient<
         threshold: OCPPClient._BACKPRESSURE_THRESHOLD,
       });
       // Emit identity + buffered amount for operator alerting
-      this.emit("backpressure" as any, {
+      this.emit("backpressure", {
         identity: this._identity,
         bufferedAmount: ws.bufferedAmount,
       });
@@ -1606,6 +1681,8 @@ export class OCPPClient<
             identity: this._identity,
             timeoutMs: pongTimeoutMs,
           });
+          // Emit pongTimeout event for plugin observability
+          this.emit("pongTimeout", { identity: this._identity });
           this._ws?.terminate();
         }, pongTimeoutMs);
       }

@@ -16,14 +16,49 @@ server.plugin(heartbeatPlugin());
 
 ## Plugin API
 
-Every plugin implements the `OCPPPlugin` interface with lifecycle hooks:
+Every plugin implements the `OCPPPlugin` interface. The system provides 22 lifecycle hooks divided into several categories:
 
-| Hook                   | When it fires           |
-| :--------------------- | :---------------------- |
-| `onInit`               | Server starts listening |
-| `onConnection(client)` | New client connects     |
-| `onDisconnect(client)` | Client disconnects      |
-| `onClose`              | Server shuts down       |
+### 1. Connection & Server Lifecycle
+| Hook | Signature | Description |
+| :--- | :--- | :--- |
+| `onInit` | `(server)` | Server starts listening and plugin is mounted. |
+| `onConnection` | `(client)` | New charging station connects and is fully initialized. |
+| `onDisconnect` | `(client, code, reason)` | Client disconnects normally. |
+| `onEviction` | `(evicted, new)` | Client is forcibly disconnected because another client connected with the same identity. |
+| `onClosing` | `()` | Pre-shutdown hook before connections are drained. |
+| `onClose` | `()` | Server shutting down. |
+| `onReconfigure`| `(newOpts, oldOpts)` | Server configuration is hot-reloaded. |
+
+### 2. Message Interception & Observability
+| Hook | Signature | Description |
+| :--- | :--- | :--- |
+| `onBeforeReceive` | `(client, rawData)` | Intercept raw incoming buffer *before* parsing. Return `false` to drop. |
+| `onBeforeSend` | `(client, message)` | Intercept outgoing tuple *before* serialization. Return `false` to block. |
+| `onMessage` | `(client, payload)` | Unified observability event for both sent (`OUT`) and received (`IN`) message tuples. |
+
+### 3. Error Handling
+| Hook | Signature | Description |
+| :--- | :--- | :--- |
+| `onBadMessage` | `(client, raw, err)` | Malformed or non-JSON message received. |
+| `onValidationFailure`| `(client, msg, err)` | Message failed JSON Schema validation (strict mode). |
+| `onHandlerError` | `(client, method, err)` | User-provided CALL handler threw an exception. |
+| `onError` | `(client, err)` | Core WebSocket transport error. |
+
+### 4. Security & Rate Limiting
+| Hook | Signature | Description |
+| :--- | :--- | :--- |
+| `onSecurityEvent` | `(evt)` | Audit-ready security events (e.g. rate limit hit, auth failed, anomalies). |
+| `onAuthFailed` | `(handshake, code, msg)` | Connection rejected during the handshake/authorization phase. |
+| `onRateLimitExceeded`| `(client, raw)` | Message dropped because internal rate limit thresholds were exceeded. |
+| `onTLSUpdate` | `(tlsOpts)` | TLS certificates are hot-reloaded by the server. |
+
+### 5. Telemetry & Infrastructure 
+| Hook | Signature | Description |
+| :--- | :--- | :--- |
+| `onTelemetry` | `(stats, adapterStats?)` | Periodic server stats push (opt-in via `telemetry.pushIntervalMs`). |
+| `getCustomMetrics` | `()` | Return Prometheus strings to merge into the `/metrics` endpoint. |
+| `onBackpressure` | `(client, buffered)` | Socket buffer is filling up (client isn't reading fast enough). |
+| `onPongTimeout` | `(client)` | Dead peer detected (no response to ping). |
 
 ---
 
@@ -176,23 +211,36 @@ Use `createPlugin` for type-safe custom plugins:
 import { createPlugin } from "ocpp-ws-io";
 
 const myPlugin = createPlugin({
-  name: "my-plugin",
+  name: "my-advanced-plugin",
 
   onInit(server) {
-    console.log("Server initialized");
+    console.log(`Plugin loaded on server listening at ${server.options.port}`);
   },
 
-  onConnection(client) {
-    console.log(`${client.identity} connected`);
+  onSecurityEvent(evt) {
+    if (evt.type === "RATE_LIMIT_EXCEEDED") {
+      console.warn(`[Security] Rate limit hit by ${evt.identity}`);
+    }
   },
 
-  onDisconnect(client) {
-    console.log(`${client.identity} disconnected`);
+  onBeforeReceive(client, rawData) {
+    // Arbitrary size limits or binary magic number checks
+    if (rawData.length > 1024 * 1024) {
+      console.error(`Payload too large from ${client.identity}`);
+      return false; // Drops the message
+    }
   },
 
-  onClose() {
-    console.log("Server closing");
+  onMessage(client, payload) {
+    // Unified observability: both outgoing and incoming messages
+    const { message, direction, ctx } = payload;
+    console.log(`[${direction}] ${ctx.action || ctx.type} at ${ctx.timestamp.toISOString()}`);
   },
+
+  onTelemetry(stats) {
+    // Push stats to your external monitoring system
+    console.log(`Active Connections: ${stats.activeConnections}`);
+  }
 });
 
 server.plugin(myPlugin);
