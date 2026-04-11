@@ -42,7 +42,7 @@ server.route("/ocpp/:identity").on("client", (client) => {
     // VIP chargers: no addSession → engine ignores, charger runs at full speed
     return {
       idTagInfo: { status: "Accepted" },
-      transactionId: ctx.payload.transactionId,
+      transactionId: ctx.params.transactionId,
     };
   });
 });
