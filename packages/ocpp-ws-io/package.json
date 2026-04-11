@@ -42,7 +42,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "bun run build"
   },
   "engines": {
     "node": ">=18.0.0"

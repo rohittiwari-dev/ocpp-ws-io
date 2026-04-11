@@ -12,11 +12,11 @@
     "changeset": "changeset",
     "format": "biome format --write .",
     "check": "biome check --write .",
-    "prepublishOnly": "npm run build",
-    "prepare": "npm -e \"if (!process.env.CI) process.exit(1)\" || husky",
+    "prepublishOnly": "bun run build",
+    "prepare": "husky || true",
     "commitlint": "commitlint --edit",
     "version": "changeset version",
-    "release": "npm run build && changeset publish"
+    "release": "bun run build && changeset publish"
   },
   "config": {
     "commitizen": {
@@ -97,5 +97,5 @@
     "packages/*",
     "apps/*"
   ],
-  "packageManager": "^npm@10.2.4"
+  "packageManager": "^bun@1.3.12"
 }

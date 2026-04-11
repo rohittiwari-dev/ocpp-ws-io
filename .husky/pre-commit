@@ -1,4 +1,4 @@
-npm run  check
-npm run format
+bun run  check
+bun run format
 git add .
-npm run test
+bun run test
