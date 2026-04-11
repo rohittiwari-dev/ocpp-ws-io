@@ -1,5 +1,5 @@
 import type { OCPPServer } from "../server.js";
-import type { OCPPPlugin } from "../types.js";
+import type { OCPPPlugin, SecurityEvent } from "../types.js";
 
 /**
  * Options for the anomaly detection plugin.
@@ -8,20 +8,39 @@ export interface AnomalyPluginOptions {
   /**
    * Maximum number of connections from the same identity
    * within the sliding window before triggering an anomaly.
-   * Default: 5
+   * @default 5
    */
   reconnectThreshold?: number;
   /**
    * Sliding window duration in milliseconds.
-   * Default: 60_000 (1 minute)
+   * @default 60_000 (1 minute)
    */
   windowMs?: number;
+  /**
+   * Maximum auth failures from the same IP within the window
+   * before triggering a brute-force anomaly.
+   * @default 5
+   */
+  authFailureThreshold?: number;
+  /**
+   * Maximum bad messages from the same identity within the window
+   * before triggering a fuzzing anomaly.
+   * @default 10
+   */
+  badMessageThreshold?: number;
+  /**
+   * Maximum evictions for the same identity within the window
+   * before triggering an identity-collision anomaly.
+   * @default 3
+   */
+  evictionThreshold?: number;
 }
 
 /**
- * Detects anomalous connection patterns such as rapid reconnections
- * from the same identity. Emits `securityEvent` on the server with
- * type `ANOMALY_RAPID_RECONNECT`.
+ * Detects anomalous connection patterns: rapid reconnections, brute-force
+ * auth attempts, message fuzzing, and identity-stealing races.
+ *
+ * Emits `securityEvent` on the server with typed anomaly identifiers.
  *
  * @example
  * ```ts
@@ -29,6 +48,8 @@ export interface AnomalyPluginOptions {
  *
  * server.plugin(anomalyPlugin({
  *   reconnectThreshold: 10,
+ *   authFailureThreshold: 5,
+ *   badMessageThreshold: 20,
  *   windowMs: 60_000,
  * }));
  *
@@ -40,20 +61,67 @@ export interface AnomalyPluginOptions {
  * ```
  */
 export function anomalyPlugin(options?: AnomalyPluginOptions): OCPPPlugin {
-  const threshold = options?.reconnectThreshold ?? 5;
+  const reconnectThreshold = options?.reconnectThreshold ?? 5;
+  const authFailThreshold = options?.authFailureThreshold ?? 5;
+  const badMsgThreshold = options?.badMessageThreshold ?? 10;
+  const evictionThreshold = options?.evictionThreshold ?? 3;
   const windowMs = options?.windowMs ?? 60_000;
 
-  /** Map of identity → array of connection timestamps */
+  // Sliding window logs: key → array of timestamps
   const connectLog = new Map<string, number[]>();
+  const authFailLog = new Map<string, number[]>(); // keyed by IP
+  const badMsgLog = new Map<string, number[]>(); // keyed by identity
+  const evictionLog = new Map<string, number[]>(); // keyed by identity
+
   let server: OCPPServer | null = null;
   let gcTimer: ReturnType<typeof setInterval> | null = null;
 
   function pruneExpired(timestamps: number[], now: number): number[] {
     const cutoff = now - windowMs;
-    // Find first index that is within the window
     let i = 0;
     while (i < timestamps.length && timestamps[i] < cutoff) i++;
     return i > 0 ? timestamps.slice(i) : timestamps;
+  }
+
+  function gcMap(map: Map<string, number[]>, now: number): void {
+    for (const [key, timestamps] of map) {
+      const pruned = pruneExpired(timestamps, now);
+      if (pruned.length === 0) {
+        map.delete(key);
+      } else {
+        map.set(key, pruned);
+      }
+    }
+  }
+
+  function trackAndCheck(
+    map: Map<string, number[]>,
+    key: string,
+    threshold: number,
+    anomalyType: SecurityEvent["type"],
+    details: Record<string, unknown>,
+  ): void {
+    const now = Date.now();
+    let timestamps = map.get(key) ?? [];
+    timestamps = pruneExpired(timestamps, now);
+    timestamps.push(now);
+    map.set(key, timestamps);
+
+    if (timestamps.length > threshold && server) {
+      const evt: SecurityEvent = {
+        type: anomalyType,
+        identity: details.identity as string | undefined,
+        ip: (details.ip ?? details.evictedIp) as string | undefined,
+        timestamp: new Date().toISOString(),
+        details: {
+          ...details,
+          countInWindow: timestamps.length,
+          threshold,
+          windowMs,
+        },
+      };
+      server.emit("securityEvent", evt);
+    }
   }
 
   return {
@@ -64,39 +132,81 @@ export function anomalyPlugin(options?: AnomalyPluginOptions): OCPPPlugin {
       // Periodic garbage collection of expired entries
       gcTimer = setInterval(() => {
         const now = Date.now();
-        for (const [identity, timestamps] of connectLog) {
-          const pruned = pruneExpired(timestamps, now);
-          if (pruned.length === 0) {
-            connectLog.delete(identity);
-          } else {
-            connectLog.set(identity, pruned);
-          }
-        }
+        gcMap(connectLog, now);
+        gcMap(authFailLog, now);
+        gcMap(badMsgLog, now);
+        gcMap(evictionLog, now);
       }, windowMs).unref();
     },
 
     onConnection(client) {
-      const now = Date.now();
-      const identity = client.identity;
-
-      let timestamps = connectLog.get(identity) ?? [];
-      timestamps = pruneExpired(timestamps, now);
-      timestamps.push(now);
-      connectLog.set(identity, timestamps);
-
-      if (timestamps.length > threshold && server) {
-        server.emit("securityEvent" as any, {
-          type: "ANOMALY_RAPID_RECONNECT",
-          identity,
+      trackAndCheck(
+        connectLog,
+        client.identity,
+        reconnectThreshold,
+        "ANOMALY_RAPID_RECONNECT",
+        {
+          identity: client.identity,
           ip: client.handshake.remoteAddress,
-          timestamp: new Date().toISOString(),
-          details: {
-            connectionsInWindow: timestamps.length,
-            threshold,
-            windowMs,
-          },
-        });
-      }
+        },
+      );
+    },
+
+    onAuthFailed(handshake, code, reason) {
+      trackAndCheck(
+        authFailLog,
+        handshake.remoteAddress,
+        authFailThreshold,
+        "ANOMALY_AUTH_BRUTE_FORCE",
+        {
+          ip: handshake.remoteAddress,
+          identity: handshake.identity,
+          code,
+          reason,
+        },
+      );
+    },
+
+    onBadMessage(client) {
+      trackAndCheck(
+        badMsgLog,
+        client.identity,
+        badMsgThreshold,
+        "ANOMALY_MESSAGE_FUZZING",
+        {
+          identity: client.identity,
+          ip: client.handshake.remoteAddress,
+        },
+      );
+    },
+
+    onValidationFailure(client) {
+      // Schema validation failures are a secondary fuzzing indicator
+      trackAndCheck(
+        badMsgLog,
+        client.identity,
+        badMsgThreshold,
+        "ANOMALY_MESSAGE_FUZZING",
+        {
+          identity: client.identity,
+          ip: client.handshake.remoteAddress,
+          source: "validation_failure",
+        },
+      );
+    },
+
+    onEviction(evictedClient, newClient) {
+      trackAndCheck(
+        evictionLog,
+        evictedClient.identity,
+        evictionThreshold,
+        "ANOMALY_IDENTITY_COLLISION",
+        {
+          identity: evictedClient.identity,
+          evictedIp: evictedClient.handshake.remoteAddress,
+          newIp: newClient.handshake.remoteAddress,
+        },
+      );
     },
 
     onClose() {
@@ -105,6 +215,9 @@ export function anomalyPlugin(options?: AnomalyPluginOptions): OCPPPlugin {
         gcTimer = null;
       }
       connectLog.clear();
+      authFailLog.clear();
+      badMsgLog.clear();
+      evictionLog.clear();
       server = null;
     },
   };
