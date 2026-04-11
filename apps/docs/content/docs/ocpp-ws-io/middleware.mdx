@@ -45,13 +45,17 @@ Middleware functions receive a `context` and a `next` function.
 
 ### Context Object
 
-| Property    | Type                               | Description                           |
-| :---------- | :--------------------------------- | :------------------------------------ |
-| `type`      | `incoming_call` \| `outgoing_call` | Direction and type of message         |
-| `method`    | `string`                           | OCPP Action (e.g. `BootNotification`) |
-| `params`    | `any`                              | Payload of the message                |
-| `messageId` | `string`                           | Unique ID of the message              |
-| `protocol`  | `OCPPProtocol`                     | negotiated protocol version           |
+The `ctx` object uses a discriminated union based on the `type` property. You can intercept all 4 phases of an RPC message:
+
+| Property    | Type                                                                                   | Description                           |
+| :---------- | :------------------------------------------------------------------------------------- | :------------------------------------ |
+| `type`      | `"incoming_call"` \| `"outgoing_call"` \| `"incoming_result"` \| `"outgoing_result"` \| `"incoming_error"` \| `"outgoing_error"` | Phase and direction of the message    |
+| `method`    | `string`                                                                               | OCPP Action (e.g. `BootNotification`) |
+| `messageId` | `string`                                                                               | Unique ID of the message              |
+| `params`    | `any` _(only on calls)_                                                                | Payload of the CALL                   |
+| `payload`   | `any` _(only on results)_                                                              | Payload of the CALLRESULT             |
+| `error`     | `OCPPCallError` _(only on errors)_                                                     | Payload of the CALLERROR              |
+| `state`     | `Record<string, any>`                                                                  | Custom user data passed down the chain|
 
 ```typescript
 import { defineRpcMiddleware } from "ocpp-ws-io/browser"; // Or "ocpp-ws-io" for Server/NodeClient
@@ -60,7 +64,15 @@ const validationMiddleware = defineRpcMiddleware(async (ctx, next) => {
   if (ctx.type === "outgoing_call" && !ctx.params) {
     throw new Error("Payload cannot be empty");
   }
-  await next();
+  
+  // You can wrap the inner execution in a try/catch
+  try {
+    const result = await next();
+    return result;
+  } catch (error) {
+    console.error(`Handler crashed during ${ctx.method}`, error);
+    throw error;
+  }
 });
 
 client.use(validationMiddleware);
@@ -155,6 +167,13 @@ server.auth(
 );
 ```
 
+---
+
 ## Execution Flow
 
-3. **Response Phase**: Middleware runs from last to first (after `await next()`).
+Because `ocpp-ws-io` uses an onion model (`await next()`), execution happens in two distinct phases:
+
+1. **Downstream (Request Phase)**: Code *before* `await next()` executes in the order middleware was registered (`use(a)` then `use(b)`).
+2. **Upstream (Response Phase)**: Code *after* `await next()` executes in reverse order (from `b` back to `a`).
+
+If a middleware does not call `await next()`, the chain is short-circuited entirely.

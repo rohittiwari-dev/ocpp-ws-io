@@ -4,6 +4,7 @@ import {
   type ClientOptions,
   ConnectionState,
   type HandshakeInfo,
+  type OCPPPlugin,
 } from "./types.js";
 import type { WorkerPool } from "./worker-pool.js";
 
@@ -16,6 +17,8 @@ import type { WorkerPool } from "./worker-pool.js";
 export class OCPPServerClient extends OCPPClient {
   private _serverSession: Record<string, any>;
   private _serverHandshake: HandshakeInfo;
+  /** Plugins passed from OCPPServer for hook execution */
+  private _serverPlugins: OCPPPlugin[];
 
   constructor(
     options: ClientOptions,
@@ -28,6 +31,8 @@ export class OCPPServerClient extends OCPPClient {
       adaptiveMultiplier?: () => number;
       /** Optional worker pool for off-thread JSON parsing */
       workerPool?: WorkerPool;
+      /** Plugins from the server for hook execution */
+      plugins?: OCPPPlugin[];
     },
   ) {
     super(options);
@@ -36,6 +41,7 @@ export class OCPPServerClient extends OCPPClient {
     this._serverHandshake = context.handshake;
     this._adaptiveMultiplier = context.adaptiveMultiplier ?? null;
     this._workerPool = context.workerPool ?? null;
+    this._serverPlugins = context.plugins ?? [];
 
     // Set state to OPEN directly (already connected via server)
     this._state = ConnectionState.OPEN;
@@ -107,12 +113,61 @@ export class OCPPServerClient extends OCPPClient {
     return true;
   }
 
-  // ─── Websocket Override ──────────────────────────────────────────
+  // ─── Websocket Override & Hooks ─────────────────────────────────
+
+  protected override _invokeBeforeSend(
+    message: import("./types.js").OCPPMessage,
+  ): boolean | Promise<boolean> {
+    if (this._serverPlugins.length === 0) return true;
+
+    // Check if we need to return a promise (if any plugin returns a promise)
+    const promises: Promise<boolean>[] = [];
+
+    for (const p of this._serverPlugins) {
+      if (p.onBeforeSend) {
+        try {
+          const result = p.onBeforeSend(this, message);
+          if (result instanceof Promise) {
+            promises.push(
+              result.then((res) => res !== false).catch(() => true),
+            );
+          } else if (result === false) {
+            return false;
+          }
+        } catch (_err) {}
+      }
+    }
+
+    if (promises.length > 0) {
+      return Promise.all(promises).then((results) =>
+        results.every((r) => r === true),
+      );
+    }
+
+    return true;
+  }
 
   private _attachServerWebsocket(ws: WebSocket): void {
-    ws.on("message", (data: RawData) => {
+    ws.on("message", async (data: RawData) => {
       // @ts-expect-error
       this._recordActivity();
+
+      // Plugin interception: onBeforeReceive
+      for (const p of this._serverPlugins) {
+        if (p.onBeforeReceive) {
+          try {
+            const result = p.onBeforeReceive(this, data);
+            if (result instanceof Promise) {
+              const res = await result;
+              if (res === false) return;
+            } else if (result === false) {
+              return;
+            }
+          } catch (_err) {
+            // Don't let plugin errors stop message processing
+          }
+        }
+      }
 
       // Rate Limit Check
       const limits = this._options.rateLimit;
@@ -202,6 +257,9 @@ export class OCPPServerClient extends OCPPClient {
   private _handleRateLimitExceeded(rawData: unknown): void {
     const limits = this._options.rateLimit!;
     const action = limits.onLimitExceeded || "ignore";
+
+    // Plugin hook: onRateLimitExceeded
+    this.emit("rateLimitExceeded", { rawData });
 
     if (action === "disconnect") {
       this._logger?.warn?.("Rate limit exceeded — disconnecting client", {

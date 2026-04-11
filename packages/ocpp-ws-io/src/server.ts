@@ -80,6 +80,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _adaptiveLimiter: AdaptiveLimiter | null = null;
   private _plugins: OCPPPlugin[] = [];
   private _workerPool: WorkerPool | null = null;
+  private _telemetryInterval: ReturnType<typeof setInterval> | null = null;
 
   // Robustness & Clustering
   private readonly _nodeId = createId();
@@ -346,7 +347,37 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         }
       }
     }
+    // Start telemetry push if configured and not already running
+    this._startTelemetryPush();
     return this;
+  }
+
+  /**
+   * Starts the periodic telemetry push engine if configured.
+   * Pushes OCPPServerStats to all plugins implementing onTelemetry.
+   */
+  private _startTelemetryPush(): void {
+    // Don't start if already running or if no interval configured
+    if (this._telemetryInterval) return;
+    const interval = this._options.telemetry?.pushIntervalMs;
+    if (!interval || interval <= 0) return;
+    // Only start if at least one plugin has onTelemetry
+    if (!this._plugins.some((p) => p.onTelemetry)) return;
+
+    this._telemetryInterval = setInterval(async () => {
+      try {
+        const stats = this.stats();
+        const adapterMetrics = this._adapter
+          ? await this.adapterMetrics().catch(() => null)
+          : null;
+        for (const p of this._plugins) {
+          try {
+            await p.onTelemetry?.(stats, adapterMetrics ?? undefined);
+          } catch {}
+        }
+      } catch {}
+    }, interval);
+    this._telemetryInterval.unref(); // Don't block process exit
   }
 
   /**
@@ -472,7 +503,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
     // Health/Metrics HTTP endpoint
     if (this._options.healthEndpoint) {
-      httpServer.on("request", (req, res) => {
+      httpServer.on("request", async (req, res) => {
         const url = req.url ?? "";
 
         if (url === "/health") {
@@ -529,6 +560,24 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
             "Cache-Control": "no-cache",
           });
+          // Plugin: getCustomMetrics — append plugin-contributed Prometheus lines
+          for (const plugin of this._plugins) {
+            if (plugin.getCustomMetrics) {
+              try {
+                const custom = await plugin.getCustomMetrics();
+                if (custom?.length) {
+                  lines.push("");
+                  lines.push(...custom);
+                }
+              } catch (err) {
+                this._logger?.error?.("Plugin getCustomMetrics error", {
+                  name: plugin.name,
+                  error: (err as Error).message,
+                });
+              }
+            }
+          }
+
           res.end(lines.join("\n"));
           return;
         }
@@ -630,6 +679,18 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     this._logger?.info?.(
       `TLS context hot-reloaded across ${updated} active server(s)`,
     );
+
+    // Plugin: onTLSUpdate
+    for (const plugin of this._plugins) {
+      try {
+        plugin.onTLSUpdate?.(tlsOpts);
+      } catch (err) {
+        this._logger?.error?.("Plugin onTLSUpdate error", {
+          name: plugin.name,
+          error: (err as Error).message,
+        });
+      }
+    }
   }
 
   // ─── Handle Upgrade ──────────────────────────────────────────
@@ -700,12 +761,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       if (bucket.tokens < 1) {
         this._logger?.warn?.("Connection rate limit exceeded", { ip });
         // Emit security event for connection-level rate limiting
-        this.emit("securityEvent", {
-          type: "CONNECTION_RATE_LIMIT",
+        const secEvt = {
+          type: "CONNECTION_RATE_LIMIT" as const,
           ip,
           timestamp: new Date().toISOString(),
           details: { tokensRemaining: bucket.tokens },
-        });
+        };
+        this.emit("securityEvent", secEvt);
+        // Plugin: onSecurityEvent
+        for (const plugin of this._plugins) {
+          try {
+            plugin.onSecurityEvent?.(secEvt);
+          } catch {}
+        }
         abortHandshake(socket, 429, "Too Many Requests");
         return;
       }
@@ -1039,13 +1107,20 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             reason,
           });
           // Emit security event for upgrade aborts
-          this.emit("securityEvent", {
-            type: "UPGRADE_ABORTED",
+          const secEvtAbort = {
+            type: "UPGRADE_ABORTED" as const,
             identity,
             ip: req.socket.remoteAddress,
             timestamp: new Date().toISOString(),
             details: { reason },
-          });
+          };
+          this.emit("securityEvent", secEvtAbort);
+          // Plugin: onSecurityEvent
+          for (const plugin of this._plugins) {
+            try {
+              plugin.onSecurityEvent?.(secEvtAbort);
+            } catch {}
+          }
           this.emit("upgradeAborted", {
             identity,
             reason,
@@ -1064,13 +1139,23 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
         this._logger?.warn?.("Auth rejected", { identity, code });
         // Emit security event for auth failures
-        this.emit("securityEvent", {
-          type: "AUTH_FAILED",
+        const secEvtAuth = {
+          type: "AUTH_FAILED" as const,
           identity,
           ip: req.socket.remoteAddress,
           timestamp: new Date().toISOString(),
           details: { code, message },
-        });
+        };
+        this.emit("securityEvent", secEvtAuth);
+        // Plugin: onSecurityEvent + onAuthFailed
+        for (const plugin of this._plugins) {
+          try {
+            plugin.onSecurityEvent?.(secEvtAuth);
+          } catch {}
+          try {
+            plugin.onAuthFailed?.(handshake, code, message);
+          } catch {}
+        }
         abortHandshake(socket, code, message);
         return;
       } finally {
@@ -1148,6 +1233,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           ? () => this._adaptiveLimiter!.multiplier
           : undefined,
         workerPool: this._workerPool ?? undefined,
+        plugins: this._plugins,
       });
 
       this._updateSessionActivity(identity, client.session);
@@ -1162,6 +1248,12 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           identity,
           reason: "Duplicate identity replaced by new connection",
         });
+        // Plugin: onEviction
+        for (const plugin of this._plugins) {
+          try {
+            plugin.onEviction?.(existingClient, client);
+          } catch {}
+        }
         // Fire-and-forget force close — don't await, don't block the new connection
         existingClient
           .close({
@@ -1249,6 +1341,75 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         }
       }
 
+      // ── Wire plugin event hooks ──
+      // onMessage: unified message observation (IN + OUT)
+      client.on("message", (payload) => {
+        for (const plugin of this._plugins) {
+          try {
+            plugin.onMessage?.(client, payload);
+          } catch {}
+        }
+      });
+      // onError: WebSocket-level errors
+      client.on("error", (err) => {
+        for (const plugin of this._plugins) {
+          try {
+            plugin.onError?.(client, err);
+          } catch {}
+        }
+      });
+      // onBadMessage: malformed/unparseable messages
+      client.on("badMessage", ({ message: rawMsg, error: badErr }) => {
+        for (const plugin of this._plugins) {
+          try {
+            plugin.onBadMessage?.(client, rawMsg, badErr);
+          } catch {}
+        }
+      });
+      // onValidationFailure: schema validation failures (strictMode)
+      client.on(
+        "strictValidationFailure",
+        ({ message: msg, error: valErr }) => {
+          for (const plugin of this._plugins) {
+            try {
+              plugin.onValidationFailure?.(client, msg, valErr);
+            } catch {}
+          }
+        },
+      );
+      // onBackpressure: slow client detection
+      client.on("backpressure", (evt) => {
+        for (const plugin of this._plugins) {
+          try {
+            plugin.onBackpressure?.(client, evt.bufferedAmount);
+          } catch {}
+        }
+      });
+      // onPongTimeout: dead peer detection
+      client.on("pongTimeout", () => {
+        for (const plugin of this._plugins) {
+          try {
+            plugin.onPongTimeout?.(client);
+          } catch {}
+        }
+      });
+      // onHandlerError: user handler threw during CALL processing
+      client.on("handlerError", ({ method: hMethod, error: hErr }) => {
+        for (const plugin of this._plugins) {
+          try {
+            plugin.onHandlerError?.(client, hMethod, hErr);
+          } catch {}
+        }
+      });
+      // onRateLimitExceeded: message dropped due to rate limiting
+      client.on("rateLimitExceeded", (evt) => {
+        for (const plugin of this._plugins) {
+          try {
+            plugin.onRateLimitExceeded?.(client, evt.rawData);
+          } catch {}
+        }
+      });
+
       // Dispatch route-specific "client" events
       this.emit("client", client);
       for (const router of matchedRouters) {
@@ -1282,9 +1443,27 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       clientCount: this._clients.size,
     });
 
+    // Plugin: onClosing (pre-shutdown hook — before client drain)
+    for (const plugin of this._plugins) {
+      try {
+        const r = plugin.onClosing?.();
+        if (r instanceof Promise) await r;
+      } catch (err) {
+        this._logger?.error?.("Plugin onClosing error", {
+          name: plugin.name,
+          error: (err as Error).message,
+        });
+      }
+    }
+
     if (this._gcInterval) {
       clearInterval(this._gcInterval);
       this._gcInterval = null;
+    }
+
+    if (this._telemetryInterval) {
+      clearInterval(this._telemetryInterval);
+      this._telemetryInterval = null;
     }
 
     // ── Graceful shutdown drain ──
@@ -1376,7 +1555,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   // ─── Reconfigure ─────────────────────────────────────────────
 
   reconfigure(options: Partial<ServerOptions>): void {
+    const oldOptions = { ...this._options } as ServerOptions;
     Object.assign(this._options, options);
+    // Plugin: onReconfigure
+    for (const plugin of this._plugins) {
+      try {
+        plugin.onReconfigure?.(options, oldOptions);
+      } catch (err) {
+        this._logger?.error?.("Plugin onReconfigure error", {
+          name: plugin.name,
+          error: (err as Error).message,
+        });
+      }
+    }
   }
 
   // ─── Pub/Sub Adapter ─────────────────────────────────────────

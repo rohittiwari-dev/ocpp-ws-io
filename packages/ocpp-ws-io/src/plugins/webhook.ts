@@ -1,14 +1,24 @@
 import { createHmac } from "node:crypto";
 import type { OCPPPlugin } from "../types.js";
 
+type WebhookEvent =
+  | "init"
+  | "connect"
+  | "disconnect"
+  | "close"
+  | "security"
+  | "auth_failed"
+  | "eviction"
+  | "closing";
+
 /**
  * Options for the webhook plugin.
  */
 export interface WebhookPluginOptions {
   /** Webhook HTTP endpoint URL. */
   url: string;
-  /** Which lifecycle events to send (default: all). */
-  events?: Array<"init" | "connect" | "disconnect" | "close">;
+  /** Which lifecycle events to send (default: lifecycle events only). */
+  events?: WebhookEvent[];
   /** Custom HTTP headers to include (e.g. Authorization). */
   headers?: Record<string, string>;
   /** HMAC-SHA256 secret for signing payloads (sent as `X-Signature` header). */
@@ -26,7 +36,7 @@ interface WebhookPayload {
 }
 
 /**
- * Sends HTTP POST webhooks on server lifecycle events.
+ * Sends HTTP POST webhooks on server lifecycle and security events.
  * Uses Node.js built-in `fetch` (Node 18+).
  *
  * @example
@@ -36,20 +46,20 @@ interface WebhookPayload {
  * server.plugin(webhookPlugin({
  *   url: 'https://api.example.com/ocpp-events',
  *   secret: process.env.WEBHOOK_SECRET,
- *   events: ['connect', 'disconnect'],
+ *   events: ['connect', 'disconnect', 'security', 'auth_failed'],
  *   headers: { Authorization: 'Bearer token123' },
  * }));
  * ```
  */
 export function webhookPlugin(options: WebhookPluginOptions): OCPPPlugin {
-  const allowedEvents = new Set(
+  const allowedEvents = new Set<WebhookEvent>(
     options.events ?? ["init", "connect", "disconnect", "close"],
   );
   const timeout = options.timeout ?? 5000;
   const maxRetries = options.retries ?? 1;
 
   async function sendWebhook(payload: WebhookPayload): Promise<void> {
-    if (!allowedEvents.has(payload.event as any)) return;
+    if (!allowedEvents.has(payload.event as WebhookEvent)) return;
 
     const body = JSON.stringify(payload);
     const headers: Record<string, string> = {
@@ -121,12 +131,54 @@ export function webhookPlugin(options: WebhookPluginOptions): OCPPPlugin {
       }).catch(() => {});
     },
 
-    onClose() {
-      // Fire-and-forget — don't block server shutdown
+    onSecurityEvent(event) {
       sendWebhook({
-        event: "close",
+        event: "security",
+        timestamp: event.timestamp,
+        data: {
+          type: event.type,
+          identity: event.identity,
+          ip: event.ip,
+          details: event.details,
+        },
+      }).catch(() => {});
+    },
+
+    onAuthFailed(handshake, code, reason) {
+      sendWebhook({
+        event: "auth_failed",
+        timestamp: new Date().toISOString(),
+        data: {
+          identity: handshake.identity,
+          ip: handshake.remoteAddress,
+          code,
+          reason,
+        },
+      }).catch(() => {});
+    },
+
+    onEviction(evictedClient, newClient) {
+      sendWebhook({
+        event: "eviction",
+        timestamp: new Date().toISOString(),
+        data: {
+          identity: evictedClient.identity,
+          evictedIp: evictedClient.handshake.remoteAddress,
+          newIp: newClient.handshake.remoteAddress,
+        },
+      }).catch(() => {});
+    },
+
+    onClosing() {
+      sendWebhook({
+        event: "closing",
         timestamp: new Date().toISOString(),
       }).catch(() => {});
+    },
+
+    onClose() {
+      // Sync cleanup — no more webhooks. Shutdown notification
+      // was already sent via onClosing() which is properly awaited.
     },
   };
 }

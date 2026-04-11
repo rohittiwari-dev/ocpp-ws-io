@@ -619,6 +619,16 @@ interface ServerOptionsBase {
    * (default: false)
    */
   compression?: boolean | CompressionOptions;
+
+  /**
+   * Telemetry configuration for plugin stats push.
+   * When configured and plugins implement `onTelemetry`, the server will
+   * push `OCPPServerStats` at the configured interval.
+   * - `{ pushIntervalMs: 10000 }` → push stats every 10s
+   * - `{ pushIntervalMs: 0 }` → disable periodic push
+   * (default: disabled)
+   */
+  telemetry?: TelemetryConfig;
 }
 
 /** When strictMode is enabled, protocols MUST be specified */
@@ -634,6 +644,16 @@ interface RelaxedServerOptions extends ServerOptionsBase {
 }
 
 export type ServerOptions = StrictServerOptions | RelaxedServerOptions;
+
+// ─── Telemetry Config ────────────────────────────────────────────
+
+export interface TelemetryConfig {
+  /**
+   * Interval in ms to push server stats to plugins via `onTelemetry`.
+   * Set to 0 to disable. (default: 0 — disabled)
+   */
+  pushIntervalMs?: number;
+}
 
 // ─── Observability ─────────────────────────────────────────────────
 
@@ -733,6 +753,10 @@ export interface ClientEvents {
   callResult: [OCPPCallResult];
   callError: [OCPPCallError];
   badMessage: [{ message: string; error: Error }];
+  handlerError: [{ method: string; error: Error }];
+  pongTimeout: [{ identity: string }];
+  backpressure: [{ identity: string; bufferedAmount: number }];
+  rateLimitExceeded: [{ rawData: unknown }];
   ping: [];
   pong: [];
   strictValidationFailure: [{ message: unknown; error: Error }];
@@ -751,7 +775,11 @@ export interface SecurityEvent {
     | "RATE_LIMIT_EXCEEDED"
     | "UPGRADE_ABORTED"
     | "CONNECTION_RATE_LIMIT"
-    | "INVALID_PAYLOAD";
+    | "INVALID_PAYLOAD"
+    | "ANOMALY_RAPID_RECONNECT"
+    | "ANOMALY_AUTH_BRUTE_FORCE"
+    | "ANOMALY_MESSAGE_FUZZING"
+    | "ANOMALY_IDENTITY_COLLISION";
   /** Station identity (if known) */
   identity?: string;
   /** Remote IP address */
@@ -841,6 +869,9 @@ export interface EventAdapterInterface {
 export interface OCPPPlugin {
   /** Unique plugin name (used for logging and deduplication) */
   name: string;
+
+  // ─── Existing Lifecycle Hooks ───────────────────────────────────
+
   /** Called when the plugin is registered via server.plugin(plugin) */
   onInit?(server: import("./server.js").OCPPServer): void | Promise<void>;
   /** Called for each new client connection after auth succeeds */
@@ -855,6 +886,120 @@ export interface OCPPPlugin {
   ): void;
   /** Called during server.close() for plugin cleanup */
   onClose?(): void | Promise<void>;
+
+  // ─── Message Observation ───────────────────────────────────────
+
+  /**
+   * Called for every OCPP message (IN + OUT, CALL + CALLRESULT + CALLERROR).
+   * Provides unified observability over all message traffic.
+   */
+  onMessage?(
+    client: import("./server-client.js").OCPPServerClient,
+    payload: MessageEventPayload,
+  ): void | Promise<void>;
+
+  // ─── Interception (return false to block) ──────────────────────
+
+  /**
+   * Called before a received message is parsed/routed.
+   * Return `false` to silently drop the message.
+   */
+  onBeforeReceive?(
+    client: import("./server-client.js").OCPPServerClient,
+    rawData: unknown,
+  ): undefined | boolean | Promise<undefined | boolean>;
+  /**
+   * Called before a message is transmitted on the wire.
+   * Return `false` to suppress the send.
+   */
+  onBeforeSend?(
+    client: import("./server-client.js").OCPPServerClient,
+    message: OCPPMessage,
+  ): undefined | boolean | Promise<undefined | boolean>;
+
+  // ─── Error & Anomaly Observation ───────────────────────────────
+
+  /** WebSocket-level or protocol-level error */
+  onError?(
+    client: import("./server-client.js").OCPPServerClient,
+    error: Error,
+  ): void | Promise<void>;
+  /** Malformed / unparseable message received */
+  onBadMessage?(
+    client: import("./server-client.js").OCPPServerClient,
+    rawMessage: string,
+    error: Error,
+  ): void | Promise<void>;
+  /** Schema validation failure (strictMode) */
+  onValidationFailure?(
+    client: import("./server-client.js").OCPPServerClient,
+    message: unknown,
+    error: Error,
+  ): void | Promise<void>;
+  /** Message dropped or client disconnected due to rate limiting */
+  onRateLimitExceeded?(
+    client: import("./server-client.js").OCPPServerClient,
+    rawData: unknown,
+  ): void | Promise<void>;
+  /** User handler threw an error during CALL processing */
+  onHandlerError?(
+    client: import("./server-client.js").OCPPServerClient,
+    method: string,
+    error: Error,
+  ): void | Promise<void>;
+
+  // ─── Security & Auth ───────────────────────────────────────────
+
+  /** Structured security events (AUTH_FAILED, UPGRADE_ABORTED, etc.) */
+  onSecurityEvent?(event: SecurityEvent): void | Promise<void>;
+  /** Auth attempt failed — visible even when onConnection never fires */
+  onAuthFailed?(
+    handshake: HandshakeInfo,
+    code: number,
+    reason: string,
+  ): void | Promise<void>;
+
+  // ─── Connection Lifecycle ──────────────────────────────────────
+
+  /** Existing client with same identity was evicted by a new connection */
+  onEviction?(
+    evictedClient: import("./server-client.js").OCPPServerClient,
+    newClient: import("./server-client.js").OCPPServerClient,
+  ): void | Promise<void>;
+  /** Send buffer exceeded backpressure threshold (512KB — slow client) */
+  onBackpressure?(
+    client: import("./server-client.js").OCPPServerClient,
+    bufferedAmount: number,
+  ): void | Promise<void>;
+  /** Pong not received within timeout — dead peer detected */
+  onPongTimeout?(
+    client: import("./server-client.js").OCPPServerClient,
+  ): void | Promise<void>;
+
+  // ─── Telemetry & Metrics ───────────────────────────────────────
+
+  /** Periodic server stats snapshot (opt-in via `telemetry.pushIntervalMs`) */
+  onTelemetry?(
+    stats: OCPPServerStats,
+    adapterMetrics?: Record<string, unknown>,
+  ): void | Promise<void>;
+  /**
+   * Plugin contributes custom Prometheus metric lines to the /metrics endpoint.
+   * Return an array of Prometheus exposition format strings.
+   */
+  getCustomMetrics?(): string[] | Promise<string[]>;
+
+  // ─── Configuration & Server Control ────────────────────────────
+
+  /** Server options changed via server.reconfigure() */
+  onReconfigure?(
+    newOptions: Partial<ServerOptions>,
+    oldOptions: ServerOptions,
+  ): void | Promise<void>;
+  /** TLS certificates hot-reloaded via server.updateTLS() */
+  onTLSUpdate?(tlsOpts: TLSOptions): void | Promise<void>;
+  /** Server entering CLOSING state — pre-shutdown hook (before clients are drained) */
+  onClosing?(): void | Promise<void>;
 }
 
 // ─── Symbols ─────────────────────────────────────────────────────
@@ -888,6 +1033,19 @@ export type MiddlewareContext =
       messageId: string;
       error: OCPPCallError;
       method: string; // Correlated method name
+    }
+  | {
+      type: "outgoing_result";
+      messageId: string;
+      method: string;
+      payload: unknown;
+    }
+  | {
+      type: "outgoing_error";
+      messageId: string;
+      method: string;
+      errorCode: string;
+      errorDescription: string;
     };
 
 export type { MiddlewareFunction, MiddlewareNext } from "./middleware.js";

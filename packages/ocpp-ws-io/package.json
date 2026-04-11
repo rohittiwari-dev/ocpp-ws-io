@@ -1,115 +1,115 @@
 {
-	"name": "ocpp-ws-io",
-	"version": "v2.2.0",
-	"description": "OCPP RPC WebSocket client and server for OCPP 1.6J, 2.0.1, and 2.1. Type-safe TypeScript toolkit for EV charging, CSMS backends, Redis scaling, and protocol validation.",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/rohittiwari-dev/ocpp-ws-io.git"
-	},
-	"main": "dist/index.js",
-	"module": "dist/index.mjs",
-	"types": "dist/index.d.ts",
-	"exports": {
-		".": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.mjs",
-			"require": "./dist/index.js"
-		},
-		"./adapters/redis": {
-			"types": "./dist/adapters/redis.d.ts",
-			"import": "./dist/adapters/redis.mjs",
-			"require": "./dist/adapters/redis.js"
-		},
-		"./browser": {
-			"types": "./dist/browser.d.ts",
-			"import": "./dist/browser.mjs",
-			"require": "./dist/browser.js"
-		},
-		"./logger": {
-			"types": "./dist/logger.d.ts",
-			"import": "./dist/logger.mjs",
-			"require": "./dist/logger.js"
-		},
-		"./plugins": {
-			"types": "./dist/plugins.d.ts",
-			"import": "./dist/plugins.mjs",
-			"require": "./dist/plugins.js"
-		}
-	},
-	"scripts": {
-		"build": "tsup",
-		"generate": "node scripts/generate-types.js",
-		"test": "vitest run",
-		"test:watch": "vitest",
-		"test:coverage": "vitest run --coverage",
-		"prepublishOnly": "npm run build"
-	},
-	"engines": {
-		"node": ">=18.0.0"
-	},
-	"keywords": [
-		"ocpp",
-		"ocpp-rpc",
-		"ocpp-j",
-		"ocpp1.6",
-		"ocpp1.6j",
-		"ocpp2.0.1",
-		"ocpp2.0.1j",
-		"ocpp2.1",
-		"websocket",
-		"ocpp-websocket",
-		"rpc",
-		"websocket-rpc",
-		"json-rpc",
-		"ocpp-client",
-		"ocpp-server",
-		"charge-point",
-		"charging-station",
-		"ev-charging",
-		"evse",
-		"csms",
-		"cpo",
-		"emsp",
-		"wamp",
-		"rpc-server",
-		"rpc-client",
-		"type-safe",
-		"typescript",
-		"node",
-		"nodejs",
-		"redis",
-		"redis-pubsub",
-		"clustering",
-		"browser",
-		"simulator",
-		"ocpp-simulator",
-		"testing-cli",
-		"ocpp-testing",
-		"ocpp-implementation",
-		"ocpp-protocol"
-	],
-	"author": "Rohit Tiwari <rohit@rohittiwari.me>",
-	"homepage": "https://ocpp-ws-io.rohittiwari.me",
-	"bugs": {
-		"url": "https://github.com/rohittiwari-dev/ocpp-ws-io/issues"
-	},
-	"files": [
-		"dist"
-	],
-	"license": "MIT",
-	"dependencies": {
-		"ajv": "^8.18.0",
-		"ajv-formats": "^3.0.1",
-		"voltlog-io": "^1.0.8",
-		"ws": "^8.19.0"
-	},
-	"devDependencies": {
-		"@types/node": "^22.19.11",
-		"@types/ws": "^8.18.1",
-		"@vitest/coverage-v8": "^3.2.4",
-		"ioredis-mock": "^8.13.1",
-		"tsup": "^8.5.1",
-		"typescript": "^5.9.3",
-		"vitest": "^3.2.4"
-	}
+  "name": "ocpp-ws-io",
+  "version": "2.2.1",
+  "description": "OCPP RPC WebSocket client and server for OCPP 1.6J, 2.0.1, and 2.1. Type-safe TypeScript toolkit for EV charging, CSMS backends, Redis scaling, and protocol validation.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rohittiwari-dev/ocpp-ws-io.git"
+  },
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./adapters/redis": {
+      "types": "./dist/adapters/redis.d.ts",
+      "import": "./dist/adapters/redis.mjs",
+      "require": "./dist/adapters/redis.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.mjs",
+      "require": "./dist/browser.js"
+    },
+    "./logger": {
+      "types": "./dist/logger.d.ts",
+      "import": "./dist/logger.mjs",
+      "require": "./dist/logger.js"
+    },
+    "./plugins": {
+      "types": "./dist/plugins.d.ts",
+      "import": "./dist/plugins.mjs",
+      "require": "./dist/plugins.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "generate": "node scripts/generate-types.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "bun run build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "ocpp",
+    "ocpp-rpc",
+    "ocpp-j",
+    "ocpp1.6",
+    "ocpp1.6j",
+    "ocpp2.0.1",
+    "ocpp2.0.1j",
+    "ocpp2.1",
+    "websocket",
+    "ocpp-websocket",
+    "rpc",
+    "websocket-rpc",
+    "json-rpc",
+    "ocpp-client",
+    "ocpp-server",
+    "charge-point",
+    "charging-station",
+    "ev-charging",
+    "evse",
+    "csms",
+    "cpo",
+    "emsp",
+    "wamp",
+    "rpc-server",
+    "rpc-client",
+    "type-safe",
+    "typescript",
+    "node",
+    "nodejs",
+    "redis",
+    "redis-pubsub",
+    "clustering",
+    "browser",
+    "simulator",
+    "ocpp-simulator",
+    "testing-cli",
+    "ocpp-testing",
+    "ocpp-implementation",
+    "ocpp-protocol"
+  ],
+  "author": "Rohit Tiwari <rohit@rohittiwari.me>",
+  "homepage": "https://ocpp-ws-io.rohittiwari.me",
+  "bugs": {
+    "url": "https://github.com/rohittiwari-dev/ocpp-ws-io/issues"
+  },
+  "files": [
+    "dist"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "ajv": "^8.18.0",
+    "ajv-formats": "^3.0.1",
+    "voltlog-io": "^1.0.8",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.11",
+    "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^3.2.4",
+    "ioredis-mock": "^8.13.1",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
 }

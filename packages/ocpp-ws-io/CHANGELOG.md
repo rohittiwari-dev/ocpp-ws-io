@@ -1,5 +1,21 @@
 # ocpp-ws-io
 
+## v2.2.1 - Plugin System Hardening & Type Exports
+
+### Patch Changes
+
+- **Exported Missing Plugin Types**: Exported `SecurityEvent`, `MessageEventPayload`, `MessageDirection`, `MessageEventContext`, `OCPPServerStats`, and `TelemetryConfig` from `index.ts` so external plugin authors can properly type their hooks.
+- **Improved Type Safety**: Added missing `backpressure` and `rateLimitExceeded` events to the `ClientEvents` interface to allow fully type-safe event listeners.
+- **Fixed Outbound Interception Bypass**: Guarded the `CALLERROR` generated from `_onBadMessage` with `_invokeBeforeSend` to ensure it can be intercepted by plugins.
+- **Massive Plugin System Upgrade**: Expanded the `OCPPPlugin` interface from 4 to 26 hooks, adding complete lifecycle observability and control.
+  - Added message interception: `onBeforeReceive` and `onBeforeSend` hooks (return `false` to drop/block messages).
+  - Added new error event hooks: `onBadMessage`, `onValidationFailure`, `onHandlerError`, `onError`.
+  - Added security and lifecycle hooks: `onSecurityEvent`, `onAuthFailed`, `onRateLimitExceeded`, `onEviction`.
+  - Added infrastructure hooks: `onBackpressure`, `onPongTimeout`, `onClosing`, `onReconfigure`, `onTLSUpdate`.
+- **Telemetry Engine**: Added background telemetry push mechanism via `telemetry.pushIntervalMs` option. Automatically pushes `OCPPServerStats` to plugins implementing `onTelemetry`.
+- **Custom Metrics**: Restored `getCustomMetrics` natively to `/metrics` so plugins can contribute custom Prometheus lines.
+- **Client & Server Integration**: Built-in support across both `OCPPClient` and `OCPPServerClient` objects. All existing plugins are fully backward compatible.
+
 ## v2.2.0 - Message Event Observability (BREAKING CHANGE)
 
 ### Major Changes

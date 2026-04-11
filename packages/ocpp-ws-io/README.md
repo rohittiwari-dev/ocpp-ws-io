@@ -27,6 +27,35 @@ The library provides enterprise-grade features for building OCPP-compliant EV ch
 - 🌐 **Browser-Ready Client** — Zero-dependency WebSocket client for EV charging simulators
 - ⚡ **CLI Toolkit** — `ocpp-ws-cli` for type generation, load testing, fuzzing, and virtual charge point simulation
 - 🛡️ **DDoS & Rate Limiting** — Token bucket rate limiting and adaptive throttling for charging station protection
+- 🧩 **19 Built-in Plugins** — PII redaction, circuit breakers, deduplication, Kafka streaming, OpenTelemetry, and more
+
+## 🧩 Plugin Ecosystem
+
+19 built-in plugins organized into a **4-level power hierarchy**. Register from highest to lowest:
+
+```
+Level 4 — Middleware          pii-redactor · schema-versioning
+Level 3 — Interceptor         message-dedup · replay-buffer
+Level 2 — Lifecycle Controller connection-guard · anomaly · circuit-breaker
+Level 1 — Passive Hook         kafka · webhook · metrics · otel · session-log · heartbeat · rate-limit-notifier
+```
+
+```typescript
+import {
+  piiRedactorPlugin, messageDedupPlugin,
+  circuitBreakerPlugin, metricsPlugin, otelPlugin,
+} from "ocpp-ws-io/plugins";
+
+server.plugin(
+  piiRedactorPlugin(),            // L4: transform payloads
+  messageDedupPlugin({ redis }),  // L3: drop duplicates
+  circuitBreakerPlugin(),         // L2: protect against flapping stations
+  metricsPlugin(),                // L1: observe
+  otelPlugin(),                   // L1: trace
+);
+```
+
+> See the full [Plugin Documentation](https://ocpp-ws-io.rohittiwari.me/docs/ocpp-ws-io/plugins) for options, examples, and the `redisStyle` guide for Redis client compatibility.
 
 ## 📦 Installation
 
