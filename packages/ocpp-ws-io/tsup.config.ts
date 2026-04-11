@@ -34,6 +34,7 @@ export default defineConfig([
     target: "esnext",
     platform: "browser",
     minify: true,
+    shims: true,
     treeshake: true,
   },
 ]);

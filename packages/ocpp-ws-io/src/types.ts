@@ -775,7 +775,11 @@ export interface SecurityEvent {
     | "RATE_LIMIT_EXCEEDED"
     | "UPGRADE_ABORTED"
     | "CONNECTION_RATE_LIMIT"
-    | "INVALID_PAYLOAD";
+    | "INVALID_PAYLOAD"
+    | "ANOMALY_RAPID_RECONNECT"
+    | "ANOMALY_AUTH_BRUTE_FORCE"
+    | "ANOMALY_MESSAGE_FUZZING"
+    | "ANOMALY_IDENTITY_COLLISION";
   /** Station identity (if known) */
   identity?: string;
   /** Remote IP address */

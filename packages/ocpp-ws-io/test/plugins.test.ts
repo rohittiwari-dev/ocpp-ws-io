@@ -21,7 +21,7 @@ describe("sessionLogPlugin", () => {
 
   it("should log on connection and disconnection", () => {
     const logSpy = vi.fn();
-    const plugin = sessionLogPlugin({ logger: { info: logSpy } });
+    const plugin = sessionLogPlugin({ logger: { info: logSpy, warn: vi.fn() } });
 
     const fakeClient = {
       identity: "CP-101",
@@ -30,7 +30,7 @@ describe("sessionLogPlugin", () => {
     } as any;
 
     plugin.onConnection!(fakeClient);
-    expect(logSpy).toHaveBeenCalledWith("Connected", {
+    expect(logSpy).toHaveBeenCalledWith("[session] connected", {
       identity: "CP-101",
       ip: "192.168.1.1",
       protocol: "ocpp1.6",
@@ -38,7 +38,7 @@ describe("sessionLogPlugin", () => {
 
     plugin.onDisconnect!(fakeClient, 1000, "normal");
     expect(logSpy).toHaveBeenCalledWith(
-      "Disconnected",
+      "[session] disconnected",
       expect.objectContaining({
         identity: "CP-101",
         code: 1000,
@@ -112,15 +112,14 @@ describe("connectionGuardPlugin", () => {
     plugin.onConnection!({ close: closeSpy } as any);
 
     expect(closeSpy).toHaveBeenCalledWith({
-      code: 4001,
+      code: 4029,
       reason: "Connection limit reached",
-      force: true,
     });
   });
 
   it("should handle disconnect without prior connect (fallback duration 0)", () => {
     const logSpy = vi.fn();
-    const plugin = sessionLogPlugin({ logger: { info: logSpy } });
+    const plugin = sessionLogPlugin({ logger: { info: logSpy, warn: vi.fn() } });
 
     // Disconnect a client that was never tracked in onConnection
     const unknownClient = {
@@ -131,7 +130,7 @@ describe("connectionGuardPlugin", () => {
 
     plugin.onDisconnect!(unknownClient, 1001, "going away");
     expect(logSpy).toHaveBeenCalledWith(
-      "Disconnected",
+      "[session] disconnected",
       expect.objectContaining({
         identity: "CP-UNKNOWN",
         durationSec: 0,
@@ -391,7 +390,7 @@ describe("webhookPlugin", () => {
     vi.restoreAllMocks();
   });
 
-  it("should send close webhook", async () => {
+  it("should NOT send close webhook (shutdown is via onClosing)", async () => {
     const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
     globalThis.fetch = fetchSpy;
 
@@ -403,9 +402,8 @@ describe("webhookPlugin", () => {
     plugin.onClose!();
 
     await new Promise((r) => setTimeout(r, 50));
-    expect(fetchSpy).toHaveBeenCalledOnce();
-    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(body.event).toBe("close");
+    // onClose no longer fires HTTP — that's done in onClosing
+    expect(fetchSpy).not.toHaveBeenCalled();
 
     vi.restoreAllMocks();
   });
