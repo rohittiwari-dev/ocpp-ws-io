@@ -33,10 +33,10 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "framer-motion": "^12.38.0",
-    "fumadocs-core": "16.6.7",
-    "fumadocs-mdx": "14.2.8",
-    "fumadocs-typescript": "^5.1.4",
-    "fumadocs-ui": "16.6.7",
+    "fumadocs-core": "^16.7.12",
+    "fumadocs-mdx": "^14.2.11",
+    "fumadocs-typescript": "^5.2.2",
+    "fumadocs-ui": "^16.7.12",
     "gray-matter": "^4.0.3",
     "lucide-react": "^0.570.0",
     "mermaid": "^11.13.0",
@@ -48,7 +48,8 @@
     "rehype-katex": "^7.0.1",
     "remark-math": "^6.0.0",
     "scroll-into-view-if-needed": "^3.1.0",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.2",

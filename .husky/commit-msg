@@ -1,2 +1,2 @@
 
-npm run commitlint --edit ${1}
+bun run commitlint --edit ${1}

@@ -1,6 +1,6 @@
 {
   "name": "ocpp-smart-charge-engine",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Library-agnostic OCPP smart charging constraint solver. Works with ocpp-ws-io, raw WebSocket, or any OCPP implementation.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -50,25 +50,21 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rohittiwari-dev/ocpp-smart-charge-engine.git"
+    "url": "git+https://github.com/rohittiwari-dev/ocpp-ws-io.git",
+    "directory": "packages/ocpp-smart-charge-engine"
   },
   "bugs": {
-    "url": "https://github.com/rohittiwari-dev/ocpp-smart-charge-engine/issues"
+    "url": "https://github.com/rohittiwari-dev/ocpp-ws-io/issues"
   },
-  "homepage": "https://github.com/rohittiwari-dev/ocpp-smart-charge-engine#readme",
+  "homepage": "https://ocpp-ws-io.rohittiwari.me/docs/smart-charge-engine",
   "files": [
     "dist",
     "README.md",
     "LICENSE"
   ],
   "devDependencies": {
-    "@biomejs/biome": "^2.4.6",
-    "@changesets/cli": "^2.30.0",
-    "@commitlint/cli": "^20.4.3",
-    "@commitlint/config-conventional": "^20.4.3",
+    "@types/node": "^25.6.0",
     "@vitest/coverage-v8": "^4.0.18",
-    "cz-conventional-changelog": "^3.3.0",
-    "husky": "^9.1.7",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"

@@ -1,6 +1,6 @@
 {
   "name": "ocpp-ws-cli",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "The ultimate CLI ecosystem for ocpp-ws-io",
   "repository": {
     "type": "git",
@@ -38,6 +38,12 @@
     "log-update": "^7.2.0",
     "picocolors": "^1.1.1",
     "ws": "^8.19.0"
+  },
+  "author": "Rohit Tiwari <rohit@rohittiwari.me>",
+  "license": "MIT",
+  "homepage": "https://ocpp-ws-io.rohittiwari.me/docs/cli",
+  "bugs": {
+    "url": "https://github.com/rohittiwari-dev/ocpp-ws-io/issues"
   },
   "files": [
     "dist"
