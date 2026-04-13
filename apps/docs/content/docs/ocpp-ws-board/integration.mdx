@@ -1,0 +1,378 @@
+---
+title: Framework Integration
+description: Integrate ocpp-ws-board with Express, Hono, or NestJS using built-in adapters.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Tab, Tabs } from "fumadocs-ui/components/tabs";
+
+# Framework Integration
+
+`ocpp-ws-board` provides first-class adapters for popular Node.js frameworks. Choose the one that matches your backend.
+
+---
+
+## Express / Connect
+
+<Tabs items={["Setup", "Full Example"]}>
+  <Tab value="Setup">
+    ### Installation
+
+    ```bash
+    npm install express ocpp-ws-board
+    ```
+
+    ### Basic Setup
+
+    ```typescript
+    import express from "express";
+    import { OCPPServer } from "ocpp-ws-io";
+    import { expressAdapter } from "ocpp-ws-board";
+
+    const app = express();
+    const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+    // Create board with Express adapter
+    const { handler, plugin } = expressAdapter({
+      auth: { mode: "token", token: "secret" },
+    });
+
+    // Attach plugin to OCPP server
+    server.plugin(plugin);
+
+    // Mount board at /board path
+    app.use("/board", handler);
+
+    // Start servers
+    server.listen(5000);
+    app.listen(9000, () => {
+      console.log("Dashboard: http://localhost:9000/board");
+    });
+    ```
+  </Tab>
+
+  <Tab value="Full Example">
+    ### Complete Express Application
+
+    ```typescript
+    import express from "express";
+    import { OCPPServer } from "ocpp-ws-io";
+    import { expressAdapter } from "ocpp-ws-board";
+
+    const app = express();
+    const server = new OCPPServer({ protocols: ["ocpp1.6", "ocpp2.0.1"] });
+
+    // Create dashboard
+    const { handler, plugin } = expressAdapter({
+      auth: { mode: "credentials", username: "admin", password: "pass" },
+      store: {
+        maxMessages: 10000,
+        maxProxyEvents: 2000,
+      },
+    });
+
+    // Connect to OCPP server
+    server.plugin(plugin);
+
+    // OCPP routes
+    server.route("/ocpp/:identity").on("client", (client) => {
+      console.log(`Charger connected: ${client.identity}`);
+
+      client.handle("ocpp1.6", "BootNotification", async (ctx) => {
+        return {
+          currentTime: new Date().toISOString(),
+          interval: 300,
+          status: "Accepted",
+        };
+      });
+
+      client.handle("ocpp1.6", "Heartbeat", () => ({
+        currentTime: new Date().toISOString(),
+      }));
+    });
+
+    // Express routes
+    app.use(express.json());
+    app.use("/board", handler);
+
+    app.get("/health", (req, res) => {
+      res.json({ status: "ok" });
+    });
+
+    // Start servers
+    server.listen(5000);
+    app.listen(9000, () => {
+      console.log("✅ OCPP Server: ws://localhost:5000");
+      console.log("✅ Dashboard: http://localhost:9000/board");
+    });
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Hono
+
+<Tabs items={["Setup", "Full Example"]}>
+  <Tab value="Setup">
+    ### Installation
+
+    ```bash
+    npm install hono ocpp-ws-board
+    ```
+
+    ### Basic Setup
+
+    ```typescript
+    import { Hono } from "hono";
+    import { OCPPServer } from "ocpp-ws-io";
+    import { honoAdapter } from "ocpp-ws-board";
+
+    const app = new Hono();
+    const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+    // Create board with Hono adapter
+    const { subApp, plugin } = honoAdapter({
+      auth: { mode: "token", token: "secret" },
+    });
+
+    // Attach plugin
+    server.plugin(plugin);
+
+    // Mount at /board
+    app.route("/board", subApp);
+
+    // Start servers
+    server.listen(5000);
+    Bun.serve({ fetch: app.fetch, port: 9000 });
+
+    console.log("Dashboard: http://localhost:9000/board");
+    ```
+  </Tab>
+
+  <Tab value="Full Example">
+    ### Complete Hono Application
+
+    ```typescript
+    import { Hono } from "hono";
+    import { cors } from "hono/cors";
+    import { OCPPServer } from "ocpp-ws-io";
+    import { honoAdapter } from "ocpp-ws-board";
+
+    const app = new Hono();
+    const server = new OCPPServer({ protocols: ["ocpp1.6", "ocpp2.0.1"] });
+
+    // CORS for dashboard
+    app.use("/*", cors({
+      origin: ["http://localhost:9000"],
+      credentials: true,
+    }));
+
+    // Create dashboard
+    const { subApp, plugin } = honoAdapter({
+      auth: { mode: "token", token: process.env.DASHBOARD_TOKEN! },
+      sseHeartbeatMs: 15000,
+    });
+
+    server.plugin(plugin);
+
+    // OCPP routes
+    server.route("/api/v2/chargers/*").on("client", (client) => {
+      client.handle("ocpp2.0.1", "BootNotification", async (ctx) => {
+        return {
+          currentTime: new Date().toISOString(),
+          interval: 300,
+          status: "Accepted",
+        };
+      });
+    });
+
+    // Mount dashboard
+    app.route("/board", subApp);
+
+    // Health check
+    app.get("/health", (c) => c.json({ status: "ok" }));
+
+    // Start
+    server.listen(5000);
+    Bun.serve({ fetch: app.fetch, port: 9000 });
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## NestJS
+
+<Tabs items={["Setup", "Module Configuration", "Full Example"]}>
+  <Tab value="Setup">
+    ### Installation
+
+    ```bash
+    npm install @nestjs/common @nestjs/core ocpp-ws-board
+    ```
+
+    ### Basic Setup
+
+    ```typescript
+    import { Module } from "@nestjs/common";
+    import { BoardModule } from "ocpp-ws-board/nest";
+
+    @Module({
+      imports: [
+        BoardModule.register({
+          auth: { mode: "token", token: "secret" },
+        }),
+      ],
+    })
+    export class AppModule {}
+    ```
+  </Tab>
+
+  <Tab value="Module Configuration">
+    ### Advanced Configuration
+
+    ```typescript
+    import { Module } from "@nestjs/common";
+    import { BoardModule } from "ocpp-ws-board/nest";
+
+    @Module({
+      imports: [
+        BoardModule.registerAsync({
+          useFactory: () => ({
+            auth: {
+              mode: "custom",
+              validate: async (creds) => {
+                // Custom validation
+                return { name: "admin" };
+              },
+            },
+            store: {
+              maxMessages: 10000,
+              maxProxyEvents: 2000,
+            },
+          }),
+          inject: [],
+        }),
+      ],
+    })
+    export class AppModule {}
+    ```
+  </Tab>
+
+  <Tab value="Full Example">
+    ### Complete NestJS Application
+
+    ```typescript
+    // app.module.ts
+    import { Module } from "@nestjs/common";
+    import { OCPPModule } from "./ocpp.module";
+    import { BoardModule } from "ocpp-ws-board/nest";
+
+    @Module({
+      imports: [
+        OCPPModule,
+        BoardModule.register({
+          auth: { mode: "token", token: process.env.DASHBOARD_TOKEN! },
+        }),
+      ],
+    })
+    export class AppModule {}
+
+    // ocpp.module.ts
+    import { Module, OnModuleInit, Inject } from "@nestjs/common";
+    import { OCPPServer } from "ocpp-ws-io";
+    import { BOARD_PLUGIN } from "ocpp-ws-board/nest";
+
+    @Module({})
+    export class OCPPModule implements OnModuleInit {
+      @Inject(BOARD_PLUGIN)
+      private boardPlugin: any;
+
+      async onModuleInit() {
+        const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+        
+        // Attach board plugin
+        server.plugin(this.boardPlugin);
+
+        // Your OCPP routes
+        server.route("/ocpp/:identity").on("client", (client) => {
+          client.handle("ocpp1.6", "BootNotification", () => ({
+            currentTime: new Date().toISOString(),
+            interval: 300,
+            status: "Accepted",
+          }));
+        });
+
+        await server.listen(5000);
+        console.log("✅ OCPP Server running on :5000");
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Using the Main createBoard Function
+
+If you prefer not to use adapters, you can use the `createBoard()` function directly:
+
+```typescript
+import { createBoard } from "ocpp-ws-board";
+
+const board = createBoard({
+  auth: { mode: "token", token: "secret" },
+});
+
+// Returns:
+// - board.app: Hono app (REST API + static files)
+// - board.plugin: OCPP plugin
+// - board.store: In-memory store
+// - board.cleanup(): Cleanup function
+```
+
+### Manual Mounting
+
+```typescript
+// With Express
+import { createNodeMiddleware } from "@hono/node-server";
+
+app.use("/board", createNodeMiddleware(board.app));
+
+// With Fastify
+import fastifyHttpProxy from "@fastify/http-proxy";
+
+fastify.register(fastifyHttpProxy, {
+  upstream: "http://localhost:3001", // board.app port
+  prefix: "/board",
+});
+```
+
+---
+
+## Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `auth` | `BoardAuthConfig` | Required | Authentication configuration |
+| `store` | `StoreOptions` | `{}` | Ring buffer sizes |
+| `sseHeartbeatMs` | `number` | `15000` | SSE keepalive interval |
+
+### Store Options
+
+```typescript
+interface StoreOptions {
+  maxMessages?: number;          // Default: 5000
+  maxProxyEvents?: number;       // Default: 1000
+  maxSmartChargeHistory?: number; // Default: 500
+}
+```
+
+---
+
+## Next Steps
+
+- [API Reference](/docs/ocpp-ws-board/api-reference) — Complete REST API documentation
+- [Architecture](/docs/ocpp-ws-board/architecture) — Internal architecture and data flow
+- [Quick Start](/docs/ocpp-ws-board) — Get started with the dashboard

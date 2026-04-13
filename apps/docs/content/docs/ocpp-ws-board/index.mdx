@@ -1,0 +1,274 @@
+---
+title: OCPP WS BOARD
+description: Real-time telemetry dashboard for ocpp-ws-io — monitor connections, inspect OCPP messages, view server logs, and track charging station metrics.
+---
+
+import { Cards, Card } from "fumadocs-ui/components/card";
+import { Tab, Tabs } from "fumadocs-ui/components/tabs";
+import { Step, Steps } from "fumadocs-ui/components/steps";
+import { Callout } from "fumadocs-ui/components/callout";
+import Image from "next/image";
+
+# OCPP WS Board
+
+**`ocpp-ws-board`** is a production-ready real-time dashboard for monitoring your OCPP charging infrastructure. Built with React, Hono, and Server-Sent Events.
+
+<Callout type="info">
+  Ships as both a **pre-built UI** and a **pluggable Node.js backend**. Embed into Express, Hono, or NestJS with a single line of code.
+</Callout>
+
+---
+
+## Dashboard Overview
+
+<Image
+  src="/images/board-ui/overview.png"
+  alt="OCPP WS Board Overview Dashboard"
+  width={1920}
+  height={1080}
+  className="rounded-lg border shadow-lg"
+/>
+
+---
+
+## Features
+
+<Cards>
+  <Card
+    title="📡 Real-time Message Inspector"
+    description="Deep packet inspection of OCPP 1.6J and 2.0.1 payloads with live filtering."
+  />
+  <Card
+    title="🔌 Connection Monitoring"
+    description="Track all connected charging stations with real-time status and metadata."
+  />
+  <Card
+    title="📋 Server Logs Viewer"
+    description="Terminal-style logs with auto-scroll, pause/resume, search, and export."
+  />
+  <Card
+    title="📊 Telemetry & Metrics"
+    description="Real-time charts for throughput, latency, error rates, and memory usage."
+  />
+  <Card
+    title="🔒 Security Events"
+    description="Monitor authentication failures, rate limiting, and policy violations."
+  />
+  <Card
+    title="🎨 Multi-Framework Support"
+    description="Adapters for Express, Hono, and NestJS."
+  />
+</Cards>
+
+---
+
+## Key Screens
+
+### Overview Dashboard
+
+High-level statistics, recent messages, and quick connection status.
+
+<Image
+  src="/images/board-ui/overview.png"
+  alt="Overview Dashboard"
+  width={1920}
+  height={1080}
+  className="rounded-lg border shadow-lg"
+/>
+
+### Message Inspector
+
+Real-time OCPP message stream with filtering by method, direction, and type.
+
+<Image
+  src="/images/board-ui/message-view.png"
+  alt="Message Inspector"
+  width={1920}
+  height={1080}
+  className="rounded-lg border shadow-lg"
+/>
+
+### Connection Monitoring
+
+View all connected charging stations with details and control options.
+
+<Image
+  src="/images/board-ui/station-connection.png"
+  alt="Station Connections"
+  width={1920}
+  height={1080}
+  className="rounded-lg border shadow-lg"
+/>
+
+### Telemetry & Metrics
+
+Real-time performance charts for messages per second, latency, and memory usage.
+
+<Image
+  src="/images/board-ui/telementry.png"
+  alt="Telemetry Dashboard"
+  width={1920}
+  height={1080}
+  className="rounded-lg border shadow-lg"
+/>
+
+### Security Events
+
+Monitor authentication failures, rate limiting, and policy violations.
+
+<Image
+  src="/images/board-ui/security.png"
+  alt="Security Events"
+  width={1920}
+  height={1080}
+  className="rounded-lg border shadow-lg"
+/>
+
+---
+
+## Quick Start
+
+<Steps>
+  <Step>
+    ### Install the Package
+
+    ```bash
+    npm install ocpp-ws-board
+    ```
+  </Step>
+
+  <Step>
+    ### Create the Board
+
+    ```typescript
+    import { OCPPServer } from "ocpp-ws-io";
+    import { createBoard } from "ocpp-ws-board";
+
+    const server = new OCPPServer({
+      protocols: ["ocpp1.6"],
+    });
+
+    const board = createBoard({
+      auth: { mode: "token", token: "my-secret-token" },
+      store: {
+        maxMessages: 5000,
+        maxProxyEvents: 1000,
+      },
+    });
+
+    // Register the OCPP plugin for passive observability
+    server.plugin(board.plugin);
+    ```
+  </Step>
+
+  <Step>
+    ### Set Up OCPP Routes
+
+    ```typescript
+    server.route("/ocpp/:identity").on("client", (client) => {
+      client.handle("ocpp1.6", "Heartbeat", () => ({
+        currentTime: new Date().toISOString(),
+      }));
+
+      client.handle("ocpp1.6", "BootNotification", () => ({
+        currentTime: new Date().toISOString(),
+        interval: 30,
+        status: "Accepted",
+      }));
+    });
+    ```
+  </Step>
+
+  <Step>
+    ### Start the Servers
+
+    ```typescript
+    // Start OCPP server
+    server.listen(5000);
+
+    // Start dashboard UI (Bun)
+    Bun.serve({ fetch: board.app.fetch, port: 9000 });
+
+    console.log("OCPP server on :5000");
+    console.log("Dashboard UI on http://localhost:9000");
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Authentication
+
+<Tabs items={["Token", "Credentials", "Custom"]}>
+  <Tab value="Token">
+    ```typescript
+    const board = createBoard({
+      auth: { mode: "token", token: "my-secret-token" },
+    });
+    ```
+  </Tab>
+
+  <Tab value="Credentials">
+    ```typescript
+    const board = createBoard({
+      auth: { mode: "credentials", username: "admin", password: "pass" },
+    });
+    ```
+  </Tab>
+
+  <Tab value="Custom">
+    ```typescript
+    const board = createBoard({
+      auth: {
+        mode: "custom",
+        validate: async (creds) => {
+          // Your custom validation
+          return { name: "admin" };
+        },
+      },
+    });
+    ```
+  </Tab>
+</Tabs>
+
+<Callout type="warning">
+  For development only: `auth: { mode: "none" }` — never use in production!
+</Callout>
+
+---
+
+## Store Configuration
+
+Control memory usage with configurable ring buffers:
+
+```typescript
+const board = createBoard({
+  store: {
+    maxMessages: 5000,          // OCPP message history
+    maxProxyEvents: 1000,       // Protocol proxy events
+    maxSmartChargeHistory: 500, // Smart charging sessions
+  },
+});
+```
+
+---
+
+## What's Next?
+
+<Cards>
+  <Card
+    title="Framework Integration"
+    description="Integrate with Express, Hono, or NestJS."
+    href="/docs/ocpp-ws-board/integration"
+  />
+  <Card
+    title="REST API Reference"
+    description="Complete API reference for all endpoints."
+    href="/docs/ocpp-ws-board/api-reference"
+  />
+  <Card
+    title="Architecture"
+    description="Understand the internal architecture and data flow."
+    href="/docs/ocpp-ws-board/architecture"
+  />
+</Cards>

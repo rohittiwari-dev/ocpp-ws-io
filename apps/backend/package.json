@@ -1,0 +1,22 @@
+{
+  "name": "backend",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "ocpp-ws-io": "workspace:*",
+    "ocpp-ws-board": "workspace:*",
+    "ocpp-smart-charge-engine": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^20.11.16"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

@@ -4,6 +4,7 @@
     "packages",
     "comparison",
     "ocpp-ws-io",
+    "ocpp-ws-board",
     "smart-charge-engine",
     "protocol-proxy",
     "cli",

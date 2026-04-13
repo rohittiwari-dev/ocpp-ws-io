@@ -183,9 +183,9 @@ server.route("/ocpp/:identity").on("client", (client) => {
 
     if (engine) {
       engine.addSession({
-        transactionId: ctx.payload.transactionId,
+        transactionId: ctx.params.transactionId,
         clientId: client.identity,
-        connectorId: ctx.payload.connectorId,
+        connectorId: ctx.params.connectorId,
         maxHardwarePowerKw: getChargerMaxKw(client.identity),
         minChargeRateKw: 1.4,
         priority: getChargerPriority(client.identity),
@@ -195,14 +195,14 @@ server.route("/ocpp/:identity").on("client", (client) => {
 
     return {
       idTagInfo: { status: "Accepted" },
-      transactionId: ctx.payload.transactionId,
+      transactionId: ctx.params.transactionId,
     };
   });
 
   client.handle("ocpp1.6", "StopTransaction", async (ctx) => {
     const engine = getEngine(client.identity);
     if (engine) {
-      engine.safeRemoveSession(ctx.payload.transactionId);
+      engine.safeRemoveSession(ctx.params.transactionId);
       await engine.dispatch();
     }
     return { idTagInfo: { status: "Accepted" } };
@@ -222,7 +222,7 @@ server.route("/ocpp/:identity").on("client", (client) => {
 
   client.handle("ocpp2.0.1", "TransactionEvent", async (ctx) => {
     const engine = getEngine(client.identity);
-    const { eventType, transactionInfo, evse } = ctx.payload;
+    const { eventType, transactionInfo, evse } = ctx.params;
 
     if (eventType === "Started" && engine) {
       engine.addSession({

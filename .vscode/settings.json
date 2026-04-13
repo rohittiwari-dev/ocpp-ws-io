@@ -1,7 +1,9 @@
 {
   "editor.codeActionsOnSave": {
     "source.organizeImports.biome": "explicit",
-    "source.fixAll.biome": "explicit"
+    "source.fixAll.biome": "explicit",
+    "source.removeUnusedImports": "explicit",
+    "source.removeUnused.ts": "explicit"
   },
   "css.lint.unknownAtRules": "ignore",
   "scss.lint.unknownAtRules": "ignore"

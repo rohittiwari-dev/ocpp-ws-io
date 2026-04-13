@@ -1,0 +1,432 @@
+---
+title: REST API Reference
+description: Complete API reference for ocpp-ws-board REST endpoints and SSE streams.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+# REST API Reference
+
+All API endpoints are prefixed with `/api` and require authentication (except login and session endpoints).
+
+<Callout type="info">
+  Base URL: `http://localhost:9000/api`
+</Callout>
+
+---
+
+## Authentication
+
+### POST `/api/auth/login`
+
+Authenticate and create a session.
+
+**Request Body:**
+```json
+{
+  "token": "my-secret-token"
+}
+```
+
+Or for credentials mode:
+```json
+{
+  "username": "admin",
+  "password": "secret"
+}
+```
+
+**Response:**
+```json
+{
+  "sessionId": "abc123",
+  "user": { "name": "admin" },
+  "expiresAt": "2026-04-14T12:00:00Z"
+}
+```
+
+---
+
+### GET `/api/auth/session`
+
+Get current session information.
+
+**Response:**
+```json
+{
+  "authenticated": true,
+  "user": { "name": "admin" },
+  "expiresAt": "2026-04-14T12:00:00Z"
+}
+```
+
+---
+
+### POST `/api/auth/logout`
+
+Destroy the current session.
+
+**Response:**
+```json
+{
+  "success": true
+}
+```
+
+---
+
+## Overview
+
+### GET `/api/overview`
+
+Get dashboard overview statistics.
+
+**Response:**
+```json
+{
+  "connectedClients": 15,
+  "totalConnections": 1250,
+  "messagesPerSecond": 45.2,
+  "avgLatencyMs": 12.5,
+  "errorRate": 0.02,
+  "uptimeSeconds": 86400,
+  "totalMessages": 3890000,
+  "recentMessages": [...],
+  "securityEventCount": 3,
+  "errorCount": 12,
+  "systemEventCount": 45
+}
+```
+
+---
+
+## Connections
+
+### GET `/api/connections`
+
+List all connections (active and historical).
+
+**Query Parameters:**
+- `status` (optional): Filter by status (`online`, `offline`, `all`)
+- `protocol` (optional): Filter by protocol version
+
+**Response:**
+```json
+[
+  {
+    "identity": "CP-001",
+    "remoteAddress": "192.168.1.100",
+    "protocol": "ocpp1.6",
+    "connectedAt": "2026-04-13T10:00:00Z",
+    "disconnectedAt": null,
+    "status": "online",
+    "messageCount": 1520,
+    "lastMessageAt": "2026-04-13T16:30:00Z"
+  }
+]
+```
+
+---
+
+### GET `/api/connections/:identity`
+
+Get detailed information about a specific connection.
+
+**Response:**
+```json
+{
+  "identity": "CP-001",
+  "remoteAddress": "192.168.1.100",
+  "protocol": "ocpp1.6",
+  "connectedAt": "2026-04-13T10:00:00Z",
+  "status": "online",
+  "messageCount": 1520,
+  "lastMessageAt": "2026-04-13T16:30:00Z",
+  "recentMessages": [...]
+}
+```
+
+---
+
+### POST `/api/connections/:identity/disconnect`
+
+Force disconnect a charging station.
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Connection terminated"
+}
+```
+
+---
+
+### DELETE `/api/connections/:identity`
+
+Remove connection record from history.
+
+**Response:**
+```json
+{
+  "success": true
+}
+```
+
+---
+
+## Messages
+
+### GET `/api/messages`
+
+Query message history with filtering and pagination.
+
+**Query Parameters:**
+- `limit` (optional, default: 100): Number of messages to return
+- `offset` (optional, default: 0): Pagination offset
+- `identity` (optional): Filter by station identity
+- `method` (optional): Filter by OCPP method
+- `direction` (optional): Filter by direction (`IN`, `OUT`)
+- `type` (optional): Filter by message type (`CALL`, `CALLRESULT`, `CALLERROR`)
+
+**Response:**
+```json
+[
+  {
+    "id": "msg-123",
+    "identity": "CP-001",
+    "method": "BootNotification",
+    "direction": "IN",
+    "type": "CALL",
+    "timestamp": "2026-04-13T16:30:00Z",
+    "payload": {
+      "chargePointVendor": "Vendor",
+      "chargePointModel": "Model"
+    },
+    "responseTime": 12
+  }
+]
+```
+
+---
+
+### GET `/api/messages/stream`
+
+Server-Sent Events stream for live messages.
+
+**Event Name:** `message`
+
+**Example:**
+```typescript
+const es = new EventSource("/api/messages/stream");
+
+es.addEventListener("message", (event) => {
+  const msg = JSON.parse(event.data);
+  console.log("New message:", msg);
+});
+```
+
+---
+
+## Telemetry
+
+### GET `/api/telemetry`
+
+Get current telemetry snapshot.
+
+**Response:**
+```json
+{
+  "messagesPerSecond": 45.2,
+  "avgLatencyMs": 12.5,
+  "errorRate": 0.02,
+  "connectionCount": 15,
+  "peakConnections": 25,
+  "uptimeSeconds": 86400,
+  "totalMessages": 3890000,
+  "memoryUsage": {
+    "rss": 125000000,
+    "heapUsed": 45000000,
+    "heapTotal": 80000000
+  }
+}
+```
+
+---
+
+### GET `/api/telemetry/stream`
+
+Server-Sent Events stream for live telemetry updates.
+
+**Event Name:** `telemetry`
+
+**Update Frequency:** Every 2 seconds
+
+**Example:**
+```typescript
+const es = new EventSource("/api/telemetry/stream");
+
+es.addEventListener("telemetry", (event) => {
+  const metrics = JSON.parse(event.data);
+  updateCharts(metrics);
+});
+```
+
+---
+
+## Security Events
+
+### GET `/api/security`
+
+Get security event history.
+
+**Query Parameters:**
+- `category` (optional): Filter by category
+- `severity` (optional): Filter by severity (`low`, `medium`, `high`, `critical`)
+- `limit` (optional, default: 100)
+- `offset` (optional, default: 0)
+
+**Response:**
+```json
+[
+  {
+    "id": "evt-123",
+    "category": "AUTH_FAILED",
+    "identity": "UNKNOWN",
+    "message": "Invalid token provided",
+    "severity": "medium",
+    "details": {
+      "ip": "192.168.1.50",
+      "attempt": 3
+    },
+    "timestamp": "2026-04-13T16:30:00Z"
+  }
+]
+```
+
+---
+
+### GET `/api/security/stream`
+
+Server-Sent Events stream for live security events.
+
+**Event Name:** `security`
+
+---
+
+## Smart Charging
+
+### GET `/api/smart-charge`
+
+Get smart charging session history.
+
+**Response:**
+```json
+[
+  {
+    "sessionId": "sc-123",
+    "identity": "CP-001",
+    "strategy": "equal_share",
+    "allocatedKw": 22.5,
+    "status": "active",
+    "startedAt": "2026-04-13T10:00:00Z",
+    "updatedAt": "2026-04-13T16:30:00Z"
+  }
+]
+```
+
+---
+
+## Protocol Proxy
+
+### GET `/api/proxy`
+
+Get protocol proxy events.
+
+**Response:**
+```json
+[
+  {
+    "id": "px-123",
+    "type": "translation",
+    "fromProtocol": "ocpp1.6",
+    "toProtocol": "ocpp2.0.1",
+    "method": "BootNotification",
+    "timestamp": "2026-04-13T16:30:00Z"
+  }
+]
+```
+
+---
+
+## Error Responses
+
+All endpoints may return error responses:
+
+### 401 Unauthorized
+```json
+{
+  "error": "Unauthorized"
+}
+```
+
+### 403 Forbidden
+```json
+{
+  "error": "Session expired"
+}
+```
+
+### 404 Not Found
+```json
+{
+  "error": "Connection not found"
+}
+```
+
+### 500 Internal Server Error
+```json
+{
+  "error": "Internal server error"
+}
+```
+
+---
+
+## SSE Connection Management
+
+### Connection Lifecycle
+
+1. Client connects to SSE endpoint
+2. Server sends `connected` event immediately
+3. Server sends data events as they occur
+4. Server sends heartbeat every `sseHeartbeatMs` milliseconds
+5. Client disconnects or connection times out
+
+### Reconnection
+
+EventSource automatically handles reconnection. Implement event listeners to handle state:
+
+```typescript
+const es = new EventSource("/api/messages/stream");
+
+es.addEventListener("connected", () => {
+  console.log("Connected to stream");
+});
+
+es.addEventListener("error", () => {
+  console.log("Connection lost, reconnecting...");
+});
+
+es.addEventListener("message", (event) => {
+  // Handle message
+});
+```
+
+---
+
+## Next Steps
+
+- [Integration Guide](/docs/ocpp-ws-board/integration) — Framework-specific setup
+- [Architecture](/docs/ocpp-ws-board/architecture) — Internal architecture
+- [Quick Start](/docs/ocpp-ws-board) — Get started

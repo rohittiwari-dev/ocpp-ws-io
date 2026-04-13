@@ -226,21 +226,21 @@ server.on("client", (client) => {
 
   client.handle("ocpp1.6", "StartTransaction", async (ctx) => {
     engine.addSession({
-      transactionId: ctx.payload.transactionId,
+      transactionId: ctx.params.transactionId,
       clientId: client.identity,
-      connectorId: ctx.payload.connectorId,
+      connectorId: ctx.params.connectorId,
       maxHardwarePowerKw: 22,
       minChargeRateKw: 1.4,
     });
     await engine.dispatch();
     return {
       idTagInfo: { status: "Accepted" },
-      transactionId: ctx.payload.transactionId,
+      transactionId: ctx.params.transactionId,
     };
   });
 
   client.handle("ocpp1.6", "StopTransaction", async (ctx) => {
-    engine.safeRemoveSession(ctx.payload.transactionId);
+    engine.safeRemoveSession(ctx.params.transactionId);
     await engine.dispatch();
     return { idTagInfo: { status: "Accepted" } };
   });
