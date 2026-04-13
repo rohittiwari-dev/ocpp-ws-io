@@ -139,26 +139,42 @@ export const modularRouting = () => {
 };
 
 export const catchAllFallbacks = async () => {
-  const server = new OCPPServer({ protocols: ["ocpp1.6"] });
-  // Specific route
-  server.route("/api/chargers").on("client", (client) => {
-    client.handle("BootNotification", () => ({
-      status: "Accepted",
-      interval: 300,
-      currentTime: new Date().toISOString(),
-    }));
+  const server = new OCPPServer({
+    protocols: ["ocpp1.6"],
+    logging: {
+      enabled: true,
+      prettify: true,
+      prettifyMetadata: true,
+      prettifySource: true,
+    },
   });
+  // Specific route
+  server
+    .route("/api/chargers")
+    .auth(async (ctx) => {
+      ctx.accept({ session: { role: "charger" } });
+    })
+    .on("client", (client) => {
+      client.handle("BootNotification", () => ({
+        status: "Accepted",
+        currentTime: new Date().toISOString(),
+      }));
+    });
 
   // Catch-all (matches anything that didn't match above)
   const wildcardRouter = server.use(async (ctx) => {
-    // Reject connection without throwing RPC errors
-    ctx.reject(404, "Endpoint Not Found");
+    console.log(`[Catch-all] ${ctx.handshake.identity}`);
+    ctx.next({
+      chargePointID: "catch-all",
+    });
   });
 
-  wildcardRouter.on("client", (client) => {
-    // Only SYS-* prefixed stations reach here
-    client.handle("TriggerMessage", () => ({ status: "Accepted" }));
-  });
+  wildcardRouter
+    .auth((ctx) => ctx.accept({ session: { role: "charger" } }))
+    .on("client", (client) => {
+      console.log("[Catch-all] TriggerMessage", client.session);
+      client.handle("TriggerMessage", () => ({ status: "Accepted" }));
+    });
 
   server.listen(3000);
 };

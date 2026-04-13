@@ -1,0 +1,376 @@
+---
+title: Architecture
+description: Understanding the internal architecture, data flow, and component interactions of ocpp-ws-board.
+---
+
+import { Mermaid } from "@/components/mermaid";
+import { Callout } from "fumadocs-ui/components/callout";
+
+# Architecture
+
+This document explains the internal architecture of `ocpp-ws-board` and how data flows through the system.
+
+---
+
+## High-Level Overview
+
+<Mermaid chart={`
+graph TB
+    subgraph OCPP["OCPP Server (ocpp-ws-io)"]
+        direction TB
+        WS[WebSocket Connections]
+        HANDLERS[Message Handlers]
+        PLUGIN[Board Plugin]
+        WS --> HANDLERS
+        HANDLERS --> PLUGIN
+    end
+
+    subgraph Board["OCPP WS Board"]
+        direction TB
+        STORE[MemoryStore<br/>Ring Buffers]
+        BROKERS[SSE Brokers<br/>Message/Telemetry/Security]
+        API[Hono REST API]
+        UI[React SPA]
+        
+        PLUGIN --> STORE
+        STORE --> BROKERS
+        STORE --> API
+        BROKERS --> API
+        API --> UI
+    end
+
+    CLIENTS[Charging Stations] --> WS
+    BROWSER[Web Browser] --> UI
+`} />
+
+---
+
+## Components
+
+### 1. OCPP Plugin (`BoardPlugin`)
+
+A passive observer plugin that hooks into the OCPP server lifecycle:
+
+```typescript
+// Passive event listeners
+onConnection: (client) => store.addConnection(client)
+onMessage: (message) => {
+  store.addMessage(message)
+  messageBroker.emit('message', message)
+}
+onDisconnect: (client) => store.removeConnection(client)
+onSecurityEvent: (event) => {
+  store.addSecurityEvent(event)
+  securityBroker.emit('security', event)
+}
+```
+
+**Key Features:**
+- Zero performance impact on message processing
+- Non-blocking async operations
+- Thread-safe event handling
+
+---
+
+### 2. MemoryStore (`CompressedMemoryStore`)
+
+In-memory ring buffers with configurable limits:
+
+<Mermaid chart={`
+graph LR
+    subgraph Store["CompressedMemoryStore"]
+        direction TB
+        CONN[Connections Map<br/>Map<string, ConnectionRecord>]
+        MSG[Messages Ring Buffer<br/>Array<StoredMessage> max: 5000]
+        TEL[Telemetry Snapshot<br/>Object]
+        SEC[Security Events<br/>Array<SecurityEventRecord>]
+        PROXY[Proxy Events<br/>Array<ProxyEvent>]
+        SC[Smart Charge<br/>Array<SmartChargeSession>]
+    end
+`} />
+
+**Ring Buffer Implementation:**
+- Automatically evicts oldest entries when limit reached
+- O(1) append operations
+- Memory-efficient with no leaks
+- Configurable per-collection limits
+
+---
+
+### 3. SSE Brokers (`SSEBroker`)
+
+Server-Sent Events broadcast system:
+
+```typescript
+class SSEBroker {
+  private clients: Set<ReadableStreamDefaultController>
+  
+  // Add new client
+  subscribe(): ReadableStream
+  
+  // Broadcast to all clients
+  emit(event: string, data: unknown): void
+  
+  // Heartbeat to keep connections alive
+  private heartbeat(): void
+}
+```
+
+**Three Separate Brokers:**
+1. **MessageBroker** — Live OCPP messages
+2. **TelemetryBroker** — Server metrics (2s interval)
+3. **SecurityBroker** — Security events
+
+---
+
+### 4. Hono REST API
+
+Lightweight HTTP framework serving:
+
+1. **REST API Endpoints** — `/api/*` routes
+2. **SSE Streams** — `/api/*/stream` endpoints
+3. **Static Files** — Pre-built React SPA
+
+**Authentication Middleware:**
+```typescript
+function requireAuth(c, next) {
+  if (!auth.requiresAuth()) return next()
+  
+  const sessionId = parseSessionCookie(c.req.header("cookie"))
+  if (!sessionId) return c.json({ error: "Unauthorized" }, 401)
+  
+  const session = auth.getSession(sessionId)
+  if (!session) return c.json({ error: "Session expired" }, 401)
+  
+  c.set("user", session.user)
+  return next()
+}
+```
+
+---
+
+### 5. React UI
+
+Single-page application built with:
+
+- **React 19** — Latest features and performance
+- **React Router 7** — Client-side routing
+- **Tailwind CSS 4** — Utility-first styling
+- **Recharts 3** — Data visualization
+- **Shadcn/ui** — Accessible component library
+
+**Key Pages:**
+- Overview (dashboard stats)
+- Connections (station list)
+- Messages (packet inspector)
+- Logs (terminal viewer)
+- Telemetry (performance charts)
+- Security (event monitor)
+
+---
+
+## Data Flow
+
+### Message Flow
+
+<Mermaid chart={`
+sequenceDiagram
+    participant CS as Charging Station
+    participant OCPP as OCPP Server
+    participant Plugin as Board Plugin
+    participant Store as MemoryStore
+    participant Broker as SSE Broker
+    participant API as REST API
+    participant UI as Browser UI
+
+    CS->>OCPP: OCPP Message (BootNotification)
+    OCPP->>Plugin: onMessage event
+    Plugin->>Store: addMessage()
+    Plugin->>Broker: emit('message', msg)
+    
+    par REST API
+        UI->>API: GET /api/messages
+        API->>Store: getMessages()
+        Store-->>API: Message array
+        API-->>UI: JSON response
+    and SSE Stream
+        UI->>Broker: Connect to /messages/stream
+        Broker-->>UI: message event (real-time)
+    end
+`} />
+
+---
+
+### Telemetry Flow
+
+<Mermaid chart={`
+sequenceDiagram
+    participant Store as MemoryStore
+    participant Timer as 2s Interval
+    participant Broker as TelemetryBroker
+    participant UI as Browser UI
+
+    loop Every 2 seconds
+        Timer->>Store: getTelemetry()
+        Store-->>Timer: Metrics snapshot
+        Timer->>Broker: emit('telemetry', data)
+        Broker-->>UI: telemetry event
+    end
+`} />
+
+---
+
+## Authentication Flow
+
+<Mermaid chart={`
+sequenceDiagram
+    participant Browser as Browser
+    participant API as Hono API
+    participant Auth as Auth Layer
+    participant Store as Session Store
+
+    Browser->>API: POST /api/auth/login {token}
+    API->>Auth: validate(token)
+    Auth-->>API: { sessionId, user }
+    API->>Store: storeSession(sessionId, user)
+    API-->>Browser: Set-Cookie: session=sessionId
+    Browser-->>Browser: Store session cookie
+    
+    Browser->>API: GET /api/connections (with cookie)
+    API->>Auth: parseSessionCookie(cookie)
+    Auth->>Store: getSession(sessionId)
+    Store-->>Auth: { user, expiresAt }
+    Auth-->>API: session valid
+    API-->>Browser: Connection data
+`} />
+
+---
+
+## Memory Management
+
+### Ring Buffer Eviction
+
+```typescript
+// When buffer exceeds maxMessages
+if (messages.length > maxMessages) {
+  messages.splice(0, messages.length - maxMessages)
+  // Oldest messages removed automatically
+}
+```
+
+### Memory Footprint
+
+| Component | Typical Size | Max Configurable |
+|-----------|--------------|------------------|
+| Messages | 50-100KB (5000 msgs) | ~1MB |
+| Connections | 5-10KB | ~100KB |
+| Telemetry | {'<'}1KB | N/A |
+| Security Events | 10-20KB | ~500KB |
+
+**Total:** Typically {'<'}200KB in memory for a busy server
+
+---
+
+## Performance Considerations
+
+### SSE Optimization
+
+- **Heartbeat interval:** 15s default (prevents timeout)
+- **Batching:** Telemetry sent every 2s
+- **Backpressure:** Slow clients are automatically disconnected
+- **Compression:** None (SSE is text-based)
+
+### REST API
+
+- **Caching:** None (real-time data)
+- **Pagination:** Limit/offset for large collections
+- **Response time:** {'<'}10ms typical
+- **Concurrency:** Hono handles thousands of requests
+
+### UI Performance
+
+- **Virtualization:** Large lists use virtual scrolling
+- **Debounce:** Search inputs debounced 300ms
+- **Memoization:** React.memo for expensive components
+- **Code splitting:** Lazy-loaded routes
+
+---
+
+## Extensibility
+
+### Custom Store
+
+You can replace the default `CompressedMemoryStore` with your own implementation:
+
+```typescript
+import { createBoard } from "ocpp-ws-board";
+
+class RedisStore {
+  async addMessage(msg) { /* ... */ }
+  async getMessages(limit) { /* ... */ }
+  // ... implement all store methods
+}
+
+const board = createBoard({
+  store: new RedisStore(),
+});
+```
+
+### Custom Authentication
+
+```typescript
+const board = createBoard({
+  auth: {
+    mode: "custom",
+    validate: async (credentials) => {
+      // Check against your database
+      const user = await db.users.find(credentials.token)
+      if (!user) throw new Error("Invalid token")
+      return { name: user.name, role: user.role }
+    },
+  },
+});
+```
+
+### Custom Metrics
+
+Extend telemetry with your own metrics:
+
+```typescript
+const board = createBoard({});
+
+// Periodically update custom metrics
+setInterval(() => {
+  const customMetrics = {
+    activeChargingSessions: getActiveSessions(),
+    totalEnergyDelivered: getEnergyDelivered(),
+  }
+  board.telemetryBroker.emit("telemetry", customMetrics)
+}, 2000)
+```
+
+---
+
+## Security
+
+### Data Protection
+
+- **In-memory only:** No data persisted to disk
+- **Session expiry:** Automatic cleanup of expired sessions
+- **Input validation:** All API inputs sanitized
+- **Rate limiting:** Built-in protection against abuse
+
+### Network Security
+
+- **CORS:** Configurable allowed origins
+- **HTTPS:** Required in production
+- **Cookie flags:** `HttpOnly`, `Secure`, `SameSite`
+- **Token storage:** Server-side only (no client storage)
+
+---
+
+## Next Steps
+
+- [REST API Reference](/docs/ocpp-ws-board/api-reference) — Complete API documentation
+- [Integration Guide](/docs/ocpp-ws-board/integration) — Framework setup
+- [Quick Start](/docs/ocpp-ws-board) — Get started

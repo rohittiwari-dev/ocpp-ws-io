@@ -1,0 +1,76 @@
+name: Publish OCPP WS Board to npm
+
+on:
+  push:
+    tags:
+      - "board-v*.*.*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag is on main branch
+        run: |
+          if ! git branch -r --contains ${{ github.sha }} | grep -q 'origin/main'; then
+            echo "❌ Error: Tag was not created from the 'main' branch."
+            exit 1
+          fi
+          echo "✅ Tag is on the 'main' branch."
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build UI and Server
+        run: cd packages/ocpp-ws-board && bun run build
+
+      - name: Determine npm dist-tag
+        id: dist-tag
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/board-v}"
+          if [[ "$VERSION" == *"-beta"* ]]; then
+            echo "tag=beta" >> $GITHUB_OUTPUT
+          elif [[ "$VERSION" == *"-rc"* ]]; then
+            echo "tag=rc" >> $GITHUB_OUTPUT
+          elif [[ "$VERSION" == *"-alpha"* ]]; then
+            echo "tag=alpha" >> $GITHUB_OUTPUT
+          else
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          fi
+          echo "Publishing $VERSION with dist-tag: $(grep tag "$GITHUB_OUTPUT" | cut -d= -f2)"
+
+      - name: Sync version from git tag to package.json
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/board-v}"
+          cd packages/ocpp-ws-board
+          VERSION="$VERSION" node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = process.env.VERSION;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          echo "✅ Version synced to $VERSION"
+
+      - name: Publish to npm
+        run: cd packages/ocpp-ws-board && npm publish --provenance --access public --tag ${{ steps.dist-tag.outputs.tag }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,4 @@
+{
+  "title": "OCPP WS UI",
+  "pages": ["index", "integration", "api-reference", "architecture"]
+}

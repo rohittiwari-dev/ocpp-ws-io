@@ -19,6 +19,11 @@ The **ocpp-ws-io** ecosystem is a modular suite of TypeScript packages, each sol
     description="The foundational WebSocket RPC library. Unified client & server across OCPP 1.6, 2.0.1, and 2.1 with end-to-end type safety, JSON schema validation, Security Profiles 0–3 (mTLS), and Redis clustering."
   />
   <Card
+    title="ocpp-ws-board"
+    href="/docs/ocpp-ws-board"
+    description="Real-time telemetry dashboard with live message inspection, server logs, connection monitoring, and performance metrics. Ships with Express, Hono, and NestJS adapters."
+  />
+  <Card
     title="ocpp-protocol-proxy"
     href="/docs/protocol-proxy"
     description="Transport-agnostic OCPP version translation proxy. Bridge legacy OCPP 1.6 chargers to modern 2.1 backends using pluggable middleware pipelines and pre-built translation presets."
@@ -60,6 +65,9 @@ The **ocpp-ws-io** ecosystem is a modular suite of TypeScript packages, each sol
 # Core RPC — client & server
 npm install ocpp-ws-io
 
+# Real-time dashboard & monitoring
+npm install ocpp-ws-board
+
 # Version translation proxy
 npm install ocpp-protocol-proxy
 
@@ -80,6 +88,7 @@ npm install voltlog-io
 | Need | Package |
 |------|---------|
 | Build a CSMS or charge point in Node.js | `ocpp-ws-io` |
+| Monitor & inspect OCPP traffic in real-time | `ocpp-ws-board` |
 | Support legacy 1.6 hardware on a 2.1 backend | `ocpp-protocol-proxy` |
 | Distribute grid power across multiple chargers | `ocpp-smart-charge-engine` |
 | Test, mock, or debug OCPP traffic locally | `ocpp-ws-cli` |

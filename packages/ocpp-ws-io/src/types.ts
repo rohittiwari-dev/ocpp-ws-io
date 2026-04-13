@@ -1062,7 +1062,7 @@ export interface BaseConnectionContext {
 }
 
 export interface ConnectionContext extends BaseConnectionContext {
-  /** Triggers the next middleware in the execution chain, optionally merging a payload into ctx.state */
+  /** Triggers the next middleware in the execution chain, optionally merging a payload into ctx.state and then client.session in the chain*/
   next: (payload?: Record<string, unknown>) => Promise<void>;
 }
 

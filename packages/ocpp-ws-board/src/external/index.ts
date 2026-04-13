@@ -5,9 +5,7 @@ export { expressAdapter } from "./adapters/express.js";
 export { honoAdapter } from "./adapters/hono.js";
 export { createAuthLayer } from "./auth.js";
 export { createBoard } from "./board.js";
-export { connectProtocolProxy } from "./connectors/protocol-proxy.js";
 // ─── Connectors ───────────────────────────────────────────────────
-export { connectSmartChargeEngine } from "./connectors/smart-charge.js";
 export type { BoardPluginCallbacks } from "./plugin.js";
 export { createBoardPlugin } from "./plugin.js";
 export { SSEBroker } from "./sse.js";
