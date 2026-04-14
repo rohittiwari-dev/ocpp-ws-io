@@ -1,6 +1,27 @@
 {
   "name": "ocpp-ws-board",
   "version": "0.1.0-alpha.1",
+  "description": "Monitoring UI and backend integration for ocpp-ws-io. Type-safe TypeScript toolkit for EV charging, CSMS backends, Redis scaling, and protocol validation.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rohittiwari-dev/ocpp-ws-io.git",
+    "directory": "packages/ocpp-ws-board"
+  },
+  "author": "Rohit Tiwari <rohit@rohittiwari.me>",
+  "homepage": "https://ocpp-ws-io.rohittiwari.me",
+  "bugs": {
+    "url": "https://github.com/rohittiwari-dev/ocpp-ws-io/issues"
+  },
+  "keywords": [
+    "ocpp",
+    "ocpp-ui",
+    "ocpp-dashboard",
+    "ocpp-monitoring",
+    "ev-charging",
+    "csms",
+    "cpo"
+  ],
+  "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.cjs",
