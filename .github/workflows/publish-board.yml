@@ -40,6 +40,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Build ocpp-ws-io dependency
+        run: cd packages/ocpp-ws-io && bun run build
+
       - name: Build UI and Server
         run: cd packages/ocpp-ws-board && bun run build
 
