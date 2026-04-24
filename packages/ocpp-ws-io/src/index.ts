@@ -65,6 +65,7 @@ export {
   type AnyOCPPProtocol,
   type AuthAccept,
   type AuthCallback,
+  type AuthContext,
   type CallHandler,
   type CallOptions,
   type ClientEvents,

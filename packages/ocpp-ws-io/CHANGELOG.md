@@ -1,5 +1,17 @@
 # ocpp-ws-io
 
+## v2.2.2-beta.1 - Native NestJS Integration
+
+### Minor Changes
+
+- **Native NestJS Support**: Shipped a fully native, robust integration module for the NestJS framework, bypassing testing limitations and complex configurations.
+  - **First-Class Decorators**: Introduced `@OcppGateway()`, `@OcppMessageEvent()`, and `@OcppAuth()` for seamless class-based WebSocket routing.
+  - **Parameter Injectors**: Map incoming OCPP properties directly to method parameters via `@Identity()`, `@Params()`, `@Session()`, and `@Context()`.
+  - **Dynamic Module Initialization**: Provided `OcppModule.forRoot()` and `OcppModule.forRootAsync()` to natively register the adapter alongside global configurations (e.g., `ConfigService`).
+  - **Zero-Config WebSockets**: The `OcppService` now automatically hooks into the underlying `HttpAdapterHost`, instantly exposing all gateways on the standard application HTTP port without any `main.ts` modifications.
+  - **Testing Environment Hardening**: Bypassed ESBuild/Vite decorator stripping behaviors (e.g., `design:paramtypes` missing in `vitest`) by internally utilizing NestJS `useFactory` instantiation, guaranteeing 100% test compatibility across all bundlers.
+  - **Documentation**: Restructured the documentation tree into the Fumadocs `frameworks` layout and introduced a massive native NestJS guide covering setup, dependency injection (MVC pattern), and wiring.
+
 ## v2.2.1 - Plugin System Hardening & Type Exports
 
 ### Patch Changes

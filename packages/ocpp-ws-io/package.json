@@ -34,6 +34,11 @@
       "types": "./dist/plugins.d.ts",
       "import": "./dist/plugins.mjs",
       "require": "./dist/plugins.js"
+    },
+    "./nestjs": {
+      "types": "./dist/nestjs.d.ts",
+      "import": "./dist/nestjs.mjs",
+      "require": "./dist/nestjs.js"
     }
   },
   "scripts": {
@@ -97,6 +102,22 @@
     "dist"
   ],
   "license": "MIT",
+  "peerDependencies": {
+    "@nestjs/common": "^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^10.0.0 || ^11.0.0",
+    "reflect-metadata": "^0.2.2"
+  },
+  "peerDependenciesMeta": {
+    "@nestjs/common": {
+      "optional": true
+    },
+    "@nestjs/core": {
+      "optional": true
+    },
+    "reflect-metadata": {
+      "optional": true
+    }
+  },
   "dependencies": {
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
@@ -110,6 +131,9 @@
     "ioredis-mock": "^8.13.1",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "reflect-metadata": "^0.2.2"
   }
 }
