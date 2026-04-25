@@ -1,3 +1,5 @@
+import type { Server as HttpServer, IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
 import {
   Inject,
   Injectable,
@@ -7,51 +9,214 @@ import {
 } from "@nestjs/common";
 import { HttpAdapterHost } from "@nestjs/core";
 import type { OCPPServer } from "../../server.js";
-import { OCPP_SERVER_INSTANCE } from "./constants.js";
+import type { OCPPServerClient } from "../../server-client.js";
+import type {
+  AllMethodNames,
+  CallOptions,
+  CloseOptions,
+  OCPPProtocol,
+  OCPPRequestType,
+  OCPPResponseType,
+  OCPPServerStats,
+} from "../../types.js";
+import { OCPP_SERVER_INSTANCE, OCPP_SERVER_OPTIONS } from "./constants.js";
+import type { OcppModuleOptions } from "./interfaces.js";
 
 @Injectable()
 export class OcppService implements OnModuleInit, OnModuleDestroy {
+  private attachedHttpServer?: HttpServer;
+  private readonly gatewayPatterns = new Set<string | RegExp>();
+  private acceptAllUpgrades = false;
+  private readonly upgradeHandler = (
+    req: IncomingMessage,
+    socket: Duplex,
+    head: Buffer,
+  ) => this.handleUpgrade(req, socket, head);
+
   constructor(
-    @Inject(OCPP_SERVER_INSTANCE) private readonly server: OCPPServer,
+    @Inject(OCPP_SERVER_INSTANCE) private readonly ocppServer: OCPPServer,
+    @Optional()
+    @Inject(OCPP_SERVER_OPTIONS)
+    private readonly options: OcppModuleOptions = {},
     @Optional()
     @Inject(HttpAdapterHost)
     private readonly httpAdapterHost?: HttpAdapterHost,
   ) {}
 
   onModuleInit() {
-    // If HttpAdapterHost is available, we attach to the existing NestJS HTTP Server
-    // This allows coexistence with regular Express/Fastify routes and Socket.io
-    const httpServer = this.httpAdapterHost?.httpAdapter?.getHttpServer();
+    if (this.options.autoAttach === false) return;
 
-    if (httpServer) {
-      httpServer.on("upgrade", this.handleUpgrade.bind(this));
+    const httpServer = this.httpAdapterHost?.httpAdapter?.getHttpServer();
+    if (!httpServer || this.attachedHttpServer === httpServer) return;
+
+    httpServer.on("upgrade", this.upgradeHandler);
+    this.attachedHttpServer = httpServer;
+  }
+
+  async onModuleDestroy() {
+    if (this.attachedHttpServer) {
+      this.attachedHttpServer.removeListener("upgrade", this.upgradeHandler);
+      this.attachedHttpServer = undefined;
+    }
+
+    await this.ocppServer.close();
+  }
+
+  get server(): OCPPServer {
+    return this.ocppServer;
+  }
+
+  get clients(): ReadonlySet<OCPPServerClient> {
+    return this.ocppServer.clients;
+  }
+
+  stats(): OCPPServerStats {
+    return this.ocppServer.stats();
+  }
+
+  getClient(identity: string): OCPPServerClient | undefined {
+    return this.ocppServer.getLocalClient(identity);
+  }
+
+  getLocalClient(identity: string): OCPPServerClient | undefined {
+    return this.ocppServer.getLocalClient(identity);
+  }
+
+  hasLocalClient(identity: string): boolean {
+    return this.ocppServer.hasLocalClient(identity);
+  }
+
+  hasClient(identity: string): Promise<boolean> {
+    return this.ocppServer.isClientConnected(identity);
+  }
+
+  sendToClient<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+    identity: string,
+    version: V,
+    method: M,
+    params: OCPPRequestType<V, M>,
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<V, M> | undefined>;
+  sendToClient<M extends AllMethodNames<any>>(
+    identity: string,
+    method: M,
+    params: OCPPRequestType<any, M>,
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<any, M> | undefined>;
+  sendToClient<TResult = any>(
+    identity: string,
+    method: string,
+    params: Record<string, any>,
+    options?: CallOptions,
+  ): Promise<TResult | undefined>;
+  async sendToClient(...args: any[]): Promise<any> {
+    const send = this.ocppServer.sendToClient as (
+      ...callArgs: any[]
+    ) => Promise<any>;
+    return send.apply(this.ocppServer, args);
+  }
+
+  safeSendToClient<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+    identity: string,
+    version: V,
+    method: M,
+    params: OCPPRequestType<V, M>,
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<V, M> | undefined>;
+  safeSendToClient<M extends AllMethodNames<any>>(
+    identity: string,
+    method: M,
+    params: OCPPRequestType<any, M>,
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<any, M> | undefined>;
+  safeSendToClient<TResult = any>(
+    identity: string,
+    method: string,
+    params: Record<string, any>,
+    options?: CallOptions,
+  ): Promise<TResult | undefined>;
+  async safeSendToClient(...args: any[]): Promise<any> {
+    const send = this.ocppServer.safeSendToClient as (
+      ...callArgs: any[]
+    ) => Promise<any>;
+    return send.apply(this.ocppServer, args);
+  }
+
+  close(options?: CloseOptions): Promise<void> {
+    return this.ocppServer.close(options);
+  }
+
+  registerUpgradePath(pattern?: string | RegExp): void {
+    if (!pattern) {
+      this.acceptAllUpgrades = true;
+      return;
+    }
+
+    this.gatewayPatterns.add(pattern);
+  }
+
+  private handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
+    if (!this.shouldHandleUpgrade(req)) return;
+    this.ocppServer.handleUpgrade(req, socket, head);
+  }
+
+  private shouldHandleUpgrade(req: IncomingMessage): boolean {
+    if (req.headers.upgrade?.toLowerCase() !== "websocket") return false;
+
+    const pathname = this.getPathname(req);
+    if (!pathname) return false;
+
+    if (this.options.upgradeFilter) {
+      return this.options.upgradeFilter(pathname, req);
+    }
+
+    const prefixes = this.normalizePrefixes(this.options.upgradePathPrefix);
+    if (prefixes.length > 0) {
+      return prefixes.some((prefix) => pathname.startsWith(prefix));
+    }
+
+    if (this.acceptAllUpgrades) return true;
+    if (this.gatewayPatterns.size === 0) return true;
+
+    for (const pattern of this.gatewayPatterns) {
+      if (this.matchesPattern(pattern, pathname)) return true;
+    }
+
+    return false;
+  }
+
+  private getPathname(req: IncomingMessage): string | undefined {
+    try {
+      return new URL(
+        req.url ?? "/",
+        `http://${req.headers.host ?? "localhost"}`,
+      ).pathname;
+    } catch {
+      return undefined;
     }
   }
 
-  onModuleDestroy() {
-    const httpServer = this.httpAdapterHost?.httpAdapter?.getHttpServer();
-    if (httpServer) {
-      httpServer.removeListener("upgrade", this.handleUpgrade.bind(this));
-    }
-
-    // Close the OCPP Server gracefully
-    this.server.close();
+  private normalizePrefixes(prefix?: string | string[]): string[] {
+    if (!prefix) return [];
+    return (Array.isArray(prefix) ? prefix : [prefix]).filter(Boolean);
   }
 
-  private handleUpgrade(req: any, socket: any, head: any) {
-    // If we want strict coexistence, we should only call server.handleUpgrade
-    // if the pathname belongs to OCPP. For now, since OCPPServer handles its own routing,
-    // we'll pass all upgrades. If you run into conflicts with Socket.io, you can
-    // add a simple pathname prefix check here (e.g., pathname.startsWith('/ocpp')).
+  private matchesPattern(pattern: string | RegExp, pathname: string): boolean {
+    if (pattern instanceof RegExp) return pattern.test(pathname);
 
-    // Check if the URL has an 'upgrade' header to 'websocket'
-    if (req.headers.upgrade?.toLowerCase() === "websocket") {
-      // Here we could add a check `if (isOcppRoute(pathname))`
-      // For maximum compatibility, we let OCPPServer handle it.
-      // OCPPServer will ignore it if it doesn't match its internal radix trie,
-      // but if it rejects with 404, we might need to intercept.
-      // For now, we delegate to the internal handler.
-      this.server.handleUpgrade(req, socket, head);
+    const patternParts = pattern.split("/").filter(Boolean);
+    const pathParts = pathname.split("/").filter(Boolean);
+
+    for (let i = 0; i < patternParts.length; i += 1) {
+      const expected = patternParts[i];
+      const actual = pathParts[i];
+
+      if (expected === "*") return true;
+      if (actual === undefined) return false;
+      if (expected.startsWith(":")) continue;
+      if (expected !== actual) return false;
     }
+
+    return patternParts.length === pathParts.length;
   }
 }

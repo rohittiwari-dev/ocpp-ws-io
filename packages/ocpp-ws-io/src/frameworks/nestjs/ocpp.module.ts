@@ -10,10 +10,11 @@ import {
   MetadataScanner,
 } from "@nestjs/core";
 import { OCPPServer } from "../../server.js";
-import { OCPP_SERVER_INSTANCE } from "./constants.js";
+import { OCPP_SERVER_INSTANCE, OCPP_SERVER_OPTIONS } from "./constants.js";
 import type {
   OcppModuleAsyncOptions,
   OcppModuleOptions,
+  OcppOptionsFactory,
 } from "./interfaces.js";
 import { OcppExplorer } from "./ocpp.explorer.js";
 import { OcppService } from "./ocpp.service.js";
@@ -25,12 +26,18 @@ import { OcppService } from "./ocpp.service.js";
     OcppService,
     {
       provide: OcppExplorer,
-      inject: [DiscoveryService, MetadataScanner, OCPP_SERVER_INSTANCE],
+      inject: [
+        DiscoveryService,
+        MetadataScanner,
+        OCPP_SERVER_INSTANCE,
+        OcppService,
+      ],
       useFactory: (
         discoveryService: DiscoveryService,
         metadataScanner: MetadataScanner,
         server: OCPPServer,
-      ) => new OcppExplorer(discoveryService, metadataScanner, server),
+        service: OcppService,
+      ) => new OcppExplorer(discoveryService, metadataScanner, server, service),
     },
   ],
   exports: [OcppService, OCPP_SERVER_INSTANCE],
@@ -39,6 +46,10 @@ export class OcppModule {
   // Dummy property to avoid static-only class warning
   public readonly _isModule = true;
   static forRoot(options: OcppModuleOptions = {}): DynamicModule {
+    const optionsProvider: Provider = {
+      provide: OCPP_SERVER_OPTIONS,
+      useValue: options,
+    };
     const serverProvider: Provider = {
       provide: OCPP_SERVER_INSTANCE,
       useValue: new OCPPServer(options),
@@ -46,24 +57,22 @@ export class OcppModule {
 
     return {
       module: OcppModule,
-      providers: [serverProvider],
-      exports: [serverProvider],
+      providers: [optionsProvider, serverProvider],
+      exports: [OcppService, OCPP_SERVER_INSTANCE],
     };
   }
 
   static forRootAsync(options: OcppModuleAsyncOptions): DynamicModule {
+    const asyncOptionsProvider = OcppModule.createAsyncOptionsProvider(options);
     const serverProvider: Provider = {
       provide: OCPP_SERVER_INSTANCE,
-      useFactory: async (...args: any[]) => {
-        const config = options.useFactory
-          ? await options.useFactory(...args)
-          : {};
+      useFactory: async (config: OcppModuleOptions) => {
         return new OCPPServer(config);
       },
-      inject: options.inject || [],
+      inject: [OCPP_SERVER_OPTIONS],
     };
 
-    const providers: Provider[] = [serverProvider];
+    const providers: Provider[] = [asyncOptionsProvider, serverProvider];
 
     if (options.useClass) {
       providers.push({
@@ -76,7 +85,34 @@ export class OcppModule {
       module: OcppModule,
       imports: options.imports || [],
       providers,
-      exports: [serverProvider],
+      exports: [OcppService, OCPP_SERVER_INSTANCE],
+    };
+  }
+
+  private static createAsyncOptionsProvider(
+    options: OcppModuleAsyncOptions,
+  ): Provider {
+    if (options.useFactory) {
+      return {
+        provide: OCPP_SERVER_OPTIONS,
+        useFactory: options.useFactory,
+        inject: options.inject || [],
+      };
+    }
+
+    const inject = options.useExisting || options.useClass;
+    if (inject) {
+      return {
+        provide: OCPP_SERVER_OPTIONS,
+        useFactory: async (factory: OcppOptionsFactory) =>
+          factory.createOcppOptions(),
+        inject: [inject],
+      };
+    }
+
+    return {
+      provide: OCPP_SERVER_OPTIONS,
+      useValue: {},
     };
   }
 }

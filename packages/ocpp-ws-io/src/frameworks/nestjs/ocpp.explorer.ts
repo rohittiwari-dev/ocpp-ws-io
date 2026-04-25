@@ -12,7 +12,8 @@ import {
   OCPP_WILDCARD_EVENT_METADATA,
   PARAM_ARGS_METADATA,
 } from "./constants.js";
-import { OcppParamType } from "./interfaces.js";
+import { type OcppParamMetadata, OcppParamType } from "./interfaces.js";
+import type { OcppService } from "./ocpp.service.js";
 
 @Injectable()
 export class OcppExplorer implements OnModuleInit {
@@ -22,6 +23,7 @@ export class OcppExplorer implements OnModuleInit {
     private readonly discoveryService: DiscoveryService,
     private readonly metadataScanner: MetadataScanner,
     private readonly server: OCPPServer,
+    private readonly service?: OcppService,
   ) {}
 
   onModuleInit() {
@@ -52,6 +54,7 @@ export class OcppExplorer implements OnModuleInit {
 
       // Create a router for this Gateway
       const path = gatewayOptions?.path;
+      this.service?.registerUpgradePath(path);
       const router = path ? this.server.route(path) : this.server.route();
 
       // Apply CORS
@@ -158,8 +161,11 @@ export class OcppExplorer implements OnModuleInit {
 
           // 4. Wildcard Handlers
           if (Reflect.hasMetadata(OCPP_WILDCARD_EVENT_METADATA, method)) {
-            router.handle((ctx: any) =>
-              this.executeWithParams(instance, method, ctx),
+            router.handle((methodName: string, ctx: any) =>
+              this.executeWithParams(instance, method, {
+                ...ctx,
+                method: ctx?.method ?? methodName,
+              }),
             );
             this.logger.log(`Mapped Wildcard Event -> ${metatype.name}.${key}`);
           }
@@ -188,37 +194,64 @@ export class OcppExplorer implements OnModuleInit {
     if (Object.keys(paramsMetadata).length === 0) {
       args[0] = ctx;
     } else {
-      for (const [indexStr, type] of Object.entries(paramsMetadata)) {
+      for (const [indexStr, rawMetadata] of Object.entries(paramsMetadata)) {
         const index = Number(indexStr);
-        switch (type) {
+        const metadata = this.normalizeParamMetadata(rawMetadata);
+        const handshake = ctx.handshake ?? ctx.client?.handshake;
+        switch (metadata.type) {
           case OcppParamType.CLIENT:
             args[index] = ctx.client;
             break;
           case OcppParamType.MESSAGE:
             args[index] = ctx.message || {
-              direction: "REQUEST",
-              payload: ctx.payload,
-            }; // Depends on ctx structure
+              messageId: ctx.messageId,
+              method: ctx.method,
+              protocol: ctx.protocol,
+              params: ctx.params,
+            };
             break;
           case OcppParamType.PARAMS:
-            args[index] = ctx.payload;
+            args[index] = ctx.params ?? ctx.payload;
             break;
           case OcppParamType.CONTEXT:
             args[index] = ctx;
             break;
           case OcppParamType.IDENTITY:
-            args[index] = ctx.client?.identity;
+            args[index] = ctx.client?.identity ?? handshake?.identity;
             break;
           case OcppParamType.PATH:
-            args[index] = ctx.handshake?.url || ctx.client?.request?.url;
+            args[index] = handshake?.pathname;
             break;
           case OcppParamType.SESSION:
-            args[index] = ctx.client?.session;
+            args[index] = ctx.client?.session ?? ctx.state;
+            break;
+          case OcppParamType.PATH_PARAMS:
+            args[index] = metadata.data
+              ? handshake?.params?.[metadata.data]
+              : handshake?.params;
+            break;
+          case OcppParamType.PROTOCOL:
+            args[index] =
+              ctx.protocol ?? ctx.client?.protocol ?? handshake?.protocols;
+            break;
+          case OcppParamType.MESSAGE_ID:
+            args[index] = ctx.messageId;
+            break;
+          case OcppParamType.HANDSHAKE:
+            args[index] = handshake;
             break;
         }
       }
     }
 
     return method.apply(instance, args);
+  }
+
+  private normalizeParamMetadata(raw: unknown): OcppParamMetadata {
+    if (typeof raw === "number") {
+      return { type: raw as OcppParamType };
+    }
+
+    return raw as OcppParamMetadata;
   }
 }
