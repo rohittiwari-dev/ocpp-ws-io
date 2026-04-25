@@ -206,6 +206,42 @@ import { ChargerService } from './charger.service';
 export class ChargerModule {}
 ```
 
+## Controlling the Server (OcppService)
+
+If you need to interact with connected chargers from outside of your Gateway (for example, from a standard REST Controller or a cron job), you can inject the `OcppService`.
+
+`OcppService` is exported from `ocpp-ws-io/nestjs` and exposes the underlying `OCPPServer` and connected clients.
+
+```typescript
+import { Injectable, Controller, Post, Param, Body } from '@nestjs/common';
+import { OcppService } from 'ocpp-ws-io/nestjs';
+
+@Controller('chargers')
+export class ChargerController {
+  constructor(private readonly ocppService: OcppService) {}
+
+  @Post(':identity/reset')
+  async resetCharger(@Param('identity') identity: string, @Body('type') type: string) {
+    // Check if connected
+    const isConnected = await this.ocppService.hasClient(identity);
+    if (!isConnected) return { success: false, reason: 'Offline' };
+
+    // Send a message to the connected client
+    const response = await this.ocppService.sendToClient(identity, 'Reset', { type });
+    return { success: true, response };
+  }
+}
+```
+
+The `OcppService` provides:
+- `.server`: Access to the raw `OCPPServer` instance.
+- `.clients`: A Map of locally connected clients.
+- `.getClient(identity)`: Retrieve a local client instance.
+- `.hasClient(identity)`: Check if a client is connected (supports Redis checks if configured).
+- `.sendToClient(identity, action, payload)`: Send a message to a client and await its response.
+- `.safeSendToClient(identity, action, payload)`: Fire-and-forget message sending.
+- `.stats()`: Connection statistics.
+
 ## Bringing it All Together: Exposing the WebSockets
 
 You might be wondering: *"How do I actually expose these websockets to the internet? Do I need to manually bind a port?"*
@@ -251,18 +287,23 @@ With this standard setup, a charging station can connect from the outside world 
 ### Method Decorators
 
 - `@OcppMessageEvent(action: string)`: Maps a method to a specific OCPP action (e.g., `BootNotification`, `Heartbeat`).
+- `@OcppWildcardEvent()`: Catch-all handler for any unmapped OCPP action. Useful for logging or proxying.
 - `@OcppAuth()`: Marks a method as the authentication handler. It receives the `AuthContext` and must call `ctx.accept()` or `ctx.reject()`.
 - `@OcppConnectionMiddleware()`: Evaluates the HTTP upgrade request before the WebSocket is even established.
 
 ### Parameter Decorators
 
-Used within your `@OcppMessageEvent` handlers:
+Used within your `@OcppMessageEvent` and `@OcppWildcardEvent` handlers:
 
 - `@Client()`: Injects the `OCPPServerClient` instance.
 - `@Identity()`: Injects the string identity of the charging station.
 - `@Params()`: Injects the payload/parameters of the OCPP message.
 - `@Session()`: Injects the session object assigned during the `ctx.accept({ session: ... })` auth step.
-- `@Context()`: Used specifically in `@OcppAuth()` or `@OcppConnectionMiddleware()` to inject the HTTP context.
+- `@Path()`: Injects the full WebSocket connection path.
+- `@PathParam()`: Injects parsed path parameters (e.g., `{ id: '123' }` if the gateway path was `/chargers/:id`).
+- `@Protocol()`: Injects the negotiated OCPP protocol version (e.g., `ocpp1.6`).
+- `@MessageId()`: Injects the raw OCPP message ID.
+- `@Context()`: Used specifically in `@OcppAuth()` or `@OcppConnectionMiddleware()` to inject the HTTP context, or in `@OcppWildcardEvent` to get the raw action context.
 
 ## Testing & Vitest Compatibility
 

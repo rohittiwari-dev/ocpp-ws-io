@@ -16,6 +16,12 @@ You can attach `OCPPServer` to any Node.js HTTP server to share the same port as
 
 ## With Express
 
+`ocpp-ws-io` provides a dedicated integration for Express that seamlessly injects the OCPP context into your route handlers.
+
+For full details and API reference, see the [Express Integration Guide](./frameworks/express).
+
+If you want to do it manually without the native middleware:
+
 ```typescript
 import express from "express";
 import { createServer } from "http";

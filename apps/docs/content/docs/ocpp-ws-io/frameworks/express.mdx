@@ -1,0 +1,210 @@
+---
+title: Express Integration
+description: Use the native Express middleware and bindings for ocpp-ws-io.
+---
+
+`ocpp-ws-io` provides a dedicated integration package for Express that makes it trivial to run your OCPP WebSockets on the same port as your Express REST APIs, and exposes your connected chargers directly to your Express route handlers via `req.ocpp`.
+
+## Installation
+
+The Express module is built into the main package but imported from the `/express` subpath:
+
+```bash
+npm install ocpp-ws-io express
+npm install -D @types/express
+```
+
+## Basic Setup
+
+Use `attachOcppExpress` to bind the WebSocket upgrade handler to your HTTP server, and `ocppMiddleware` to inject the OCPP context into your Express request objects.
+
+```typescript
+import express from "express";
+import http from "node:http";
+import { OCPPServer } from "ocpp-ws-io";
+import {
+  attachOcppExpress,
+  ocppMiddleware,
+} from "ocpp-ws-io/express";
+
+const app = express();
+app.use(express.json());
+
+// 1. Create your servers
+const httpServer = http.createServer(app);
+const ocppServer = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+// 2. Attach the OCPP Server to the HTTP Server's 'upgrade' event
+// This function "fuses" Express and ocpp-ws-io, returning a binding object.
+const binding = attachOcppExpress(httpServer, ocppServer, {
+  upgradePathPrefix: "/ocpp", 
+});
+
+// 3. Inject the generated context into Express request objects
+app.use(ocppMiddleware(binding.context));
+
+// 4. Start listening
+httpServer.listen(3000, () => {
+  console.log("Express + OCPP listening on port 3000");
+});
+```
+
+## Accessing OCPP in REST Routes
+
+Because we registered the `ocppMiddleware`, every Express request object now has a `req.ocpp` property. This allows your REST APIs to instantly interact with any connected charging stations.
+
+### Example: Checking Client Status
+
+```typescript
+app.get("/chargers/:id/status", async (req, res) => {
+  const chargerId = req.params.id;
+  
+  // Check if connected directly to this node
+  const isLocal = Boolean(req.ocpp.getClient(chargerId));
+  
+  // Check globally (useful if using Redis PubSub across multiple instances)
+  const isGlobal = await req.ocpp.hasClient(chargerId);
+
+  res.json({
+    online: isGlobal,
+    nodeLocal: isLocal,
+  });
+});
+```
+
+### Example: Triggering a Remote Action
+
+You can trigger actions like `Reset`, `UnlockConnector`, or `RemoteStartTransaction` directly from a REST endpoint.
+
+```typescript
+app.post("/chargers/:id/reset", async (req, res) => {
+  const chargerId = req.params.id;
+  
+  try {
+    // Send the Reset command to the connected charger
+    const response = await req.ocpp.sendToClient(chargerId, "Reset", {
+      type: req.body.type || "Soft"
+    });
+    
+    // Respond with the charger's answer (e.g. { status: "Accepted" })
+    res.json(response);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+```
+
+### Example: Fire-and-Forget Messages
+
+If you don't need to wait for the charger to reply (or if you are sending a high volume of metrics/triggers), you can use `safeSendToClient` which sends the payload and immediately resolves without awaiting the charger's response.
+
+```typescript
+app.post("/chargers/:id/trigger-message", async (req, res) => {
+  const chargerId = req.params.id;
+  
+  // Triggers the message without blocking the HTTP response
+  await req.ocpp.safeSendToClient(chargerId, "TriggerMessage", {
+    requestedMessage: "MeterValues"
+  });
+  
+  res.json({ status: "Trigger dispatched" });
+});
+```
+
+### Example: Advanced Setup with `upgradeFilter`
+
+If you are running `ocpp-ws-io` alongside `socket.io` or another WebSocket library on the same Express server, you can use `upgradePathPrefix` or the advanced `upgradeFilter` function to precisely control which WebSocket connections go to the OCPP Server.
+
+```typescript
+const binding = attachOcppExpress(httpServer, ocppServer, {
+  // Option 1: Simple prefix matching
+  upgradePathPrefix: ["/v1/ocpp", "/v2/ocpp"],
+  
+  // Option 2: Advanced custom logic
+  upgradeFilter: (pathname, req) => {
+    // Only accept connections that specify an OCPP subprotocol
+    const subprotocols = req.headers["sec-websocket-protocol"] || "";
+    return pathname.startsWith("/chargers") && subprotocols.includes("ocpp1.6");
+  }
+});
+```
+
+## API Reference
+
+### `attachOcppExpress(httpServer, ocppServer, options?)`
+
+This is the primary function that fuses Express and `ocpp-ws-io`. It hooks into the Node.js `http.Server`'s `upgrade` event and creates the Express context.
+
+**Options:**
+- `upgradePathPrefix`: (Optional) `string | string[]`. Only upgrades requests where `req.url` starts with this prefix. Useful if you are sharing the server with other WebSocket libraries (e.g., `"/ocpp"` or `["/v1/ocpp", "/v2/ocpp"]`).
+- `upgradeFilter`: (Optional) Advanced filtering. `(pathname: string, req: IncomingMessage) => boolean`. Return `true` to let OCPP handle the request.
+- `closeHttpServer`: (Optional) `boolean`. If `true`, calling `binding.close()` will also close the underlying Express HTTP server. Default is `false`.
+
+**Returns `OcppExpressBinding`:**
+- `server`: The `OCPPServer` instance.
+- `httpServer`: The raw `http.Server` instance.
+- `context`: The `OcppExpressContext` (passed to `ocppMiddleware`).
+- `dispose()`: Removes the `upgrade` listener from the HTTP server without closing the server.
+- `close(options?)`: Safely shuts down the OCPP server. If `closeHttpServer` was true, closes the HTTP server too.
+
+---
+
+### `ocppMiddleware(context)`
+
+An Express middleware that takes the `context` generated by `attachOcppExpress` (or `createOcppExpressContext`) and attaches it to `req.ocpp` for all subsequent routes.
+
+---
+
+### `OcppExpressContext` (Available on `req.ocpp` or via `binding.context`)
+
+This context exposes the following properties and methods to interact with the OCPP Server:
+
+- **`server`**: The underlying `OCPPServer` instance.
+- **`clients`**: A read-only Map of locally connected clients.
+- **`stats()`**: Returns connection statistics (connected clients, dropped connections, etc.).
+
+**Client Lookup:**
+- **`getClient(identity)`**: Alias for `getLocalClient`.
+- **`getLocalClient(identity)`**: Synchronously gets a local client instance connected to this node. Returns `undefined` if not found.
+- **`hasLocalClient(identity)`**: Synchronously checks if a client is connected to this specific node.
+- **`hasClient(identity)`**: Asynchronously checks if a client is connected anywhere in the cluster. (Checks local first, then Redis if the Redis adapter is configured).
+
+**Message Sending:**
+- **`sendToClient(identity, action, payload, options?)`**: Sends a message to a client and awaits the response payload. Works seamlessly across Redis clusters if the client is connected to another node.
+- **`safeSendToClient(identity, action, payload, options?)`**: Fire-and-forget message sending without awaiting a response.
+
+**Lifecycle:**
+- **`close()`**: Closes the context and the underlying OCPP server.
+
+---
+
+### `createOcppExpressContext(ocppServer)`
+
+If you are manually handling the `upgrade` events instead of using `attachOcppExpress`, you can still generate the `OcppExpressContext` manually using this function so that you can inject `req.ocpp` into your Express routes.
+
+```typescript
+import express from "express";
+import http from "node:http";
+import { OCPPServer } from "ocpp-ws-io";
+import { createOcppExpressContext, ocppMiddleware } from "ocpp-ws-io/express";
+
+const app = express();
+const httpServer = http.createServer(app);
+const ocppServer = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+// 1. Manually create the context & inject it into Express
+const context = createOcppExpressContext(ocppServer);
+app.use(ocppMiddleware(context));
+
+// 2. Manually handle the upgrade event
+httpServer.on("upgrade", (req, socket, head) => {
+  if (req.url?.startsWith("/ocpp-custom-path")) {
+    // Custom upgrade validation or routing...
+    ocppServer.handleUpgrade(req, socket, head);
+  } else {
+    socket.destroy();
+  }
+});
+
+httpServer.listen(3000);
+```
