@@ -11,6 +11,7 @@ export default defineConfig([
       express: "src/frameworks/express/index.ts",
       nestjs: "src/frameworks/nestjs/index.ts",
       fastify: "src/frameworks/fastify/index.ts",
+      hono: "src/frameworks/hono/index.ts",
     },
     format: ["cjs", "esm"],
     dts: true,
