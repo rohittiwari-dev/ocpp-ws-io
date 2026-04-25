@@ -8,6 +8,7 @@ export default defineConfig([
       "adapters/redis": "src/adapters/redis/index.ts",
       logger: "src/logger/index.ts",
       plugins: "src/plugins/index.ts",
+      express: "src/frameworks/express/index.ts",
       nestjs: "src/frameworks/nestjs/index.ts",
     },
     format: ["cjs", "esm"],
