@@ -1,5 +1,38 @@
 # ocpp-ws-io
 
+## v2.2.2-beta.1 - The "Universal Framework" Release
+
+This massive release transforms `ocpp-ws-io` from a standalone WebSocket engine into a universal, multi-framework toolkit. We have introduced native integrations for **Fastify**, **Hono**, **NestJS**, and fundamentally unlocked **Bun** and **Deno** support.
+
+### Major Features & Integrations
+
+- **Unified Context Architecture (`BaseOcppContext`)**: Completely abstracted the core context logic, allowing any Node.js framework to inject a standard, strongly-typed `ocpp` object directly into its request lifecycle.
+- **First-Class Fastify Integration (`ocpp-ws-io/fastify`)**: 
+  - Shipped a native Fastify plugin that seamlessly handles HTTP upgrades.
+  - Hardened with strict memory-leak prevention (automatically deregisters `upgrade` hooks on server close).
+  - TypeScript module augmentation injects `req.ocpp` safely across all Fastify routes.
+- **First-Class Hono Integration (`ocpp-ws-io/hono`)**: 
+  - Shipped native middleware (`ocppMiddleware`) compatible with Hono's `ContextVariableMap`.
+  - Added `@hono/node-server` adapters to elegantly handle raw Node server upgrades without dropping performance.
+- **Bun & Deno Native Support**: 
+  - By hooking into standard Node.js networking (`ws` and `node:http`), `ocpp-ws-io` now inherently supports Bun and Deno environments perfectly via their compatibility layers. Zero configuration required.
+- **Native NestJS Support (`ocpp-ws-io/nestjs`)**: 
+  - **First-Class Decorators**: Introduced `@OcppGateway()`, `@OcppMessageEvent()`, and `@OcppAuth()` for seamless class-based WebSocket routing.
+  - **Parameter Injectors**: Map incoming OCPP properties directly to method parameters via `@Identity()`, `@Params()`, `@Session()`, and `@Context()`.
+  - **Dynamic Module Initialization**: Provided `OcppModule.forRoot()` and `OcppModule.forRootAsync()` to natively register the adapter alongside global configurations.
+  - **Zero-Config WebSockets**: The `OcppService` now automatically hooks into the underlying `HttpAdapterHost`.
+  - **Testing Environment Hardening**: Bypassed ESBuild/Vite decorator stripping behaviors by utilizing NestJS `useFactory` instantiation, guaranteeing 100% test compatibility.
+
+### Internal Refactors
+
+- **Express Optimization**: Refactored the existing `ocpp-ws-io/express` integration to utilize the new `BaseOcppContext` for consistency across the library.
+- **Upgrade Request Filtering**: Centralized the path-matching and upgrade-filtering logic into `base/utils.ts` to guarantee uniform behavior across all supported frameworks.
+
+### Documentation
+
+- Restructured the documentation tree into a new Fumadocs `frameworks` layout.
+- Added extensive guides, examples, and edge-case documentation for NestJS, Fastify, Hono, Bun, and Deno.
+
 ## v2.2.1 - Plugin System Hardening & Type Exports
 
 ### Patch Changes

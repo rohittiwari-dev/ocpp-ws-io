@@ -1,0 +1,346 @@
+---
+title: NestJS Integration
+description: Complete guide to using the native NestJS integration in ocpp-ws-io.
+---
+
+`ocpp-ws-io` provides a robust, native integration with NestJS. This module allows you to easily connect your charging stations, define gateways using classes and decorators, and seamlessly hook into your existing NestJS dependency injection system.
+
+## Features
+
+- **First-Class Decorators**: `@OcppGateway`, `@OcppMessageEvent`, `@OcppAuth`, and parameter injectors (`@Params`, `@Session`, etc.).
+- **Dynamic Dependency Injection**: Fully compatible with NestJS `ConfigService` and dynamic providers (`forRootAsync`).
+- **Framework Agnostic Under-The-Hood**: Can share ports and routers directly with NestJS's underlying Express/Fastify HTTP server.
+- **Testing Ready**: Native workarounds for compatibility with ESBuild/Vite environments (like `vitest`) without stripping decorator metadata.
+
+## Installation
+
+The NestJS module relies on `@nestjs/common` and `@nestjs/core`. Ensure you have them installed:
+
+```bash
+npm install @nestjs/common @nestjs/core reflect-metadata
+```
+
+## Basic Setup
+
+Import the `OcppModule` in your `AppModule`.
+
+### Synchronous Configuration
+
+```typescript
+import { Module } from '@nestjs/common';
+import { OcppModule } from 'ocpp-ws-io/nestjs';
+import { ChargerGateway } from './charger.gateway';
+
+@Module({
+  imports: [
+    OcppModule.forRoot({
+      protocols: ['ocpp1.6', 'ocpp2.0.1'], // Supported versions globally
+    }),
+  ],
+  providers: [ChargerGateway],
+})
+export class AppModule {}
+```
+
+### Asynchronous Configuration (e.g. with `ConfigService`)
+
+```typescript
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { OcppModule } from 'ocpp-ws-io/nestjs';
+import { RedisPubSubAdapter } from 'ocpp-ws-io/adapters/redis';
+import { Redis } from 'ioredis';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    OcppModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        protocols: ['ocpp1.6'],
+        adapter: new RedisPubSubAdapter(new Redis(config.get('REDIS_URL'))),
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+## Creating a Gateway
+
+Use the `@OcppGateway(path)` decorator to define a class that handles WebSocket connections for a specific path. 
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { 
+  OcppGateway, 
+  OcppAuth, 
+  OcppMessageEvent, 
+  Context, 
+  Identity, 
+  Params 
+} from 'ocpp-ws-io/nestjs';
+import { AuthContext } from 'ocpp-ws-io';
+
+@OcppGateway('/api/v1/chargers/*')
+@Injectable()
+export class ChargerGateway {
+  
+  // 1. Authentication Hook
+  @OcppAuth()
+  async authenticate(@Context() ctx: AuthContext) {
+    const authHeader = ctx.handshake.headers['authorization'];
+    
+    if (authHeader === 'Bearer secret-token') {
+      ctx.accept({ protocol: 'ocpp1.6', session: { role: 'charger' } });
+    } else {
+      ctx.reject(401, 'Unauthorized');
+    }
+  }
+
+  // 2. Message Event Handler
+  @OcppMessageEvent('BootNotification')
+  async handleBoot(@Identity() identity: string, @Params() params: any) {
+    console.log(`BootNotification from ${identity}:`, params);
+    
+    return {
+      status: 'Accepted',
+      currentTime: new Date().toISOString(),
+      interval: 300,
+    };
+  }
+}
+```
+
+## Dependency Injection & MVC Patterns
+
+A core benefit of using NestJS is its powerful Dependency Injection (DI) system. In a real-world application, your `Gateway` should act merely as a controller (routing requests and validating payloads), while the heavy lifting (database calls, external API requests, business logic) is delegated to standard `@Injectable()` services.
+
+Because `@OcppGateway` is just a standard NestJS provider, you can freely inject any service, repository, or configuration into its constructor.
+
+### 1. Create a Service
+
+```typescript
+import { Injectable, Logger } from '@nestjs/common';
+
+@Injectable()
+export class ChargerService {
+  private readonly logger = new Logger(ChargerService.name);
+
+  async processBootNotification(identity: string, vendor: string, model: string) {
+    this.logger.log(`Processing boot for ${identity} (${vendor} ${model})`);
+    
+    // Example: Look up charger in the database
+    // const charger = await this.db.chargers.findById(identity);
+    // if (!charger) throw new RpcException('Unknown charger');
+
+    return {
+      status: 'Accepted',
+      currentTime: new Date().toISOString(),
+      interval: 300,
+    };
+  }
+
+  async authorizeCard(identity: string, idTag: string) {
+    // Example: Validate RFID tag
+    // const tag = await this.db.tags.findByTag(idTag);
+    return {
+      idTagInfo: {
+        status: 'Accepted', // or 'Invalid', 'Expired', etc.
+        expiryDate: new Date(Date.now() + 86400000).toISOString(),
+      }
+    };
+  }
+}
+```
+
+### 2. Inject into the Gateway
+
+Now, update your Gateway to inject the `ChargerService` and delegate the OCPP events to it.
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { OcppGateway, OcppMessageEvent, Identity, Params } from 'ocpp-ws-io/nestjs';
+import { ChargerService } from './charger.service';
+
+@OcppGateway('/api/v1/chargers/*')
+@Injectable()
+export class ChargerGateway {
+  
+  // Inject the service via standard NestJS constructor injection
+  constructor(private readonly chargerService: ChargerService) {}
+
+  @OcppMessageEvent('BootNotification')
+  async handleBoot(@Identity() identity: string, @Params() params: any) {
+    // Delegate business logic to the service
+    return this.chargerService.processBootNotification(
+      identity, 
+      params.chargePointVendor, 
+      params.chargePointModel
+    );
+  }
+
+  @OcppMessageEvent('Authorize')
+  async handleAuthorize(@Identity() identity: string, @Params() params: any) {
+    return this.chargerService.authorizeCard(identity, params.idTag);
+  }
+}
+```
+
+### 3. Register in your Module
+
+Don't forget to register both the Gateway and the Service in your `Module`.
+
+```typescript
+import { Module } from '@nestjs/common';
+import { OcppModule } from 'ocpp-ws-io/nestjs';
+import { ChargerGateway } from './charger.gateway';
+import { ChargerService } from './charger.service';
+
+@Module({
+  imports: [
+    OcppModule.forRoot({ protocols: ['ocpp1.6'] }),
+  ],
+  providers: [ChargerGateway, ChargerService], // Both are standard providers!
+})
+export class ChargerModule {}
+```
+
+## Controlling the Server (OcppService)
+
+If you need to interact with connected chargers from outside of your Gateway (for example, from a standard REST Controller or a cron job), you can inject the `OcppService`.
+
+`OcppService` is exported from `ocpp-ws-io/nestjs` and exposes the underlying `OCPPServer` and connected clients.
+
+```typescript
+import { Injectable, Controller, Post, Param, Body } from '@nestjs/common';
+import { OcppService } from 'ocpp-ws-io/nestjs';
+
+@Controller('chargers')
+export class ChargerController {
+  constructor(private readonly ocppService: OcppService) {}
+
+  @Post(':identity/reset')
+  async resetCharger(@Param('identity') identity: string, @Body('type') type: string) {
+    // Check if connected
+    const isConnected = await this.ocppService.hasClient(identity);
+    if (!isConnected) return { success: false, reason: 'Offline' };
+
+    // Send a message to the connected client
+    const response = await this.ocppService.sendToClient(identity, 'Reset', { type });
+    return { success: true, response };
+  }
+}
+```
+
+The `OcppService` provides:
+- `.server`: Access to the raw `OCPPServer` instance.
+- `.clients`: A Map of locally connected clients.
+- `.getClient(identity)`: Retrieve a local client instance.
+- `.hasClient(identity)`: Check if a client is connected (supports Redis checks if configured).
+- `.sendToClient(identity, action, payload)`: Send a message to a client and await its response.
+- `.safeSendToClient(identity, action, payload)`: Fire-and-forget message sending.
+- `.stats()`: Connection statistics.
+
+## Bringing it All Together: Exposing the WebSockets
+
+You might be wondering: *"How do I actually expose these websockets to the internet? Do I need to manually bind a port?"*
+
+**No, you don't! It happens automatically.**
+
+When you register `OcppModule`, the `ocpp-ws-io` library actively listens to the NestJS lifecycle hooks. Under the hood, the internal `OcppService` injects the NestJS `HttpAdapterHost` (which represents the underlying Express or Fastify server) and hooks into its HTTP `upgrade` events.
+
+Because of this seamless integration, your `@OcppGateway('/api/v1/chargers/*')` is automatically exposed on **the exact same port** your API is running on.
+
+### The Standard `main.ts`
+
+You don't have to touch your `main.ts` to make OCPP work. Your standard NestJS bootstrap file is already enough:
+
+```typescript
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  
+  // By calling listen(3000), your REST APIs are exposed on port 3000.
+  // ocpp-ws-io automatically hooks into this server, meaning your 
+  // OCPP WebSockets are also exposed publicly on port 3000!
+  await app.listen(3000);
+  
+  console.log(`Application and OCPP Server listening on http://localhost:3000`);
+}
+bootstrap();
+```
+
+With this standard setup, a charging station can connect from the outside world using the URL:
+`ws://localhost:3000/api/v1/chargers/my-charger-identity`
+
+## Available Decorators
+
+### Class Decorators
+
+- `@OcppGateway(path?: string)`: Marks a class as an OCPP Gateway. It listens to WebSocket upgrade requests on the specified path (e.g., `/api/v1/chargers/*`).
+- `@OcppCors(options)`: Configures CORS for the specific Gateway.
+- `@OcppRpcMiddleware(middleware[])`: Injects RPC middleware directly into clients connecting to this gateway.
+
+### Method Decorators
+
+- `@OcppMessageEvent(action: string)`: Maps a method to a specific OCPP action (e.g., `BootNotification`, `Heartbeat`).
+- `@OcppWildcardEvent()`: Catch-all handler for any unmapped OCPP action. Useful for logging or proxying.
+- `@OcppAuth()`: Marks a method as the authentication handler. It receives the `AuthContext` and must call `ctx.accept()` or `ctx.reject()`.
+- `@OcppConnectionMiddleware()`: Evaluates the HTTP upgrade request before the WebSocket is even established.
+
+### Parameter Decorators
+
+Used within your `@OcppMessageEvent` and `@OcppWildcardEvent` handlers:
+
+- `@Client()`: Injects the `OCPPServerClient` instance.
+- `@Identity()`: Injects the string identity of the charging station.
+- `@Params()`: Injects the payload/parameters of the OCPP message.
+- `@Session()`: Injects the session object assigned during the `ctx.accept({ session: ... })` auth step.
+- `@Path()`: Injects the full WebSocket connection path.
+- `@PathParam()`: Injects parsed path parameters (e.g., `{ id: '123' }` if the gateway path was `/chargers/:id`).
+- `@Protocol()`: Injects the negotiated OCPP protocol version (e.g., `ocpp1.6`).
+- `@MessageId()`: Injects the raw OCPP message ID.
+- `@Context()`: Used specifically in `@OcppAuth()` or `@OcppConnectionMiddleware()` to inject the HTTP context, or in `@OcppWildcardEvent` to get the raw action context.
+
+## Testing & Vitest Compatibility
+
+When unit testing with modern toolchains like Vite/ESBuild (`vitest`), standard TypeScript decorators often fail to emit the metadata (`design:paramtypes`) required by NestJS for dependency injection. 
+
+`ocpp-ws-io` natively circumvents this limitation internally by dynamically instantiating its core explorers using raw NestJS `useFactory` providers instead of decorator-based injection.
+
+This means you can drop `ocpp-ws-io` directly into any `vitest` or `esbuild`-powered NestJS application, and it will run flawlessly without requiring complex SWC plugins!
+
+### Example Integration Test
+
+```typescript
+import { Test, TestingModule } from '@nestjs/testing';
+import { OcppModule } from 'ocpp-ws-io/nestjs';
+import { ChargerGateway } from './charger.gateway';
+
+describe('Charger Gateway Integration', () => {
+  let module: TestingModule;
+
+  beforeAll(async () => {
+    module = await Test.createTestingModule({
+      imports: [
+        OcppModule.forRoot({ protocols: ['ocpp1.6'] }),
+      ],
+      providers: [ChargerGateway],
+    }).compile();
+
+    // The OcppModule automatically attaches to the NestJS lifecycle!
+    await module.init(); 
+  });
+
+  afterAll(async () => {
+    await module.close();
+  });
+
+  it('should initialize successfully', () => {
+    expect(module).toBeDefined();
+  });
+});
+```

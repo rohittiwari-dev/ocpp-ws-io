@@ -16,6 +16,12 @@ You can attach `OCPPServer` to any Node.js HTTP server to share the same port as
 
 ## With Express
 
+`ocpp-ws-io` provides a dedicated integration for Express that seamlessly injects the OCPP context into your route handlers.
+
+For full details and API reference, see the [Express Integration Guide](./frameworks/express).
+
+If you want to do it manually without the native middleware:
+
 ```typescript
 import express from "express";
 import { createServer } from "http";
@@ -110,56 +116,9 @@ httpServer.listen(3000, () => {
 
 ## With NestJS
 
-`ocpp-ws-io` can be easily integrated into a NestJS application.
+`ocpp-ws-io` provides first-class native integration with NestJS, including dynamic module registration, decorator-based event routing, and robust parameter injection.
 
-```typescript
-import {
-  Module,
-  OnModuleInit,
-  OnModuleDestroy,
-  Injectable,
-} from "@nestjs/common";
-import { HttpAdapterHost } from "@nestjs/core";
-import { OCPPServer } from "ocpp-ws-io";
-
-@Injectable()
-export class OCPPGateway implements OnModuleInit, OnModuleDestroy {
-  private server: OCPPServer;
-
-  constructor(private readonly adapterHost: HttpAdapterHost) {
-    this.server = new OCPPServer({ protocols: ["ocpp1.6", "ocpp2.0.1"] });
-  }
-
-  async onModuleInit() {
-    // Wait for the HTTP adapter to be ready
-    const httpServer = this.adapterHost.httpAdapter.getHttpServer();
-
-    // Attach to the NestJS HTTP server
-    await this.server.listen(0, undefined, { server: httpServer });
-
-    this.server.on("client", (client) => {
-      console.log(`Client connected: ${client.identity}`);
-
-      client.handle("BootNotification", async ({ params }) => {
-        return {
-          status: "Accepted",
-          currentTime: new Date().toISOString(),
-          interval: 300,
-        };
-      });
-    });
-  }
-
-  async onModuleDestroy() {
-    await this.server.close();
-  }
-}
-
-@Module({
-  providers: [OCPPGateway],
-})
-export class AppModule {}
-```
+For full details, see the dedicated [NestJS Integration Guide](./frameworks/nestjs).
 
 ## Bun
 

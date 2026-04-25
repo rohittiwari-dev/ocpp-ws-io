@@ -1,0 +1,90 @@
+---
+title: Hono Integration
+description: Learn how to integrate ocpp-ws-io with Hono and @hono/node-server
+---
+
+# Hono Integration
+
+`ocpp-ws-io` provides first-class support for **Hono** through the `ocpp-ws-io/hono` package. Because Hono is highly decoupled, it runs beautifully on Node.js (via `@hono/node-server`), Bun, and Deno.
+
+The integration provides a type-safe middleware that injects the OCPP context directly into Hono's `c.get('ocpp')`.
+
+## Installation
+
+```bash
+npm install ocpp-ws-io hono @hono/node-server
+```
+
+## Basic Setup
+
+Because WebSockets require HTTP Upgrade handling at the raw server level, you need to use the `attachOcppHonoNode` adapter on the underlying Node server.
+
+```typescript
+import { serve } from '@hono/node-server';
+import { Hono } from 'hono';
+import { OCPPServer } from 'ocpp-ws-io';
+import { ocppMiddleware, attachOcppHonoNode } from 'ocpp-ws-io/hono';
+
+const app = new Hono();
+const ocppServer = new OCPPServer();
+
+// 1. Apply the middleware to your OCPP routes
+app.use('/ocpp/*', ocppMiddleware(ocppServer));
+
+// 2. Access the type-safe context in your route handlers
+app.get('/ocpp/status/:stationId', async (c) => {
+  const stationId = c.req.param('stationId');
+  const ocpp = c.get('ocpp'); // Automatically typed as OcppHonoContext!
+
+  const client = ocpp.getClient(stationId);
+
+  if (!client || !client.isConnected) {
+    return c.json({ status: 'offline' });
+  }
+
+  return c.json({
+    status: 'online',
+    session: client.session,
+    uptime: process.uptime()
+  });
+});
+
+// 3. Start the server and attach the upgrade listener
+const server = serve({
+  fetch: app.fetch,
+  port: 3000,
+});
+
+// Attach the raw HTTP upgrade handler
+attachOcppHonoNode(server as any, ocppServer, {
+  upgradePathPrefix: "/ocpp" // Only upgrade requests to /ocpp
+});
+
+console.log('Hono server is running on http://localhost:3000');
+```
+
+## Type Safety
+
+The middleware utilizes Hono's `ContextVariableMap` via TypeScript module augmentation. This means that as soon as you import `ocpp-ws-io/hono`, `c.get('ocpp')` becomes strongly typed.
+
+You don't need to pass generics to your `Hono` constructor!
+
+## Advanced Routing
+
+You can use Hono's router to build REST APIs that interact with your connected charge points:
+
+```typescript
+app.post('/api/charge-points/:id/reboot', async (c) => {
+  const ocpp = c.get('ocpp');
+  const client = ocpp.getClient(c.req.param('id'));
+
+  if (!client) {
+    return c.json({ error: "Station not connected" }, 404);
+  }
+
+  // Send a remote reset command
+  await client.call("Reset", { type: "Hard" });
+
+  return c.json({ success: true });
+});
+```
