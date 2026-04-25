@@ -1,6 +1,6 @@
 {
   "name": "ocpp-ws-io",
-  "version": "2.2.1",
+  "version": "2.2.2.beta.1",
   "description": "OCPP RPC WebSocket client and server for OCPP 1.6J, 2.0.1, and 2.1. Type-safe TypeScript toolkit for EV charging, CSMS backends, Redis scaling, and protocol validation.",
   "repository": {
     "type": "git",
