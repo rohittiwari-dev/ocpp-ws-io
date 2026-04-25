@@ -1,0 +1,132 @@
+---
+title: Bun & Deno Support
+description: Run ocpp-ws-io natively in modern JS runtimes
+---
+
+# Bun & Deno Support
+
+Because `ocpp-ws-io` relies on robust, standard Node.js networking (`node:http`, `ws`, `node:net`), it works flawlessly in **Bun** and **Deno** through their built-in Node.js compatibility layers.
+
+You do **not** need to rewrite your application or use special "Bun" WebSockets. You can simply use your favorite frameworks (like Hono, Fastify, or Express) and run them using `bun run` or `deno run`. 
+
+The underlying runtimes will automatically handle the networking using their high-performance C++ / Rust networking stacks.
+
+---
+
+## Running with Bun
+
+Bun provides complete compatibility with Node.js modules. The cleanest way to run an OCPP server in Bun is by using **Hono**.
+
+### Example: Bun + Hono
+
+```typescript
+// server.ts
+import { serve } from '@hono/node-server';
+import { Hono } from 'hono';
+import { OCPPServer } from 'ocpp-ws-io';
+import { ocppMiddleware, attachOcppHonoNode } from 'ocpp-ws-io/hono';
+
+const app = new Hono();
+const ocppServer = new OCPPServer();
+
+// Apply OCPP context middleware
+app.use('/ocpp/*', ocppMiddleware(ocppServer));
+
+app.get('/api/status/:id', (c) => {
+  const ocpp = c.get('ocpp');
+  const client = ocpp.getClient(c.req.param('id'));
+  
+  return c.json({
+    online: client?.isConnected ?? false
+  });
+});
+
+// Start the server using Bun's native `serve` abstraction via Hono
+const server = serve({ 
+  fetch: app.fetch, 
+  port: 3000 
+});
+
+// Attach the WebSocket upgrade handler
+attachOcppHonoNode(server as any, ocppServer, {
+  upgradePathPrefix: '/ocpp'
+});
+
+console.log('🔌 Running natively on Bun!');
+```
+
+**To run it:**
+```bash
+bun run server.ts
+```
+
+### Example: Bun + Express
+
+If you have an existing Express application, it runs perfectly in Bun without modification.
+
+```typescript
+// server.ts
+import express from 'express';
+import { OCPPServer } from 'ocpp-ws-io';
+import { ocppMiddleware, attachOcppExpress } from 'ocpp-ws-io/express';
+
+const app = express();
+const ocppServer = new OCPPServer();
+
+app.use('/ocpp', ocppMiddleware(ocppServer));
+
+const server = app.listen(3000, () => {
+  console.log('🔌 Express running on Bun!');
+});
+
+attachOcppExpress(server, ocppServer);
+```
+
+---
+
+## Running with Deno
+
+Deno supports npm packages via the `npm:` specifier. You can run `ocpp-ws-io` seamlessly in Deno.
+
+### Example: Deno + Express
+
+```typescript
+// server.ts
+import express from "npm:express";
+import { OCPPServer } from "npm:ocpp-ws-io";
+import { ocppMiddleware, attachOcppExpress } from "npm:ocpp-ws-io/express";
+
+const app = express();
+const ocppServer = new OCPPServer();
+
+// 1. Setup middleware
+app.use("/ocpp", ocppMiddleware(ocppServer));
+
+// 2. Add some REST routes
+app.get("/api/stations", (req, res) => {
+  res.json({
+    activeConnections: req.ocpp.server.clients.size
+  });
+});
+
+// 3. Start server
+const server = app.listen(3000, () => {
+  console.log("🔌 Running natively on Deno!");
+});
+
+// 4. Attach WebSocket handler
+attachOcppExpress(server, ocppServer, {
+  upgradePathPrefix: "/ocpp"
+});
+```
+
+**To run it:**
+```bash
+deno run --allow-net --allow-read --allow-env server.ts
+```
+
+## Advanced Native Adapters
+
+*Note: While both Bun and Deno provide native WebSocket APIs (`Bun.serve({ websocket })` and `Deno.upgradeWebSocket`), `ocpp-ws-io` relies heavily on raw TCP controls (keep-alive, buffer management) and ping/pong frame interception which standard Web APIs do not expose natively.*
+
+*Using the Node compatibility layer (as shown above) ensures 100% feature parity, dead-peer detection, and security features without sacrificing meaningful performance.*

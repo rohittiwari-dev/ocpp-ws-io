@@ -1,0 +1,80 @@
+---
+title: Fastify Integration
+description: Learn how to integrate ocpp-ws-io natively with Fastify
+---
+
+# Fastify Integration
+
+`ocpp-ws-io` provides a robust, production-ready Fastify plugin out of the box via `ocpp-ws-io/fastify`.
+
+Because Fastify manages its own server lifecycle, the plugin automatically binds to the underlying HTTP server's `upgrade` event and cleanly removes listeners when the server closes to prevent memory leaks.
+
+## Installation
+
+```bash
+npm install ocpp-ws-io fastify
+```
+
+## Setup
+
+Use `fastify.register` to attach the OCPP plugin to your Fastify instance.
+
+```typescript
+import Fastify from 'fastify';
+import { OCPPServer } from 'ocpp-ws-io';
+import { ocppFastify } from 'ocpp-ws-io/fastify';
+
+const fastify = Fastify({ logger: true });
+const ocppServer = new OCPPServer();
+
+// 1. Register the plugin
+fastify.register(ocppFastify, {
+  ocppServer,
+  upgradePathPrefix: '/ocpp' // Only upgrade requests to /ocpp
+});
+
+// 2. Access the context in your routes via `req.ocpp`
+fastify.get('/api/stations/:id', async (req, reply) => {
+  const { id } = req.params as { id: string };
+  
+  // `req.ocpp` is automatically typed as OcppFastifyContext
+  const client = req.ocpp.getClient(id);
+
+  if (!client || !client.isConnected) {
+    return reply.code(404).send({ status: 'offline' });
+  }
+
+  return { status: 'online', session: client.session };
+});
+
+const start = async () => {
+  try {
+    await fastify.listen({ port: 3000 });
+  } catch (err) {
+    fastify.log.error(err);
+    process.exit(1);
+  }
+};
+
+start();
+```
+
+## Type Safety
+
+The `ocppFastify` plugin uses Fastify's decorator API. We use TypeScript module augmentation so that `req.ocpp` is fully typed across your entire Fastify application without needing to cast types.
+
+## Handling Upgrades Manually
+
+If you prefer not to use the automated plugin (for example, if you want to handle the `upgrade` event yourself), you can still generate the context manually:
+
+```typescript
+import { createOcppFastifyContext } from 'ocpp-ws-io/fastify';
+
+fastify.decorateRequest('ocpp', null);
+
+fastify.addHook('onRequest', async (req, reply) => {
+  req.ocpp = createOcppFastifyContext(ocppServer);
+});
+```
+
+*(Note: The plugin is highly recommended as it handles WebSocket upgrade prefixing and memory leak prevention for you).*
