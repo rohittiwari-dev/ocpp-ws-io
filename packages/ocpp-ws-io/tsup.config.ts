@@ -10,6 +10,7 @@ export default defineConfig([
       plugins: "src/plugins/index.ts",
       express: "src/frameworks/express/index.ts",
       nestjs: "src/frameworks/nestjs/index.ts",
+      fastify: "src/frameworks/fastify/index.ts",
     },
     format: ["cjs", "esm"],
     dts: true,
