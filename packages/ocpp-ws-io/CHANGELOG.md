@@ -1,6 +1,6 @@
 # ocpp-ws-io
 
-## v2.2.2-beta.1 - The "Universal Framework" Release
+## v2.2.2 - The "Universal Framework" Release
 
 This massive release transforms `ocpp-ws-io` from a standalone WebSocket engine into a universal, multi-framework toolkit. We have introduced native integrations for **Fastify**, **Hono**, **NestJS**, and fundamentally unlocked **Bun** and **Deno** support.
 
