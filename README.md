@@ -6,7 +6,7 @@
 
 **The Complete, Type-Safe OCPP Ecosystem for Node.js**
 
-A modular suite of tools built with TypeScript from the ground up for building Charge Point Management Systems (CSMS), Charge Point Simulators (EVSE), Smart Charging Solvers, and Protocol Translators. 
+A modular suite of tools built with TypeScript from the ground up for building Charge Point Management Systems (CSMS), Charge Point Simulators (EVSE), Smart Charging Solvers, and Protocol Translators.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen?style=flat-square&logo=node.js)](https://nodejs.org)
@@ -15,6 +15,10 @@ A modular suite of tools built with TypeScript from the ground up for building C
 [Documentation](https://ocpp-ws-io.rohittiwari.me) · [npm Organization / Core Package](https://www.npmjs.com/package/ocpp-ws-io) · [Contributing](CONTRIBUTING.md)
 
 </div>
+
+---
+
+> ⚠️ **Netlify Status**: Due to high traffic, documentation loading may experience delays under free tier. I appreciate your patience!
 
 ---
 
@@ -39,14 +43,16 @@ Historically, building an OCPP-compliant network has been an infrastructure nigh
 
 ## ⚡ 1. Core RPC: `ocpp-ws-io`
 
-At the heart of the ecosystem is the rock-solid WebSocket RPC core. 
+At the heart of the ecosystem is the rock-solid WebSocket RPC core.
 
 **Features:**
+
 - **End-to-End Type Safety**: Auto-generated typings for all 1.6, 2.0.1, and 2.1 methods.
 - **Security Profiles 0–3**: Plain WS, Basic Auth, TLS + Basic Auth, Mutual TLS (mTLS).
 - **Resilience**: Redis caching, eager state-synchronization, token-bucket Rate Limiting per station, and single-source-of-truth idempotency keys.
 
 **Example: Spinning up a Central System (Server)**
+
 ```typescript
 import { OCPPServer } from "ocpp-ws-io";
 
@@ -81,11 +87,13 @@ await server.listen(3000);
 Legacy OCPP 1.6 charge points can't natively speak to modern OCPP 2.1 central systems. Instead of maintaining dual-protocol backends, put the Protocol Proxy in between.
 
 **Features:**
+
 - **Any-to-Any Translation**: Maps all 28 messages of OCPP 1.6 to 2.1 bidirectionally.
 - **Middleware Hooks**: Intercept messages pre- and post-translation for observability.
 - **Stateful Sessions**: Automatically maps string-based UUIDs (2.1) to integer Transaction IDs (1.6).
 
 **Example: Translating 1.6 to 2.1**
+
 ```typescript
 import { OCPPProtocolProxy, presets, OcppWsIoAdapter } from "ocpp-protocol-proxy";
 
@@ -114,11 +122,13 @@ await proxy.listenOnAdapter(adapter);
 How do you safely distribute 100kW of physical grid power across 5 cars without tripping the breaker? Use the Smart Charge Engine.
 
 **Features:**
+
 - **Multiple Algorithms**: Equal Share, Priority, Time-of-Use.
 - **Auto-Dispatch**: Recalculates mathematically optimal charging limits on an interval.
 - **Hardware Agnostic**: Handles minimum EV acceptance floors and maximum hardware limits to prevent faults.
 
 **Example: Distributing Power**
+
 ```typescript
 import { SmartChargingEngine, Strategies } from "ocpp-smart-charge-engine";
 import { buildOcpp16Profile } from "ocpp-smart-charge-engine/builders";
@@ -158,12 +168,14 @@ Testing physical chargers is expensive. We built tools to let you test immediate
 ### Terminal Tooling (`ocpp-ws-cli`)
 
 **Features:**
+
 - **`ocpp simulate`**: Interactive terminal-based Virtual Charge Point. Swipe RFID tags, start transactions, and stream metrics with keyboard shortcuts.
 - **`ocpp load-test`**: Simulate 1000s of concurrent EVs slamming your CSMS.
 - **`ocpp bench`**: Print throughput metrics and latency percentiles (P95, P99).
 - **`ocpp fuzz`**: Chaos engineer your CSMS by hurling malformed JSON payloads at it.
 
 **Example:**
+
 ```bash
 # Install globally
 npm i -g ocpp-ws-cli
@@ -174,7 +186,7 @@ ocpp simulate
 
 ### Web Simulator (`ocpp-ws-simulator`)
 
-For visual debugging and demos, we maintain an entire Next.js browser-based simulator. 
+For visual debugging and demos, we maintain an entire Next.js browser-based simulator.
 
 **🌍 Live application**: [**ocpp.rohittiwari.me**](https://ocpp.rohittiwari.me)
 
@@ -192,6 +204,7 @@ Or grab the source directly: [github.com/rohittiwari-dev/ocpp-ws-simulator](http
 ## 📚 General Ecosystem Documentation
 
 Explore the comprehensive documentation for the entire ecosystem:
+
 - [Official Documentation Portal](https://ocpp-ws-io.rohittiwari.me)
 - [API Reference](https://ocpp-ws-io.rohittiwari.me/docs/api-reference)
 
@@ -205,6 +218,7 @@ Explore the comprehensive documentation for the entire ecosystem:
 We welcome contributions across all packages in the ecosystem! This repository is organized as a Turborepo monorepo.
 
 Please see our [Contributing Guide](CONTRIBUTING.md) for details on:
+
 - Setting up the development environment (`npm install && npm run build`)
 - Submitting pull requests
 - Code style and commit conventions (we use `changesets` and `commitlint`)
