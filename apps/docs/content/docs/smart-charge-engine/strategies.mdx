@@ -42,7 +42,10 @@ const engine = new SmartChargingEngine({
 
 **Best for:** Fleet depots, employee lots, subscription tiers — where some vehicles should always get more power.
 
-Sessions are ranked by `priority` (higher = more). Higher-priority sessions are allocated first. Lower-priority sessions receive leftover grid capacity. When grid is constrained, low-priority sessions may receive only `minChargeRateKw`.
+Power is allocated **proportionally** to each session's `priority` weight (higher =
+more). Any power a session can't use (because it hit a hardware/EV cap) is
+redistributed to the rest by priority weight, so the grid stays fully utilized. If
+the priorities sum to 0, the strategy falls back to an equal split.
 
 ```typescript
 const engine = new SmartChargingEngine({
@@ -75,20 +78,20 @@ engine.addSession({
 
 **Best for:** Sites with time-of-day electricity pricing — charge faster during cheap off-peak hours, slower during expensive peak hours.
 
-Combines Equal Share allocation with a configurable schedule of power multipliers. During peak hours, the effective grid limit is reduced. During off-peak hours, it may be increased.
+Combines Equal Share allocation with a list of **peak windows**. During a matching
+window the effective grid limit is multiplied by that window's `peakPowerMultiplier`
+(a value between 0 and 1). Outside every window, the full grid limit applies.
 
 ```typescript
 const engine = new SmartChargingEngine({
   siteId: "SITE-TOU",
   maxGridPowerKw: 100,
   algorithm: Strategies.TIME_OF_USE,
-  touConfig: {
-    peakHours: { start: 18, end: 22 },     // 6 PM – 10 PM
-    offPeakHours: { start: 0, end: 6 },    // midnight – 6 AM
-    peakMultiplier: 0.4,                    // 40% of grid during peak
-    offPeakMultiplier: 1.0,                 // 100% during off-peak
-    shoulderMultiplier: 0.75,               // 75% all other times
-  },
+  timeOfUseWindows: [
+    { peakStartHour: 18, peakEndHour: 22, peakPowerMultiplier: 0.4 },  // 6–10 PM → 40%
+    { peakStartHour: 6,  peakEndHour: 18, peakPowerMultiplier: 0.75 }, // 6 AM–6 PM → 75%
+  ],
+  timeOfUseTimezone: "America/New_York", // optional — defaults to server local time
   dispatcher: /* ... */,
 });
 
@@ -98,34 +101,50 @@ engine.startAutoDispatch(60_000); // recalculate every 60s
 
 **Power schedule example (100kW site):**
 
-| Time | Multiplier | Effective Grid |
+| Time | Matching window | Effective Grid |
 | :--- | :--- | :--- |
-| 00:00 – 06:00 (off-peak) | 1.0 | 100 kW |
-| 06:00 – 18:00 (shoulder) | 0.75 | 75 kW |
-| 18:00 – 22:00 (peak) | 0.4 | 40 kW |
-| 22:00 – 00:00 (shoulder) | 0.75 | 75 kW |
+| 00:00 – 06:00 | none (off-peak) | 100 kW |
+| 06:00 – 18:00 | `0.75` | 75 kW |
+| 18:00 – 22:00 | `0.4` | 40 kW |
+| 22:00 – 00:00 | none (off-peak) | 100 kW |
+
+<Callout type="info">
+  Windows are evaluated top-to-bottom; the **first** match wins. `peakStartHour` /
+  `peakEndHour` are integers 0–23 (overnight ranges like `22 → 6` are supported);
+  `peakPowerMultiplier` must be between 0 and 1. Invalid windows throw
+  `SmartChargingConfigError`. Set `timeOfUseTimezone` (IANA) to evaluate windows in
+  the site's local time rather than the server's.
+</Callout>
 
 ---
 
 ## Runtime Strategy Swap
 
-Switch strategy on a live engine without any downtime:
+Switch strategy on a live engine without any downtime — to a built-in name or a
+custom `StrategyFn`:
 
 ```typescript
 // Evening peak — switch to TOU to reduce draw
+// (windows from the constructor are retained, so no config arg is needed)
 engine.setAlgorithm(Strategies.TIME_OF_USE);
 await engine.dispatch(); // immediately rebalance with new strategy
 
 // Fleet arrives overnight — switch to Priority
 engine.setAlgorithm(Strategies.PRIORITY);
 await engine.dispatch();
+
+// Or swap in a custom function
+engine.setAlgorithm(myCustomStrategy);
 ```
 
 ---
 
 ## Minimum Charge Rate
 
-All strategies respect `minChargeRateKw` per session. Even when the grid is heavily constrained, a session will never drop below its minimum:
+All strategies respect `minChargeRateKw` per session. When the grid is constrained,
+the engine takes headroom from other sessions to honor each minimum (the floor is
+clamped to the session's hardware/EV cap — it can never exceed what the hardware can
+deliver):
 
 ```typescript
 engine.addSession({
@@ -137,35 +156,47 @@ engine.addSession({
 ```
 
 <Callout type="warn">
-  If the site is so constrained that even minimums cannot be satisfied, the
-  engine respects **priority** to decide who gets their minimum first.
+  If the site is so over-subscribed that even the **sum of all minimums** exceeds
+  the grid, the minimums cannot all be met. Grid safety wins: allocations are scaled
+  down proportionally to fit, and a `gridOverCommitted` event fires with
+  `feasible: false` and a `starvedSessions` list naming exactly which sessions fell
+  below their floor (and by how much).
 </Callout>
 
 ---
 
 ## Custom Strategy (Advanced)
 
-The engine accepts any function conforming to the `ChargingStrategy` type:
+The engine accepts any function conforming to the `StrategyFn` type. It receives the
+active sessions, the effective grid budget (after the safety margin), and a context
+with the configured voltage. Use the `buildSessionProfile` helper to produce the raw
+kW/W/A numbers correctly.
 
 ```typescript
-import type { ChargingStrategy } from "ocpp-smart-charge-engine/strategies";
+import { SmartChargingEngine } from "ocpp-smart-charge-engine";
+import { buildSessionProfile } from "ocpp-smart-charge-engine/strategies";
+import type { StrategyFn } from "ocpp-smart-charge-engine";
 
-const myStrategy: ChargingStrategy = (sessions, availableKw) => {
-  // sessions: ChargingSession[]
-  // availableKw: effective grid budget after safety margin
-  // Return: SessionProfile[] with allocatedKw per session
-  return sessions.map((s) => ({
-    ...s,
-    allocatedKw: Math.min(s.maxHardwarePowerKw, availableKw / sessions.length),
-    allocatedW: /* ... */,
-    allocatedAmps: /* ... */,
-  }));
+// FIFO: the longest-waiting session charges first.
+const fifo: StrategyFn = (sessions, effectiveGridKw, ctx) => {
+  const oldest = [...sessions].sort((a, b) => a.addedAt - b.addedAt)[0];
+  return sessions.map((s) =>
+    buildSessionProfile(s, s === oldest ? effectiveGridKw : 0, ctx?.voltageV),
+  );
 };
 
 const engine = new SmartChargingEngine({
   siteId: "CUSTOM",
   maxGridPowerKw: 100,
-  algorithm: myStrategy,
+  algorithm: fifo,        // or: engine.setAlgorithm(fifo) at runtime
   dispatcher: /* ... */,
 });
+// engine.config.algorithm === "CUSTOM"
 ```
+
+<Callout type="info">
+  `buildSessionProfile(session, allocatedKw, voltageV?)` enforces the session's
+  `minChargeRateKw` floor (clamped to its caps) and computes `allocatedW` /
+  `allocatedAmpsPerPhase` for you. The engine's grid-budget guard still runs after
+  your strategy, so you can never exceed the grid limit even with a custom function.
+</Callout>

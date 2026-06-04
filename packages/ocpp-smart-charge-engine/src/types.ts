@@ -165,10 +165,11 @@ export interface ChargingSession {
   priority?: number;
 
   /**
-   * Optional: Number of AC phases this connector supports.
-   * Used by the 3-phase balancer. Defaults to 3.
+   * Optional: Number of AC phases this connector supplies to the EV.
+   * `1` = single-phase, `2` = split-phase (e.g. US 240 V), `3` = three-phase.
+   * Used for the amps-per-phase calculation. Defaults to the site `phases`.
    */
-  phases?: 1 | 3;
+  phases?: 1 | 2 | 3;
 
   /**
    * Optional: Arbitrary metadata you want attached to the session.
@@ -203,11 +204,36 @@ export interface SessionProfile {
   allocatedKw: number;
   /** Allocated power converted to Watts (allocatedKw * 1000) */
   allocatedW: number;
-  /** Allocated amps per phase (allocatedW / phases / 230) */
+  /** Allocated amps per phase (allocatedW / phases / voltageV) */
   allocatedAmpsPerPhase: number;
-  /** Minimum charge rate in kW (from session.minChargeRateKw, or 0 if not set) */
+  /**
+   * The effective minimum charge rate in kW that was guaranteed for this
+   * session — `session.minChargeRateKw` clamped to the hardware/EV caps,
+   * or 0 if not set. Never exceeds what the hardware can deliver.
+   */
   minChargeRateKw: number;
+  /** Number of AC phases used for the amps calculation (1, 2, or 3). */
+  phases: 1 | 2 | 3;
+  /** Grid voltage (V) used for the amps calculation. */
+  voltageV: number;
 }
+
+/**
+ * Fields of a session that can be changed in place via `engine.updateSession()`.
+ * `transactionId` and `clientId` are immutable identity and cannot be changed.
+ */
+export type SessionUpdate = Partial<
+  Pick<
+    ChargingSession,
+    | "connectorId"
+    | "maxHardwarePowerKw"
+    | "maxEvAcceptancePowerKw"
+    | "minChargeRateKw"
+    | "priority"
+    | "phases"
+    | "metadata"
+  >
+>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Engine configuration
@@ -245,15 +271,19 @@ export interface SmartChargingEngineConfig {
 
   /**
    * Number of AC phases at the site. Defaults to 3.
-   * Used for per-phase amperage calculations returned in profiles.
+   * `1` = single-phase, `2` = split-phase, `3` = three-phase.
+   * Used as the default for sessions and for per-phase amperage calculations.
    */
-  phases?: 1 | 3;
+  phases?: 1 | 2 | 3;
 
   /**
    * The allocation strategy. Defaults to "EQUAL_SHARE".
    * Can be changed at runtime via `engine.setAlgorithm()`.
+   *
+   * Pass one of the built-in `Strategy` names, or a custom `StrategyFn` to
+   * implement your own allocation logic.
    */
-  algorithm?: Strategy;
+  algorithm?: Strategy | StrategyFn;
 
   /**
    * Percentage of grid capacity to hold in reserve as a safety margin.
@@ -272,6 +302,14 @@ export interface SmartChargingEngineConfig {
    * Time-of-Use windows. Only applies when `algorithm === "TIME_OF_USE"`.
    */
   timeOfUseWindows?: TimeOfUseWindow[];
+
+  /**
+   * IANA timezone (e.g. "America/New_York") used to evaluate Time-of-Use peak
+   * windows. Defaults to the host server's local time. Set this when the site
+   * is in a different timezone than the server running the engine.
+   * @example "Europe/Berlin"
+   */
+  timeOfUseTimezone?: string;
 
   /**
    * The dispatcher function — the ONLY integration point with your OCPP library.
@@ -313,8 +351,12 @@ export interface SmartChargingEngineConfig {
 export interface SmartChargingEngineEvents {
   /** Fired after a session is registered. */
   sessionAdded: (session: ActiveSession) => void;
+  /** Fired after a session is updated in place via `updateSession()`. */
+  sessionUpdated: (session: ActiveSession) => void;
   /** Fired after a session is removed. */
   sessionRemoved: (session: ActiveSession) => void;
+  /** Fired after a persisted snapshot is loaded via `loadSnapshot()`. */
+  snapshotLoaded: (sessions: ReadonlyArray<ActiveSession>) => void;
   /** Fired after `optimize()` completes — includes the calculated profiles. */
   optimized: (profiles: SessionProfile[]) => void;
   /** Fired after `dispatch()` completes for ALL sessions. */
@@ -329,6 +371,13 @@ export interface SmartChargingEngineEvents {
   autoDispatchStarted: (intervalMs: number) => void;
   /** Fired when `stopAutoDispatch()` stops the interval. */
   autoDispatchStopped: () => void;
+  /**
+   * Fired when the requested allocation (after applying per-session minimum
+   * charge-rate floors) exceeds the effective grid limit. The engine has
+   * already scaled allocations back down to fit the grid before this fires —
+   * it is a warning that the site is over-subscribed, not a failure.
+   */
+  gridOverCommitted: (info: GridOverCommitInfo) => void;
   /** General engine errors (e.g., strategy threw an exception). */
   error: (error: Error) => void;
 }
@@ -340,12 +389,55 @@ export interface DispatchErrorEvent {
   error: unknown;
 }
 
+/** Payload for the 'gridOverCommitted' event */
+export interface GridOverCommitInfo {
+  siteId: string;
+  /** The grid limit after the safety margin, in kW. */
+  effectiveGridLimitKw: number;
+  /** The total kW the sessions wanted (sum of floors + shares) before clamping. */
+  requestedKw: number;
+  /** Number of active sessions at the time. */
+  sessionCount: number;
+  /**
+   * `false` when even the sum of all minimum floors exceeds the grid — in that
+   * case the engine could not honor every minimum and scaled everything down
+   * proportionally (grid safety wins over minimum charge rate).
+   */
+  feasible: boolean;
+  /**
+   * Sessions that ended up **below** their requested `minChargeRateKw` after the
+   * engine scaled allocations to fit the grid. Empty unless `feasible` is false.
+   */
+  starvedSessions: StarvedSession[];
+}
+
+/** A session that received less than its requested minimum after grid scaling. */
+export interface StarvedSession {
+  clientId: string;
+  transactionId: number | string;
+  connectorId: number;
+  /** The minimum charge rate (kW) that was requested but could not be met. */
+  minChargeRateKw: number;
+  /** The kW actually allocated (below the requested minimum). */
+  allocatedKw: number;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Strategy function signature
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Context passed to strategy functions so per-session numbers (amps) can be
+ * computed against the site's real electrical parameters.
+ */
+export interface StrategyContext {
+  /** Grid voltage (V) used for amps-per-phase calculation. */
+  voltageV: number;
+}
 
 /** The signature all strategy implementations must conform to. */
 export type StrategyFn = (
   sessions: ActiveSession[],
   effectiveGridLimitKw: number,
+  ctx?: StrategyContext,
 ) => SessionProfile[];

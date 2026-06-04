@@ -332,6 +332,66 @@ await engine.clearDispatch(42);    // clear only transactionId 42
 
 ---
 
+## Updating Sessions In Place
+
+When an EV reports a new acceptance limit (or you want to re-prioritize mid-charge),
+use `updateSession()` instead of `removeSession()` + `addSession()`. It preserves
+`addedAt`, keeps `transactionId` / `clientId` immutable, validates the change, and —
+unlike a remove — does **not** trigger `autoClearOnRemove`.
+
+```typescript
+engine.updateSession(txId, { maxEvAcceptancePowerKw: 7.4, priority: 5 });
+await engine.dispatch(); // re-balances with the new value
+```
+
+---
+
+## Persistence (Snapshot & Restore)
+
+Persist active sessions (e.g. to Redis/DB) and restore them after a process restart
+so allocations survive a redeploy.
+
+```typescript
+// Save — getSnapshot() is JSON-serializable and includes addedAt.
+await redis.set("sce:SITE-001", JSON.stringify(engine.getSnapshot()));
+
+// Restore — validates every entry up front (atomic): throws before applying if any is invalid.
+const saved = JSON.parse(await redis.get("sce:SITE-001"));
+engine.loadSnapshot(saved);                    // replaces all sessions (default)
+engine.loadSnapshot(saved, { clear: false });  // merge instead of replace
+await engine.dispatch();
+```
+
+---
+
+## Grid Safety & Over-Subscription
+
+The engine guarantees a hard invariant: **the sum of allocated power never exceeds
+the effective grid limit**, and no session ever exceeds its hardware/EV caps —
+including when per-session `minChargeRateKw` floors are in play.
+
+If the floors add up to more than the grid can supply, allocations are scaled down
+to fit and a `gridOverCommitted` event fires:
+
+```typescript
+engine.on("gridOverCommitted", (info) => {
+  console.warn(`Over-subscribed: wanted ${info.requestedKw}kW, grid is ${info.effectiveGridLimitKw}kW`);
+  if (!info.feasible) {
+    // Even the minimums don't fit — these sessions were scaled below their floor:
+    for (const s of info.starvedSessions) {
+      console.warn(`  ${s.clientId} got ${s.allocatedKw}kW (wanted min ${s.minChargeRateKw}kW)`);
+    }
+  }
+});
+```
+
+<Callout type="info">
+  This guard runs after **every** strategy — built-in or custom — so a custom
+  strategy can never push the total above the grid limit.
+</Callout>
+
+---
+
 ## Profile Builders
 
 Version-specific helpers convert raw `SessionProfile` numbers into the correct OCPP shape:
@@ -380,12 +440,18 @@ buildOcpp21Profile(sessionProfile, {
 | `dispatcher` | `ChargingProfileDispatcher` | required | Your OCPP send function |
 | `clearDispatcher` | `ClearProfileDispatcher` | — | Sends `ClearChargingProfile` |
 | `autoClearOnRemove` | `boolean` | `false` | Auto-clear profile on `removeSession()` |
-| `algorithm` | `Strategy` | `EQUAL_SHARE` | Allocation strategy |
+| `algorithm` | `Strategy \| StrategyFn` | `EQUAL_SHARE` | Built-in strategy name **or** a custom function |
 | `safetyMarginPct` | `number` | `5` | Power held in reserve (%) |
-| `phases` | `1 \| 3` | `3` | AC phase count |
-| `voltageV` | `number` | `230` | Grid voltage for amps calculation |
+| `phases` | `1 \| 2 \| 3` | `3` | AC phase count (2 = split-phase) |
+| `voltageV` | `number` | `230` | Grid voltage — used for the amps calculation |
 | `timeOfUseWindows` | `TimeOfUseWindow[]` | `[]` | Peak windows (TIME_OF_USE only) |
+| `timeOfUseTimezone` | `string` | server tz | IANA timezone for TOU windows (e.g. `Asia/Kolkata`) |
 | `debug` | `boolean` | `false` | Verbose logging |
+
+<Callout type="info">
+  All numeric options are validated at construction; invalid values throw
+  `SmartChargingConfigError`.
+</Callout>
 
 ### `addSession()` Options
 
@@ -398,25 +464,35 @@ buildOcpp21Profile(sessionProfile, {
 | `maxEvAcceptancePowerKw` | `number` | `∞` | EV acceptance limit |
 | `minChargeRateKw` | `number` | `0` | Minimum power floor |
 | `priority` | `number` | `1` | Priority (PRIORITY strategy) |
-| `phases` | `1 \| 3` | site default | Phase count for connector |
+| `phases` | `1 \| 2 \| 3` | site default | Phase count for connector (2 = split-phase) |
 | `metadata` | `object` | — | Arbitrary data (stored, not used) |
+
+<Callout type="info">
+  Numeric fields are validated: caps must be a positive number or `Infinity`;
+  `minChargeRateKw` / `priority` must be non-negative. Invalid values throw
+  `SmartChargingConfigError`.
+</Callout>
 
 ### Methods
 
 | Method | Description |
 | :--- | :--- |
 | `addSession(session)` | Register a session. Throws `DuplicateSessionError` if exists |
+| `updateSession(txId, patch)` | Update a session in place (no clear/re-add side effects) |
 | `removeSession(txId)` | Remove a session. Throws `SessionNotFoundError` if not found |
 | `safeRemoveSession(txId)` | Remove without throwing |
 | `optimize()` | Calculate profiles without dispatching |
-| `dispatch()` | Calculate + dispatch to all active sessions |
+| `dispatch()` | Calculate + dispatch to all active sessions (overlapping calls coalesce) |
 | `clearDispatch(txId?)` | Send `ClearChargingProfile` to one or all |
 | `startAutoDispatch(ms)` | Start periodic dispatch (min 1000ms) |
 | `stopAutoDispatch()` | Stop auto-dispatch |
 | `setGridLimit(kw)` | Update grid limit at runtime |
-| `setAlgorithm(strategy)` | Hot-swap algorithm at runtime |
+| `setAlgorithm(strategy \| fn)` | Hot-swap a built-in strategy **or** a custom `StrategyFn` at runtime |
 | `setSafetyMargin(pct)` | Update safety margin at runtime |
-| `getSessions()` | Read-only array of active sessions |
+| `getSessions()` | Read-only array of active sessions (copies) |
+| `getSession(txId)` | Single session snapshot (copy), or `undefined` |
+| `getSnapshot()` | JSON-serializable snapshot of all sessions for persistence |
+| `loadSnapshot(sessions, opts?)` | Restore sessions from a snapshot (validated, atomic) |
 | `isEmpty()` | `true` when no sessions registered |
 
 ### Events
@@ -424,10 +500,13 @@ buildOcpp21Profile(sessionProfile, {
 | Event | Payload | When |
 | :--- | :--- | :--- |
 | `sessionAdded` | `ActiveSession` | Session registered |
+| `sessionUpdated` | `ActiveSession` | Session updated via `updateSession()` |
 | `sessionRemoved` | `ActiveSession` | Session removed |
+| `snapshotLoaded` | `ReadonlyArray<ActiveSession>` | After `loadSnapshot()` restores sessions |
 | `optimized` | `SessionProfile[]` | After `optimize()` |
 | `dispatched` | `SessionProfile[]` | After all dispatchers settle |
 | `dispatchError` | `DispatchErrorEvent` | Dispatcher throws; engine continues |
+| `gridOverCommitted` | `GridOverCommitInfo` | Min-rate floors exceed grid; allocations scaled (incl. `starvedSessions`) |
 | `cleared` | `ClearDispatchPayload` | After `clearDispatcher` succeeds |
 | `clearError` | `ClearDispatchPayload & { error }` | `clearDispatcher` throws |
 | `autoDispatchStarted` | `number` (intervalMs) | After `startAutoDispatch()` |

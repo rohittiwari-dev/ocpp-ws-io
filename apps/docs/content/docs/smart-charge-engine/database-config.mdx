@@ -383,6 +383,25 @@ redis.subscribe("panel:config:updated", (msg) => {
   connected to.
 </Callout>
 
+### Persisting sessions across restarts
+
+The engine's session state is in-memory. To survive a node restart or redeploy,
+snapshot the sessions and restore them on boot with `getSnapshot()` / `loadSnapshot()`:
+
+```typescript
+// Periodically (or on change) persist this node's session state
+await redis.set(`sce:sessions:${nodeId}`, JSON.stringify(engine.getSnapshot()));
+
+// On boot, rehydrate before the first dispatch
+const saved = await redis.get(`sce:sessions:${nodeId}`);
+if (saved) engine.loadSnapshot(JSON.parse(saved)); // validated + atomic
+```
+
+<Callout type="warn">
+  Restored sessions only resume charging control once their charger reconnects to
+  this node — the snapshot restores the **allocation state**, not the WebSocket.
+</Callout>
+
 ---
 
 ## What NOT to Do

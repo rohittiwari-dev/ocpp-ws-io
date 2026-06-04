@@ -9,6 +9,9 @@ import type {
   StrategyFn,
   DispatchPayload,
   ClearDispatchPayload,
+  TimeOfUseWindow,
+  SessionUpdate,
+  StarvedSession,
 } from "./types.js";
 import {
   SmartChargingConfigError,
@@ -88,20 +91,25 @@ class SmartChargingEngine extends EventEmitter {
   private gridLimitKw: number;
   private safetyMarginPct: number;
   private readonly voltageV: number;
-  private algorithm: Strategy;
+  /** Label for the active strategy ("CUSTOM" when a user function is supplied). */
+  private algorithm: Strategy | "CUSTOM";
   private strategyFn: StrategyFn;
-  private readonly phases: 1 | 3;
+  private readonly phases: 1 | 2 | 3;
   private readonly dispatcher: SmartChargingEngineConfig["dispatcher"];
   private readonly clearDispatcher: SmartChargingEngineConfig["clearDispatcher"];
   private readonly autoClearOnRemove: boolean;
   private readonly debug: boolean;
   private autoDispatchTimer: ReturnType<typeof setInterval> | null = null;
 
+  /** Time-of-Use windows retained so the strategy can be hot-swapped at runtime. */
+  private timeOfUseWindows: TimeOfUseWindow[] | undefined;
+  /** Timezone used to evaluate Time-of-Use windows (host local time if unset). */
+  private timeOfUseTimezone: string | undefined;
+  /** In-flight dispatch promise — coalesces overlapping dispatch() calls. */
+  private dispatchInFlight: Promise<SessionProfile[]> | null = null;
+
   /** Internal session map keyed by transactionId (as string) */
   private readonly sessions = new Map<string, ActiveSession>();
-
-  /** Auto-incrementing profile ID counter */
-  private profileIdCounter = 1;
 
   constructor(config: SmartChargingEngineConfig) {
     super();
@@ -118,21 +126,36 @@ class SmartChargingEngine extends EventEmitter {
         `safetyMarginPct must be between 0 and 99, got ${safetyMarginPct}`,
       );
     }
+    const voltageV = config.voltageV ?? 230;
+    if (voltageV <= 0) {
+      throw new SmartChargingConfigError(
+        `voltageV must be > 0, got ${voltageV}`,
+      );
+    }
+    const phases = config.phases ?? 3;
+    if (phases !== 1 && phases !== 2 && phases !== 3) {
+      throw new SmartChargingConfigError(
+        `phases must be 1, 2, or 3, got ${phases}`,
+      );
+    }
 
     // ── Store config ────────────────────────────────────────────────────────
     this.siteId = config.siteId;
     this.gridLimitKw = config.maxGridPowerKw;
     this.safetyMarginPct = safetyMarginPct;
-    this.voltageV = config.voltageV ?? 230;
-    this.phases = config.phases ?? 3;
-    this.algorithm = config.algorithm ?? "EQUAL_SHARE";
+    this.voltageV = voltageV;
+    this.phases = phases;
+    const algorithm = config.algorithm ?? "EQUAL_SHARE";
+    this.algorithm = typeof algorithm === "function" ? "CUSTOM" : algorithm;
+    this.timeOfUseWindows = config.timeOfUseWindows;
+    this.timeOfUseTimezone = config.timeOfUseTimezone;
     this.dispatcher = config.dispatcher;
     this.clearDispatcher = config.clearDispatcher;
     this.autoClearOnRemove = config.autoClearOnRemove ?? false;
     this.debug = config.debug ?? false;
 
     // ── Strategy ────────────────────────────────────────────────────────────
-    this.strategyFn = this.resolveStrategy(this.algorithm, config);
+    this.strategyFn = this.resolveStrategy(algorithm, config);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -154,6 +177,8 @@ class SmartChargingEngine extends EventEmitter {
       throw new DuplicateSessionError(session.transactionId);
     }
 
+    this.validateSession(session);
+
     const active: ActiveSession = {
       ...session,
       connectorId: session.connectorId ?? 1,
@@ -166,6 +191,47 @@ class SmartChargingEngine extends EventEmitter {
     this.log(`[${this.siteId}] Session added: ${key} (client: ${session.clientId})`);
     this.emit("sessionAdded", active);
     return active;
+  }
+
+  /**
+   * Update a session's parameters **in place** — e.g. when the EV reports a new
+   * acceptance limit, or you want to change its priority mid-charge.
+   *
+   * Unlike `removeSession()` + `addSession()`, this preserves `addedAt` and does
+   * NOT trigger `autoClearOnRemove`, so no spurious `ClearChargingProfile` is
+   * sent. `transactionId` and `clientId` are immutable and cannot be changed.
+   * The merged result is validated; takes effect on the next `optimize()`/`dispatch()`.
+   *
+   * @throws {SessionNotFoundError} if the transactionId is not registered.
+   * @throws {SmartChargingConfigError} if the patched values are invalid.
+   */
+  updateSession(
+    transactionId: number | string,
+    patch: SessionUpdate,
+  ): ActiveSession {
+    const key = String(transactionId);
+    const existing = this.sessions.get(key);
+    if (!existing) {
+      throw new SessionNotFoundError(transactionId);
+    }
+
+    const merged: ActiveSession = {
+      ...existing,
+      ...patch,
+      // Identity & bookkeeping are immutable.
+      transactionId: existing.transactionId,
+      clientId: existing.clientId,
+      connectorId: patch.connectorId ?? existing.connectorId,
+      priority: patch.priority ?? existing.priority,
+      phases: patch.phases ?? existing.phases,
+      addedAt: existing.addedAt,
+    };
+
+    this.validateSession(merged);
+    this.sessions.set(key, merged);
+    this.log(`[${this.siteId}] Session updated: ${key}`);
+    this.emit("sessionUpdated", merged);
+    return { ...merged };
   }
 
   /**
@@ -221,9 +287,70 @@ class SmartChargingEngine extends EventEmitter {
 
   /**
    * Read-only snapshot of all currently active sessions.
+   * Returns shallow copies — mutating them does NOT affect engine state.
    */
   getSessions(): ReadonlyArray<ActiveSession> {
-    return Array.from(this.sessions.values());
+    return Array.from(this.sessions.values(), (s) => ({ ...s }));
+  }
+
+  /**
+   * Read-only snapshot of a single session by transactionId, or `undefined`.
+   * Returns a shallow copy — mutating it does NOT affect engine state.
+   */
+  getSession(transactionId: number | string): ActiveSession | undefined {
+    const s = this.sessions.get(String(transactionId));
+    return s ? { ...s } : undefined;
+  }
+
+  /**
+   * Serializable snapshot of all active sessions — safe to `JSON.stringify` and
+   * persist (e.g. to Redis/DB), then restore with `loadSnapshot()` after a
+   * process restart. Returns shallow copies including `addedAt`.
+   */
+  getSnapshot(): ActiveSession[] {
+    return Array.from(this.sessions.values(), (s) => ({ ...s }));
+  }
+
+  /**
+   * Restore sessions from a previously-saved `getSnapshot()` (or any list of
+   * `ChargingSession`s). Every entry is validated up front, so a single bad
+   * entry throws **before** any change is applied (atomic).
+   *
+   * @param sessions Sessions to load. `addedAt` is preserved when present.
+   * @param opts.clear Replace all existing sessions (default `true`). When
+   *   `false`, the snapshot is merged in (entries with an existing
+   *   transactionId are overwritten).
+   * @throws {SmartChargingConfigError} if any entry has invalid numeric fields.
+   */
+  loadSnapshot(
+    sessions: ReadonlyArray<ChargingSession & { addedAt?: number }>,
+    opts: { clear?: boolean } = {},
+  ): void {
+    // Validate everything first — never partially apply a bad snapshot.
+    for (const s of sessions) {
+      this.validateSession(s);
+    }
+
+    if (opts.clear ?? true) {
+      this.sessions.clear();
+    }
+
+    for (const s of sessions) {
+      const key = String(s.transactionId);
+      this.sessions.set(key, {
+        ...s,
+        connectorId: s.connectorId ?? 1,
+        priority: s.priority ?? 1,
+        phases: s.phases ?? this.phases,
+        addedAt: s.addedAt ?? Date.now(),
+      });
+    }
+
+    this.log(
+      `[${this.siteId}] Snapshot loaded: ${sessions.length} session(s) ` +
+        `(clear: ${opts.clear ?? true})`,
+    );
+    this.emit("snapshotLoaded", this.getSessions());
   }
 
   /**
@@ -264,7 +391,9 @@ class SmartChargingEngine extends EventEmitter {
 
     let profiles: SessionProfile[];
     try {
-      profiles = this.strategyFn(sessions, effectiveGridLimitKw);
+      profiles = this.strategyFn(sessions, effectiveGridLimitKw, {
+        voltageV: this.voltageV,
+      });
     } catch (err) {
       const error = new StrategyError(
         this.algorithm,
@@ -273,6 +402,12 @@ class SmartChargingEngine extends EventEmitter {
       this.emit("error", error);
       throw error;
     }
+
+    // ── Grid-budget guard ────────────────────────────────────────────────────
+    // Strategies cap each session to its share, but per-session minimum-rate
+    // floors can push the SUM above the grid limit. This final pass guarantees
+    // the hard invariant: total allocated power never exceeds the grid.
+    profiles = this.enforceGridBudget(profiles, effectiveGridLimitKw);
 
     this.log(
       `[${this.siteId}] Optimized ${profiles.length} sessions. ` +
@@ -295,6 +430,17 @@ class SmartChargingEngine extends EventEmitter {
    * @returns The array of SessionProfiles that were dispatched.
    */
   async dispatch(): Promise<SessionProfile[]> {
+    // Re-entrancy guard: if a dispatch is already running (e.g. a slow dispatcher
+    // while auto-dispatch ticks again, or a concurrent manual call), coalesce
+    // onto the in-flight run instead of sending overlapping/out-of-order profiles.
+    if (this.dispatchInFlight) return this.dispatchInFlight;
+    this.dispatchInFlight = this._runDispatch().finally(() => {
+      this.dispatchInFlight = null;
+    });
+    return this.dispatchInFlight;
+  }
+
+  private async _runDispatch(): Promise<SessionProfile[]> {
     const profiles = this.optimize();
     if (profiles.length === 0) return profiles;
 
@@ -397,6 +543,8 @@ class SmartChargingEngine extends EventEmitter {
         });
       }
     }, intervalMs);
+    // Don't keep the Node process alive solely for the dispatch interval.
+    (this.autoDispatchTimer as { unref?: () => void }).unref?.();
     this.log(`[${this.siteId}] Auto-dispatch started every ${intervalMs}ms`);
     this.emit("autoDispatchStarted", intervalMs);
   }
@@ -419,13 +567,16 @@ class SmartChargingEngine extends EventEmitter {
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Change the allocation strategy at runtime.
-   * Takes effect on the next `optimize()` / `dispatch()` call.
+   * Change the allocation strategy at runtime — a built-in `Strategy` name or a
+   * custom `StrategyFn`. Takes effect on the next `optimize()` / `dispatch()`.
    */
-  setAlgorithm(algorithm: Strategy, config?: SmartChargingEngineConfig): void {
-    this.algorithm = algorithm;
+  setAlgorithm(
+    algorithm: Strategy | StrategyFn,
+    config?: Partial<SmartChargingEngineConfig>,
+  ): void {
+    this.algorithm = typeof algorithm === "function" ? "CUSTOM" : algorithm;
     this.strategyFn = this.resolveStrategy(algorithm, config);
-    this.log(`[${this.siteId}] Algorithm changed to: ${algorithm}`);
+    this.log(`[${this.siteId}] Algorithm changed to: ${this.algorithm}`);
   }
 
   /**
@@ -463,11 +614,12 @@ class SmartChargingEngine extends EventEmitter {
     siteId: string;
     gridLimitKw: number;
     safetyMarginPct: number;
-    algorithm: Strategy;
-    phases: 1 | 3;
+    algorithm: Strategy | "CUSTOM";
+    phases: 1 | 2 | 3;
     voltageV: number;
     effectiveGridLimitKw: number;
     autoDispatchActive: boolean;
+    timeOfUseWindows: TimeOfUseWindow[] | undefined;
   } {
     return {
       siteId: this.siteId,
@@ -478,6 +630,9 @@ class SmartChargingEngine extends EventEmitter {
       voltageV: this.voltageV,
       effectiveGridLimitKw: this.gridLimitKw * (1 - this.safetyMarginPct / 100),
       autoDispatchActive: this.autoDispatchTimer !== null,
+      timeOfUseWindows: this.timeOfUseWindows
+        ? this.timeOfUseWindows.map((w) => ({ ...w }))
+        : undefined,
     };
   }
 
@@ -485,28 +640,201 @@ class SmartChargingEngine extends EventEmitter {
   // Private helpers
   // ─────────────────────────────────────────────────────────────────────────
 
+  /**
+   * Guarantee that the sum of allocated power never exceeds the grid limit.
+   *
+   * Strategies already cap each session to its fair share, but per-session
+   * `minChargeRateKw` floors are applied independently and can push the total
+   * over budget. This pass scales the allocations back down to fit:
+   *
+   *  - If the sum of the minimum floors still fits the grid, only the
+   *    above-floor portion is reduced (proportionally) so every session keeps
+   *    at least its guaranteed minimum.
+   *  - If even the floors alone exceed the grid (over-subscribed site), grid
+   *    safety wins: everything is scaled down proportionally and a
+   *    `gridOverCommitted` event with `feasible: false` is emitted.
+   */
+  private enforceGridBudget(
+    profiles: SessionProfile[],
+    effectiveGridLimitKw: number,
+  ): SessionProfile[] {
+    const EPS = 1e-9;
+    const total = profiles.reduce((s, p) => s + p.allocatedKw, 0);
+    if (total <= effectiveGridLimitKw + EPS) return profiles;
+
+    const floorSum = profiles.reduce((s, p) => s + p.minChargeRateKw, 0);
+    const feasible = floorSum <= effectiveGridLimitKw + EPS;
+
+    let result: SessionProfile[];
+    if (feasible) {
+      // Reduce only the discretionary (above-floor) power, keeping every floor.
+      const aboveFloorTotal = total - floorSum;
+      const excess = total - effectiveGridLimitKw;
+      const scale =
+        aboveFloorTotal > EPS ? (aboveFloorTotal - excess) / aboveFloorTotal : 0;
+      result = profiles.map((p) => {
+        const above = Math.max(0, p.allocatedKw - p.minChargeRateKw);
+        return this.rebuildProfileKw(p, p.minChargeRateKw + above * scale);
+      });
+    } else {
+      // Infeasible — floors alone exceed the grid. Scale everything proportionally.
+      const scale = effectiveGridLimitKw / total;
+      result = profiles.map((p) => this.rebuildProfileKw(p, p.allocatedKw * scale));
+    }
+
+    // Per-session starvation detail (only the infeasible branch can starve floors).
+    const starvedSessions: StarvedSession[] = result
+      .filter((p) => p.allocatedKw < p.minChargeRateKw - EPS)
+      .map((p) => ({
+        clientId: p.clientId,
+        transactionId: p.transactionId,
+        connectorId: p.connectorId,
+        minChargeRateKw: p.minChargeRateKw,
+        allocatedKw: p.allocatedKw,
+      }));
+
+    this.emit("gridOverCommitted", {
+      siteId: this.siteId,
+      effectiveGridLimitKw,
+      requestedKw: parseFloat(total.toFixed(2)),
+      sessionCount: profiles.length,
+      feasible,
+      starvedSessions,
+    });
+    this.log(
+      `[${this.siteId}] Grid over-committed: requested ${total.toFixed(2)}kW > ` +
+        `${effectiveGridLimitKw.toFixed(2)}kW (feasible: ${feasible}, ` +
+        `starved: ${starvedSessions.length}). Scaling down.`,
+    );
+
+    return result;
+  }
+
+  /**
+   * Recompute a profile's W and amps from an adjusted kW value, rounding DOWN
+   * to 2 decimals so the grid invariant is never broken by rounding.
+   */
+  private rebuildProfileKw(
+    profile: SessionProfile,
+    newKw: number,
+  ): SessionProfile {
+    const floor2 = (n: number) => Math.floor(Math.max(0, n) * 100) / 100;
+    const kw = floor2(newKw);
+    const watts = floor2(kw * 1000);
+    const ampsPerPhase = floor2(watts / (profile.voltageV * profile.phases));
+    return {
+      ...profile,
+      allocatedKw: kw,
+      allocatedW: watts,
+      allocatedAmpsPerPhase: ampsPerPhase,
+    };
+  }
+
   private resolveStrategy(
-    algorithm: Strategy,
+    algorithm: Strategy | StrategyFn,
     config?: Partial<SmartChargingEngineConfig>,
   ): StrategyFn {
+    // Custom user-supplied strategy function — use it as-is.
+    if (typeof algorithm === "function") {
+      return algorithm;
+    }
     switch (algorithm) {
       case "EQUAL_SHARE":
         return equalShareStrategy;
       case "PRIORITY":
         return priorityStrategy;
       case "TIME_OF_USE": {
-        const windows = config?.timeOfUseWindows;
+        // Prefer windows passed to this call, else fall back to the windows the
+        // engine was constructed with — so setAlgorithm("TIME_OF_USE") works.
+        const windows = config?.timeOfUseWindows ?? this.timeOfUseWindows;
         if (!windows || windows.length === 0) {
           throw new SmartChargingConfigError(
             'algorithm "TIME_OF_USE" requires at least one entry in timeOfUseWindows.',
           );
         }
-        return createTimeOfUseStrategy(windows);
+        this.validateTimeOfUseWindows(windows);
+        // Retain for any later runtime swaps.
+        this.timeOfUseWindows = windows;
+        if (config?.timeOfUseTimezone !== undefined) {
+          this.timeOfUseTimezone = config.timeOfUseTimezone;
+        }
+        return createTimeOfUseStrategy(windows, this.timeOfUseTimezone);
       }
       default:
         throw new SmartChargingConfigError(
           `Unknown algorithm "${algorithm as string}". Valid: EQUAL_SHARE, PRIORITY, TIME_OF_USE`,
         );
+    }
+  }
+
+  /**
+   * Validate the numeric fields of a session before it enters the solver.
+   * Rejects negative / NaN / non-finite values that would otherwise produce
+   * negative or `NaN` power limits in the dispatched charging profile.
+   */
+  private validateSession(session: ChargingSession): void {
+    // Upper caps: a positive finite number, or Infinity ("uncapped").
+    const checkCap = (name: string, v: number | undefined): void => {
+      if (v === undefined || v === Infinity) return;
+      if (!Number.isFinite(v) || v <= 0) {
+        throw new SmartChargingConfigError(
+          `${name} must be a positive number or Infinity, got ${v}`,
+        );
+      }
+    };
+    checkCap("maxHardwarePowerKw", session.maxHardwarePowerKw);
+    checkCap("maxEvAcceptancePowerKw", session.maxEvAcceptancePowerKw);
+
+    // Non-negative finite numbers.
+    const checkNonNeg = (name: string, v: number | undefined): void => {
+      if (v === undefined) return;
+      if (!Number.isFinite(v) || v < 0) {
+        throw new SmartChargingConfigError(
+          `${name} must be a non-negative finite number, got ${v}`,
+        );
+      }
+    };
+    checkNonNeg("minChargeRateKw", session.minChargeRateKw);
+    checkNonNeg("priority", session.priority);
+
+    if (
+      session.connectorId !== undefined &&
+      (!Number.isInteger(session.connectorId) || session.connectorId < 0)
+    ) {
+      throw new SmartChargingConfigError(
+        `connectorId must be a non-negative integer, got ${session.connectorId}`,
+      );
+    }
+    if (
+      session.phases !== undefined &&
+      session.phases !== 1 &&
+      session.phases !== 2 &&
+      session.phases !== 3
+    ) {
+      throw new SmartChargingConfigError(
+        `phases must be 1, 2, or 3, got ${session.phases}`,
+      );
+    }
+  }
+
+  /** Validate Time-of-Use windows: hours in 0–23, multiplier in 0–1. */
+  private validateTimeOfUseWindows(windows: TimeOfUseWindow[]): void {
+    for (const w of windows) {
+      const hoursOk = (h: number) => Number.isInteger(h) && h >= 0 && h <= 23;
+      if (!hoursOk(w.peakStartHour) || !hoursOk(w.peakEndHour)) {
+        throw new SmartChargingConfigError(
+          `Time-of-Use window hours must be integers between 0 and 23, got ` +
+            `start=${w.peakStartHour}, end=${w.peakEndHour}.`,
+        );
+      }
+      if (
+        !(w.peakPowerMultiplier >= 0 && w.peakPowerMultiplier <= 1) // also rejects NaN
+      ) {
+        throw new SmartChargingConfigError(
+          `Time-of-Use peakPowerMultiplier must be between 0 and 1, got ` +
+            `${w.peakPowerMultiplier}. Values > 1 would exceed the grid limit.`,
+        );
+      }
     }
   }
 

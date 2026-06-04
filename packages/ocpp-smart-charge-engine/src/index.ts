@@ -32,10 +32,14 @@ export type {
   // Session
   ChargingSession,
   ActiveSession,
+  SessionUpdate,
   // Dispatch
   ChargingProfileDispatcher,
   DispatchPayload,
   DispatchErrorEvent,
+  // Grid budget
+  GridOverCommitInfo,
+  StarvedSession,
   // Clear profile
   ClearProfileDispatcher,
   ClearDispatchPayload,
@@ -45,6 +49,7 @@ export type {
   TimeOfUseWindow,
   // Strategy internals (for custom strategies)
   StrategyFn,
+  StrategyContext,
 } from "./types.js";
 
 // OCPP version-specific ChargingProfile types & builders are in 'ocpp-smart-charge-engine/builders'

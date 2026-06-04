@@ -285,36 +285,53 @@ engine.addSession({
   clientId: "CP-001",
   minChargeRateKw: 1.4, // 6A × 230V = 1.38kW — IEC 61851 minimum
 });
-// Even under extreme grid pressure, this session receives at least 1.4kW.
-// The value is also written into chargingSchedule.minChargingRate in the profile.
+// This session receives at least 1.4kW — headroom is taken from other sessions
+// to honor it. The value is also written into chargingSchedule.minChargingRate.
 ```
+
+> If the floors of **all** sessions together exceed the grid, the minimums can't
+> all be met. Grid safety wins: allocations are scaled to fit and a
+> `gridOverCommitted` event fires with `feasible: false` and a `starvedSessions`
+> list (see [Grid safety](#grid-safety--over-subscription)).
 
 ---
 
 ## Strategies
 
+> **Headroom redistribution (water-filling).** All three built-in strategies fully
+> utilize the grid: when a session is capped (by hardware/EV limit or low SoC),
+> the power it cannot use is **redistributed** to the sessions that can still
+> accept more. The total never exceeds the grid limit, and no session exceeds its
+> caps.
+
 ### `EQUAL_SHARE` (default)
 
-Divides available grid power equally among all active sessions. Each session is additionally capped by `maxHardwarePowerKw` and `maxEvAcceptancePowerKw`.
+Divides available grid power equally among all active sessions, capped by
+`maxHardwarePowerKw` and `maxEvAcceptancePowerKw`. Surplus from a capped session
+flows to the rest.
 
 ```typescript
-// 3 cars, 100kW grid, 5% margin = 95kW effective
-// Each car gets: 95 / 3 = 31.67 kW
+// 3 cars, 100kW grid, 5% margin = 95kW effective → ~31.67 kW each.
+// If one car caps at 10kW, its unused share is split among the other two.
 ```
 
 ### `PRIORITY`
 
-Allocates power proportionally to each session's `priority` value (higher number = more power).
+Allocates power proportionally to each session's `priority` value (higher number =
+more power). Surplus from a capped session is redistributed to the others by
+priority weight. (Priorities that sum to 0 fall back to an equal split.)
 
 ```typescript
 engine.addSession({ transactionId: 1, clientId: "CP-001", priority: 8 }); // → 80kW
 engine.addSession({ transactionId: 2, clientId: "CP-002", priority: 2 }); // → 20kW
-// Total: 100kW
+// Total: 100kW. If CP-001 caps at 40kW, CP-002 receives the surplus → 60kW.
 ```
 
 ### `TIME_OF_USE`
 
-Reduces grid usage during configured peak pricing windows. Works best with `startAutoDispatch()`.
+Reduces grid usage during configured peak pricing windows. Works best with
+`startAutoDispatch()`. Pass `timeOfUseTimezone` (IANA) to evaluate windows in the
+site's local time rather than the server's.
 
 ```typescript
 const engine = new SmartChargingEngine({
@@ -322,11 +339,95 @@ const engine = new SmartChargingEngine({
   timeOfUseWindows: [
     { peakStartHour: 18, peakEndHour: 22, peakPowerMultiplier: 0.5 }, // 50% during 6–10pm
   ],
+  timeOfUseTimezone: "Europe/Berlin", // optional — defaults to server local time
   // ...
 });
 engine.startAutoDispatch(60_000); // recalculate every minute
-// At 7pm: effectiveGrid = 100 * 0.5 = 50kW, divided equally
-// At 2pm: effectiveGrid = 100kW, divided equally
+// At 7pm Berlin: effectiveGrid = 100 * 0.5 = 50kW
+// At 2pm Berlin: effectiveGrid = 100kW
+```
+
+> `peakPowerMultiplier` must be between 0 and 1; peak hours must be integers 0–23.
+> Invalid windows throw `SmartChargingConfigError` at construction.
+
+### Custom strategy
+
+Pass your own `StrategyFn` as the `algorithm` (or via `setAlgorithm()` at runtime).
+It receives the active sessions, the effective grid limit, and a context with the
+configured voltage. Use the `buildSessionProfile` helper to produce results.
+
+```typescript
+import { SmartChargingEngine } from "ocpp-smart-charge-engine";
+import { buildSessionProfile } from "ocpp-smart-charge-engine/strategies";
+import type { StrategyFn } from "ocpp-smart-charge-engine";
+
+// Give the longest-waiting session priority (FIFO).
+const fifo: StrategyFn = (sessions, grid, ctx) => {
+  const oldest = [...sessions].sort((a, b) => a.addedAt - b.addedAt)[0];
+  return sessions.map((s) =>
+    buildSessionProfile(s, s === oldest ? grid : 0, ctx?.voltageV),
+  );
+};
+
+const engine = new SmartChargingEngine({ siteId: "S", maxGridPowerKw: 100, algorithm: fifo, dispatcher });
+// engine.config.algorithm === "CUSTOM"
+```
+
+> The grid-budget guard still runs after any strategy (built-in or custom), so a
+> custom strategy can never push the total above the grid limit.
+
+---
+
+## Grid safety & over-subscription
+
+The engine guarantees a hard invariant: **the sum of allocated power never exceeds
+the effective grid limit**, and no session ever exceeds its hardware/EV caps.
+
+If the per-session `minChargeRateKw` floors add up to more than the grid can
+supply, the engine scales allocations down to fit and emits `gridOverCommitted`:
+
+```typescript
+engine.on("gridOverCommitted", (info) => {
+  console.warn(`Site over-subscribed: wanted ${info.requestedKw}kW, grid is ${info.effectiveGridLimitKw}kW`);
+  if (!info.feasible) {
+    // Even the minimums don't fit — these sessions were scaled below their floor:
+    for (const s of info.starvedSessions) {
+      console.warn(`  ${s.clientId} got ${s.allocatedKw}kW (wanted min ${s.minChargeRateKw}kW)`);
+    }
+  }
+});
+```
+
+---
+
+## Updating sessions in place
+
+When an EV reports a new acceptance limit (or you want to re-prioritize mid-charge),
+use `updateSession()` instead of `removeSession()` + `addSession()`. It preserves
+`addedAt`, keeps `transactionId`/`clientId` immutable, validates the change, and —
+unlike a remove — does **not** trigger `autoClearOnRemove`.
+
+```typescript
+engine.updateSession(txId, { maxEvAcceptancePowerKw: 7.4, priority: 5 });
+await engine.dispatch(); // re-balances with the new value
+```
+
+---
+
+## Persistence (snapshot & restore)
+
+Persist active sessions (e.g. to Redis/DB) and restore them after a process
+restart so allocations survive a redeploy.
+
+```typescript
+// Save — getSnapshot() is JSON-serializable and includes addedAt.
+await redis.set("sce:SITE-001", JSON.stringify(engine.getSnapshot()));
+
+// Restore — validates every entry up front (atomic); throws before applying if any is invalid.
+const saved = JSON.parse(await redis.get("sce:SITE-001"));
+engine.loadSnapshot(saved);            // replaces all sessions (default)
+engine.loadSnapshot(saved, { clear: false }); // merge instead of replace
+await engine.dispatch();
 ```
 
 ---
@@ -381,19 +482,23 @@ dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
 
 ### `new SmartChargingEngine(config)`
 
-| Option              | Type                        | Default       | Description                             |
-| ------------------- | --------------------------- | ------------- | --------------------------------------- |
-| `siteId`            | `string`                    | required      | Human-readable site identifier          |
-| `maxGridPowerKw`    | `number`                    | required      | Maximum site grid power in kW           |
-| `dispatcher`        | `ChargingProfileDispatcher` | required      | Your OCPP send function                 |
-| `clearDispatcher`   | `ClearProfileDispatcher`    | —             | Optional: sends `ClearChargingProfile`  |
-| `autoClearOnRemove` | `boolean`                   | `false`       | Auto-clear profile on `removeSession()` |
-| `algorithm`         | `Strategy`                  | `EQUAL_SHARE` | Allocation strategy                     |
-| `safetyMarginPct`   | `number`                    | `5`           | Power held in reserve (%)               |
-| `phases`            | `1 \| 3`                    | `3`           | AC phase count for the site             |
-| `voltageV`          | `number`                    | `230`         | Grid voltage for amps calculation       |
-| `timeOfUseWindows`  | `TimeOfUseWindow[]`         | `[]`          | Peak windows (TIME_OF_USE only)         |
-| `debug`             | `boolean`                   | `false`       | Enable verbose console logging          |
+| Option               | Type                        | Default       | Description                                      |
+| -------------------- | --------------------------- | ------------- | ------------------------------------------------ |
+| `siteId`             | `string`                    | required      | Human-readable site identifier                   |
+| `maxGridPowerKw`     | `number`                    | required      | Maximum site grid power in kW                    |
+| `dispatcher`         | `ChargingProfileDispatcher` | required      | Your OCPP send function                          |
+| `clearDispatcher`    | `ClearProfileDispatcher`    | —             | Optional: sends `ClearChargingProfile`           |
+| `autoClearOnRemove`  | `boolean`                   | `false`       | Auto-clear profile on `removeSession()`          |
+| `algorithm`          | `Strategy \| StrategyFn`    | `EQUAL_SHARE` | Built-in strategy name **or** a custom function  |
+| `safetyMarginPct`    | `number`                    | `5`           | Power held in reserve (%)                        |
+| `phases`             | `1 \| 2 \| 3`               | `3`           | AC phase count for the site (2 = split-phase)    |
+| `voltageV`           | `number`                    | `230`         | Grid voltage — used for the amps calculation     |
+| `timeOfUseWindows`   | `TimeOfUseWindow[]`         | `[]`          | Peak windows (TIME_OF_USE only)                  |
+| `timeOfUseTimezone`  | `string`                    | server tz     | IANA timezone for TOU windows (e.g. `Asia/Kolkata`) |
+| `debug`              | `boolean`                   | `false`       | Enable verbose console logging                   |
+
+> All numeric options are validated at construction; invalid values throw
+> `SmartChargingConfigError`.
 
 ### `addSession(session)` options
 
@@ -406,41 +511,52 @@ dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
 | `maxEvAcceptancePowerKw` | `number`         | `∞`     | EV acceptance limit (upper cap)                           |
 | `minChargeRateKw`        | `number`         | `0`     | Minimum power floor — prevents EV faults                  |
 | `priority`               | `number`         | `1`     | Session priority (PRIORITY strategy only)                 |
-| `phases`                 | `1 \| 3`         | site    | Phase count for this connector                            |
+| `phases`                 | `1 \| 2 \| 3`    | site    | Phase count for this connector (2 = split-phase)          |
 | `metadata`               | `object`         | —       | Arbitrary data (RFID, tariff ID, etc.) — stored, not used |
+
+> Numeric fields are validated: caps must be a positive number or `Infinity`;
+> `minChargeRateKw`/`priority` must be non-negative; invalid values throw
+> `SmartChargingConfigError`.
 
 ### Methods
 
-| Method                    | Description                                                                              |
-| ------------------------- | ---------------------------------------------------------------------------------------- |
-| `addSession(session)`     | Register a session. Throws `DuplicateSessionError` if already exists                     |
-| `removeSession(txId)`     | Remove a session. Throws `SessionNotFoundError` if not found                             |
-| `safeRemoveSession(txId)` | Remove without throwing — returns `undefined` if not found                               |
-| `optimize()`              | Calculate profiles **without** dispatching. Returns `SessionProfile[]`                   |
-| `dispatch()`              | Calculate profiles **and** call dispatcher for each. Returns `Promise<SessionProfile[]>` |
-| `clearDispatch(txId?)`    | Send `ClearChargingProfile` to one or all sessions. No-op if no `clearDispatcher`        |
-| `startAutoDispatch(ms)`   | Start periodic dispatch every `ms` milliseconds (min 1000ms)                             |
-| `stopAutoDispatch()`      | Stop the auto-dispatch interval                                                          |
-| `setGridLimit(kw)`        | Update grid limit at runtime                                                             |
-| `setAlgorithm(strategy)`  | Hot-swap algorithm at runtime                                                            |
-| `setSafetyMargin(pct)`    | Update safety margin at runtime                                                          |
-| `getSessions()`           | Read-only array of active sessions                                                       |
-| `isEmpty()`               | Returns `true` when no sessions are registered                                           |
+| Method                          | Description                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------------------------- |
+| `addSession(session)`           | Register a session. Throws `DuplicateSessionError` if already exists                     |
+| `updateSession(txId, patch)`    | Update a session in place (no clear/re-add side effects). Throws `SessionNotFoundError`  |
+| `removeSession(txId)`           | Remove a session. Throws `SessionNotFoundError` if not found                             |
+| `safeRemoveSession(txId)`       | Remove without throwing — returns `undefined` if not found                               |
+| `optimize()`                    | Calculate profiles **without** dispatching. Returns `SessionProfile[]`                   |
+| `dispatch()`                    | Calculate profiles **and** call dispatcher for each. Returns `Promise<SessionProfile[]>` |
+| `clearDispatch(txId?)`          | Send `ClearChargingProfile` to one or all sessions. No-op if no `clearDispatcher`        |
+| `startAutoDispatch(ms)`         | Start periodic dispatch every `ms` milliseconds (min 1000ms)                             |
+| `stopAutoDispatch()`            | Stop the auto-dispatch interval                                                          |
+| `setGridLimit(kw)`              | Update grid limit at runtime                                                             |
+| `setAlgorithm(strategy \| fn)`  | Hot-swap a built-in strategy **or** a custom `StrategyFn` at runtime                     |
+| `setSafetyMargin(pct)`          | Update safety margin at runtime                                                          |
+| `getSessions()`                 | Read-only array of active sessions (copies)                                              |
+| `getSession(txId)`              | Single session snapshot (copy), or `undefined`                                           |
+| `getSnapshot()`                 | JSON-serializable snapshot of all sessions for persistence                               |
+| `loadSnapshot(sessions, opts?)` | Restore sessions from a snapshot (validated, atomic). `{ clear }` replaces or merges     |
+| `isEmpty()`                     | Returns `true` when no sessions are registered                                           |
 
 ### Events
 
-| Event                 | Payload                            | Fired when                                 |
-| --------------------- | ---------------------------------- | ------------------------------------------ |
-| `sessionAdded`        | `ActiveSession`                    | A session is registered                    |
-| `sessionRemoved`      | `ActiveSession`                    | A session is removed                       |
-| `optimized`           | `SessionProfile[]`                 | After `optimize()` completes               |
-| `dispatched`          | `SessionProfile[]`                 | After all dispatcher calls settle          |
-| `dispatchError`       | `DispatchErrorEvent`               | A dispatcher call throws; engine continues |
-| `cleared`             | `ClearDispatchPayload`             | After a `clearDispatcher` call succeeds    |
-| `clearError`          | `ClearDispatchPayload & { error }` | A `clearDispatcher` call throws            |
-| `autoDispatchStarted` | `number` (intervalMs)              | After `startAutoDispatch()` is called      |
-| `autoDispatchStopped` | —                                  | After `stopAutoDispatch()` is called       |
-| `error`               | `Error`                            | A strategy function throws                 |
+| Event                 | Payload                            | Fired when                                       |
+| --------------------- | ---------------------------------- | ------------------------------------------------ |
+| `sessionAdded`        | `ActiveSession`                    | A session is registered                          |
+| `sessionUpdated`      | `ActiveSession`                    | A session is updated via `updateSession()`       |
+| `sessionRemoved`      | `ActiveSession`                    | A session is removed                             |
+| `snapshotLoaded`      | `ReadonlyArray<ActiveSession>`     | After `loadSnapshot()` restores sessions         |
+| `optimized`           | `SessionProfile[]`                 | After `optimize()` completes                     |
+| `dispatched`          | `SessionProfile[]`                 | After all dispatcher calls settle                |
+| `dispatchError`       | `DispatchErrorEvent`               | A dispatcher call throws; engine continues       |
+| `gridOverCommitted`   | `GridOverCommitInfo`               | Min-rate floors exceed the grid; allocations scaled (incl. `starvedSessions`) |
+| `cleared`             | `ClearDispatchPayload`             | After a `clearDispatcher` call succeeds          |
+| `clearError`          | `ClearDispatchPayload & { error }` | A `clearDispatcher` call throws                  |
+| `autoDispatchStarted` | `number` (intervalMs)              | After `startAutoDispatch()` is called            |
+| `autoDispatchStopped` | —                                  | After `stopAutoDispatch()` is called             |
+| `error`               | `Error`                            | A strategy function throws                        |
 
 ---
 

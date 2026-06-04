@@ -115,7 +115,8 @@ export function buildOcpp16Profile(
     sessionProfile.minChargeRateKw > 0
       ? rateUnit === "W"
         ? sessionProfile.minChargeRateKw * 1000
-        : (sessionProfile.minChargeRateKw * 1000) / ((options.numberPhases ?? 3) * 230)
+        : (sessionProfile.minChargeRateKw * 1000) /
+          ((options.numberPhases ?? 3) * (sessionProfile.voltageV || 230))
       : undefined;
 
   const periods: Ocpp16ChargingSchedulePeriod[] = options.periods
@@ -232,7 +233,8 @@ export function buildOcpp201Profile(
     sessionProfile.minChargeRateKw > 0
       ? rateUnit === "W"
         ? sessionProfile.minChargeRateKw * 1000
-        : (sessionProfile.minChargeRateKw * 1000) / ((options.numberPhases ?? 3) * 230)
+        : (sessionProfile.minChargeRateKw * 1000) /
+          ((options.numberPhases ?? 3) * (sessionProfile.voltageV || 230))
       : undefined;
 
   const periods: Ocpp201ChargingSchedulePeriod[] = options.periods
@@ -323,7 +325,8 @@ export function buildOcpp21Profile(
     sessionProfile.minChargeRateKw > 0
       ? rateUnit === "W"
         ? sessionProfile.minChargeRateKw * 1000
-        : (sessionProfile.minChargeRateKw * 1000) / ((options.numberPhases ?? 3) * 230)
+        : (sessionProfile.minChargeRateKw * 1000) /
+          ((options.numberPhases ?? 3) * (sessionProfile.voltageV || 230))
       : undefined;
 
   const period: Ocpp21ChargingSchedulePeriod = {
