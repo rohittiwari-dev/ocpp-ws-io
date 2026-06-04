@@ -1,6 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import { OCPPServer } from "../src/server";
-import { OCPPServerClient } from "../src/server-client";
 
 describe("OCPPServer Coverage", () => {
   let server: OCPPServer;
@@ -93,8 +92,10 @@ describe("OCPPServer Coverage", () => {
       identity: "client-1",
       call: vi.fn().mockRejectedValue(new Error("Call Failed")),
     } as any;
-    // @ts-ignore
+    // @ts-ignore — mirror real _handleUpgrade: both the set and the identity index
     server._clients.add(client);
+    // @ts-ignore
+    server._clientsByIdentity.set("client-1", client);
 
     await unicastHandler({
       source: "other-node",
@@ -128,5 +129,74 @@ describe("OCPPServer Coverage", () => {
     await expect(
       (server.sendToClient as any)("id", "1.6", "Method", {}),
     ).rejects.toThrow();
+  });
+
+  test("sendToClient forwards version to a local client's call", async () => {
+    const client = {
+      identity: "cp-1",
+      call: vi.fn().mockResolvedValue({ ok: true }),
+    } as any;
+    // @ts-ignore
+    server._clientsByIdentity.set("cp-1", client);
+
+    // Versioned overload: (identity, version, method, params, options)
+    await (server.sendToClient as any)(
+      "cp-1",
+      "ocpp1.6",
+      "GetConfiguration",
+      { key: ["X"] },
+      { timeoutMs: 5000 },
+    );
+
+    expect(client.call).toHaveBeenCalledWith(
+      "ocpp1.6",
+      "GetConfiguration",
+      { key: ["X"] },
+      { timeoutMs: 5000 },
+    );
+  });
+
+  test("sendToClient publishes version across the cluster (unicast)", async () => {
+    adapter.getPresence.mockResolvedValue("remote-node");
+
+    await (server.sendToClient as any)("cp-remote", "ocpp2.0.1", "Reset", {
+      type: "Soft",
+    });
+
+    expect(adapter.publish).toHaveBeenCalledWith(
+      "ocpp:node:remote-node",
+      expect.objectContaining({
+        target: "cp-remote",
+        version: "ocpp2.0.1",
+        method: "Reset",
+        params: { type: "Soft" },
+      }),
+    );
+  });
+
+  test("unicast handler forwards version to the target client's call", async () => {
+    const client = {
+      identity: "cp-2",
+      call: vi.fn().mockResolvedValue(undefined),
+    } as any;
+    // @ts-ignore
+    server._clientsByIdentity.set("cp-2", client);
+
+    unicastHandler({
+      source: "other-node",
+      target: "cp-2",
+      version: "ocpp2.1",
+      method: "Reset",
+      params: { type: "Hard" },
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(client.call).toHaveBeenCalledWith(
+      "ocpp2.1",
+      "Reset",
+      { type: "Hard" },
+      undefined,
+    );
   });
 });

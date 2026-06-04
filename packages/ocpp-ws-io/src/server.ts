@@ -124,11 +124,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
     // Initialize WebSocketServer immediately (ws best practice: noServer mode)
     // Apply maxPayloadBytes to reject oversized frames at the transport layer
-    this._wss = new WebSocketServer({
-      noServer: true,
-      maxPayload: this._options.maxPayloadBytes ?? 65536,
-      perMessageDeflate: this._buildCompressionConfig(),
-    });
+    this._wss = this._createWss();
 
     // Start Session Garbage Collector
     this._gcInterval = setInterval(() => {
@@ -1185,11 +1181,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
     // Ensure _wss is available (should always be after constructor init)
     if (!this._wss) {
-      // Reapply maxPayload on re-init
-      this._wss = new WebSocketServer({
-        noServer: true,
-        maxPayload: this._options.maxPayloadBytes ?? 65536,
-      });
+      // Reapply full transport config (maxPayload + compression) on re-init
+      this._wss = this._createWss();
     }
 
     // Complete WebSocket upgrade & create client
@@ -1507,10 +1500,12 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
     this._httpServerAbortControllers.clear();
 
-    // Close WebSocket server and re-init for potential restart
+    // Close WebSocket server and re-init for potential restart.
+    // Re-init with full transport config (maxPayload + compression) so a
+    // close()/listen() restart cycle preserves the configured behavior.
     if (this._wss) {
       this._wss.close();
-      this._wss = new WebSocketServer({ noServer: true });
+      this._wss = this._createWss();
     }
 
     // Close all HTTP servers
@@ -1614,6 +1609,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   async sendToClient(...args: any[]): Promise<any> {
     let identity: string;
+    let version: string | undefined;
     let method: string;
     let params: any;
     let options: CallOptions | undefined;
@@ -1627,7 +1623,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     ) {
       // (identity, version, method, params, options)
       identity = args[0];
-      // version = args[1]; // Not used for routing yet, but could be validation
+      version = args[1];
       method = args[2];
       params = args[3];
       options = args[4];
@@ -1639,22 +1635,31 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       options = args[3];
     }
 
-    // 1. Check local
-    for (const client of this._clients) {
-      if (client.identity === identity) {
-        // Found locally
-        return await client.call(method as any, params as any, options);
-      }
+    // 1. Check local (O(1) identity lookup)
+    const localClient = this._clientsByIdentity.get(identity);
+    if (localClient) {
+      // Forward the version when provided so the call resolves against the
+      // version-specific overload (and version-aware strict validation).
+      return version
+        ? await localClient.call(
+            version as any,
+            method as any,
+            params as any,
+            options,
+          )
+        : await localClient.call(method as any, params as any, options);
     }
 
     // 2. Check Registry & Unicast
     if (this._adapter?.getPresence) {
       const nodeId = await this._adapter.getPresence(identity);
       if (nodeId) {
-        // Found remote node
+        // Found remote node — carry `version` across the cluster so the
+        // receiving node can resolve the same version-specific overload.
         await this._adapter.publish(`ocpp:node:${nodeId}`, {
           source: this._nodeId,
           target: identity,
+          version,
           method,
           params,
           options,
@@ -1839,28 +1844,35 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       const payload = msg as {
         source: string;
         target: string;
+        version?: string;
         method: string;
         params: unknown;
         options?: CallOptions;
       };
 
-      // Unicast is meant for ME, but specifically for a TARGET client
-      // I should find that client and send.
-      // Unlike broadcast, I don't need to iterate all.
-      for (const client of this._clients) {
-        if (client.identity === payload.target) {
-          client
-            .call(payload.method, payload.params as any, payload.options)
-            .catch((err) => {
-              if ((err as Error).name !== "TimeoutError") {
-                this._logger?.error?.("Error delivering unicast to client", {
-                  identity: payload.target,
-                  error: err,
-                });
-              }
+      // Unicast is meant for ME, but specifically for a TARGET client.
+      // Resolve the target via O(1) identity lookup.
+      const client = this._clientsByIdentity.get(payload.target);
+      if (client) {
+        // Forward the version when present so the call resolves against the
+        // version-specific overload, matching local sendToClient behavior.
+        const delivery = payload.version
+          ? client.call(
+              payload.version as any,
+              payload.method as any,
+              payload.params as any,
+              payload.options,
+            )
+          : client.call(payload.method, payload.params as any, payload.options);
+        delivery.catch((err) => {
+          if ((err as Error).name !== "TimeoutError") {
+            this._logger?.error?.("Error delivering unicast to client", {
+              identity: payload.target,
+              error: err,
             });
-          return;
-        }
+          }
+        });
+        return;
       }
       // If we got here, we received a unicast for a client we don't have.
       // This implies the Registry is stale.
@@ -1983,6 +1995,22 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
 
     await Promise.all(localPromises);
+  }
+
+  // ─── Internal: WebSocketServer Factory ──────────────────────────
+
+  /**
+   * Builds a `noServer` WebSocketServer with the configured transport-layer
+   * settings (max payload + per-message compression). Centralized so every
+   * (re)creation site — constructor, upgrade re-init, and close/restart —
+   * stays consistent.
+   */
+  private _createWss(): WebSocketServer {
+    return new WebSocketServer({
+      noServer: true,
+      maxPayload: this._options.maxPayloadBytes ?? 65536,
+      perMessageDeflate: this._buildCompressionConfig(),
+    });
   }
 
   // ─── Internal: Compression Config ───────────────────────────────

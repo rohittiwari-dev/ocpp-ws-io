@@ -1,5 +1,33 @@
 # ocpp-ws-io
 
+## v2.2.3 - Transport Hardening
+
+A focused reliability release that closes gaps in cross-cluster routing, the
+restart lifecycle, and best-effort call logging. Fully backward compatible.
+
+### Improvements
+
+- **Version-Aware Unicast Routing**: `sendToClient(identity, version, method, params)`
+  now carries the OCPP `version` end-to-end. Locally it dispatches through the
+  version-specific `client.call()` overload (enabling version-aware strict
+  validation); across a cluster the `version` is included in the unicast payload so
+  the receiving node resolves the same overload. Previously the `version` argument
+  was parsed and silently discarded, and remote nodes received no version at all.
+- **O(1) Targeted Delivery**: `sendToClient` and the internal unicast handler now
+  resolve the target via the `identity` index instead of scanning every connected
+  client, removing a linear lookup on the hot path for large fleets.
+- **Restart-Safe Transport Config**: Centralized `WebSocketServer` creation so the
+  configured `maxPayloadBytes` and `perMessageDeflate` compression settings are
+  reapplied consistently across the constructor, upgrade re-init, and
+  `close()` → `listen()` restart cycles. Previously a restart could silently drop
+  compression and the max-payload limit.
+
+### Fixes
+
+- **Accurate `safeCall` Error Logs**: The method name reported when a `safeCall`
+  fails is now resolved using the same overload parsing as `call()`, instead of a
+  string heuristic that could misreport custom method names.
+
 ## v2.2.2 - The "Universal Framework" Release
 
 This massive release transforms `ocpp-ws-io` from a standalone WebSocket engine into a universal, multi-framework toolkit. We have introduced native integrations for **Fastify**, **Hono**, **NestJS**, and fundamentally unlocked **Bun** and **Deno** support.
@@ -7,16 +35,16 @@ This massive release transforms `ocpp-ws-io` from a standalone WebSocket engine 
 ### Major Features & Integrations
 
 - **Unified Context Architecture (`BaseOcppContext`)**: Completely abstracted the core context logic, allowing any Node.js framework to inject a standard, strongly-typed `ocpp` object directly into its request lifecycle.
-- **First-Class Fastify Integration (`ocpp-ws-io/fastify`)**: 
+- **First-Class Fastify Integration (`ocpp-ws-io/fastify`)**:
   - Shipped a native Fastify plugin that seamlessly handles HTTP upgrades.
   - Hardened with strict memory-leak prevention (automatically deregisters `upgrade` hooks on server close).
   - TypeScript module augmentation injects `req.ocpp` safely across all Fastify routes.
-- **First-Class Hono Integration (`ocpp-ws-io/hono`)**: 
+- **First-Class Hono Integration (`ocpp-ws-io/hono`)**:
   - Shipped native middleware (`ocppMiddleware`) compatible with Hono's `ContextVariableMap`.
   - Added `@hono/node-server` adapters to elegantly handle raw Node server upgrades without dropping performance.
-- **Bun & Deno Native Support**: 
+- **Bun & Deno Native Support**:
   - By hooking into standard Node.js networking (`ws` and `node:http`), `ocpp-ws-io` now inherently supports Bun and Deno environments perfectly via their compatibility layers. Zero configuration required.
-- **Native NestJS Support (`ocpp-ws-io/nestjs`)**: 
+- **Native NestJS Support (`ocpp-ws-io/nestjs`)**:
   - **First-Class Decorators**: Introduced `@OcppGateway()`, `@OcppMessageEvent()`, and `@OcppAuth()` for seamless class-based WebSocket routing.
   - **Parameter Injectors**: Map incoming OCPP properties directly to method parameters via `@Identity()`, `@Params()`, `@Session()`, and `@Context()`.
   - **Dynamic Module Initialization**: Provided `OcppModule.forRoot()` and `OcppModule.forRootAsync()` to natively register the adapter alongside global configurations.
@@ -80,8 +108,8 @@ This massive release transforms `ocpp-ws-io` from a standalone WebSocket engine 
 
 ```typescript
 client.on("call", (msg) => {
- const [, id, method] = msg;
- console.log(`Call: ${method}`);
+  const [, id, method] = msg;
+  console.log(`Call: ${method}`);
 });
 ```
 
@@ -89,7 +117,7 @@ client.on("call", (msg) => {
 
 ```typescript
 client.on("message", ({ message, direction, ctx }) => {
- console.log(`${direction} ${ctx.method} [latency: ${ctx.latencyMs}ms]`);
+  console.log(`${direction} ${ctx.method} [latency: ${ctx.latencyMs}ms]`);
 });
 ```
 
@@ -112,24 +140,23 @@ client.on("message", ({ message, direction, ctx }) => {
 
 - Bump `voltlog-io` to v1.0.6
 
-    v1.0.5 and earlier shipped `dist/chunk-DAFMRCAN.mjs` which unconditionally
-    executed `import { fileURLToPath } from "url"` (a Node.js built-in) as part of
-    tsup's ESM shim, crashing every browser bundler (Vite, Next.js/webpack, esbuild)
-    with `fileURLToPath is not a function`.
+  v1.0.5 and earlier shipped `dist/chunk-DAFMRCAN.mjs` which unconditionally
+  executed `import { fileURLToPath } from "url"` (a Node.js built-in) as part of
+  tsup's ESM shim, crashing every browser bundler (Vite, Next.js/webpack, esbuild)
+  with `fileURLToPath is not a function`.
 
-    v1.0.6 removes the shared chunk entirely and ships a clean browser-safe client
-    bundle — no Node.js shim, no `path`/`url` imports.
+  v1.0.6 removes the shared chunk entirely and ships a clean browser-safe client
+  bundle — no Node.js shim, no `path`/`url` imports.
 
-    This unblocks `voltlog-io/client` usage in `ocpp-ws-io/browser` (`browser/init-logger.ts`)
-    which was added in the previous patch to replace the root `init-logger.ts` that
-    imported from the Node.js-only full `voltlog-io` entry point.
+  This unblocks `voltlog-io/client` usage in `ocpp-ws-io/browser` (`browser/init-logger.ts`)
+  which was added in the previous patch to replace the root `init-logger.ts` that
+  imported from the Node.js-only full `voltlog-io` entry point.
 
 ## 2.1.12
 
 ### Patch Changes
 
 - Fix browser package pulling in Node.js-only modules
-
   - `browser/util.ts`: inline `NOOP_LOGGER` definition instead of re-exporting from `../util.js`, which transitively imported `node:crypto` and would break any strict browser bundler (Vite, webpack, esbuild)
   - `browser/init-logger.ts`: new browser-safe logger initialiser that imports from `voltlog-io/client` (the browser-only bundle) instead of the full `voltlog-io` package which includes Node.js transports
   - `browser/client.ts`: update `initLogger` import to `./init-logger.js` (new browser-local file)
@@ -156,7 +183,7 @@ client.on("message", ({ message, direction, ctx }) => {
 
 - fix: resolve CodeQL security vulnerabilities including dynamic method call invocation issues
 
-    fix: update CI/CD pipeline with Netlify build hooks for reliable monorepo deployments
+  fix: update CI/CD pipeline with Netlify build hooks for reliable monorepo deployments
 
 ## 2.1.8
 
@@ -270,7 +297,6 @@ This patch release encapsulates several major registry layout optimizations and 
 ### Minor Changes
 
 - a2c0f3f: ### ✨ Features
-
   - **OCPPRouter Engine**: Introduced an Express-style `OCPPRouter` API to support modular connection routing based on URL patterns (`server.route()`, `server.use()`, `server.auth()`).
   - **Browser Middleware Parity**: Brought the internal `MiddlewareStack` outwards to the `BrowserOCPPClient`, giving `client.use()` full interceptor-like support natively in the browser.
   - **TypeScript Middleware Helpers**: Shipped typed utility functions `defineRpcMiddleware` for strict browser/node interceptors, `defineMiddleware` for node connections, and `defineAuth` / `combineAuth` for highly composable authentication logic.
@@ -286,7 +312,6 @@ This patch release encapsulates several major registry layout optimizations and 
 - # Reliability, Middleware, and Type Safety
 
   ## 🚀 Features
-
   - **Redis Streams for Unicast**: Replaced Pub/Sub for node-to-node communication. This ensures **zero message loss** during temporary node restarts or network instability.
   - **Middleware System**: Added `client.use()` and server-side middleware for intercepting and modifying OCPP messages.
   - **Enhanced Logging**:

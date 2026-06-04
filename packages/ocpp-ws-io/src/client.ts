@@ -788,10 +788,16 @@ export class OCPPClient<
       return await this.call(...args);
     } catch (error) {
       if ((error as Error).name !== "TimeoutError") {
+        // Resolve the method name the same way call() parses its overloads:
+        // (version, method, params, options?) vs (method, params?, options?).
+        const method =
+          args.length >= 3 &&
+          typeof args[0] === "string" &&
+          typeof args[1] === "string"
+            ? args[1]
+            : args[0];
         const payload = {
-          method: args.find(
-            (a) => typeof a === "string" && !a.startsWith("ocpp"),
-          ), // heuristic
+          method,
           error,
         };
         if (this._logger?.warn) {
