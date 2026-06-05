@@ -19,6 +19,7 @@ import type {
   OCPPResponseType,
   OCPPServerStats,
 } from "../../types.js";
+import { matchesPrefix } from "../base/utils.js";
 import { OCPP_SERVER_INSTANCE, OCPP_SERVER_OPTIONS } from "./constants.js";
 import type { OcppModuleOptions } from "./interfaces.js";
 
@@ -172,7 +173,9 @@ export class OcppService implements OnModuleInit, OnModuleDestroy {
 
     const prefixes = this.normalizePrefixes(this.options.upgradePathPrefix);
     if (prefixes.length > 0) {
-      return prefixes.some((prefix) => pathname.startsWith(prefix));
+      // Boundary-safe prefix match (shared with the other framework adapters)
+      // so "/ocpp" does NOT match a sibling path like "/ocpp-admin".
+      return prefixes.some((prefix) => matchesPrefix(prefix, pathname));
     }
 
     if (this.acceptAllUpgrades) return true;

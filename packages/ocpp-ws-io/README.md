@@ -47,7 +47,7 @@ import {
 } from "ocpp-ws-io/plugins";
 
 server.plugin(
-  piiRedactorPlugin(),            // L4: transform payloads
+  piiRedactorPlugin({ sensitiveKeys: ["password", "authorizationKey"] }), // L4: transform payloads
   messageDedupPlugin({ redis }),  // L3: drop duplicates
   circuitBreakerPlugin(),         // L2: protect against flapping stations
   metricsPlugin(),                // L1: observe

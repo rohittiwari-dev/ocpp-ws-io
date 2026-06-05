@@ -204,15 +204,22 @@ describe("replayBufferPlugin", () => {
 
 describe("piiRedactorPlugin", () => {
   it("should register with correct name", () => {
-    const plugin = piiRedactorPlugin();
+    const plugin = piiRedactorPlugin({ sensitiveKeys: ["password"] });
     expect(plugin.name).toBe("pii-redactor");
   });
 
   it("should install middleware on connection", () => {
     const useSpy = vi.fn();
-    const plugin = piiRedactorPlugin();
+    const plugin = piiRedactorPlugin({ sensitiveKeys: ["password"] });
     plugin.onConnection!({ use: useSpy } as any);
     expect(useSpy).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it("requires a non-empty sensitiveKeys array (no defaults)", () => {
+    expect(() => (piiRedactorPlugin as any)()).toThrow(/sensitiveKeys/);
+    expect(() => piiRedactorPlugin({ sensitiveKeys: [] })).toThrow(
+      /sensitiveKeys/,
+    );
   });
 });
 
@@ -468,6 +475,34 @@ describe("rateLimitNotifierPlugin", () => {
         eventType: "CONNECTION_RATE_LIMIT",
       }),
     );
+  });
+
+  it("bounds tracked-key state via LRU (maxTrackedKeys)", () => {
+    const sendSpy = vi.fn();
+    const plugin = rateLimitNotifierPlugin({
+      sink: { send: sendSpy },
+      threshold: 1,
+      cooldownMs: 60_000, // long cooldown
+      maxTrackedKeys: 2,
+    });
+    const fire = (id: string) =>
+      plugin.onRateLimitExceeded!(
+        { identity: id, handshake: { remoteAddress: "1.1.1.1" } } as any,
+        "raw",
+      );
+
+    fire("A"); // alert #1 — A's cooldown is now set
+    fire("A"); // within cooldown → suppressed
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+
+    // Two more distinct keys evict A from the 2-entry LRU maps.
+    fire("B"); // alert #2
+    fire("C"); // alert #3 → A's cooldown state is now evicted
+
+    // Because A's state was evicted (not retained forever), A alerts AGAIN
+    // despite the long cooldown — proving the maps are LRU-bounded.
+    fire("A");
+    expect(sendSpy).toHaveBeenCalledTimes(4);
   });
 
   it("should clean up on close", () => {
@@ -875,7 +910,7 @@ describe("Plugin Integration — all new plugins register", () => {
     const result = server.plugin(
       messageDedupPlugin({ redis: mockRedis }),
       replayBufferPlugin({ redis: mockRedis }),
-      piiRedactorPlugin(),
+      piiRedactorPlugin({ sensitiveKeys: ["password"] }),
       kafkaPlugin({ producer: mockProducer }),
       circuitBreakerPlugin(),
       rateLimitNotifierPlugin({ sink: { send: vi.fn() } }),

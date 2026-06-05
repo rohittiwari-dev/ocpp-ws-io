@@ -1,9 +1,17 @@
+import { LRUMap } from "../lru-map.js";
 import type { OCPPPlugin } from "../types.js";
 
 /**
  * Options for the circuit-breaker plugin.
  */
 export interface CircuitBreakerOptions {
+  /**
+   * Maximum number of distinct client identities to track circuit state for.
+   * Bounds memory under identity churn / random-identity floods (LRU eviction).
+   * @default 10000
+   */
+  maxTrackedClients?: number;
+
   /**
    * Number of consecutive failures before the circuit opens.
    * @default 5
@@ -85,10 +93,12 @@ export function circuitBreakerPlugin(
   const failureThreshold = options?.failureThreshold ?? 5;
   const resetTimeoutMs = options?.resetTimeoutMs ?? 30_000;
   const maxConcurrent = options?.maxConcurrent ?? 20;
+  const maxTrackedClients = options?.maxTrackedClients ?? 10_000;
   const log = options?.logger;
   const onStateChange = options?.onStateChange;
 
-  const circuits = new Map<string, CircuitInfo>();
+  // LRU-bounded so a flood of unique identities can't grow this unboundedly.
+  const circuits = new LRUMap<string, CircuitInfo>(maxTrackedClients);
 
   function getCircuit(identity: string): CircuitInfo {
     let circuit = circuits.get(identity);
@@ -156,7 +166,7 @@ export function circuitBreakerPlugin(
           const result = await next();
 
           // Success — reset failures
-          circuit.concurrentCalls--;
+          circuit.concurrentCalls = Math.max(0, circuit.concurrentCalls - 1);
           if (circuit.state === "HALF_OPEN") {
             transition(client.identity, "CLOSED");
             circuit.failures = 0;
@@ -167,7 +177,7 @@ export function circuitBreakerPlugin(
 
           return result;
         } catch (err) {
-          circuit.concurrentCalls--;
+          circuit.concurrentCalls = Math.max(0, circuit.concurrentCalls - 1);
           circuit.failures++;
           circuit.lastFailure = Date.now();
 

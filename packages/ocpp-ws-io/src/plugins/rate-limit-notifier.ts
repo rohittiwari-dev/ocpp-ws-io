@@ -1,3 +1,4 @@
+import { LRUMap } from "../lru-map.js";
 import type { OCPPPlugin, SecurityEvent } from "../types.js";
 
 /**
@@ -64,6 +65,13 @@ export interface RateLimitNotifierOptions {
   windowMs?: number;
 
   /**
+   * Maximum number of distinct identities/IPs to track alert state for.
+   * Bounds memory under identity/IP churn (LRU eviction of the oldest keys).
+   * @default 10000
+   */
+  maxTrackedKeys?: number;
+
+  /**
    * Custom HTTP headers for webhook sink.
    */
   headers?: Record<string, string>;
@@ -99,12 +107,13 @@ export function rateLimitNotifierPlugin(
   const cooldownMs = options.cooldownMs ?? 60_000;
   const threshold = options.threshold ?? 1;
   const windowMs = options.windowMs ?? 300_000;
+  const maxTrackedKeys = options.maxTrackedKeys ?? 10_000;
   const log = options.logger;
 
-  // Per-identity sliding window of event timestamps
-  const eventWindows = new Map<string, number[]>();
-  // Per-identity cooldown tracker
-  const lastAlerted = new Map<string, number>();
+  // Per-identity sliding window of event timestamps (LRU-bounded against churn).
+  const eventWindows = new LRUMap<string, number[]>(maxTrackedKeys);
+  // Per-identity cooldown tracker (LRU-bounded against churn).
+  const lastAlerted = new LRUMap<string, number>(maxTrackedKeys);
 
   function getSink(): AlertSink {
     if (typeof options.sink === "string") {

@@ -121,7 +121,7 @@ export class OcppExplorer implements OnModuleInit {
             Reflect.hasMetadata(OCPP_CONNECTION_MIDDLEWARE_METADATA, method)
           ) {
             router.use((ctx: any) =>
-              this.executeWithParams(instance, method, ctx),
+              this.executeWithParams(instance, method, key, ctx),
             );
             this.logger.log(
               `Mapped Connection Middleware: ${metatype.name}.${key}`,
@@ -131,7 +131,7 @@ export class OcppExplorer implements OnModuleInit {
           // 2. Auth Handler
           if (Reflect.hasMetadata(OCPP_AUTH_METADATA, method)) {
             router.auth((ctx: any) =>
-              this.executeWithParams(instance, method, ctx),
+              this.executeWithParams(instance, method, key, ctx),
             );
             this.logger.log(`Mapped Auth Handler: ${metatype.name}.${key}`);
           }
@@ -144,7 +144,7 @@ export class OcppExplorer implements OnModuleInit {
           if (messageEvent) {
             const { action, protocol } = messageEvent;
             const handler = (ctx: any) =>
-              this.executeWithParams(instance, method, ctx);
+              this.executeWithParams(instance, method, key, ctx);
 
             if (protocol) {
               router.handle(protocol, action, handler);
@@ -162,7 +162,7 @@ export class OcppExplorer implements OnModuleInit {
           // 4. Wildcard Handlers
           if (Reflect.hasMetadata(OCPP_WILDCARD_EVENT_METADATA, method)) {
             router.handle((methodName: string, ctx: any) =>
-              this.executeWithParams(instance, method, {
+              this.executeWithParams(instance, method, key, {
                 ...ctx,
                 method: ctx?.method ?? methodName,
               }),
@@ -177,14 +177,13 @@ export class OcppExplorer implements OnModuleInit {
   private async executeWithParams(
     instance: any,
     method: (...args: any[]) => any,
+    key: string,
     ctx: any,
   ) {
+    // Look up param metadata by the property key the decorator stored it under.
+    // (Using `method.name` would break for bound/renamed methods.)
     const paramsMetadata =
-      Reflect.getMetadata(
-        PARAM_ARGS_METADATA,
-        instance.constructor,
-        method.name,
-      ) || {};
+      Reflect.getMetadata(PARAM_ARGS_METADATA, instance.constructor, key) || {};
 
     // Determine the max parameter index to initialize the array length
     const maxIndex = Math.max(-1, ...Object.keys(paramsMetadata).map(Number));

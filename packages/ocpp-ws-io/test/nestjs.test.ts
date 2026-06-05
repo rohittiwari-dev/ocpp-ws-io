@@ -262,4 +262,23 @@ describe("NestJS OCPP Integration", () => {
     await service.onModuleDestroy();
     await new Promise<void>((resolve) => nestHttpServer.close(() => resolve()));
   });
+
+  it("uses boundary-safe prefix matching (no sibling-path hijack)", () => {
+    const server = new OCPPServer({ logging: false });
+    const service = new OcppService(server, {
+      upgradePathPrefix: "/ocpp",
+      autoAttach: false,
+    });
+    const should = (url: string): boolean =>
+      (service as any).shouldHandleUpgrade({
+        headers: { upgrade: "websocket", host: "localhost" },
+        url,
+      });
+
+    expect(should("/ocpp/CP-1")).toBe(true);
+    expect(should("/ocpp")).toBe(true);
+    // The fix: a sibling path that merely shares the prefix is NOT hijacked.
+    expect(should("/ocpp-admin/socket")).toBe(false);
+    expect(should("/other/ws")).toBe(false);
+  });
 });

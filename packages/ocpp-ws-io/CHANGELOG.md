@@ -1,5 +1,15 @@
 # ocpp-ws-io
 
+## v2.2.4 - Security & Reliability Hardening
+
+### Changes
+
+- **Strict Plugin Initialization**: Added runtime validation to prevent **zero-key PII redaction** (which caused silent failures) and **uninitialized Redis plugins**. The `initialize()` call now throws an informative error if `options.sensitiveKeys` is missing or empty, or if a Redis-backed plugin is initialized without a Redis client.
+- **Refined PII Redaction Logic**:
+  - **Default Value Removed**: `options.sensitiveKeys` now defaults to `undefined`, forcing the caller to explicitly list keys. This prevents accidental redaction of essential fields like `idToken` in `Authorize` messages.
+  - **Breaking Change Documentation**: Updated `src/plugins/pii-redactor.ts` to clearly state in the JSDoc that `sensitiveKeys` is a **required** property and provide explicit usage examples.
+- **Graceful Redis Plugin Handling**: Modified `OCPPPluginFactory.initialize` to check for the presence of a `redisClient` when creating Redis-backed plugins. If a plugin requires a Redis client and none is provided, it will now log a warning and skip initialization instead of throwing a hard error, ensuring the rest of the plugin chain remains functional.
+
 ## v2.2.3 - Transport Hardening
 
 A focused reliability release that closes gaps in cross-cluster routing, the

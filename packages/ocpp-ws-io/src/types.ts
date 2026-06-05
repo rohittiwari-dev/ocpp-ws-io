@@ -520,9 +520,20 @@ export interface RouterConfig {
 }
 
 export interface CORSOptions {
-  /** Allowed IPv4, IPv6, or CIDR ranges (e.g. "10.0.0.0/8") */
+  /**
+   * Allowed exact IPv4/IPv6 addresses or CIDR ranges
+   * (e.g. "10.0.0.0/8", "2001:db8::/32").
+   */
   allowedIPs?: string[];
-  /** Allowed Origin header values (e.g. "https://dashboard.example.com") */
+  /**
+   * Allowed `Origin` header values (e.g. "https://dashboard.example.com").
+   *
+   * **Note:** this is a *browser-side* defense only. Requests with **no**
+   * `Origin` header pass through (physical charging stations don't send one),
+   * so a non-browser client can bypass this by simply omitting the header.
+   * Do not rely on `allowedOrigins` for authentication — use `auth()` / Basic
+   * Auth / mTLS for that.
+   */
   allowedOrigins?: string[];
   /** Allowed WebSocket protocol schemes */
   allowedSchemes?: ("ws" | "wss")[];

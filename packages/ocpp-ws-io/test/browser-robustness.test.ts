@@ -111,6 +111,42 @@ describe("Browser Phase 3 — Reconnect State", () => {
     expect(client.state).toBe(CONNECTING);
     await expect(client.connect()).rejects.toThrow("Cannot connect");
   });
+
+  it("resets the reconnect counter after a successful reconnect", async () => {
+    client = new BrowserOCPPClient({
+      identity: "BR_RC_RESET",
+      endpoint: `ws://localhost:${port}`,
+      protocols: ["ocpp1.6"],
+      reconnect: true,
+      maxReconnects: 10,
+      backoffMin: 50,
+      backoffMax: 100,
+    });
+    client.on("error", () => {});
+
+    await client.connect();
+    expect(client.state).toBe(OPEN);
+
+    // Simulate that prior reconnect attempts had accumulated.
+    (client as unknown as { _reconnectAttempt: number })._reconnectAttempt = 4;
+
+    // Listen for the reconnect "open" BEFORE dropping the socket.
+    const reconnected = new Promise<void>((resolve) =>
+      client.on("open", () => resolve()),
+    );
+
+    // Drop only this client's socket (server stays up) → triggers a reconnect.
+    const serverClient = [...server.clients][0];
+    await serverClient?.close({ force: true });
+
+    await reconnected;
+    expect(client.state).toBe(OPEN);
+    // The fix: a successful (re)connect resets the counter to 0 so maxReconnects
+    // and backoff are per-incident, not a cumulative lifetime budget.
+    expect(
+      (client as unknown as { _reconnectAttempt: number })._reconnectAttempt,
+    ).toBe(0);
+  });
 });
 
 describe("Browser Phase 3 — disconnect vs close Events", () => {

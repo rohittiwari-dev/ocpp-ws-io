@@ -213,6 +213,11 @@ export class BrowserOCPPClient<
           this._options.protocols = [ws.protocol];
         }
 
+        // Reset the reconnect counter on a successful (re)connection so that
+        // `maxReconnects` and backoff are per-disconnection-incident, not a
+        // cumulative lifetime budget (OCPP 2.0.1 §J.1 backoff resets on connect).
+        this._reconnectAttempt = 0;
+
         this._attachWebsocket(ws);
 
         // Flush outbound buffer (messages queued during CONNECTING)

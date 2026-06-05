@@ -43,7 +43,7 @@ Plugins execute in registration order, but they are **designed** to be layered b
 ```typescript
 server.plugin(
   // L4: Middleware — transform payloads before anything else sees them
-  piiRedactorPlugin({ fields: ["idToken", "email"] }),
+  piiRedactorPlugin({ sensitiveKeys: ["idToken", "email"] }),
   schemaVersioningPlugin({ sourceVersion: "ocpp1.6", targetVersion: "ocpp2.0.1", rules }),
 
   // L3: Interceptor — deduplicate or replay before handlers process
@@ -120,29 +120,47 @@ Every plugin implements the `OCPPPlugin` interface. The system provides 22 lifec
 
 ---
 
+## Plugin Initialization & Validation
+
+`ocpp-ws-io` enforces strict validation checks when plugins are initialized to prevent silent failures and ensure system resilience:
+
+### Strict Validation & Error Handling
+- **PII Redaction Guard**: The `piiRedactorPlugin` checks options at startup and will throw an informative error if `options.sensitiveKeys` is missing or empty. This prevents zero-key PII redaction which would otherwise fail silently without masking anything.
+- **Graceful Redis-backed Plugin Handling**: If a Redis-backed plugin (like `messageDedupPlugin` or `replayBufferPlugin`) is registered without passing a required `redis` client instance, the system automatically logs a warning and skips the initialization of that specific plugin rather than throwing a hard crash error. This guarantees that the rest of your server's plugin chain (e.g., logging, metrics) continues to function normally.
+
+---
+
 ## Level 4: Middleware Plugins
 
-### `piiRedactorPlugin(options?)`
+### `piiRedactorPlugin(options)`
 
 Recursively redacts Personally Identifiable Information from OCPP message payloads before they reach handlers or downstream plugins. Installs as client middleware.
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `fields` | `string[]` | `["idToken", "idTag", ...]` | Field names to redact. |
-| `mask` | `string` | `"[REDACTED]"` | Replacement string. |
-| `deep` | `boolean` | `true` | Recursively traverse nested objects. |
+| `sensitiveKeys` | `string[]` | **required** | Keys to redact (matched recursively, at any depth). No default — you must list them explicitly. |
+| `replacement` | `string` | `"***REDACTED***"` | Replacement value for redacted keys. |
+| `incoming` | `boolean` | `true` | Redact inbound message payloads. |
+| `outgoing` | `boolean` | `true` | Redact outbound message payloads. |
 
 ```typescript
 import { piiRedactorPlugin } from "ocpp-ws-io/plugins";
 
 server.plugin(piiRedactorPlugin({
-  fields: ["idToken", "idTag", "email", "phoneNumber", "groupIdToken"],
-  mask: "***",
+  sensitiveKeys: ["password", "authorizationKey", "email", "phoneNumber"],
+  replacement: "***",
 }));
 ```
 
 <Callout type="warn">
-  PII redaction is **irreversible** — the original values are not preserved. If you need to forward the original payload to a secure store, do so *before* this plugin runs (register your forwarding plugin at Level 1 first, or use a separate `onMessage` hook).
+  **`sensitiveKeys` is required — there is no default.** This is deliberate:
+  redaction **mutates the live payload, not just logs**, so a key redacted on an
+  **incoming** message is also hidden from your handlers. If you list `idTag` and
+  your handlers authorize by it (`Authorize`, `StartTransaction`), they'll receive
+  the placeholder instead of the real value — set `incoming: false` in that case,
+  or don't include `idTag`. Redaction is also **irreversible**; forward the
+  original to a secure store *before* this plugin runs (a Level 1 plugin or a
+  separate `onMessage` hook) if you need it.
 </Callout>
 
 ---

@@ -18,6 +18,8 @@ export interface WorkerPoolOptions {
 interface PendingTask {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
+  /** Index of the worker this task was dispatched to (for crash recovery). */
+  workerIndex: number;
 }
 
 export interface ParseResult {
@@ -32,6 +34,7 @@ export class WorkerPool {
   private _pending = new Map<number, PendingTask>();
   private _maxQueueSize: number;
   private _terminated = false;
+  private readonly _workerPath: string;
 
   constructor(options: WorkerPoolOptions = {}) {
     const poolSize = options.poolSize ?? Math.max(2, cpus().length - 2);
@@ -39,41 +42,74 @@ export class WorkerPool {
 
     // Resolve the worker entry point path
     // In production (dist/), the worker is compiled alongside the pool
-    const workerPath = resolve(__dirname, "parse-worker.js");
+    this._workerPath = resolve(__dirname, "parse-worker.js");
 
     for (let i = 0; i < poolSize; i++) {
-      const worker = new Worker(workerPath);
-      worker.on(
-        "message",
-        (response: {
-          id: number;
-          message?: unknown;
-          validationError?: unknown;
-          error?: string;
-        }) => {
-          const task = this._pending.get(response.id);
-          if (!task) return;
-          this._pending.delete(response.id);
+      this._workers.push(this._createWorker(i));
+    }
+  }
 
-          if (response.error) {
-            task.reject(new Error(response.error));
-          } else {
-            task.resolve({
-              message: response.message,
-              validationError: response.validationError,
-            } as ParseResult);
-          }
-        },
-      );
+  /**
+   * Create (or recreate) a worker bound to a fixed pool index, wiring up
+   * message/error/exit handlers. On a crash the worker is respawned at the
+   * same index and any tasks it owned are rejected so callers never hang.
+   */
+  private _createWorker(index: number): Worker {
+    const worker = new Worker(this._workerPath);
 
-      worker.on("error", (err) => {
-        // Worker crashed — reject all pending tasks assigned to this worker
-        // In practice we don't track which tasks went to which worker,
-        // so just log. The pool continues with remaining workers.
-        console.error(`[WorkerPool] Worker ${i} error:`, err.message);
-      });
+    worker.on(
+      "message",
+      (response: {
+        id: number;
+        message?: unknown;
+        validationError?: unknown;
+        error?: string;
+      }) => {
+        const task = this._pending.get(response.id);
+        if (!task) return;
+        this._pending.delete(response.id);
 
-      this._workers.push(worker);
+        if (response.error) {
+          task.reject(new Error(response.error));
+        } else {
+          task.resolve({
+            message: response.message,
+            validationError: response.validationError,
+          } as ParseResult);
+        }
+      },
+    );
+
+    worker.on("error", (err) => {
+      console.error(`[WorkerPool] Worker ${index} error:`, err.message);
+      // Fail-fast the tasks this worker owned instead of letting them hang.
+      this._failWorkerTasks(index, `Worker ${index} crashed: ${err.message}`);
+    });
+
+    worker.on("exit", (code) => {
+      if (this._terminated) return;
+      // Abnormal exit (a crash, not shutdown) — reject any stragglers and
+      // respawn a replacement at the same index so the pool self-heals.
+      this._failWorkerTasks(index, `Worker ${index} exited (code ${code})`);
+      if (this._workers[index] === worker) {
+        try {
+          this._workers[index] = this._createWorker(index);
+        } catch {
+          // If respawn fails, leave the slot; parse() guards against a dead worker.
+        }
+      }
+    });
+
+    return worker;
+  }
+
+  /** Reject every pending task that was dispatched to the given worker index. */
+  private _failWorkerTasks(index: number, reason: string): void {
+    for (const [id, task] of this._pending) {
+      if (task.workerIndex === index) {
+        task.reject(new Error(reason));
+        this._pending.delete(id);
+      }
     }
   }
 
@@ -109,16 +145,25 @@ export class WorkerPool {
 
     return new Promise<ParseResult>((resolve, reject) => {
       const id = this._taskId++;
+
+      // Round-robin worker selection
+      const workerIndex = this._nextWorker % this._workers.length;
+      const worker = this._workers[workerIndex];
+      this._nextWorker = (this._nextWorker + 1) % this._workers.length;
+
       this._pending.set(id, {
         resolve: resolve as (v: unknown) => void,
         reject,
+        workerIndex,
       });
 
-      // Round-robin worker selection
-      const worker = this._workers[this._nextWorker % this._workers.length];
-      this._nextWorker = (this._nextWorker + 1) % this._workers.length;
-
-      worker.postMessage({ id, buffer: data, schemaInfo });
+      try {
+        worker.postMessage({ id, buffer: data, schemaInfo });
+      } catch (err) {
+        // Dead/closed worker — fail fast rather than hang.
+        this._pending.delete(id);
+        reject(err);
+      }
     });
   }
 

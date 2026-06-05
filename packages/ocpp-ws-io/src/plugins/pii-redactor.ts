@@ -3,11 +3,19 @@ import type { MiddlewareContext, OCPPPlugin } from "../types.js";
 
 export interface PiiRedactorOptions {
   /**
-   * List of object keys that should be redacted.
-   * Matches ANY key in the payload recursively.
-   * @default ["idTag", "authorizationKey", "token", "password", "securityCode"]
+   * **Required.** List of object keys to redact (matched recursively, at any
+   * depth). There is no default — you must explicitly list every key to redact,
+   * so nothing is ever scrubbed by accident.
+   *
+   * ⚠️ **Redaction mutates the live payload, not just logs.** If you list a key
+   * here that your handlers need on an **incoming** message (e.g. `idTag` for
+   * `Authorize` / `StartTransaction`), the handler will receive the redacted
+   * placeholder and cannot use the real value. Either set `incoming: false`, or
+   * don't include such keys, when you need the value at the handler.
+   *
+   * @example ["password", "authorizationKey", "token"]
    */
-  sensitiveKeys?: string[];
+  sensitiveKeys: string[];
 
   /**
    * The replacement string to use for redacted values.
@@ -36,6 +44,12 @@ export interface PiiRedactorOptions {
  * incoming and outgoing payloads. Because it mutates the payload inline, the redacted
  * data will be what application handlers, downstream plugins, and observability tools see.
  *
+ * ⚠️ **Caveat:** because it mutates the live payload (not a logging copy), redacting a
+ * key on **incoming** messages also hides it from your handlers. The default
+ * `sensitiveKeys` includes `idTag` — if your handlers authorize by `idTag`
+ * (`Authorize`, `StartTransaction`), either pass `incoming: false` or drop `idTag`
+ * from `sensitiveKeys` so the handler still receives the real value.
+ *
  * @example
  * ```ts
  * server.plugin(piiRedactorPlugin({
@@ -44,18 +58,21 @@ export interface PiiRedactorOptions {
  * }));
  * ```
  */
-export function piiRedactorPlugin(
-  options: PiiRedactorOptions = {},
-): OCPPPlugin {
-  const keys = new Set(
-    options.sensitiveKeys ?? [
-      "idTag",
-      "authorizationKey",
-      "token",
-      "password",
-      "securityCode",
-    ],
-  );
+export function piiRedactorPlugin(options: PiiRedactorOptions): OCPPPlugin {
+  // Strict: callers must explicitly list the keys to redact. No defaults — this
+  // prevents accidentally redacting a field your handlers rely on (e.g. idTag).
+  if (
+    !options ||
+    !Array.isArray(options.sensitiveKeys) ||
+    options.sensitiveKeys.length === 0
+  ) {
+    throw new Error(
+      "piiRedactorPlugin requires a non-empty 'sensitiveKeys' array — explicitly " +
+        "list the keys to redact, e.g. piiRedactorPlugin({ sensitiveKeys: ['password', 'authorizationKey'] }).",
+    );
+  }
+
+  const keys = new Set(options.sensitiveKeys);
   const replacement = options.replacement ?? "***REDACTED***";
   const incoming = options.incoming ?? true;
   const outgoing = options.outgoing ?? true;

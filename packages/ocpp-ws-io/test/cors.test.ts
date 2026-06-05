@@ -34,9 +34,32 @@ describe("CORS Utilities - isIPAllowed", () => {
     expect(isIPAllowed("8.8.8.8", ["0.0.0.0/0"])).toBe(true);
   });
 
+  it("should match IPv6 CIDR blocks", () => {
+    // 2001:db8::/32
+    expect(isIPAllowed("2001:db8::1", ["2001:db8::/32"])).toBe(true);
+    expect(isIPAllowed("2001:db8:abcd:1234::5", ["2001:db8::/32"])).toBe(true);
+    expect(isIPAllowed("2001:db9::1", ["2001:db8::/32"])).toBe(false);
+
+    // tighter prefix
+    expect(isIPAllowed("fe80::1", ["fe80::/64"])).toBe(true);
+    expect(isIPAllowed("fe80::abcd:1", ["fe80::/64"])).toBe(true);
+    expect(isIPAllowed("fe81::1", ["fe80::/64"])).toBe(false);
+
+    // /128 exact, and /0 (all IPv6)
+    expect(isIPAllowed("2001:db8::dead", ["2001:db8::dead/128"])).toBe(true);
+    expect(isIPAllowed("2001:db8::beef", ["2001:db8::dead/128"])).toBe(false);
+    expect(isIPAllowed("2600:1234::1", ["::/0"])).toBe(true);
+  });
+
+  it("should not cross-match IPv4 and IPv6 CIDR families", () => {
+    expect(isIPAllowed("10.0.0.5", ["2001:db8::/32"])).toBe(false);
+    expect(isIPAllowed("2001:db8::1", ["10.0.0.0/8"])).toBe(false);
+  });
+
   it("should ignore invalid CIDR blocks safely", () => {
     expect(isIPAllowed("10.0.0.5", ["invalid/cidr"])).toBe(false);
     expect(isIPAllowed("10.0.0.5", ["10.0.0.0/"])).toBe(false);
+    expect(isIPAllowed("2001:db8::1", ["2001:db8::/200"])).toBe(false); // mask > 128
   });
 });
 
