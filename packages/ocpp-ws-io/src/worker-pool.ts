@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { cpus } from "node:os";
 import { resolve } from "node:path";
 import { Worker } from "node:worker_threads";
@@ -13,6 +14,8 @@ export interface WorkerPoolOptions {
   poolSize?: number;
   /** Max pending parse jobs before rejecting (default: 10000) */
   maxQueueSize?: number;
+  /** Override the worker entry path (used by tests; defaults to parse-worker.cjs next to this file) */
+  workerPath?: string;
 }
 
 interface PendingTask {
@@ -40,9 +43,16 @@ export class WorkerPool {
     const poolSize = options.poolSize ?? Math.max(2, cpus().length - 2);
     this._maxQueueSize = options.maxQueueSize ?? 10_000;
 
-    // Resolve the worker entry point path
-    // In production (dist/), the worker is compiled alongside the pool
-    this._workerPath = resolve(__dirname, "parse-worker.js");
+    // Resolve the worker entry point path.
+    // parse-worker.cjs ships as a plain CJS file (copied into dist/ by the
+    // build) so the same relative path works from src/ (tests) and dist/.
+    this._workerPath =
+      options.workerPath ?? resolve(__dirname, "parse-worker.cjs");
+    if (!existsSync(this._workerPath)) {
+      throw new Error(
+        `WorkerPool: worker entry not found at ${this._workerPath}`,
+      );
+    }
 
     for (let i = 0; i < poolSize; i++) {
       this._workers.push(this._createWorker(i));

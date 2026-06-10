@@ -172,6 +172,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         this._logger?.info?.("Worker thread pool initialized", {
           poolSize: this._workerPool.size,
         });
+      } else {
+        this._logger?.warn?.(
+          "workerThreads was requested but the worker pool could not be created — falling back to main-thread parsing",
+        );
       }
     }
   }

@@ -23,6 +23,10 @@ export default defineConfig([
     shims: true,
     minify: true,
     treeshake: true,
+    onSuccess: async () => {
+      const { copyFileSync } = await import("node:fs");
+      copyFileSync("src/parse-worker.cjs", "dist/parse-worker.cjs");
+    },
   },
   // Browser entry (no Node.js dependencies)
   {
