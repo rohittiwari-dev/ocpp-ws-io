@@ -1475,18 +1475,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     if (!options.force) {
       const drainTimeout = 5000;
       const drainPromises = Array.from(this._clients).map(async (client) => {
-        // @ts-expect-error — accessing private _ws field for drain check
-        const ws = client._ws;
-        if (ws && ws.bufferedAmount > 0) {
+        if (client.bufferedAmount > 0) {
           this._logger?.debug?.("Waiting for client buffer to drain", {
             identity: client.identity,
-            bufferedAmount: ws.bufferedAmount,
+            bufferedAmount: client.bufferedAmount,
           });
           await new Promise<void>((resolve) => {
             let elapsed = 0;
             const check = setInterval(() => {
               elapsed += 50;
-              if (!ws || ws.bufferedAmount === 0 || elapsed >= drainTimeout) {
+              if (client.bufferedAmount === 0 || elapsed >= drainTimeout) {
                 clearInterval(check);
                 resolve();
               }

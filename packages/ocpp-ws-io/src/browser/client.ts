@@ -52,7 +52,8 @@ interface PendingCall {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
   timeoutHandle: ReturnType<typeof setTimeout>;
-  abortHandler?: () => void;
+  /** Detaches the abort listener from options.signal (if one was attached). */
+  removeAbortListener?: () => void;
   method: string;
   sentAt: number;
 }
@@ -527,6 +528,7 @@ export class BrowserOCPPClient<
 
       callResult = await new Promise<unknown>((resolve, reject) => {
         const timeoutHandle = setTimeout(() => {
+          this._pendingCalls.get(msgId)?.removeAbortListener?.();
           this._pendingCalls.delete(msgId);
           this._logger.warn?.("Call timed out", {
             messageId: msgId,
@@ -563,7 +565,8 @@ export class BrowserOCPPClient<
           options.signal.addEventListener("abort", abortHandler, {
             once: true,
           });
-          pending.abortHandler = abortHandler;
+          pending.removeAbortListener = () =>
+            options.signal?.removeEventListener("abort", abortHandler);
         }
 
         this._pendingCalls.set(msgId, pending);
@@ -789,6 +792,7 @@ export class BrowserOCPPClient<
       this.emit("callResult", modifiedMessage);
 
       clearTimeout(pending.timeoutHandle);
+      pending.removeAbortListener?.();
       this._pendingCalls.delete(msgId);
       pending.resolve(ctxvals.payload);
     });
@@ -834,6 +838,7 @@ export class BrowserOCPPClient<
       this.emit("callError", modifiedMessage);
 
       clearTimeout(pending.timeoutHandle);
+      pending.removeAbortListener?.();
       this._pendingCalls.delete(msgId);
       pending.reject(resolvedRpcErr);
     });
@@ -878,6 +883,7 @@ export class BrowserOCPPClient<
   private _rejectPendingCalls(reason: string): void {
     for (const [, pending] of this._pendingCalls) {
       clearTimeout(pending.timeoutHandle);
+      pending.removeAbortListener?.();
       pending.reject(new Error(reason));
     }
     this._pendingCalls.clear();

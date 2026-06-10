@@ -56,7 +56,6 @@ export class OCPPServerClient extends OCPPClient {
 
     // Activate ping/pong dead-peer detection — without this, 4G NAT teardowns
     // leave zombie connections open indefinitely. Now detected within ~40s.
-    // @ts-expect-error — _startPing is private in base class OCPPClient
     this._startPing();
   }
 
@@ -149,7 +148,6 @@ export class OCPPServerClient extends OCPPClient {
 
   private _attachServerWebsocket(ws: WebSocket): void {
     ws.on("message", async (data: RawData) => {
-      // @ts-expect-error
       this._recordActivity();
 
       // Plugin interception: onBeforeReceive
@@ -220,7 +218,6 @@ export class OCPPServerClient extends OCPPClient {
     });
 
     ws.on("close", (code: number, reason: Buffer) =>
-      // @ts-expect-error
       this._onClose(code, reason),
     );
     ws.on("error", (err: Error) => {
@@ -236,19 +233,14 @@ export class OCPPServerClient extends OCPPClient {
       }
     });
     ws.on("ping", () => {
-      // @ts-expect-error
       this._recordActivity();
       this.emit("ping");
     });
     ws.on("pong", () => {
-      // @ts-expect-error
       if (this._pongTimer) {
-        // @ts-expect-error
         clearTimeout(this._pongTimer);
-        // @ts-expect-error
         this._pongTimer = null;
       }
-      // @ts-expect-error
       this._recordActivity();
       this.emit("pong");
     });

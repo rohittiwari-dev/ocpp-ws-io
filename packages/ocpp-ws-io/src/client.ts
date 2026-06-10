@@ -59,7 +59,8 @@ interface PendingCall {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
   timeoutHandle: ReturnType<typeof setTimeout>;
-  abortHandler?: () => void;
+  /** Detaches the abort listener from options.signal (if one was attached). */
+  removeAbortListener?: () => void;
   method: string;
   sentAt: number;
 }
@@ -111,7 +112,7 @@ export class OCPPClient<
   private _pendingResponses = new Set<string>();
   private _callQueue: Queue;
   private _pingTimer: ReturnType<typeof setTimeout> | null = null;
-  private _pongTimer: ReturnType<typeof setTimeout> | null = null;
+  protected _pongTimer: ReturnType<typeof setTimeout> | null = null;
   private _closePromise: Promise<{ code: number; reason: string }> | null =
     null;
   private _reconnectAttempt = 0;
@@ -249,6 +250,14 @@ export class OCPPClient<
    */
   public get endpoint(): string {
     return this._options.endpoint;
+  }
+
+  /**
+   * Bytes currently queued in the underlying WebSocket send buffer
+   * (0 when disconnected). Useful for backpressure monitoring and drain checks.
+   */
+  get bufferedAmount(): number {
+    return this._ws?.bufferedAmount ?? 0;
   }
 
   /**
@@ -716,7 +725,10 @@ export class OCPPClient<
         return new Promise((resolve, reject) => {
           const maxSize = this._options.offlineQueueMaxSize ?? 100;
           if (this._offlineQueue.length >= maxSize) {
-            this._offlineQueue.shift(); // Drop oldest
+            const dropped = this._offlineQueue.shift(); // Drop oldest
+            dropped?.reject(
+              new Error("Offline queue overflow — oldest queued call dropped"),
+            );
             this._logger?.warn?.(
               "Offline queue full — dropping oldest message",
               {
@@ -864,7 +876,10 @@ export class OCPPClient<
       const messageStr = JSON.stringify(message);
 
       callResult = await new Promise<unknown>((resolve, reject) => {
+        let removeAbortListener: (() => void) | undefined;
+
         const timeoutHandle = setTimeout(() => {
+          removeAbortListener?.();
           this._pendingCalls.delete(msgId);
           reject(
             new TimeoutError(
@@ -876,20 +891,22 @@ export class OCPPClient<
         const abortHandler = () => {
           clearTimeout(timeoutHandle);
           this._pendingCalls.delete(msgId);
-          reject(new Error("Aborted"));
+          reject(options.signal?.reason ?? new Error("Aborted"));
         };
 
         if (options.signal) {
-          options.signal.addEventListener("abort", abortHandler);
+          options.signal.addEventListener("abort", abortHandler, {
+            once: true,
+          });
+          removeAbortListener = () =>
+            options.signal?.removeEventListener("abort", abortHandler);
         }
 
         this._pendingCalls.set(msgId, {
           resolve,
           reject,
           timeoutHandle,
-          abortHandler: options.signal
-            ? () => options.signal?.removeEventListener("abort", abortHandler)
-            : undefined,
+          removeAbortListener,
           method: ctxvals.method,
           sentAt: Date.now(),
         });
@@ -899,6 +916,7 @@ export class OCPPClient<
             if (err) {
               // Failed to send
               clearTimeout(timeoutHandle);
+              removeAbortListener?.();
               this._pendingCalls.delete(msgId);
               reject(err);
             } else {
@@ -921,6 +939,7 @@ export class OCPPClient<
           // The promise remains pending until connected & flushed -> then response comes
         } else {
           clearTimeout(timeoutHandle);
+          removeAbortListener?.();
           this._pendingCalls.delete(msgId);
           reject(new Error(`WebSocket is not open (state: ${this._state})`));
         }
@@ -1328,9 +1347,7 @@ export class OCPPClient<
       this.emit("callResult", message);
 
       clearTimeout(pendingCtx.timeoutHandle);
-      if (pendingCtx.abortHandler) {
-        // Remove abort listener if bound
-      }
+      pendingCtx.removeAbortListener?.();
       this._pendingCalls.delete(ctxvals.messageId);
       pendingCtx.resolve(ctxvals.payload);
     });
@@ -1372,6 +1389,7 @@ export class OCPPClient<
       const [, , code, msg, details] = ctxvals.error;
 
       clearTimeout(pendingCtx.timeoutHandle);
+      pendingCtx.removeAbortListener?.();
       this._pendingCalls.delete(ctxvals.messageId);
 
       const err = createRPCError(code, msg, details);
@@ -1433,13 +1451,14 @@ export class OCPPClient<
   private _rejectPendingCalls(reason: string): void {
     for (const [, pending] of this._pendingCalls) {
       clearTimeout(pending.timeoutHandle);
+      pending.removeAbortListener?.();
       pending.reject(new Error(reason));
     }
     this._pendingCalls.clear();
     this._pendingResponses.clear();
   }
 
-  private _onClose(code: number, reason: Buffer): void {
+  protected _onClose(code: number, reason: Buffer): void {
     this._stopPing();
     const reasonStr = reason.toString();
     this._rejectPendingCalls(`Connection closed (${code}: ${reasonStr})`);
@@ -1661,7 +1680,7 @@ export class OCPPClient<
 
   // ─── Internal: Ping/Pong ─────────────────────────────────────
 
-  private _startPing(): void {
+  protected _startPing(): void {
     if (this._options.pingIntervalMs <= 0) return;
 
     const pongTimeoutMs =
@@ -1717,7 +1736,7 @@ export class OCPPClient<
     }
   }
 
-  private _recordActivity(): void {
+  protected _recordActivity(): void {
     this._lastActivity = Date.now();
   }
 
