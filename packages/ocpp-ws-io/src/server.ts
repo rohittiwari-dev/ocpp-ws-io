@@ -39,7 +39,12 @@ import {
   type TypedEventEmitter,
 } from "./types.js";
 import { TimeoutError } from "./errors.js";
-import { createId, createRPCError, NOOP_LOGGER } from "./util.js";
+import {
+  createId,
+  createRPCError,
+  NOOP_LOGGER,
+  safeDecodeURIComponent,
+} from "./util.js";
 import { createWorkerPool, type WorkerPool } from "./worker-pool.js";
 import {
   abortHandshake,
@@ -787,6 +792,28 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return;
     }
 
+    // Hard connection cap — reject before any expensive handshake work
+    const maxConnections = this._options.maxConnections;
+    if (maxConnections !== undefined && this._clients.size >= maxConnections) {
+      const secEvt = {
+        type: "CONNECTION_LIMIT" as const,
+        ip: req.socket.remoteAddress ?? "unknown",
+        timestamp: new Date().toISOString(),
+        details: {
+          activeConnections: this._clients.size,
+          maxConnections,
+        },
+      };
+      this.emit("securityEvent", secEvt);
+      for (const plugin of this._plugins) {
+        try {
+          plugin.onSecurityEvent?.(secEvt);
+        } catch {}
+      }
+      abortHandshake(socket, 503, "Connection limit reached");
+      return;
+    }
+
     // Connection-level per-IP rate limit
     const connRateLimit = this._options.connectionRateLimit;
     if (connRateLimit) {
@@ -916,7 +943,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           hasTerminalRoute = true;
           if (match.groups) {
             for (const [key, val] of Object.entries(match.groups)) {
-              params[key] = decodeURIComponent(val ?? "");
+              params[key] = safeDecodeURIComponent(val ?? "");
             }
           }
           if (router._routeConfig) {
@@ -942,7 +969,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     let identity = params.identity;
     if (!identity) {
       const pathParts = pathname.split("/").filter(Boolean);
-      identity = decodeURIComponent(pathParts[pathParts.length - 1] ?? "");
+      identity = safeDecodeURIComponent(pathParts[pathParts.length - 1] ?? "");
     }
 
     if (!identity) {

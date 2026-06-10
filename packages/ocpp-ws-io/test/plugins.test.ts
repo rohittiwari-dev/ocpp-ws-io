@@ -9,6 +9,7 @@ import {
   otelPlugin,
   webhookPlugin,
   anomalyPlugin,
+  messageDedupPlugin,
 } from "../src/plugins/index.js";
 
 // ─── sessionLogPlugin ──────────────────────────────────────────
@@ -547,5 +548,46 @@ describe("Plugin Integration", () => {
     ]);
 
     server.close({ force: true }).catch(() => {});
+  });
+});
+
+describe("messageDedupPlugin replay (M11)", () => {
+  function fakeRedis() {
+    const store = new Map<string, string>();
+    return {
+      store,
+      async set(key: string, value: string, ...args: unknown[]) {
+        if (args.includes("NX") && store.has(key)) return null;
+        store.set(key, value);
+        return "OK" as const;
+      },
+      async get(key: string) {
+        return store.get(key) ?? null;
+      },
+    };
+  }
+  const makeClient = () => ({ identity: "CP-D", sendRaw: vi.fn() }) as any;
+
+  it("only CALL messages are deduplicated", async () => {
+    const plugin = messageDedupPlugin({ redis: fakeRedis() });
+    const client = makeClient();
+    const callResult = JSON.stringify([3, "m1", { ok: 1 }]);
+    expect(await plugin.onBeforeReceive!(client, callResult)).toBeUndefined();
+    expect(await plugin.onBeforeReceive!(client, callResult)).toBeUndefined();
+  });
+
+  it("duplicate CALL replays the cached response", async () => {
+    const plugin = messageDedupPlugin({ redis: fakeRedis() });
+    const client = makeClient();
+    const call = JSON.stringify([2, "m2", "Heartbeat", {}]);
+    const response: any = [3, "m2", { currentTime: "t" }];
+
+    expect(await plugin.onBeforeReceive!(client, call)).toBeUndefined();
+    plugin.onBeforeSend!(client, response); // server responds -> cached
+    await new Promise((r) => setTimeout(r, 10));
+
+    const second = await plugin.onBeforeReceive!(client, call);
+    expect(second).toBe(false); // dropped
+    expect(client.sendRaw).toHaveBeenCalledWith(JSON.stringify(response));
   });
 });

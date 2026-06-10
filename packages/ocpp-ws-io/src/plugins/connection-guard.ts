@@ -42,6 +42,11 @@ export interface ConnectionGuardOptions {
  * Optionally reclaims slots from dead peers (pong timeout) and
  * slow consumers (backpressure).
  *
+ * NOTE: prefer `new OCPPServer({ maxConnections })` for the hard cap — it
+ * rejects at upgrade time, before TLS/auth work. This plugin's cap closes
+ * connections only after they complete the handshake; its main value is the
+ * pong-timeout / backpressure slot-reclaim options.
+ *
  * @example
  * ```ts
  * import { connectionGuardPlugin } from 'ocpp-ws-io/plugins';

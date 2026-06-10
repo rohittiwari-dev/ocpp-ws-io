@@ -101,3 +101,16 @@ describe("getPackageIdent", () => {
     expect(getPackageIdent()).toBe(getPackageIdent());
   });
 });
+
+describe("getErrorPlainObject stack handling (M13)", () => {
+  it("includeStack=false omits the stack", () => {
+    const obj = getErrorPlainObject(new Error("x"), false);
+    expect(obj.stack).toBeUndefined();
+    expect(obj.message).toBe("x");
+  });
+
+  it("default keeps backward-compatible behavior", () => {
+    const obj = getErrorPlainObject(new Error("x"));
+    expect(obj.stack).toBeDefined();
+  });
+});

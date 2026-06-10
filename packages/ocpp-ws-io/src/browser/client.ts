@@ -742,8 +742,9 @@ export class BrowserOCPPClient<
             ? (err as RPCError)
             : createRPCError("InternalError", (err as Error).message);
 
+        // Never ship stack traces to remote peers (report M13)
         const details = this._options.respondWithDetailedErrors
-          ? getErrorPlainObject(err as Error)
+          ? getErrorPlainObject(err as Error, false)
           : {};
 
         const errorResponse: OCPPCallError = [

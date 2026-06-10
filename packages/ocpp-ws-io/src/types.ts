@@ -613,6 +613,12 @@ interface ServerOptionsBase {
    */
   maxSessions?: number;
   /**
+   * Hard cap on concurrent client connections, enforced before the TLS/auth
+   * handshake work is done (the connection-guard plugin only closes after
+   * the fact). Excess upgrades are rejected with HTTP 503.
+   */
+  maxConnections?: number;
+  /**
    * Enable the built-in HTTP health/metrics endpoint.
    * When enabled, non-upgrade HTTP requests to `/health` return a JSON health check,
    * and requests to `/metrics` return Prometheus-compatible text metrics.
@@ -803,6 +809,7 @@ export interface SecurityEvent {
     | "RATE_LIMIT_EXCEEDED"
     | "UPGRADE_ABORTED"
     | "CONNECTION_RATE_LIMIT"
+    | "CONNECTION_LIMIT"
     | "INVALID_PAYLOAD"
     | "ANOMALY_RAPID_RECONNECT"
     | "ANOMALY_AUTH_BRUTE_FORCE"

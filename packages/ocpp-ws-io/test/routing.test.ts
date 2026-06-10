@@ -300,3 +300,19 @@ describe("OCPPServer - Express-like Routing", () => {
     expect(failError.message).toMatch(/400/);
   });
 });
+
+import { RadixTrie } from "../src/radix-trie.js";
+import { OCPPRouter } from "../src/router.js";
+
+describe("malformed percent-encoding (M14)", () => {
+  it("trie match does not throw on bad %-sequences", () => {
+    const trie = new RadixTrie();
+    const router = new OCPPRouter();
+    trie.insert("/ocpp/:identity", router);
+
+    expect(() => trie.match("/ocpp/CP%E0%A4%A")).not.toThrow();
+    expect(trie.match("/ocpp/CP%E0%A4%A")!.params.identity).toBe(
+      "CP%E0%A4%A",
+    );
+  });
+});

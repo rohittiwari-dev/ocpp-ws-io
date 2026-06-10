@@ -376,7 +376,10 @@ export class OCPPClient<
         this._logger?.error?.("Connection error", {
           error: err.message,
         });
-        this.emit("error", err);
+        // The connect() rejection is the primary failure signal — only emit
+        // "error" when someone listens, otherwise EventEmitter throws and
+        // the rejection below never runs.
+        if (this.listenerCount("error") > 0) this.emit("error", err);
         reject(err);
       };
 
@@ -394,7 +397,7 @@ export class OCPPClient<
         this._logger?.error?.("Unexpected HTTP response", {
           statusCode: res.statusCode,
         });
-        this.emit("error", err);
+        if (this.listenerCount("error") > 0) this.emit("error", err);
         reject(err);
       };
 
@@ -1286,8 +1289,9 @@ export class OCPPClient<
               ? (err as RPCError)
               : createRPCError("InternalError", (err as Error).message);
 
+          // Never ship stack traces to remote peers (report M13)
           const details = this._options.respondWithDetailedErrors
-            ? getErrorPlainObject(err as Error)
+            ? getErrorPlainObject(err as Error, false)
             : {};
 
           const errorResponse: OCPPCallError = [
