@@ -570,6 +570,12 @@ interface ServerOptionsBase {
    */
   sessionTtlMs?: number;
   /**
+   * TTL (seconds) for cluster presence registry entries, and the basis for
+   * the automatic presence heartbeat (refreshed every ttl/2 while clients
+   * are connected). Default: 300.
+   */
+  presenceTtlSeconds?: number;
+  /**
    * Maximum time (ms) to wait for the auth callback to resolve during
    * a WebSocket upgrade handshake. If the callback does not settle within
    * this window, the socket is destroyed and an `upgradeAborted` event

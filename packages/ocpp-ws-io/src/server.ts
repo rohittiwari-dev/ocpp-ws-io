@@ -81,6 +81,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _plugins: OCPPPlugin[] = [];
   private _workerPool: WorkerPool | null = null;
   private _telemetryInterval: ReturnType<typeof setInterval> | null = null;
+  private _presenceInterval: ReturnType<typeof setInterval> | null = null;
 
   // Robustness & Clustering
   private readonly _nodeId = createId();
@@ -1266,19 +1267,18 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       this._clients.add(client);
       this._clientsByIdentity.set(identity, client);
 
-      // Register presence
+      // Register presence (TTL refreshed by the presence heartbeat — see
+      // _startPresenceRefresh).
       if (this._adapter?.setPresence) {
-        // TTL: slightly longer than session timeout or heartbeat interval
-        // For now, use 60s as a default active TTL, refreshed on activity?
-        // Actually, we should set it with a reasonable TTL (e.g. 5 mins)
-        // and ideally refresh it. For Phase 1, we set it once.
-        // Let's use 5 minutes (300s).
-        this._adapter.setPresence(identity, this._nodeId, 300).catch((err) => {
-          this._logger?.error?.("Error setting presence", {
-            identity,
-            error: err,
+        const ttlSec = this._options.presenceTtlSeconds ?? 300;
+        this._adapter
+          .setPresence(identity, this._nodeId, ttlSec)
+          .catch((err) => {
+            this._logger?.error?.("Error setting presence", {
+              identity,
+              error: err,
+            });
           });
-        });
       }
 
       this._logger?.info?.("Client connected", {
@@ -1461,6 +1461,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     if (this._telemetryInterval) {
       clearInterval(this._telemetryInterval);
       this._telemetryInterval = null;
+    }
+
+    if (this._presenceInterval) {
+      clearInterval(this._presenceInterval);
+      this._presenceInterval = null;
     }
 
     // ── Graceful shutdown drain ──
@@ -1819,6 +1824,44 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         this._onUnicast(msg);
       },
     );
+
+    // Presence heartbeat — refresh TTLs so long-lived connections never
+    // expire out of the cluster registry (report C3).
+    this._startPresenceRefresh();
+  }
+
+  private _startPresenceRefresh(): void {
+    if (this._presenceInterval || !this._adapter?.setPresence) return;
+    const ttlSec = this._options.presenceTtlSeconds ?? 300;
+    const intervalMs = Math.max(250, (ttlSec * 1000) / 2);
+    this._presenceInterval = setInterval(() => {
+      this._refreshPresence(ttlSec).catch((err) => {
+        this._logger?.warn?.("Presence refresh failed", { error: err });
+      });
+    }, intervalMs);
+    this._presenceInterval.unref();
+  }
+
+  private async _refreshPresence(ttlSec: number): Promise<void> {
+    const adapter = this._adapter;
+    if (!adapter) return;
+    const identities = Array.from(this._clientsByIdentity.keys());
+    if (identities.length === 0) return;
+    if (adapter.setPresenceBatch) {
+      await adapter.setPresenceBatch(
+        identities.map((identity) => ({
+          identity,
+          nodeId: this._nodeId,
+          ttl: ttlSec,
+        })),
+      );
+    } else if (adapter.setPresence) {
+      await Promise.all(
+        identities.map((identity) =>
+          adapter.setPresence!(identity, this._nodeId, ttlSec),
+        ),
+      );
+    }
   }
 
   private _onBroadcast(msg: unknown) {
