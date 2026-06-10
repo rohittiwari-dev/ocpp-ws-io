@@ -266,7 +266,7 @@ describe("RedisAdapter Streams", () => {
     expect(pub.expire).toHaveBeenCalled();
   });
 
-  it("should add sequence counters to unicast messages", async () => {
+  it("should not mutate unicast payloads (M3: __seq removed)", async () => {
     const pub = createStreamMock();
     const sub = createStreamMock();
     const adapter = new RedisAdapter({ pubClient: pub, subClient: sub });
@@ -274,8 +274,7 @@ describe("RedisAdapter Streams", () => {
     const data = { method: "Test", params: {} } as any;
     await adapter.publish("ocpp:node:n1", data);
 
-    // __seq should be attached
-    expect(data.__seq).toBe(1);
+    expect("__seq" in data).toBe(false);
   });
 
   it("should subscribe to streams and start polling", async () => {

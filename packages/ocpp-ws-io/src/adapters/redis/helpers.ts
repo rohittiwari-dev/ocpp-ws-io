@@ -85,6 +85,13 @@ export interface RedisPubSubDriver {
     block?: number,
   ): Promise<StreamEntry[] | null>;
   xlen(stream: string): Promise<number>;
+
+  /**
+   * True when the driver has a dedicated connection for blocking XREAD.
+   * Without it, BLOCK would head-of-line-block every other command on the
+   * shared connection, so the adapter falls back to non-blocking polls.
+   */
+  readonly hasBlockingClient?: boolean;
 }
 
 export class IoRedisDriver implements RedisPubSubDriver {
@@ -101,6 +108,10 @@ export class IoRedisDriver implements RedisPubSubDriver {
         if (handler) handler(message);
       });
     }
+  }
+
+  get hasBlockingClient(): boolean {
+    return !!this.blocking;
   }
 
   async publish(channel: string, message: string): Promise<void> {
@@ -265,6 +276,10 @@ export class NodeRedisDriver implements RedisPubSubDriver {
     private sub: any,
     private blocking?: any,
   ) {}
+
+  get hasBlockingClient(): boolean {
+    return !!this.blocking;
+  }
 
   async publish(channel: string, message: string): Promise<void> {
     await this.pub.publish(channel, message);
