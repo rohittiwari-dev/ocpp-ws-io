@@ -345,6 +345,9 @@ export class RedisAdapter implements EventAdapterInterface {
 
   async removePresence(identity: string): Promise<void> {
     const key = `${this._prefix}presence:${identity}`;
+    // Drop the rehydration cache entry too — otherwise a Redis reconnect
+    // resurrects presence for disconnected clients (report H3).
+    this._presenceCache.delete(identity);
     await this._driver.del(key);
   }
 

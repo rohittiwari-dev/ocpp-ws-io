@@ -38,7 +38,8 @@ import {
   type ServerOptions,
   type TypedEventEmitter,
 } from "./types.js";
-import { createId, NOOP_LOGGER } from "./util.js";
+import { TimeoutError } from "./errors.js";
+import { createId, createRPCError, NOOP_LOGGER } from "./util.js";
 import { createWorkerPool, type WorkerPool } from "./worker-pool.js";
 import {
   abortHandshake,
@@ -98,6 +99,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   // Robustness & Clustering
   private readonly _nodeId = createId();
+
+  /** Pending cross-node RPC calls awaiting a correlated response. */
+  private _pendingRemoteCalls = new Map<
+    string,
+    {
+      resolve: (value: unknown) => void;
+      reject: (reason: unknown) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
+
+  /** Extra wait on top of the call timeout to absorb cross-node transit. */
+  private static readonly _REMOTE_RESPONSE_GRACE_MS = 1000;
   private _sessions: LRUMap<
     string,
     { data: Record<string, any>; lastActive: number }
@@ -1607,6 +1621,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
     }
 
+    // Fail any in-flight cross-node calls
+    for (const [, pending] of this._pendingRemoteCalls) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error("Server closing"));
+    }
+    this._pendingRemoteCalls.clear();
+
     // Disconnect adapter
     if (this._adapter) {
       await this._adapter.disconnect();
@@ -1639,16 +1660,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   /**
    * Send a request to a specific client (local or remote).
    *
-   * 1. Checks local clients.
-   * 2. Checks Presence Registry -> Unicast.
-   * 3. Fallback: Broadcast.
-   */
-  /**
-   * Send a request to a specific client (local or remote).
+   * 1. Local clients are called directly.
+   * 2. Otherwise the presence registry routes the call to the owning node,
+   *    and the response is correlated back over the adapter (cross-node RPC).
+   * 3. Unknown identity → rejects with "Client <identity> not found".
    *
-   * 1. Checks local clients.
-   * 2. Checks Presence Registry -> Unicast.
-   * 3. Fallback: Error (Client not found).
+   * Backward compatibility: nodes running older versions deliver the call
+   * but never publish a response — such calls reject with TimeoutError.
    */
   // 1. Protocol-specific overload
   async sendToClient<V extends OCPPProtocol, M extends AllMethodNames<V>>(
@@ -1719,12 +1737,33 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         : await localClient.call(method as any, params as any, options);
     }
 
-    // 2. Check Registry & Unicast
+    // 2. Check Registry & Unicast (with response correlation — report H1)
     if (this._adapter?.getPresence) {
       const nodeId = await this._adapter.getPresence(identity);
       if (nodeId) {
-        // Found remote node — carry `version` across the cluster so the
-        // receiving node can resolve the same version-specific overload.
+        const correlationId = createId();
+        const timeoutMs =
+          (options?.timeoutMs ?? this._options.callTimeoutMs ?? 30_000) +
+          OCPPServer._REMOTE_RESPONSE_GRACE_MS;
+
+        const resultPromise = new Promise<unknown>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            this._pendingRemoteCalls.delete(correlationId);
+            reject(
+              new TimeoutError(
+                `Remote call to "${identity}" via node ${nodeId} timed out after ${timeoutMs}ms`,
+              ),
+            );
+          }, timeoutMs);
+          this._pendingRemoteCalls.set(correlationId, {
+            resolve,
+            reject,
+            timer,
+          });
+        });
+
+        // Carry `version` across the cluster so the receiving node can
+        // resolve the same version-specific overload.
         await this._adapter.publish(`ocpp:node:${nodeId}`, {
           source: this._nodeId,
           target: identity,
@@ -1732,10 +1771,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           method,
           params,
           options,
+          correlationId,
         });
-        return;
-      } else {
-        // Node not found in registry
+        return await resultPromise;
       }
     }
 
@@ -1948,6 +1986,39 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _onUnicast(msg: unknown) {
     try {
       if (!msg || typeof msg !== "object") return;
+
+      // Response leg: a remote node answering one of our calls
+      const asResponse = msg as {
+        __type?: string;
+        correlationId?: string;
+        ok?: boolean;
+        result?: unknown;
+        error?: {
+          code?: string;
+          message?: string;
+          details?: Record<string, unknown>;
+        };
+      };
+      if (asResponse.__type === "callResult" && asResponse.correlationId) {
+        const pending = this._pendingRemoteCalls.get(asResponse.correlationId);
+        if (!pending) return; // late or duplicate response
+        this._pendingRemoteCalls.delete(asResponse.correlationId);
+        clearTimeout(pending.timer);
+        if (asResponse.ok) {
+          pending.resolve(asResponse.result);
+        } else {
+          pending.reject(
+            createRPCError(
+              asResponse.error?.code ?? "GenericError",
+              asResponse.error?.message,
+              asResponse.error?.details ?? {},
+            ),
+          );
+        }
+        return;
+      }
+
+      // Request leg: deliver to a locally connected client
       const payload = msg as {
         source: string;
         target: string;
@@ -1955,10 +2026,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         method: string;
         params: unknown;
         options?: CallOptions;
+        correlationId?: string;
       };
 
-      // Unicast is meant for ME, but specifically for a TARGET client.
-      // Resolve the target via O(1) identity lookup.
       const client = this._clientsByIdentity.get(payload.target);
       if (client) {
         // Forward the version when present so the call resolves against the
@@ -1971,22 +2041,42 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
               payload.options,
             )
           : client.call(payload.method, payload.params as any, payload.options);
-        delivery.catch((err) => {
-          if ((err as Error).name !== "TimeoutError") {
-            this._logger?.error?.("Error delivering unicast to client", {
-              identity: payload.target,
-              error: err,
+        delivery.then(
+          (result) => {
+            this._publishRemoteResult(payload, { ok: true, result });
+          },
+          (err) => {
+            this._publishRemoteResult(payload, {
+              ok: false,
+              error: {
+                code: (err as any)?.rpcErrorCode ?? "GenericError",
+                message: (err as Error)?.message ?? "",
+                details: (err as any)?.details ?? {},
+              },
             });
-          }
-        });
+            if ((err as Error).name !== "TimeoutError") {
+              this._logger?.error?.("Error delivering unicast to client", {
+                identity: payload.target,
+                error: err,
+              });
+            }
+          },
+        );
         return;
       }
-      // If we got here, we received a unicast for a client we don't have.
-      // This implies the Registry is stale.
+
+      // Unknown target — the registry is stale. Tell the caller immediately
+      // instead of letting it time out, and clean up the stale entry.
       this._logger?.warn?.("Received unicast for unknown client", {
         target: payload.target,
       });
-      // Corrective action: Clean up stale registry entry?
+      this._publishRemoteResult(payload, {
+        ok: false,
+        error: {
+          code: "GenericError",
+          message: `Client ${payload.target} not found on node ${this._nodeId}`,
+        },
+      });
       if (this._adapter?.removePresence) {
         this._adapter.removePresence(payload.target).catch(() => {});
       }
@@ -1995,6 +2085,33 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         error: (err as Error).message,
       });
     }
+  }
+
+  /** Publish the result of a remotely requested call back to the origin node. */
+  private _publishRemoteResult(
+    request: { source?: string; correlationId?: string },
+    body: {
+      ok: boolean;
+      result?: unknown;
+      error?: {
+        code?: string;
+        message?: string;
+        details?: Record<string, unknown>;
+      };
+    },
+  ): void {
+    if (!request.correlationId || !request.source || !this._adapter) return;
+    this._adapter
+      .publish(`ocpp:node:${request.source}`, {
+        __type: "callResult",
+        correlationId: request.correlationId,
+        ...body,
+      })
+      .catch((err) => {
+        this._logger?.error?.("Failed to publish remote call result", {
+          error: err,
+        });
+      });
   }
 
   async publish(channel: string, data: unknown): Promise<void> {

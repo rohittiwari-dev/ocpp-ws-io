@@ -159,9 +159,14 @@ describe("OCPPServer Coverage", () => {
   test("sendToClient publishes version across the cluster (unicast)", async () => {
     adapter.getPresence.mockResolvedValue("remote-node");
 
-    await (server.sendToClient as any)("cp-remote", "ocpp2.0.1", "Reset", {
+    // Remote calls now block on a correlated response (H1); the mock adapter
+    // never answers, so don't await — assert the published request instead.
+    const pending = (server.sendToClient as any)("cp-remote", "ocpp2.0.1", "Reset", {
       type: "Soft",
     });
+    pending.catch(() => {}); // rejected with "Server closing" on teardown
+
+    await vi.waitFor(() => expect(adapter.publish).toHaveBeenCalled());
 
     expect(adapter.publish).toHaveBeenCalledWith(
       "ocpp:node:remote-node",
@@ -170,6 +175,7 @@ describe("OCPPServer Coverage", () => {
         version: "ocpp2.0.1",
         method: "Reset",
         params: { type: "Soft" },
+        correlationId: expect.any(String),
       }),
     );
   });

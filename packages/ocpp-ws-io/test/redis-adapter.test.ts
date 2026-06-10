@@ -478,3 +478,37 @@ describe("RedisAdapter publishBatch", () => {
     await adapter.disconnect();
   });
 });
+
+describe("presence cache pruning (H3)", () => {
+  function stubClients() {
+    const pub: any = {
+      publish: vi.fn(async () => 1),
+      set: vi.fn(async () => "OK"),
+      get: vi.fn(async () => null),
+      del: vi.fn(async () => 1),
+      mget: vi.fn(async () => []),
+      xadd: vi.fn(async () => "1-1"),
+      xlen: vi.fn(async () => 0),
+      expire: vi.fn(async () => 1),
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    };
+    const sub: any = {
+      subscribe: vi.fn(async () => {}),
+      unsubscribe: vi.fn(async () => {}),
+      on: vi.fn(),
+    };
+    return { pub, sub };
+  }
+
+  it("removePresence deletes the rehydration cache entry", async () => {
+    const { pub, sub } = stubClients();
+    const adapter = new RedisAdapter({ pubClient: pub, subClient: sub });
+    await adapter.setPresence("CP-X", "node-1", 60);
+    expect((adapter as any)._presenceCache.has("CP-X")).toBe(true);
+
+    await adapter.removePresence("CP-X");
+    expect((adapter as any)._presenceCache.has("CP-X")).toBe(false);
+    expect(pub.del).toHaveBeenCalledWith("ocpp-ws-io:presence:CP-X");
+  });
+});
