@@ -762,6 +762,28 @@ export class OCPPClient<
     return this._callQueue.push(() => this._sendCall(method, params, options));
   }
 
+  /**
+   * Execute a call immediately, bypassing the callConcurrency queue.
+   * Used by OCPPServer.sendBatch to pipeline warm-up calls without
+   * mutating the client's configured concurrency (report M9).
+   */
+  callImmediate<TResult = unknown>(
+    method: string,
+    params?: Record<string, unknown>,
+    options?: CallOptions,
+  ): Promise<TResult> {
+    if (this._state !== OPEN) {
+      return Promise.reject(
+        new Error(`Cannot call: client is in state ${this._state}`),
+      );
+    }
+    return this._sendCall(
+      method,
+      params ?? {},
+      options ?? {},
+    ) as Promise<TResult>;
+  }
+
   // ─── Safe Call (Best Effort) ─────────────────────────────────
 
   /**
@@ -1636,6 +1658,14 @@ export class OCPPClient<
   /** Maximum bytes allowed in the ws send buffer before applying backpressure (512KB) */
   private static readonly _BACKPRESSURE_THRESHOLD = 512 * 1024;
 
+  /** Sends queued while the socket is backpressured (FIFO). */
+  private _backpressureQueue: Array<{
+    data: string;
+    cb?: (err?: Error) => void;
+    enqueuedAt: number;
+  }> = [];
+  private _backpressureTimer: ReturnType<typeof setInterval> | null = null;
+
   /**
    * Protected hook for plugins to intercept outbound messages before serialization.
    * Return `false` to suppress the message transmission.
@@ -1647,9 +1677,11 @@ export class OCPPClient<
   }
 
   /**
-   * Wraps ws.send() with backpressure protection.
-   * If bufferedAmount exceeds the threshold, waits for the buffer to drain
-   * before sending. Prevents OOM on slow 2G/3G charger connections.
+   * Wraps ws.send() with backpressure protection. When bufferedAmount
+   * exceeds the threshold, sends are queued and flushed FIFO by a single
+   * shared 50ms drain timer (one per client, not one per send — report M10).
+   * Entries older than 10s are sent regardless, preserving the previous
+   * timeout semantics. Prevents OOM on slow 2G/3G charger connections.
    */
   private _safeSend(
     ws: WebSocket | null,
@@ -1661,37 +1693,65 @@ export class OCPPClient<
       return;
     }
 
-    if (ws.bufferedAmount > OCPPClient._BACKPRESSURE_THRESHOLD) {
-      this._logger?.warn?.("Backpressure — pausing send", {
-        identity: this._identity,
-        bufferedAmount: ws.bufferedAmount,
-        threshold: OCPPClient._BACKPRESSURE_THRESHOLD,
-      });
-      // Emit identity + buffered amount for operator alerting
-      this.emit("backpressure", {
-        identity: this._identity,
-        bufferedAmount: ws.bufferedAmount,
-      });
+    if (
+      ws.bufferedAmount > OCPPClient._BACKPRESSURE_THRESHOLD ||
+      this._backpressureQueue.length > 0
+    ) {
+      if (this._backpressureQueue.length === 0) {
+        this._logger?.warn?.("Backpressure — pausing send", {
+          identity: this._identity,
+          bufferedAmount: ws.bufferedAmount,
+          threshold: OCPPClient._BACKPRESSURE_THRESHOLD,
+        });
+        // Emit identity + buffered amount for operator alerting
+        this.emit("backpressure", {
+          identity: this._identity,
+          bufferedAmount: ws.bufferedAmount,
+        });
+      }
+      this._backpressureQueue.push({ data, cb, enqueuedAt: Date.now() });
+      this._startBackpressureDrain(ws);
+      return;
+    }
 
-      // Poll until buffer drains below threshold (check every 50ms, timeout 10s)
-      let waited = 0;
-      const drainCheck = setInterval(() => {
-        waited += 50;
-        if (!ws || ws.readyState !== WebSocket.OPEN) {
-          clearInterval(drainCheck);
-          cb?.(new Error("WebSocket closed during backpressure wait"));
-          return;
+    ws.send(data, cb);
+  }
+
+  private _startBackpressureDrain(ws: WebSocket): void {
+    if (this._backpressureTimer) return;
+    this._backpressureTimer = setInterval(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        this._stopBackpressureDrain();
+        const failed = this._backpressureQueue.splice(0);
+        for (const entry of failed) {
+          entry.cb?.(new Error("WebSocket closed during backpressure wait"));
         }
+        return;
+      }
+      const now = Date.now();
+      while (this._backpressureQueue.length > 0) {
+        const head = this._backpressureQueue[0];
+        const timedOut = now - head.enqueuedAt >= 10_000;
         if (
           ws.bufferedAmount <= OCPPClient._BACKPRESSURE_THRESHOLD ||
-          waited >= 10000
+          timedOut
         ) {
-          clearInterval(drainCheck);
-          ws.send(data, cb);
+          this._backpressureQueue.shift();
+          ws.send(head.data, head.cb);
+        } else {
+          break;
         }
-      }, 50);
-    } else {
-      ws.send(data, cb);
+      }
+      if (this._backpressureQueue.length === 0) {
+        this._stopBackpressureDrain();
+      }
+    }, 50);
+  }
+
+  private _stopBackpressureDrain(): void {
+    if (this._backpressureTimer) {
+      clearInterval(this._backpressureTimer);
+      this._backpressureTimer = null;
     }
   }
 
@@ -1938,6 +1998,11 @@ export class OCPPClient<
     if (this._reconnectTimer) {
       clearTimeout(this._reconnectTimer);
       this._reconnectTimer = null;
+    }
+    this._stopBackpressureDrain();
+    const queued = this._backpressureQueue.splice(0);
+    for (const entry of queued) {
+      entry.cb?.(new Error("Connection closed"));
     }
     this._closePromise = null;
     this._ws = null;

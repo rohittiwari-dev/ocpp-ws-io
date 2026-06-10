@@ -1878,31 +1878,22 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return calls.map(() => undefined);
     }
 
-    // Temporarily raise call concurrency to allow all calls to fly in parallel
-    const originalConcurrency = client.options.callConcurrency ?? 1;
-    if (calls.length > originalConcurrency) {
-      client.reconfigure({ callConcurrency: calls.length });
-    }
+    // Bypass the call queue so the batch pipelines in parallel without
+    // mutating the client's configured callConcurrency (report M9).
+    const results = await Promise.allSettled(
+      calls.map((c) =>
+        client.callImmediate(c.method, c.params, c.options ?? {}),
+      ),
+    );
 
-    try {
-      const results = await Promise.allSettled(
-        calls.map((c) => client.call(c.method, c.params, c.options ?? {})),
-      );
-
-      return results.map((r) => {
-        if (r.status === "fulfilled") return r.value;
-        this._logger?.warn?.("sendBatch: individual call failed", {
-          identity,
-          error: (r.reason as Error)?.message,
-        });
-        return undefined;
+    return results.map((r) => {
+      if (r.status === "fulfilled") return r.value;
+      this._logger?.warn?.("sendBatch: individual call failed", {
+        identity,
+        error: (r.reason as Error)?.message,
       });
-    } finally {
-      // Restore original concurrency
-      if (calls.length > originalConcurrency) {
-        client.reconfigure({ callConcurrency: originalConcurrency });
-      }
-    }
+      return undefined;
+    });
   }
 
   // ─── Pub/Sub Adapter ─────────────────────────────────────────
