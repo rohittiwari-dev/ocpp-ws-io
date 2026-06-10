@@ -93,11 +93,17 @@ export class Validator {
     // happens lazily when getSchema() is first called for a given $id.
     for (const schema of schemas) {
       const normalized = { ...schema };
-      if (
-        typeof normalized.$id === "string" &&
-        normalized.$id.startsWith("urn:")
-      ) {
-        normalized.$id = normalized.$id.replace("urn:", "urn/");
+      if (typeof normalized.$id === "string") {
+        // OCPP 2.1 schemas use `urn:<Method>Request` / `urn:<Method>Response`
+        // ids while lookups are `urn:<Method>.req` / `urn:<Method>.conf`
+        // (the 1.6 / 2.0.1 convention). Normalize so all versions resolve.
+        const m = normalized.$id.match(/^urn:(.+?)(Request|Response)$/);
+        if (m) {
+          normalized.$id = `urn:${m[1]}.${m[2] === "Request" ? "req" : "conf"}`;
+        }
+        if (normalized.$id.startsWith("urn:")) {
+          normalized.$id = normalized.$id.replace("urn:", "urn/");
+        }
       }
       this._ajv.addSchema(normalized);
     }

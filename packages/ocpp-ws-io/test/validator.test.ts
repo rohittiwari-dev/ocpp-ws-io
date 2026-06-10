@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, test } from "vitest";
 import { Validator, createValidator } from "../src/validator.js";
+import { getStandardValidators } from "../src/standard-validators.js";
 
 // Minimal JSON schema for testing
 const testSchemas = [
@@ -159,5 +160,25 @@ describe("Validator", () => {
       expect(v).toBeInstanceOf(Validator);
       expect(v.subprotocol).toBe("ocpp2.0.1");
     });
+  });
+});
+
+describe("OCPP 2.1 schema ID normalization (C2)", () => {
+  test("resolves urn:<Method>.req for 2.1 Request/Response-style ids", () => {
+    const v21 = getStandardValidators().find((v) => v.subprotocol === "ocpp2.1")!;
+    expect(v21.hasSchema("urn:BootNotification.req")).toBe(true);
+    expect(v21.hasSchema("urn:BootNotification.conf")).toBe(true);
+  });
+
+  test("2.1 strict validation actually rejects invalid payloads", () => {
+    const v21 = getStandardValidators().find((v) => v.subprotocol === "ocpp2.1")!;
+    // BootNotificationRequest requires `reason` and `chargingStation`
+    expect(() => v21.validate("urn:BootNotification.req", {})).toThrow();
+    expect(() =>
+      v21.validate("urn:BootNotification.req", {
+        reason: "PowerUp",
+        chargingStation: { model: "M1", vendorName: "V1" },
+      }),
+    ).not.toThrow();
   });
 });

@@ -10,12 +10,23 @@ if (!parentPort) {
   throw new Error("parse-worker must be run inside a worker thread");
 }
 
+// Mirror src/validator.ts: rewrite OCPP 2.1 `urn:<Method>Request/Response`
+// ids to the `.req`/`.conf` convention, then `urn:` -> `urn/` because
+// AJV's fast-uri resolver rejects single-colon URNs.
+function normalizeSchemaId(id) {
+  const m = /^urn:(.+?)(Request|Response)$/.exec(id);
+  let out = m ? `urn:${m[1]}.${m[2] === "Request" ? "req" : "conf"}` : id;
+  if (out.startsWith("urn:")) out = out.replace("urn:", "urn/");
+  return out;
+}
+
 // Lazy-loaded AJV instance for validation in the worker
 let ajv = null;
 const compiledSchemas = new Map();
 
 function getOrCompileSchema(schemaId, schemas) {
-  const cached = compiledSchemas.get(schemaId);
+  const normalizedId = normalizeSchemaId(schemaId);
+  const cached = compiledSchemas.get(normalizedId);
   if (cached) return cached;
 
   if (!ajv) {
@@ -26,7 +37,7 @@ function getOrCompileSchema(schemaId, schemas) {
       addFormats(ajv);
       for (const [id, schema] of Object.entries(schemas)) {
         try {
-          ajv.addSchema(schema, id);
+          ajv.addSchema({ ...schema, $id: undefined }, normalizeSchemaId(id));
         } catch {
           // Ignore duplicate schema errors
         }
@@ -37,9 +48,9 @@ function getOrCompileSchema(schemaId, schemas) {
   }
 
   try {
-    const validate = ajv.getSchema(schemaId);
+    const validate = ajv.getSchema(normalizedId);
     if (validate) {
-      compiledSchemas.set(schemaId, validate);
+      compiledSchemas.set(normalizedId, validate);
       return validate;
     }
   } catch {

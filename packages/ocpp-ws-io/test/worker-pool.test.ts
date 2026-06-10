@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { Worker } from "node:worker_threads";
 import { describe, expect, test } from "vitest";
 import { WorkerPool } from "../src/worker-pool.js";
 
@@ -31,5 +32,32 @@ describe("WorkerPool", () => {
     expect(
       () => new WorkerPool({ poolSize: 1, workerPath: "Z:/nope/missing.cjs" }),
     ).toThrow(/worker/i);
+  });
+
+  test("worker validates CALL payloads via schemaInfo (C2 worker path)", async () => {
+    const worker = new Worker(workerPath);
+    try {
+      const result = await new Promise<any>((resolve, reject) => {
+        worker.once("message", resolve);
+        worker.once("error", reject);
+        worker.postMessage({
+          id: 1,
+          buffer: '[2,"id9","Heartbeat",{"bogus":true}]',
+          schemaInfo: {
+            schemas: {
+              "urn:Heartbeat.req": {
+                type: "object",
+                properties: {},
+                additionalProperties: false,
+              },
+            },
+          },
+        });
+      });
+      expect(result.validationError).toBeDefined();
+      expect(result.validationError.schemaId).toBe("urn:Heartbeat.req");
+    } finally {
+      await worker.terminate();
+    }
   });
 });
