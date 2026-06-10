@@ -23,10 +23,13 @@ export function checkCORS(
   if (options.allowedSchemes && options.allowedSchemes.length > 0) {
     let scheme = request.socket instanceof TLSSocket ? "wss" : "ws";
 
-    // Fallback for reverse proxy deployments (nginx/Caddy)
-    const fwdProto = request.headers["x-forwarded-proto"];
-    if (typeof fwdProto === "string") {
-      scheme = fwdProto === "https" || fwdProto === "wss" ? "wss" : "ws";
+    // Only honor proxy headers when explicitly trusted — X-Forwarded-Proto
+    // is client-controlled on direct connections (report H5).
+    if (options.trustProxy === true) {
+      const fwdProto = request.headers["x-forwarded-proto"];
+      if (typeof fwdProto === "string") {
+        scheme = fwdProto === "https" || fwdProto === "wss" ? "wss" : "ws";
+      }
     }
 
     if (!options.allowedSchemes.includes(scheme as "ws" | "wss")) {

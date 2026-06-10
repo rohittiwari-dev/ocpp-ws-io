@@ -66,6 +66,14 @@ export class OCPPServerClient extends OCPPClient {
   private _adaptiveMultiplier: (() => number) | null = null;
   private _workerPool: WorkerPool | null = null;
 
+  /**
+   * Per-connection inbound pipeline. Serializes async pre-processing
+   * (plugin onBeforeReceive, rate-limit parse, worker-pool parse) so
+   * messages are dispatched in wire order — OCPP transaction semantics
+   * depend on it (e.g. StartTransaction before StopTransaction).
+   */
+  private _inboundChain: Promise<void> = Promise.resolve();
+
   private _checkRateLimit(method?: string): boolean {
     const limits = this._options.rateLimit;
     if (!limits) return true;
@@ -147,74 +155,13 @@ export class OCPPServerClient extends OCPPClient {
   }
 
   private _attachServerWebsocket(ws: WebSocket): void {
-    ws.on("message", async (data: RawData) => {
+    ws.on("message", (data: RawData) => {
       this._recordActivity();
-
-      // Plugin interception: onBeforeReceive
-      for (const p of this._serverPlugins) {
-        if (p.onBeforeReceive) {
-          try {
-            const result = p.onBeforeReceive(this, data);
-            if (result instanceof Promise) {
-              const res = await result;
-              if (res === false) return;
-            } else if (result === false) {
-              return;
-            }
-          } catch (_err) {
-            // Don't let plugin errors stop message processing
-          }
-        }
-      }
-
-      // Rate Limit Check
-      const limits = this._options.rateLimit;
-      if (limits) {
-        // We need to parse just enough to find the method name if there are method rules
-        let method: string | undefined;
-        let pData: unknown;
-
-        if (limits.methods) {
-          try {
-            // Zero-copy — JSON.parse accepts Buffer directly (Node 18+)
-            pData = JSON.parse(data as unknown as string);
-            if (Array.isArray(pData) && pData[0] === 2) {
-              method = pData[2];
-            }
-          } catch {
-            // Ignore parse errors here, let super._onMessage handle bad JSON
-          }
-        }
-
-        if (!this._checkRateLimit(method)) {
-          this._handleRateLimitExceeded(pData || data.toString());
-          return;
-        }
-
-        // If we parsed for rate limiting, pass the pre-parsed data to avoid double-parse
-        if (pData !== undefined) {
-          this._onMessage(data, pData);
-          return;
-        }
-      }
-
-      // Worker pool path: off-thread parse, then forward pre-parsed result
-      if (this._workerPool) {
-        const raw = typeof data === "string" ? data : (data as Buffer);
-        this._workerPool
-          .parse(raw)
-          .then((result) => {
-            this._onMessage(data, result.message);
-          })
-          .catch(() => {
-            // Parse failed — fall through to _onMessage which will handle bad JSON
-            this._onMessage(data);
-          });
-        return;
-      }
-
-      // Default path: main-thread parse
-      this._onMessage(data);
+      this._inboundChain = this._inboundChain
+        .then(() => this._processInboundMessage(data))
+        .catch(() => {
+          // _processInboundMessage handles its own errors; never break the chain
+        });
     });
 
     ws.on("close", (code: number, reason: Buffer) =>
@@ -244,6 +191,72 @@ export class OCPPServerClient extends OCPPClient {
       this._recordActivity();
       this.emit("pong");
     });
+  }
+
+  private async _processInboundMessage(data: RawData): Promise<void> {
+    // Plugin interception: onBeforeReceive
+    for (const p of this._serverPlugins) {
+      if (p.onBeforeReceive) {
+        try {
+          const result = p.onBeforeReceive(this, data);
+          if (result instanceof Promise) {
+            const res = await result;
+            if (res === false) return;
+          } else if (result === false) {
+            return;
+          }
+        } catch (_err) {
+          // Don't let plugin errors stop message processing
+        }
+      }
+    }
+
+    // Rate Limit Check
+    const limits = this._options.rateLimit;
+    if (limits) {
+      // We need to parse just enough to find the method name if there are method rules
+      let method: string | undefined;
+      let pData: unknown;
+
+      if (limits.methods) {
+        try {
+          // JSON.parse accepts a Buffer directly (implicit utf8 toString)
+          pData = JSON.parse(data as unknown as string);
+          if (Array.isArray(pData) && pData[0] === 2) {
+            method = pData[2];
+          }
+        } catch {
+          // Ignore parse errors here, let _onMessage handle bad JSON
+        }
+      }
+
+      if (!this._checkRateLimit(method)) {
+        this._handleRateLimitExceeded(pData || data.toString());
+        return;
+      }
+
+      // If we parsed for rate limiting, pass the pre-parsed data to avoid double-parse
+      if (pData !== undefined) {
+        this._onMessage(data, pData);
+        return;
+      }
+    }
+
+    // Worker pool path: off-thread parse (awaited to preserve ordering)
+    if (this._workerPool) {
+      const raw = typeof data === "string" ? data : (data as Buffer);
+      try {
+        const result = await this._workerPool.parse(raw);
+        this._onMessage(data, result.message);
+      } catch {
+        // Parse failed — fall through to _onMessage which handles bad JSON
+        this._onMessage(data);
+      }
+      return;
+    }
+
+    // Default path: main-thread parse
+    this._onMessage(data);
   }
 
   private _handleRateLimitExceeded(rawData: unknown): void {

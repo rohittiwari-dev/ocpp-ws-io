@@ -537,6 +537,13 @@ export interface CORSOptions {
   allowedOrigins?: string[];
   /** Allowed WebSocket protocol schemes */
   allowedSchemes?: ("ws" | "wss")[];
+  /**
+   * Honor `X-Forwarded-Proto` from a reverse proxy when evaluating
+   * `allowedSchemes`. Leave false (default) unless the server is only
+   * reachable through a trusted proxy — otherwise clients can spoof the
+   * header to bypass wss-only rules.
+   */
+  trustProxy?: boolean;
 }
 
 // ─── Server Options ──────────────────────────────────────────────
@@ -609,6 +616,10 @@ interface ServerOptionsBase {
    * Enable the built-in HTTP health/metrics endpoint.
    * When enabled, non-upgrade HTTP requests to `/health` return a JSON health check,
    * and requests to `/metrics` return Prometheus-compatible text metrics.
+   * When attaching to a user-provided server (listen(..., { server })),
+   * only /health and /metrics are handled; all other routes are left to
+   * the application, and close() will not close the external server.
+   * Ensure your app does not also write responses for /health or /metrics.
    * (default: false)
    */
   healthEndpoint?: boolean;

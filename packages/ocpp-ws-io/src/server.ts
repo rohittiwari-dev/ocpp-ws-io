@@ -65,6 +65,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _clients = new Set<OCPPServerClient>();
   private _clientsByIdentity = new Map<string, OCPPServerClient>();
   private _httpServers = new Set<Server>();
+  /** HTTP servers created by listen() — we own their lifecycle. */
+  private _ownedHttpServers = new Set<Server>();
+  /** Listeners we attached per server, for removal on close(). */
+  private _attachedHttpHandlers = new Map<
+    Server,
+    {
+      upgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => void;
+      request?: (
+        req: IncomingMessage,
+        res: import("node:http").ServerResponse,
+      ) => void;
+    }
+  >();
   private _wss: WebSocketServer | null = null;
   private _state: "OPEN" | "CLOSING" | "CLOSED" = "OPEN";
   private _adapter: EventAdapterInterface | null = null;
@@ -135,6 +148,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           this._sessions.delete(identity);
         }
       }
+      this._sweepConnectionBuckets(now);
     }, 60 * 1000).unref(); // Run every minute, don't block exit
 
     // Initialize logger
@@ -502,9 +516,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     httpServer.on("upgrade", upgradeHandler);
     this._httpServers.add(httpServer);
 
+    const ownsServer = !options?.server;
+    if (ownsServer) this._ownedHttpServers.add(httpServer);
+
     // Health/Metrics HTTP endpoint
+    let requestHandler:
+      | ((
+          req: IncomingMessage,
+          res: import("node:http").ServerResponse,
+        ) => void)
+      | undefined;
     if (this._options.healthEndpoint) {
-      httpServer.on("request", async (req, res) => {
+      requestHandler = async (req, res) => {
+        if (res.headersSent || res.writableEnded) return;
         const url = req.url ?? "";
 
         if (url === "/health") {
@@ -583,11 +607,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           return;
         }
 
-        // Non-OCPP request — 404
-        res.writeHead(404, { "Content-Type": "text/plain" });
-        res.end("Not Found");
-      });
+        // Only 404 unknown routes on servers we created. On a user-provided
+        // server the application's own handlers must keep working (report H7).
+        if (ownsServer) {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("Not Found");
+        }
+      };
+      httpServer.on("request", requestHandler);
     }
+    this._attachedHttpHandlers.set(httpServer, {
+      upgrade: upgradeHandler,
+      request: requestHandler,
+    });
 
     // Handle abort signal
     if (options?.signal) {
@@ -1429,6 +1461,25 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     });
   }
 
+  /**
+   * Evict per-IP connection buckets that have been idle longer than the
+   * rate-limit window. Recreating a bucket grants a full token allowance,
+   * which is exactly what a full refill after `windowMs` idle would yield —
+   * so eviction is behavior-preserving while bounding memory (report H4).
+   */
+  private _sweepConnectionBuckets(now: number): void {
+    const rl = this._options.connectionRateLimit;
+    if (!rl) {
+      this._connectionBuckets.clear();
+      return;
+    }
+    for (const [ip, bucket] of this._connectionBuckets) {
+      if (now - bucket.lastRefill > rl.windowMs) {
+        this._connectionBuckets.delete(ip);
+      }
+    }
+  }
+
   // ─── Close ───────────────────────────────────────────────────
 
   async close(options: CloseOptions = {}): Promise<void> {
@@ -1515,15 +1566,26 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       this._wss = this._createWss();
     }
 
-    // Close all HTTP servers
-    const serverClosePromises = Array.from(this._httpServers).map(
-      (server) =>
-        new Promise<void>((resolve) => {
-          server.close(() => resolve());
-        }),
-    );
+    // Detach our listeners from every server; only close servers we own.
+    const serverClosePromises: Promise<void>[] = [];
+    for (const srv of this._httpServers) {
+      const handlers = this._attachedHttpHandlers.get(srv);
+      if (handlers) {
+        srv.removeListener("upgrade", handlers.upgrade);
+        if (handlers.request) srv.removeListener("request", handlers.request);
+      }
+      if (this._ownedHttpServers.has(srv)) {
+        serverClosePromises.push(
+          new Promise<void>((resolve) => {
+            srv.close(() => resolve());
+          }),
+        );
+      }
+    }
     await Promise.allSettled(serverClosePromises);
     this._httpServers.clear();
+    this._ownedHttpServers.clear();
+    this._attachedHttpHandlers.clear();
 
     // Stop adaptive limiter
     if (this._adaptiveLimiter) {
