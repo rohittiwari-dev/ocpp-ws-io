@@ -1346,6 +1346,20 @@ export class OCPPClient<
       // Keep backward-compatible "callResult" event
       this.emit("callResult", message);
 
+      // Strict mode: validate the inbound response payload against the
+      // method's .conf schema (report M6).
+      if (this._options.strictMode && this._protocol) {
+        try {
+          this._validateInbound(pendingCtx.method, ctxvals.payload, "conf");
+        } catch (err) {
+          clearTimeout(pendingCtx.timeoutHandle);
+          pendingCtx.removeAbortListener?.();
+          this._pendingCalls.delete(ctxvals.messageId);
+          pendingCtx.reject(err);
+          return;
+        }
+      }
+
       clearTimeout(pendingCtx.timeoutHandle);
       pendingCtx.removeAbortListener?.();
       this._pendingCalls.delete(ctxvals.messageId);
@@ -1412,10 +1426,13 @@ export class OCPPClient<
     // Pattern matches OCPP-J CALL format: [2, "messageId", ...]
     const match = rawMessage.match(/^\s*\[\s*2\s*,\s*"([^"]+)"/);
     if (match?.[1] && this._ws) {
+      // OCPP 1.6J spells this error "FormationViolation" (report M7)
+      const formatCode =
+        this._protocol === "ocpp1.6" ? "FormationViolation" : "FormatViolation";
       const errorResponse: OCPPCallError = [
         MessageType.CALLERROR,
         match[1],
-        "FormatViolation",
+        formatCode,
         error.message || "Invalid message format",
         {},
       ];

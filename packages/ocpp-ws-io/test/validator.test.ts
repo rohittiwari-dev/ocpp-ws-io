@@ -109,7 +109,7 @@ describe("Validator", () => {
       }
     });
 
-    it("should throw FormatViolation for value exceeding maxLength", () => {
+    it("should throw FormationViolation for value exceeding maxLength (1.6 spelling, M7)", () => {
       const v = new Validator("ocpp1.6", testSchemas);
       try {
         v.validate("urn:Authorize.req", {
@@ -118,7 +118,7 @@ describe("Validator", () => {
         expect.unreachable("should have thrown");
       } catch (err: unknown) {
         expect((err as { rpcErrorCode: string }).rpcErrorCode).toBe(
-          "FormatViolation",
+          "FormationViolation",
         );
       }
     });
@@ -180,5 +180,60 @@ describe("OCPP 2.1 schema ID normalization (C2)", () => {
         chargingStation: { model: "M1", vendorName: "V1" },
       }),
     ).not.toThrow();
+  });
+});
+
+describe("protocol-aware error codes (M7)", () => {
+  test("1.6 format violations use FormationViolation", () => {
+    const v16 = getStandardValidators().find(
+      (v) => v.subprotocol === "ocpp1.6",
+    )!;
+    try {
+      // chargePointVendor maxLength 20 → FORMAT violation keyword
+      v16.validate("urn:BootNotification.req", {
+        chargePointVendor: "X".repeat(50),
+        chargePointModel: "M",
+      });
+      expect.unreachable("should have thrown");
+    } catch (err: any) {
+      expect(err.rpcErrorCode).toBe("FormationViolation");
+    }
+  });
+
+  test("2.0.1 format violations keep FormatViolation", () => {
+    const v201 = getStandardValidators().find(
+      (v) => v.subprotocol === "ocpp2.0.1",
+    )!;
+    try {
+      v201.validate("urn:BootNotification.req", {
+        reason: "NotARealReason",
+        chargingStation: { model: "M", vendorName: "V" },
+      });
+      expect.unreachable("should have thrown");
+    } catch (err: any) {
+      expect(["FormatViolation", "PropertyConstraintViolation"]).toContain(
+        err.rpcErrorCode,
+      );
+    }
+  });
+});
+
+describe("createValidator custom schemas (M8)", () => {
+  test("custom schemas are not shadowed by the standard registry", () => {
+    getStandardValidators(); // ensure standard ocpp1.6 validator exists first
+    const custom = createValidator("ocpp1.6", [
+      {
+        $id: "urn:MyCustom.req",
+        type: "object",
+        properties: { x: { type: "number" } },
+        required: ["x"],
+      },
+    ]);
+    expect(custom.hasSchema("urn:MyCustom.req")).toBe(true);
+    expect(() => custom.validate("urn:MyCustom.req", {})).toThrow();
+  });
+
+  test("getStandardValidators still returns cached instances", () => {
+    expect(getStandardValidators()[0]).toBe(getStandardValidators()[0]);
   });
 });

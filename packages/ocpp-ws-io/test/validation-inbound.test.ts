@@ -95,3 +95,30 @@ describe("Inbound Validation (Strict Mode)", () => {
     expect(result).toBeInstanceOf(Error);
   });
 });
+
+describe("inbound CALLRESULT validation (M6)", () => {
+  it("strict client rejects a malformed response payload", async () => {
+    const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    server.on("client", (c) =>
+      c.handle("Heartbeat", () => ({ currentTime: 12345 }) as any),
+    );
+    const httpServer = await server.listen(0);
+    const port = getPort(httpServer);
+
+    const client = new OCPPClient({
+      identity: "CP-CONF",
+      endpoint: `ws://127.0.0.1:${port}`,
+      protocols: ["ocpp1.6"],
+      strictMode: true,
+      reconnect: false,
+    });
+    await client.connect();
+
+    await expect(client.call("Heartbeat", {})).rejects.toMatchObject({
+      rpcErrorCode: "TypeConstraintViolation",
+    });
+
+    await client.close({ force: true });
+    await server.close({ force: true });
+  });
+});

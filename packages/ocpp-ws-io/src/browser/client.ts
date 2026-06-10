@@ -857,10 +857,13 @@ export class BrowserOCPPClient<
     // Best-effort: try to extract messageId and respond with CALLERROR
     const match = rawMessage.match(/^\s*\[\s*2\s*,\s*"([^"]+)"/);
     if (match?.[1] && this._ws) {
+      // OCPP 1.6J spells this error "FormationViolation" (report M7)
+      const formatCode =
+        this._protocol === "ocpp1.6" ? "FormationViolation" : "FormatViolation";
       const errorResponse: OCPPCallError = [
         MessageType.CALLERROR,
         match[1],
-        "FormatViolation",
+        formatCode,
         error.message || "Invalid message format",
         {},
       ];

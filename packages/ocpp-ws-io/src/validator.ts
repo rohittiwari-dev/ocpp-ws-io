@@ -137,7 +137,15 @@ export class Validator {
     const isValid = validateFn(params);
     if (!isValid && validateFn.errors && validateFn.errors.length > 0) {
       const primaryError = validateFn.errors[0];
-      const ocppErrorCode = keywordToOCPPError(primaryError.keyword);
+      let ocppErrorCode = keywordToOCPPError(primaryError.keyword);
+      // OCPP 1.6J names this error "FormationViolation"; 2.0.1+ renamed it
+      // to "FormatViolation" (report M7).
+      if (
+        ocppErrorCode === "FormatViolation" &&
+        this.subprotocol.startsWith("ocpp1.6")
+      ) {
+        ocppErrorCode = "FormationViolation";
+      }
       const description = this._ajv.errorsText(validateFn.errors);
 
       throw createRPCError(ocppErrorCode, description);
@@ -152,28 +160,16 @@ export class Validator {
   }
 }
 
-// ─── E5: Global Schema Registry ────────────────────────────────
-
 /**
- * Global singleton registry that deduplicates Validator instances
- * across multiple routers and server instances using the same protocol.
- * Prevents creating multiple AJV instances with identical schemas.
- */
-const _validatorRegistry = new Map<string, Validator>();
-
-/**
- * Create or retrieve a cached validator for a specific subprotocol version.
- * E5: Returns an existing instance if one was already created for this subprotocol,
- * preventing duplicate AJV instances and saving memory.
+ * Create a validator for a specific subprotocol version.
+ *
+ * Always returns a fresh instance so custom schema sets are never shadowed
+ * by previously created validators for the same subprotocol (report M8).
+ * Standard validators are cached separately by getStandardValidators().
  */
 export function createValidator(
   subprotocol: string,
   schemas: ValidatorSchema[],
 ): Validator {
-  const existing = _validatorRegistry.get(subprotocol);
-  if (existing) return existing;
-
-  const validator = new Validator(subprotocol, schemas);
-  _validatorRegistry.set(subprotocol, validator);
-  return validator;
+  return new Validator(subprotocol, schemas);
 }
