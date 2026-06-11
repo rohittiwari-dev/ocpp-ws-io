@@ -1,5 +1,44 @@
 # Changelog
 
+## Unreleased
+
+Fixes all findings from the 2026-06-11 deep-dive review (see `report.md`).
+
+### Fixed
+
+- **Process crash with auto-dispatch and no `error` listener** — `emit("error")`
+  inside the dispatch interval threw uncaught when unlistened, killing the host
+  process; errors are now logged to console instead when no listener is attached.
+- **`clearDispatch(0)` cleared ALL sessions** — transactionId `0` (legal in OCPP
+  1.6) was treated as "clear everything"; it now targets only that session.
+- **Spurious `gridOverCommitted` events** — allocations are now rounded DOWN to
+  2 decimals, so non-exact divisions (e.g. 95 kW / 3) no longer overshoot the
+  budget by 0.01 kW and fire false over-subscription alarms.
+- **Builders honor the session's phase count** — schedule periods and the
+  `minChargingRate` amps conversion default to `sessionProfile.phases` instead
+  of a hardcoded 3, keeping amp-unit profiles internally consistent.
+- **`dispatch()` coalescing no longer drops state changes** — a dispatch
+  requested while another run is in flight now schedules one trailing re-run, so
+  `updateSession()`/`setGridLimit()` made mid-flight apply promptly.
+- **Profile id counters are time-seeded** — a CSMS restart no longer reuses ids
+  1, 2, 3… and silently replaces profiles persisted on chargers. Pass
+  `profileId` for full control.
+- **`buildOcpp21Profile` applies `dischargeLimitW` to custom `periods`**
+  (previously silently dropped when both options were supplied).
+- Events (`sessionAdded`/`sessionUpdated`/`sessionRemoved`) and `addSession()`
+  now emit/return copies — listeners can no longer mutate engine state.
+- `loadSnapshot()` rejects snapshots containing duplicate transactionIds;
+  sessions without a `transactionId` or with an empty `clientId` are rejected.
+
+### Documentation
+
+- `voltageV` is the **per-phase (per-leg)** voltage: US split-phase is
+  `phases: 2` + `voltageV: 120` (not 240, which would halve the computed amps).
+- `updateSession()` with an explicit `undefined` removes a cap; Time-of-Use
+  windows with `peakStartHour === peakEndHour` are empty (never peak).
+- Added the missing `LICENSE` file (MIT) shipped in `files`.
+
+
 ## [0.2.0] — 2026-06-04
 
 A major correctness, safety, and capability release. The allocator is now a true

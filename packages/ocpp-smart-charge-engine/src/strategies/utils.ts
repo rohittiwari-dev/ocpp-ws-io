@@ -102,7 +102,10 @@ export function sessionCapKw(session: ActiveSession): number {
  * Shared helper used by all strategies to build a SessionProfile
  * from an ActiveSession and an allocated kW figure.
  *
- * - Normalises the value to 2 decimal places.
+ * - Rounds the value DOWN to 2 decimal places. Rounding down (never up) keeps
+ *   the sum of all allocations at or below the grid budget — round-half-up
+ *   could push e.g. 95/3 → 31.67×3 = 95.01 kW over a 95 kW limit and trigger
+ *   spurious `gridOverCommitted` events.
  * - Enforces `session.minChargeRateKw` as a floor, **but clamps that floor to
  *   the hardware / EV caps** so the result never exceeds what the hardware can
  *   deliver (the floor can never override an upper cap).
@@ -118,6 +121,7 @@ export function buildSessionProfile(
   voltageV: number = DEFAULT_VOLTAGE_V,
 ): SessionProfile {
   const voltage = voltageV > 0 ? voltageV : DEFAULT_VOLTAGE_V;
+  const floor2 = (n: number) => Math.floor(Math.max(0, n) * 100) / 100;
 
   // Upper bound this session can ever receive (hardware & EV acceptance).
   const cap = Math.min(
@@ -134,12 +138,10 @@ export function buildSessionProfile(
   // allocatedKw is already <= cap (the strategy capped it); raise to the floor,
   // and re-cap defensively so the result is always within [effectiveMin, cap].
   const rawKw = Math.min(Math.max(allocatedKw, effectiveMin), cap);
-  const kw = parseFloat(rawKw.toFixed(2));
-  const watts = parseFloat((kw * 1000).toFixed(2));
+  const kw = floor2(rawKw);
+  const watts = floor2(kw * 1000);
   // Amps per phase: P(W) = V * I * phases  →  I = P / (V * phases)
-  const ampsPerPhase = parseFloat(
-    (watts / (voltage * session.phases)).toFixed(2),
-  );
+  const ampsPerPhase = floor2(watts / (voltage * session.phases));
 
   return {
     transactionId: session.transactionId,
@@ -148,7 +150,8 @@ export function buildSessionProfile(
     allocatedKw: kw,
     allocatedW: watts,
     allocatedAmpsPerPhase: ampsPerPhase,
-    minChargeRateKw: parseFloat(effectiveMin.toFixed(2)),
+    // Floored like the allocation so `allocatedKw >= minChargeRateKw` holds.
+    minChargeRateKw: floor2(effectiveMin),
     phases: session.phases,
     voltageV: voltage,
   };

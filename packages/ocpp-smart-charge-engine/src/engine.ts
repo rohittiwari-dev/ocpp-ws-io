@@ -107,6 +107,8 @@ class SmartChargingEngine extends EventEmitter {
   private timeOfUseTimezone: string | undefined;
   /** In-flight dispatch promise — coalesces overlapping dispatch() calls. */
   private dispatchInFlight: Promise<SessionProfile[]> | null = null;
+  /** Set when dispatch() was requested while another run was in flight. */
+  private dispatchPending = false;
 
   /** Internal session map keyed by transactionId (as string) */
   private readonly sessions = new Map<string, ActiveSession>();
@@ -189,8 +191,10 @@ class SmartChargingEngine extends EventEmitter {
 
     this.sessions.set(key, active);
     this.log(`[${this.siteId}] Session added: ${key} (client: ${session.clientId})`);
-    this.emit("sessionAdded", active);
-    return active;
+    // Emit/return copies — listeners and callers must not be able to mutate
+    // engine state through the shared reference.
+    this.emit("sessionAdded", { ...active });
+    return { ...active };
   }
 
   /**
@@ -230,7 +234,7 @@ class SmartChargingEngine extends EventEmitter {
     this.validateSession(merged);
     this.sessions.set(key, merged);
     this.log(`[${this.siteId}] Session updated: ${key}`);
-    this.emit("sessionUpdated", merged);
+    this.emit("sessionUpdated", { ...merged });
     return { ...merged };
   }
 
@@ -253,7 +257,7 @@ class SmartChargingEngine extends EventEmitter {
 
     this.sessions.delete(key);
     this.log(`[${this.siteId}] Session removed: ${key}`);
-    this.emit("sessionRemoved", session);
+    this.emit("sessionRemoved", { ...session });
 
     // Auto-clear profile from charger if configured
     if (this.autoClearOnRemove && this.clearDispatcher) {
@@ -327,8 +331,16 @@ class SmartChargingEngine extends EventEmitter {
     opts: { clear?: boolean } = {},
   ): void {
     // Validate everything first — never partially apply a bad snapshot.
+    const seen = new Set<string>();
     for (const s of sessions) {
       this.validateSession(s);
+      const key = String(s.transactionId);
+      if (seen.has(key)) {
+        throw new SmartChargingConfigError(
+          `loadSnapshot: duplicate transactionId "${key}" in snapshot.`,
+        );
+      }
+      seen.add(key);
     }
 
     if (opts.clear ?? true) {
@@ -399,7 +411,7 @@ class SmartChargingEngine extends EventEmitter {
         this.algorithm,
         err instanceof Error ? err.message : String(err),
       );
-      this.emit("error", error);
+      this.emitError(error);
       throw error;
     }
 
@@ -433,9 +445,20 @@ class SmartChargingEngine extends EventEmitter {
     // Re-entrancy guard: if a dispatch is already running (e.g. a slow dispatcher
     // while auto-dispatch ticks again, or a concurrent manual call), coalesce
     // onto the in-flight run instead of sending overlapping/out-of-order profiles.
-    if (this.dispatchInFlight) return this.dispatchInFlight;
+    // A trailing re-run is scheduled so state changes made during the in-flight
+    // run (updateSession, setGridLimit, …) are still applied promptly.
+    if (this.dispatchInFlight) {
+      this.dispatchPending = true;
+      return this.dispatchInFlight;
+    }
     this.dispatchInFlight = this._runDispatch().finally(() => {
       this.dispatchInFlight = null;
+      if (this.dispatchPending) {
+        this.dispatchPending = false;
+        this.dispatch().catch((err: unknown) => {
+          this.emitError(err instanceof Error ? err : new Error(String(err)));
+        });
+      }
     });
     return this.dispatchInFlight;
   }
@@ -493,11 +516,14 @@ class SmartChargingEngine extends EventEmitter {
       return;
     }
 
-    const targets: ActiveSession[] = transactionId
-      ? [this.sessions.get(String(transactionId))].filter(
-          (s): s is ActiveSession => s !== undefined,
-        )
-      : Array.from(this.sessions.values());
+    // Explicit undefined check — transactionId 0 is a legal OCPP 1.6 id and
+    // must target only that session, never fall through to "clear all".
+    const targets: ActiveSession[] =
+      transactionId !== undefined
+        ? [this.sessions.get(String(transactionId))].filter(
+            (s): s is ActiveSession => s !== undefined,
+          )
+        : Array.from(this.sessions.values());
 
     await Promise.allSettled(
       targets.map(async (session) => {
@@ -539,7 +565,7 @@ class SmartChargingEngine extends EventEmitter {
     this.autoDispatchTimer = setInterval(() => {
       if (this.sessions.size > 0) {
         this.dispatch().catch((err: unknown) => {
-          this.emit("error", err instanceof Error ? err : new Error(String(err)));
+          this.emitError(err instanceof Error ? err : new Error(String(err)));
         });
       }
     }, intervalMs);
@@ -773,6 +799,23 @@ class SmartChargingEngine extends EventEmitter {
    * negative or `NaN` power limits in the dispatched charging profile.
    */
   private validateSession(session: ChargingSession): void {
+    // Identity fields must be present — they key the session map and address
+    // the charger in every dispatch.
+    if (
+      session.transactionId === undefined ||
+      session.transactionId === null ||
+      session.transactionId === ""
+    ) {
+      throw new SmartChargingConfigError(
+        `transactionId is required, got ${String(session.transactionId)}`,
+      );
+    }
+    if (typeof session.clientId !== "string" || session.clientId.length === 0) {
+      throw new SmartChargingConfigError(
+        `clientId must be a non-empty string, got ${String(session.clientId)}`,
+      );
+    }
+
     // Upper caps: a positive finite number, or Infinity ("uncapped").
     const checkCap = (name: string, v: number | undefined): void => {
       if (v === undefined || v === Infinity) return;
@@ -835,6 +878,20 @@ class SmartChargingEngine extends EventEmitter {
             `${w.peakPowerMultiplier}. Values > 1 would exceed the grid limit.`,
         );
       }
+    }
+  }
+
+  /**
+   * Emit `"error"` only when someone is listening. Node's EventEmitter throws
+   * on an unlistened `"error"` emit — inside the auto-dispatch interval that
+   * would surface as an uncaught exception and crash the host process.
+   */
+  private emitError(error: Error): void {
+    if (this.listenerCount("error") > 0) {
+      this.emit("error", error);
+    } else {
+      // Always leave a trace even when debug logging is off.
+      console.error(`[${this.siteId}] [ocpp-smart-charge-engine]`, error);
     }
   }
 
