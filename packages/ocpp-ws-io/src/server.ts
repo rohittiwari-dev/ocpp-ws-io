@@ -10,6 +10,7 @@ import type { TLSSocket } from "node:tls";
 import { WebSocketServer } from "ws";
 import { AdaptiveLimiter } from "./adaptive-limiter.js";
 import { checkCORS } from "./cors.js";
+import { TimeoutError } from "./errors.js";
 import { initLogger } from "./init-logger.js";
 import { LRUMap } from "./lru-map.js";
 import { RadixTrie } from "./radix-trie.js";
@@ -38,7 +39,6 @@ import {
   type ServerOptions,
   type TypedEventEmitter,
 } from "./types.js";
-import { TimeoutError } from "./errors.js";
 import {
   createId,
   createRPCError,
