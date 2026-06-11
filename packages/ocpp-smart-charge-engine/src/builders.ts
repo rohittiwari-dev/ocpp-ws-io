@@ -99,13 +99,22 @@ export interface Ocpp16ProfileOptions {
  * }
  * ```
  */
-let ocpp16IdCounter = 1;
+// Default profile-id counters are seeded from the clock so a CSMS restart
+// does not reuse ids 1, 2, 3… and silently replace profiles still persisted
+// on chargers (OCPP replaces profiles on id match). Pass `options.profileId`
+// for full control over id assignment.
+const idSeed = () => Date.now() % 2_000_000_000;
+let ocpp16IdCounter = idSeed();
 
 export function buildOcpp16Profile(
   sessionProfile: SessionProfile,
   options: Ocpp16ProfileOptions = {},
 ): Ocpp16ChargingProfile {
   const rateUnit = options.rateUnit ?? "W";
+  // Phase count follows the session the engine computed amps for, unless
+  // explicitly overridden — `allocatedAmpsPerPhase` was derived from
+  // `sessionProfile.phases`, so the period must declare the same count.
+  const numberPhases = options.numberPhases ?? sessionProfile.phases;
   const limit =
     rateUnit === "W"
       ? sessionProfile.allocatedW
@@ -116,12 +125,12 @@ export function buildOcpp16Profile(
       ? rateUnit === "W"
         ? sessionProfile.minChargeRateKw * 1000
         : (sessionProfile.minChargeRateKw * 1000) /
-          ((options.numberPhases ?? 3) * (sessionProfile.voltageV || 230))
+          (numberPhases * (sessionProfile.voltageV || 230))
       : undefined;
 
   const periods: Ocpp16ChargingSchedulePeriod[] = options.periods
     ? options.periods.map((p) => ({ ...p }))
-    : [{ startPeriod: 0, limit, numberPhases: options.numberPhases ?? 3 }];
+    : [{ startPeriod: 0, limit, numberPhases }];
 
   return {
     chargingProfileId: options.profileId ?? ocpp16IdCounter++,
@@ -217,13 +226,14 @@ export interface Ocpp201ProfileOptions {
  * }
  * ```
  */
-let ocpp201IdCounter = 1;
+let ocpp201IdCounter = idSeed();
 
 export function buildOcpp201Profile(
   sessionProfile: SessionProfile,
   options: Ocpp201ProfileOptions = {},
 ): Ocpp201ChargingProfile {
   const rateUnit = options.rateUnit ?? "W";
+  const numberPhases = options.numberPhases ?? sessionProfile.phases;
   const limit =
     rateUnit === "W"
       ? sessionProfile.allocatedW
@@ -234,12 +244,12 @@ export function buildOcpp201Profile(
       ? rateUnit === "W"
         ? sessionProfile.minChargeRateKw * 1000
         : (sessionProfile.minChargeRateKw * 1000) /
-          ((options.numberPhases ?? 3) * (sessionProfile.voltageV || 230))
+          (numberPhases * (sessionProfile.voltageV || 230))
       : undefined;
 
   const periods: Ocpp201ChargingSchedulePeriod[] = options.periods
     ? options.periods.map((p) => ({ ...p }))
-    : [{ startPeriod: 0, limit, numberPhases: options.numberPhases ?? 3 }];
+    : [{ startPeriod: 0, limit, numberPhases }];
 
   return {
     id: options.profileId ?? ocpp201IdCounter++,
@@ -309,13 +319,14 @@ export interface Ocpp21ProfileOptions extends Ocpp201ProfileOptions {
  * }
  * ```
  */
-let ocpp21IdCounter = 1;
+let ocpp21IdCounter = idSeed();
 
 export function buildOcpp21Profile(
   sessionProfile: SessionProfile,
   options: Ocpp21ProfileOptions = {},
 ): Ocpp21ChargingProfile {
   const rateUnit = options.rateUnit ?? "W";
+  const numberPhases = options.numberPhases ?? sessionProfile.phases;
   const limit =
     rateUnit === "W"
       ? sessionProfile.allocatedW
@@ -326,21 +337,32 @@ export function buildOcpp21Profile(
       ? rateUnit === "W"
         ? sessionProfile.minChargeRateKw * 1000
         : (sessionProfile.minChargeRateKw * 1000) /
-          ((options.numberPhases ?? 3) * (sessionProfile.voltageV || 230))
+          (numberPhases * (sessionProfile.voltageV || 230))
       : undefined;
 
-  const period: Ocpp21ChargingSchedulePeriod = {
-    startPeriod: 0,
-    limit,
-    numberPhases: options.numberPhases ?? 3,
-    ...(options.dischargeLimitW !== undefined
-      ? { dischargeLimit: -Math.abs(options.dischargeLimitW) }
-      : {}),
-  };
+  const dischargeLimit =
+    options.dischargeLimitW !== undefined
+      ? -Math.abs(options.dischargeLimitW)
+      : undefined;
 
+  // dischargeLimitW also applies to user-supplied periods (unless a period
+  // already sets its own dischargeLimit) — previously it was silently dropped.
   const periods: Ocpp21ChargingSchedulePeriod[] = options.periods
-    ? options.periods.map((p) => ({ ...p }))
-    : [period];
+    ? options.periods.map((p) => ({
+        ...p,
+        ...(dischargeLimit !== undefined &&
+        (p as Ocpp21ChargingSchedulePeriod).dischargeLimit === undefined
+          ? { dischargeLimit }
+          : {}),
+      }))
+    : [
+        {
+          startPeriod: 0,
+          limit,
+          numberPhases,
+          ...(dischargeLimit !== undefined ? { dischargeLimit } : {}),
+        },
+      ];
 
   return {
     id: options.profileId ?? ocpp21IdCounter++,

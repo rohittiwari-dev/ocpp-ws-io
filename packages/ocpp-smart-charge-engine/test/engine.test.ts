@@ -5,6 +5,7 @@ import {
   DuplicateSessionError,
   SessionNotFoundError,
   SmartChargingConfigError,
+  StrategyError,
 } from "../src/index.js";
 import type { ChargingProfileDispatcher, StrategyFn } from "../src/index.js";
 import { buildSessionProfile } from "../src/strategies/utils.js";
@@ -826,15 +827,17 @@ describe("SmartChargingEngine — dispatch overlap guard", () => {
     engine.addSession({ transactionId: 1, clientId: "A" });
 
     const p1 = engine.dispatch();
-    const p2 = engine.dispatch(); // should coalesce onto p1, not start a 2nd run
+    const p2 = engine.dispatch(); // coalesces onto p1, never overlaps it
     const [r1, r2] = await Promise.all([p1, p2]);
 
     expect(r1).toBe(r2); // same in-flight result
-    expect(dispatcher).toHaveBeenCalledTimes(1); // only one dispatch executed
+    // The coalesced call schedules ONE trailing re-run (so state changes made
+    // mid-flight are applied) — runs are sequential, never overlapping.
+    await vi.waitFor(() => expect(dispatcher).toHaveBeenCalledTimes(2));
 
     // After settling, a fresh dispatch runs normally again.
     await engine.dispatch();
-    expect(dispatcher).toHaveBeenCalledTimes(2);
+    expect(dispatcher).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -1041,5 +1044,185 @@ describe("SmartChargingEngine — split-phase (phases: 2)", () => {
     expect(() =>
       engine.addSession({ transactionId: 1, clientId: "A", phases: 4 as 1 | 2 | 3 }),
     ).toThrow(SmartChargingConfigError);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Review fixes (report.md 2026-06-11)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("Review H1 — no crash without an 'error' listener", () => {
+  it("auto-dispatch tick with a throwing strategy does not throw uncaught", () => {
+    vi.useFakeTimers();
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const engine = new SmartChargingEngine({
+        siteId: "X",
+        maxGridPowerKw: 100,
+        algorithm: () => {
+          throw new Error("strategy boom");
+        },
+        dispatcher: makeDispatcher(),
+      });
+      engine.addSession({ transactionId: 1, clientId: "A" });
+      engine.startAutoDispatch(1000);
+      // No 'error' listener attached — the tick must not throw out of the timer
+      expect(() => vi.advanceTimersByTime(3500)).not.toThrow();
+      engine.stopAutoDispatch();
+      expect(consoleSpy).toHaveBeenCalled(); // error still surfaced via console
+    } finally {
+      consoleSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("still emits 'error' when a listener is attached", () => {
+    const engine = new SmartChargingEngine({
+      siteId: "X",
+      maxGridPowerKw: 100,
+      algorithm: () => {
+        throw new Error("strategy boom");
+      },
+      dispatcher: makeDispatcher(),
+    });
+    engine.addSession({ transactionId: 1, clientId: "A" });
+    const errors: Error[] = [];
+    engine.on("error", (e) => errors.push(e));
+    expect(() => engine.optimize()).toThrow(StrategyError);
+    expect(errors).toHaveLength(1);
+  });
+});
+
+describe("Review H2 — clearDispatch(0) targets only transaction 0", () => {
+  it("does not clear all sessions for a falsy transactionId", async () => {
+    const cleared: Array<number | string> = [];
+    const engine = new SmartChargingEngine({
+      siteId: "X",
+      maxGridPowerKw: 100,
+      dispatcher: makeDispatcher(),
+      clearDispatcher: async (p) => {
+        cleared.push(p.transactionId);
+      },
+    });
+    engine.addSession({ transactionId: 0, clientId: "A" });
+    engine.addSession({ transactionId: 1, clientId: "B" });
+
+    await engine.clearDispatch(0);
+    expect(cleared).toEqual([0]);
+
+    cleared.length = 0;
+    await engine.clearDispatch(); // no arg still clears everything
+    expect(cleared.sort()).toEqual([0, 1]);
+  });
+});
+
+describe("Review M1 — no spurious gridOverCommitted from rounding", () => {
+  it("3 uncapped sessions on a non-exact division stay within budget", () => {
+    const engine = new SmartChargingEngine({
+      siteId: "X",
+      maxGridPowerKw: 100, // 5% default margin → 95 kW / 3 = 31.666…
+      dispatcher: makeDispatcher(),
+    });
+    let fired = false;
+    engine.on("gridOverCommitted", () => {
+      fired = true;
+    });
+    for (let i = 1; i <= 3; i++)
+      engine.addSession({ transactionId: i, clientId: `CP${i}` });
+
+    const profiles = engine.optimize();
+    const sum = profiles.reduce((s, p) => s + p.allocatedKw, 0);
+    expect(sum).toBeLessThanOrEqual(95);
+    expect(profiles.every((p) => p.allocatedKw === 31.66)).toBe(true);
+    expect(fired).toBe(false);
+  });
+
+  it("still fires for genuine floor-induced overcommit", () => {
+    const engine = new SmartChargingEngine({
+      siteId: "X",
+      maxGridPowerKw: 10,
+      safetyMarginPct: 0,
+      dispatcher: makeDispatcher(),
+    });
+    let info: unknown = null;
+    engine.on("gridOverCommitted", (i) => {
+      info = i;
+    });
+    engine.addSession({ transactionId: 1, clientId: "A", minChargeRateKw: 8 });
+    engine.addSession({ transactionId: 2, clientId: "B", minChargeRateKw: 8 });
+    engine.optimize();
+    expect(info).not.toBeNull();
+  });
+});
+
+describe("Review M3 — trailing re-dispatch after coalesced call", () => {
+  it("applies state changes made during an in-flight dispatch", async () => {
+    const seen: number[] = [];
+    let resolveFirst!: () => void;
+    let callCount = 0;
+    const engine = new SmartChargingEngine({
+      siteId: "X",
+      maxGridPowerKw: 100,
+      safetyMarginPct: 0,
+      dispatcher: async ({ sessionProfile }) => {
+        callCount++;
+        seen.push(sessionProfile.allocatedKw);
+        if (callCount === 1) {
+          await new Promise<void>((r) => {
+            resolveFirst = r;
+          });
+        }
+      },
+    });
+    engine.addSession({ transactionId: 1, clientId: "A" });
+
+    const first = engine.dispatch(); // hangs in the dispatcher
+    await new Promise((r) => setTimeout(r, 10));
+    engine.setGridLimit(50); // state change mid-flight
+    const coalesced = engine.dispatch(); // coalesces onto the first run
+    resolveFirst();
+    await first;
+    await coalesced;
+    // Trailing run must have fired with the NEW limit
+    await vi.waitFor(() => expect(seen).toContain(50));
+  });
+});
+
+describe("Review L6/L7 — validation hardening", () => {
+  it("rejects snapshots with duplicate transactionIds", () => {
+    const engine = makeEngine();
+    expect(() =>
+      engine.loadSnapshot([
+        { transactionId: 1, clientId: "A" },
+        { transactionId: 1, clientId: "B" },
+      ]),
+    ).toThrow(SmartChargingConfigError);
+  });
+
+  it("rejects sessions without identity fields", () => {
+    const engine = makeEngine();
+    expect(() =>
+      engine.addSession({ transactionId: 1, clientId: "" }),
+    ).toThrow(SmartChargingConfigError);
+    expect(() =>
+      engine.addSession({
+        transactionId: undefined as unknown as number,
+        clientId: "A",
+      }),
+    ).toThrow(SmartChargingConfigError);
+  });
+});
+
+describe("Review L3 — events emit copies", () => {
+  it("mutating an emitted session does not affect engine state", () => {
+    const engine = makeEngine();
+    let emitted: { priority: number } | null = null;
+    engine.on("sessionAdded", (s) => {
+      emitted = s;
+    });
+    const returned = engine.addSession({ transactionId: 1, clientId: "A" });
+    emitted!.priority = 999;
+    returned.priority = 888;
+    expect(engine.getSession(1)!.priority).toBe(1);
   });
 });

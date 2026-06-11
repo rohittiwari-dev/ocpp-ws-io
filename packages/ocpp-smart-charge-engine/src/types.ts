@@ -166,8 +166,11 @@ export interface ChargingSession {
 
   /**
    * Optional: Number of AC phases this connector supplies to the EV.
-   * `1` = single-phase, `2` = split-phase (e.g. US 240 V), `3` = three-phase.
-   * Used for the amps-per-phase calculation. Defaults to the site `phases`.
+   * `1` = single-phase, `2` = split-phase, `3` = three-phase.
+   * Used for the amps-per-phase calculation (`I = W / (V × phases)`), so
+   * `voltageV` must be the **per-phase (per-leg) voltage**. For US split-phase
+   * use `phases: 2` with `voltageV: 120` (two 120 V legs) — NOT 240 V, which
+   * would halve the computed current. Defaults to the site `phases`.
    */
   phases?: 1 | 2 | 3;
 
@@ -221,6 +224,10 @@ export interface SessionProfile {
 /**
  * Fields of a session that can be changed in place via `engine.updateSession()`.
  * `transactionId` and `clientId` are immutable identity and cannot be changed.
+ *
+ * Passing an explicit `undefined` for a cap (e.g. `{ maxHardwarePowerKw:
+ * undefined }`) REMOVES that cap — the session becomes uncapped on that axis.
+ * Omit the key entirely to leave the current value unchanged.
  */
 export type SessionUpdate = Partial<
   Pick<
@@ -246,7 +253,13 @@ export type Strategy = "EQUAL_SHARE" | "PRIORITY" | "TIME_OF_USE";
 export interface TimeOfUseWindow {
   /** Hour of day (0–23) when the peak pricing window starts */
   peakStartHour: number;
-  /** Hour of day (0–23) when the peak pricing window ends (exclusive) */
+  /**
+   * Hour of day (0–23) when the peak pricing window ends (exclusive).
+   * `peakEndHour < peakStartHour` wraps overnight (e.g. 22 → 6).
+   * NOTE: `peakStartHour === peakEndHour` is an EMPTY window (never peak),
+   * not a 24-hour window — use `0` → `23` plus a second `23` → `0` window
+   * (or simply lower `maxGridPowerKw`) for an all-day reduction.
+   */
   peakEndHour: number;
   /**
    * Power multiplier during peak hours. E.g. 0.5 = charge at 50% during peak.
@@ -293,7 +306,9 @@ export interface SmartChargingEngineConfig {
   safetyMarginPct?: number;
 
   /**
-   * Voltage to use for Amps calculation (V = W / A).
+   * Per-phase (per-leg) voltage used for the amps calculation
+   * (`I = W / (V × phases)`).
+   * For US split-phase sites use `voltageV: 120` with `phases: 2`.
    * @default 230  (European standard, also common in India)
    */
   voltageV?: number;
