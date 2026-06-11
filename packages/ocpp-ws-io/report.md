@@ -1,3 +1,7 @@
+> **Status update (2026-06-11):** All findings in this report have been addressed.
+> See `docs/superpowers/plans/2026-06-10-ocpp-ws-io-review-fixes.md` and the
+> `Unreleased` section of CHANGELOG.md for the fix list.
+
 # Deep-Dive Review: `ocpp-ws-io` (v2.2.4)
 
 **Date:** 2026-06-10
