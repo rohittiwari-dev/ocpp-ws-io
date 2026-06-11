@@ -1,6 +1,6 @@
 > **Status update (2026-06-11):** All findings below have been addressed —
 > H1/H2/M1–M5 fixed with regression tests (90 tests passing), L1–L7 fixed or
-> documented. See the `Unreleased` section of CHANGELOG.md.
+> documented. Released as v0.3.0 — see the `[0.3.0]` section of CHANGELOG.md.
 
 # ocpp-smart-charge-engine — Deep-Dive Review
 
