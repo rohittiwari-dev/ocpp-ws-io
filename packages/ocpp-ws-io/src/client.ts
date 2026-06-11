@@ -1095,8 +1095,7 @@ export class OCPPClient<
         // Worker pool already parsed — skip JSON.parse entirely
         message = preParsed as OCPPMessage;
       } else {
-        // Zero-copy — JSON.parse accepts Buffer directly (Node 18+),
-        // avoiding an intermediate string allocation per message.
+        // JSON.parse accepts a Buffer directly (implicit utf8 toString).
         message = JSON.parse(rawData as unknown as string) as OCPPMessage;
       }
       if (!Array.isArray(message)) throw new Error("Message is not an array");
@@ -1779,7 +1778,6 @@ export class OCPPClient<
       this._options.pingIntervalMs + 5000;
 
     const doPing = () => {
-      // console.log("doPing called", this._state, !!this._ws, "interval", this._options.pingIntervalMs);
       if (this._state !== OPEN || !this._ws) return;
 
       if (this._options.deferPingsOnActivity) {

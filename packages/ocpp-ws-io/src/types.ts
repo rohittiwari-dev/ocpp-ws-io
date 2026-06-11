@@ -398,7 +398,11 @@ export interface ClientOptions {
   strictModeMethods?: Array<AllMethodNames<OCPPProtocol>>;
   /** Custom validators for strict mode */
   strictModeValidators?: Validator[];
-  /** Max number of bad messages before closing (default: Infinity) */
+  /**
+   * Max number of bad messages before closing.
+   * Default: Infinity (never disconnects on bad messages) — set a finite
+   * value in production.
+   */
   maxBadMessages?: number;
   /** Include error details in responses (default: false) */
   respondWithDetailedErrors?: boolean;
@@ -567,7 +571,11 @@ interface ServerOptionsBase {
   strictModeValidators?: Validator[];
   /** Rate Limiting configuration — inherited */
   rateLimit?: RateLimitOptions;
-  /** Max bad messages — inherited (default: Infinity) */
+  /**
+   * Max bad messages — inherited.
+   * Default: Infinity (never disconnects on bad messages) — set a finite
+   * value in production.
+   */
   maxBadMessages?: number;
   /** Include error details in responses — inherited (default: false) */
   respondWithDetailedErrors?: boolean;

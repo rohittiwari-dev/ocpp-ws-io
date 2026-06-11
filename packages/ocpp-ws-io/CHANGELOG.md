@@ -1,5 +1,26 @@
 # ocpp-ws-io
 
+## Unreleased
+
+### Fixed
+
+- Worker-thread parse pool now ships `parse-worker.cjs` in dist and decodes binary frames (was silently non-functional).
+- OCPP 2.1 strict-mode validation resolves `Request`/`Response`-style schema ids (was a silent no-op).
+- Cluster presence TTL is heartbeat-refreshed; long-lived connections stay routable.
+- Cross-node `sendToClient` now returns the remote client's response (correlation ids over the adapter).
+- AbortSignal listeners detach when calls settle; offline-queue overflow rejects the dropped call.
+- Inbound message processing is serialized per connection (ordering with async plugins/worker parsing).
+- Per-IP connection-rate buckets are garbage-collected; `x-forwarded-proto` requires `trustProxy`.
+- External HTTP servers are no longer 404-hijacked by `healthEndpoint` nor closed by `server.close()`.
+- Redis adapter: presence cache pruned on removal, no `__seq` payload mutation, offsets survive resubscribe, non-blocking polls without a dedicated blocking client, direct `driver` option (ClusterDriver usable).
+- Strict mode validates inbound CALLRESULT payloads; OCPP 1.6 uses `FormationViolation`.
+- `message-dedup` only dedups CALLs and replays cached responses; webhook retries non-2xx with backoff.
+- Detailed CALLERRORs no longer include stack traces; Basic-Auth identity check is timing-safe.
+
+### Added
+
+- `ServerOptions.maxConnections` (upgrade-time cap), `ServerOptions.presenceTtlSeconds`, `CORSOptions.trustProxy`, `RedisAdapterOptions.driver`, `OCPPClient.hasHandler()`, `OCPPClient.callImmediate()`, `OCPPClient.bufferedAmount`.
+
 ## v2.2.4 - Security & Reliability Hardening
 
 ### Changes

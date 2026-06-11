@@ -6,7 +6,7 @@
 
 The **production-ready OCPP RPC implementation** for building type-safe EV charging platforms, CSMS backends, charge points, and simulators. Supports OCPP 1.6J, 2.0.1, and 2.1 with full protocol compliance, all security profiles, Redis clustering, strict JSON schema validation, and structured logging.
 
-> **Built with TypeScript** for EV charging, CSMS, CPO/EMSP platforms. Zero-dependency WebSocket RPC framework supporting OCPP versions 1.6, 2.0.1, and 2.1 with optional JSON schema validation, bidirectional messaging, all security profiles (0–3), Redis pub/sub clustering, and structured logging powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io).
+> **Built with TypeScript** for EV charging, CSMS, CPO/EMSP platforms. Lightweight WebSocket RPC framework (runtime deps: ws, ajv, ajv-formats, voltlog-io) supporting OCPP versions 1.6, 2.0.1, and 2.1 with optional JSON schema validation, bidirectional messaging, all security profiles (0–3), Redis pub/sub clustering, and structured logging powered by [voltlog-io](https://ocpp-ws-io.rohittiwari.me/docs/voltlog-io).
 
 [![npm version](https://img.shields.io/npm/v/ocpp-ws-io.svg)](https://www.npmjs.com/package/ocpp-ws-io)
 [![License](https://img.shields.io/npm/l/ocpp-ws-io.svg)](https://github.com/rohittiwari-dev/ocpp-ws-io/blob/main/LICENSE)
@@ -163,7 +163,7 @@ await client.call("ocpp1.6", "BootNotification", { ... }, { idempotencyKey: "uni
 | `rateLimit`          | `RateLimitOptions` | —         | Token bucket socket & method rate-limiter  |
 | `healthEndpoint`     | `boolean`          | `false`   | Expose HTTP `/health` and `/metrics` APIs  |
 
-## � Message Observability & Event Handling (v3.0.0+)
+## � Message Observability & Event Handling (v2.2+)
 
 Unified message event API with direction tracking and rich contextual metadata for complete visibility into OCPP message flow.
 
@@ -448,7 +448,7 @@ client.use(async (ctx, next) => {
 
 ## 📡 Redis Clustering & Distributed CSMS Architecture
 
-Scale OCPP RPC servers across multiple nodes with Redis pub/sub, Streams, and presence tracking for enterprise CSMS deployments.
+Scale OCPP RPC servers across multiple nodes with Redis pub/sub, Streams, and presence tracking for enterprise CSMS deployments. Cross-node `sendToClient` returns the remote client's response (correlated over the adapter); sessions remain node-local.
 
 ### Set Up Redis Clustering
 
