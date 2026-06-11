@@ -114,3 +114,14 @@ describe("getErrorPlainObject stack handling (M13)", () => {
     expect(obj.stack).toBeDefined();
   });
 });
+
+import { readFileSync } from "node:fs";
+
+describe("getPackageIdent version (low)", () => {
+  it("matches package.json version", () => {
+    const pkg = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    );
+    expect(getPackageIdent()).toBe(`ocpp-ws-io/${pkg.version}`);
+  });
+});

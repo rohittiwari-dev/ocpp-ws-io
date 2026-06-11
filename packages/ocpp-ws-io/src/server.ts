@@ -467,6 +467,20 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         this._regexRouters.push(router);
       }
     }
+
+    // Sync patterns added after registration (e.g. server.route("/a").route("/b"))
+    router._onPatternAdded = (pattern) => {
+      // A router that was registered as global middleware becomes scoped
+      // the moment it gains a pattern.
+      const globalIdx = this._globalMiddlewareRouters.indexOf(router);
+      if (globalIdx !== -1) this._globalMiddlewareRouters.splice(globalIdx, 1);
+
+      if (typeof pattern === "string") {
+        this._trie.insert(pattern, router);
+      } else if (!this._regexRouters.includes(router)) {
+        this._regexRouters.push(router);
+      }
+    };
   }
 
   // ─── Listen ──────────────────────────────────────────────────

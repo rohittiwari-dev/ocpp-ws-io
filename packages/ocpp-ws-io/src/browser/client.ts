@@ -983,17 +983,18 @@ export class BrowserOCPPClient<
   // ─── Internal: Endpoint building ─────────────────────────────
 
   private _buildEndpoint(): string {
-    let url = this._options.endpoint;
-
-    if (!url.endsWith("/")) url += "/";
-    url += encodeURIComponent(this._identity);
+    // Use URL so identities land in the pathname even when the configured
+    // endpoint carries a query string (report: low/_buildEndpoint).
+    const url = new URL(this._options.endpoint);
+    if (!url.pathname.endsWith("/")) url.pathname += "/";
+    url.pathname += encodeURIComponent(this._identity);
 
     if (this._options.query) {
-      const params = new URLSearchParams(this._options.query);
-      url += (url.includes("?") ? "&" : "?") + params.toString();
+      for (const [k, v] of new URLSearchParams(this._options.query)) {
+        url.searchParams.append(k, v);
+      }
     }
-
-    return url;
+    return url.toString();
   }
 
   // ─── Internal: Cleanup ───────────────────────────────────────

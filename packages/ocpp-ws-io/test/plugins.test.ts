@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { OCPPServer } from "../src/server.js";
 import type { OCPPPlugin } from "../src/types.js";
+import { OCPPClient } from "../src/client.js";
 import {
   sessionLogPlugin,
   heartbeatPlugin,
@@ -71,7 +72,7 @@ describe("heartbeatPlugin", () => {
   it("should register a Heartbeat handler on connection", () => {
     const plugin = heartbeatPlugin();
     const handleSpy = vi.fn();
-    const fakeClient = { handle: handleSpy } as any;
+    const fakeClient = { handle: handleSpy, hasHandler: () => false } as any;
 
     plugin.onConnection!(fakeClient);
     expect(handleSpy).toHaveBeenCalledWith("Heartbeat", expect.any(Function));
@@ -589,5 +590,21 @@ describe("messageDedupPlugin replay (M11)", () => {
     const second = await plugin.onBeforeReceive!(client, call);
     expect(second).toBe(false); // dropped
     expect(client.sendRaw).toHaveBeenCalledWith(JSON.stringify(response));
+  });
+});
+
+describe("heartbeatPlugin handler collision (low)", () => {
+  it("does not throw when a Heartbeat handler already exists", () => {
+    const client: any = new OCPPClient({ identity: "x", endpoint: "ws://x" });
+    client.handle("Heartbeat", () => ({ currentTime: "user" }));
+
+    expect(() => heartbeatPlugin().onConnection!(client)).not.toThrow();
+    expect(client.hasHandler("Heartbeat")).toBe(true);
+  });
+
+  it("registers the default handler when none exists", () => {
+    const client: any = new OCPPClient({ identity: "y", endpoint: "ws://x" });
+    heartbeatPlugin().onConnection!(client);
+    expect(client.hasHandler("Heartbeat")).toBe(true);
   });
 });

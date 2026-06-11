@@ -90,6 +90,12 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
    */
   public _regexPatterns: CompiledRegexPattern[] = [];
 
+  /**
+   * @internal Set by OCPPServer when the router is registered, so patterns
+   * added after registration still reach the trie / regex list.
+   */
+  _onPatternAdded?: (pattern: string | RegExp) => void;
+
   constructor(
     patterns?: Array<string | RegExp>,
     middlewares?: ConnectionMiddleware[],
@@ -115,6 +121,7 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
         this._regexPatterns.push({ regex: p, paramNames: [] });
       }
       // String patterns are handled by the RadixTrie in OCPPServer
+      this._onPatternAdded?.(p);
     }
     return this;
   }
