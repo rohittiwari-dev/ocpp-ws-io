@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## [0.3.0] — 2026-06-11
 
 Fixes all findings from the 2026-06-11 deep-dive review (see `report.md`).
+Minor bump: allocation **outputs** change slightly (values now round down to
+2 decimals instead of half-up), and validation is stricter.
 
 ### Fixed
 
