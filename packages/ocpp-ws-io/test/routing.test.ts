@@ -300,3 +300,50 @@ describe("OCPPServer - Express-like Routing", () => {
     expect(failError.message).toMatch(/400/);
   });
 });
+
+import { RadixTrie } from "../src/radix-trie.js";
+import { OCPPRouter } from "../src/router.js";
+
+describe("malformed percent-encoding (M14)", () => {
+  it("trie match does not throw on bad %-sequences", () => {
+    const trie = new RadixTrie();
+    const router = new OCPPRouter();
+    trie.insert("/ocpp/:identity", router);
+
+    expect(() => trie.match("/ocpp/CP%E0%A4%A")).not.toThrow();
+    expect(trie.match("/ocpp/CP%E0%A4%A")!.params.identity).toBe(
+      "CP%E0%A4%A",
+    );
+  });
+});
+
+import { OCPPClient } from "../src/client.js";
+
+describe("late route() registration (low)", () => {
+  it("patterns added after attachment still match", async () => {
+    const server = new OCPPServer({});
+    const router = server.route("/a/:identity");
+    router.route("/b/:identity"); // late addition
+
+    let seen = "";
+    router.on("client", (c) => {
+      seen = c.handshake.pathname;
+    });
+
+    const httpServer = await server.listen(0);
+    const addr = httpServer.address();
+    const port = addr && typeof addr !== "string" ? addr.port : 0;
+    const client = new OCPPClient({
+      identity: "CP-LATE",
+      endpoint: `ws://127.0.0.1:${port}/b`,
+      reconnect: false,
+    });
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(seen).toBe("/b/CP-LATE");
+
+    await client.close({ force: true });
+    await server.close({ force: true });
+  });
+});

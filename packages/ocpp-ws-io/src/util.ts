@@ -78,10 +78,14 @@ const ERROR_PROPERTIES = [
  * If a property holds a non-serializable value (functions, symbols,
  * circular references), it is silently skipped.
  */
-export function getErrorPlainObject(err: Error): Record<string, unknown> {
+export function getErrorPlainObject(
+  err: Error,
+  includeStack = true,
+): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
   for (const prop of ERROR_PROPERTIES) {
+    if (prop === "stack" && !includeStack) continue;
     const value = (err as unknown as Record<string, unknown>)[prop];
     if (value !== undefined) {
       // Skip functions and symbols — they aren't JSON-serializable
@@ -111,7 +115,9 @@ export function getErrorPlainObject(err: Error): Record<string, unknown> {
 // ─── Package Identity ───────────────────────────────────────────
 
 const PKG_NAME = "ocpp-ws-io";
-const PKG_VERSION = "1.0.1";
+// Keep in sync with package.json — guarded by test/util.test.ts so a
+// version bump without updating this constant fails CI.
+const PKG_VERSION = "2.3.0";
 
 /**
  * Get the package identifier string used in HTTP headers and logging.
@@ -132,3 +138,16 @@ export const NOOP_LOGGER: LoggerLikeNotOptional = {
   error: () => {},
   child: () => NOOP_LOGGER,
 };
+
+/**
+ * decodeURIComponent that returns the raw input instead of throwing on
+ * malformed percent-encoding (e.g. "/ocpp/CP%E0%A4%A"). Prevents handshake
+ * crashes from hostile or buggy URLs (report M14).
+ */
+export function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}

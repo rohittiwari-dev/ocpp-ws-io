@@ -182,7 +182,7 @@ describe("Phase C — Redis Failure Rehydration", () => {
 // ─── C4: Message Ordering (Sequence IDs) ─────────────────────────
 
 describe("Phase C — Message Ordering Sequence IDs", () => {
-  it("should attach __seq to unicast messages", async () => {
+  it("should NOT attach __seq to unicast messages (M3: dead counters removed)", async () => {
     const pub = createMockRedis();
     const sub = createMockRedis();
 
@@ -207,13 +207,9 @@ describe("Phase C — Message Ordering Sequence IDs", () => {
     const payload = { source: "node-1", target: "CP-1", method: "Reset" };
     await adapter.publish("ocpp:node:xyz", payload);
 
-    // The payload object should now have __seq
-    expect((payload as any).__seq).toBe(1);
-
-    // Publish again — seq should increment
-    const payload2 = { source: "node-1", target: "CP-2", method: "Reset" };
-    await adapter.publish("ocpp:node:xyz", payload2);
-    expect((payload2 as any).__seq).toBe(2);
+    // Stream IDs already provide ordering; payloads pass through unmutated
+    expect((payload as any).__seq).toBeUndefined();
+    expect(capturedMessage).toBe(JSON.stringify(payload));
 
     await adapter.disconnect();
   });

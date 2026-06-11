@@ -38,7 +38,13 @@ import {
   type ServerOptions,
   type TypedEventEmitter,
 } from "./types.js";
-import { createId, NOOP_LOGGER } from "./util.js";
+import { TimeoutError } from "./errors.js";
+import {
+  createId,
+  createRPCError,
+  NOOP_LOGGER,
+  safeDecodeURIComponent,
+} from "./util.js";
 import { createWorkerPool, type WorkerPool } from "./worker-pool.js";
 import {
   abortHandshake,
@@ -65,6 +71,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _clients = new Set<OCPPServerClient>();
   private _clientsByIdentity = new Map<string, OCPPServerClient>();
   private _httpServers = new Set<Server>();
+  /** HTTP servers created by listen() — we own their lifecycle. */
+  private _ownedHttpServers = new Set<Server>();
+  /** Listeners we attached per server, for removal on close(). */
+  private _attachedHttpHandlers = new Map<
+    Server,
+    {
+      upgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => void;
+      request?: (
+        req: IncomingMessage,
+        res: import("node:http").ServerResponse,
+      ) => void;
+    }
+  >();
   private _wss: WebSocketServer | null = null;
   private _state: "OPEN" | "CLOSING" | "CLOSED" = "OPEN";
   private _adapter: EventAdapterInterface | null = null;
@@ -81,9 +100,23 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _plugins: OCPPPlugin[] = [];
   private _workerPool: WorkerPool | null = null;
   private _telemetryInterval: ReturnType<typeof setInterval> | null = null;
+  private _presenceInterval: ReturnType<typeof setInterval> | null = null;
 
   // Robustness & Clustering
   private readonly _nodeId = createId();
+
+  /** Pending cross-node RPC calls awaiting a correlated response. */
+  private _pendingRemoteCalls = new Map<
+    string,
+    {
+      resolve: (value: unknown) => void;
+      reject: (reason: unknown) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
+
+  /** Extra wait on top of the call timeout to absorb cross-node transit. */
+  private static readonly _REMOTE_RESPONSE_GRACE_MS = 1000;
   private _sessions: LRUMap<
     string,
     { data: Record<string, any>; lastActive: number }
@@ -134,6 +167,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           this._sessions.delete(identity);
         }
       }
+      this._sweepConnectionBuckets(now);
     }, 60 * 1000).unref(); // Run every minute, don't block exit
 
     // Initialize logger
@@ -172,6 +206,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         this._logger?.info?.("Worker thread pool initialized", {
           poolSize: this._workerPool.size,
         });
+      } else {
+        this._logger?.warn?.(
+          "workerThreads was requested but the worker pool could not be created — falling back to main-thread parsing",
+        );
       }
     }
   }
@@ -429,6 +467,20 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         this._regexRouters.push(router);
       }
     }
+
+    // Sync patterns added after registration (e.g. server.route("/a").route("/b"))
+    router._onPatternAdded = (pattern) => {
+      // A router that was registered as global middleware becomes scoped
+      // the moment it gains a pattern.
+      const globalIdx = this._globalMiddlewareRouters.indexOf(router);
+      if (globalIdx !== -1) this._globalMiddlewareRouters.splice(globalIdx, 1);
+
+      if (typeof pattern === "string") {
+        this._trie.insert(pattern, router);
+      } else if (!this._regexRouters.includes(router)) {
+        this._regexRouters.push(router);
+      }
+    };
   }
 
   // ─── Listen ──────────────────────────────────────────────────
@@ -476,6 +528,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       this._state = "OPEN";
     }
 
+    // Re-create the worker pool after a close()/listen() restart cycle
+    // (close() shuts it down so worker threads don't pin the process).
+    if (this._options.workerThreads && !this._workerPool) {
+      const wt = this._options.workerThreads;
+      this._workerPool = createWorkerPool(typeof wt === "object" ? wt : {});
+    }
+
     // Handle upgrade requests
     const upgradeHandler = (
       req: IncomingMessage,
@@ -497,9 +556,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     httpServer.on("upgrade", upgradeHandler);
     this._httpServers.add(httpServer);
 
+    const ownsServer = !options?.server;
+    if (ownsServer) this._ownedHttpServers.add(httpServer);
+
     // Health/Metrics HTTP endpoint
+    let requestHandler:
+      | ((
+          req: IncomingMessage,
+          res: import("node:http").ServerResponse,
+        ) => void)
+      | undefined;
     if (this._options.healthEndpoint) {
-      httpServer.on("request", async (req, res) => {
+      requestHandler = async (req, res) => {
+        if (res.headersSent || res.writableEnded) return;
         const url = req.url ?? "";
 
         if (url === "/health") {
@@ -578,11 +647,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           return;
         }
 
-        // Non-OCPP request — 404
-        res.writeHead(404, { "Content-Type": "text/plain" });
-        res.end("Not Found");
-      });
+        // Only 404 unknown routes on servers we created. On a user-provided
+        // server the application's own handlers must keep working (report H7).
+        if (ownsServer) {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("Not Found");
+        }
+      };
+      httpServer.on("request", requestHandler);
     }
+    this._attachedHttpHandlers.set(httpServer, {
+      upgrade: upgradeHandler,
+      request: requestHandler,
+    });
 
     // Handle abort signal
     if (options?.signal) {
@@ -593,7 +670,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         "abort",
         () => {
           ac.abort();
-          httpServer.close();
+          // Mirror close(): detach our listeners, only close owned servers
+          const handlers = this._attachedHttpHandlers.get(httpServer);
+          if (handlers) {
+            httpServer.removeListener("upgrade", handlers.upgrade);
+            if (handlers.request) {
+              httpServer.removeListener("request", handlers.request);
+            }
+            this._attachedHttpHandlers.delete(httpServer);
+          }
+          if (this._ownedHttpServers.has(httpServer)) {
+            httpServer.close();
+            this._ownedHttpServers.delete(httpServer);
+          }
           this._httpServers.delete(httpServer);
         },
         { once: true },
@@ -736,6 +825,28 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return;
     }
 
+    // Hard connection cap — reject before any expensive handshake work
+    const maxConnections = this._options.maxConnections;
+    if (maxConnections !== undefined && this._clients.size >= maxConnections) {
+      const secEvt = {
+        type: "CONNECTION_LIMIT" as const,
+        ip: req.socket.remoteAddress ?? "unknown",
+        timestamp: new Date().toISOString(),
+        details: {
+          activeConnections: this._clients.size,
+          maxConnections,
+        },
+      };
+      this.emit("securityEvent", secEvt);
+      for (const plugin of this._plugins) {
+        try {
+          plugin.onSecurityEvent?.(secEvt);
+        } catch {}
+      }
+      abortHandshake(socket, 503, "Connection limit reached");
+      return;
+    }
+
     // Connection-level per-IP rate limit
     const connRateLimit = this._options.connectionRateLimit;
     if (connRateLimit) {
@@ -865,7 +976,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           hasTerminalRoute = true;
           if (match.groups) {
             for (const [key, val] of Object.entries(match.groups)) {
-              params[key] = decodeURIComponent(val ?? "");
+              params[key] = safeDecodeURIComponent(val ?? "");
             }
           }
           if (router._routeConfig) {
@@ -891,7 +1002,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     let identity = params.identity;
     if (!identity) {
       const pathParts = pathname.split("/").filter(Boolean);
-      identity = decodeURIComponent(pathParts[pathParts.length - 1] ?? "");
+      identity = safeDecodeURIComponent(pathParts[pathParts.length - 1] ?? "");
     }
 
     if (!identity) {
@@ -1223,7 +1334,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         session: finalSession,
         protocol: selectedProtocol,
         adaptiveMultiplier: this._adaptiveLimiter
-          ? () => this._adaptiveLimiter!.multiplier
+          ? () => this._adaptiveLimiter?.multiplier ?? 1
           : undefined,
         workerPool: this._workerPool ?? undefined,
         plugins: this._plugins,
@@ -1262,19 +1373,18 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       this._clients.add(client);
       this._clientsByIdentity.set(identity, client);
 
-      // Register presence
+      // Register presence (TTL refreshed by the presence heartbeat — see
+      // _startPresenceRefresh).
       if (this._adapter?.setPresence) {
-        // TTL: slightly longer than session timeout or heartbeat interval
-        // For now, use 60s as a default active TTL, refreshed on activity?
-        // Actually, we should set it with a reasonable TTL (e.g. 5 mins)
-        // and ideally refresh it. For Phase 1, we set it once.
-        // Let's use 5 minutes (300s).
-        this._adapter.setPresence(identity, this._nodeId, 300).catch((err) => {
-          this._logger?.error?.("Error setting presence", {
-            identity,
-            error: err,
+        const ttlSec = this._options.presenceTtlSeconds ?? 300;
+        this._adapter
+          .setPresence(identity, this._nodeId, ttlSec)
+          .catch((err) => {
+            this._logger?.error?.("Error setting presence", {
+              identity,
+              error: err,
+            });
           });
-        });
       }
 
       this._logger?.info?.("Client connected", {
@@ -1289,15 +1399,17 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           this._clients.delete(client);
           if (this._clientsByIdentity.get(identity) === client) {
             this._clientsByIdentity.delete(identity);
-          }
-          // Remove presence
-          if (this?._adapter?.removePresence) {
-            this._adapter.removePresence(identity).catch((err) => {
-              this._logger?.error?.("Error removing presence", {
-                identity,
-                error: err,
+            // Remove presence — only when this socket still owns the
+            // identity. An evicted duplicate must not wipe the presence
+            // the replacement connection just registered (review fix).
+            if (this._adapter?.removePresence) {
+              this._adapter.removePresence(identity).catch((err) => {
+                this._logger?.error?.("Error removing presence", {
+                  identity,
+                  error: err,
+                });
               });
-            });
+            }
           }
           // Plugin: onDisconnect
           for (const plugin of this._plugins) {
@@ -1425,6 +1537,25 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     });
   }
 
+  /**
+   * Evict per-IP connection buckets that have been idle longer than the
+   * rate-limit window. Recreating a bucket grants a full token allowance,
+   * which is exactly what a full refill after `windowMs` idle would yield —
+   * so eviction is behavior-preserving while bounding memory (report H4).
+   */
+  private _sweepConnectionBuckets(now: number): void {
+    const rl = this._options.connectionRateLimit;
+    if (!rl) {
+      this._connectionBuckets.clear();
+      return;
+    }
+    for (const [ip, bucket] of this._connectionBuckets) {
+      if (now - bucket.lastRefill > rl.windowMs) {
+        this._connectionBuckets.delete(ip);
+      }
+    }
+  }
+
   // ─── Close ───────────────────────────────────────────────────
 
   async close(options: CloseOptions = {}): Promise<void> {
@@ -1459,6 +1590,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       this._telemetryInterval = null;
     }
 
+    if (this._presenceInterval) {
+      clearInterval(this._presenceInterval);
+      this._presenceInterval = null;
+    }
+
     // ── Graceful shutdown drain ──
     // When not force-closing, wait for each client's ws.bufferedAmount to
     // reach 0 (max 5s) before closing. Prevents in-flight financial messages
@@ -1466,18 +1602,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     if (!options.force) {
       const drainTimeout = 5000;
       const drainPromises = Array.from(this._clients).map(async (client) => {
-        // @ts-expect-error — accessing private _ws field for drain check
-        const ws = client._ws;
-        if (ws && ws.bufferedAmount > 0) {
+        if (client.bufferedAmount > 0) {
           this._logger?.debug?.("Waiting for client buffer to drain", {
             identity: client.identity,
-            bufferedAmount: ws.bufferedAmount,
+            bufferedAmount: client.bufferedAmount,
           });
           await new Promise<void>((resolve) => {
             let elapsed = 0;
             const check = setInterval(() => {
               elapsed += 50;
-              if (!ws || ws.bufferedAmount === 0 || elapsed >= drainTimeout) {
+              if (client.bufferedAmount === 0 || elapsed >= drainTimeout) {
                 clearInterval(check);
                 resolve();
               }
@@ -1508,19 +1642,37 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       this._wss = this._createWss();
     }
 
-    // Close all HTTP servers
-    const serverClosePromises = Array.from(this._httpServers).map(
-      (server) =>
-        new Promise<void>((resolve) => {
-          server.close(() => resolve());
-        }),
-    );
+    // Detach our listeners from every server; only close servers we own.
+    const serverClosePromises: Promise<void>[] = [];
+    for (const srv of this._httpServers) {
+      const handlers = this._attachedHttpHandlers.get(srv);
+      if (handlers) {
+        srv.removeListener("upgrade", handlers.upgrade);
+        if (handlers.request) srv.removeListener("request", handlers.request);
+      }
+      if (this._ownedHttpServers.has(srv)) {
+        serverClosePromises.push(
+          new Promise<void>((resolve) => {
+            srv.close(() => resolve());
+          }),
+        );
+      }
+    }
     await Promise.allSettled(serverClosePromises);
     this._httpServers.clear();
+    this._ownedHttpServers.clear();
+    this._attachedHttpHandlers.clear();
 
     // Stop adaptive limiter
     if (this._adaptiveLimiter) {
       this._adaptiveLimiter.stop();
+    }
+
+    // Shut down the worker pool — its threads would otherwise keep the
+    // process alive after close() (review fix). listen() re-creates it.
+    if (this._workerPool) {
+      await this._workerPool.shutdown().catch(() => {});
+      this._workerPool = null;
     }
 
     // Plugin: onClose
@@ -1538,6 +1690,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
     }
 
+    // Fail any in-flight cross-node calls
+    for (const [, pending] of this._pendingRemoteCalls) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error("Server closing"));
+    }
+    this._pendingRemoteCalls.clear();
+
     // Disconnect adapter
     if (this._adapter) {
       await this._adapter.disconnect();
@@ -1552,6 +1711,52 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   reconfigure(options: Partial<ServerOptions>): void {
     const oldOptions = { ...this._options } as ServerOptions;
     Object.assign(this._options, options);
+
+    // Transport-level settings only apply to a fresh WebSocketServer —
+    // rebuild so new connections pick them up (existing sockets keep theirs).
+    if (
+      options.maxPayloadBytes !== undefined ||
+      options.compression !== undefined
+    ) {
+      this._wss?.close();
+      this._wss = this._createWss();
+    }
+
+    // Toggle the adaptive limiter to match the new rateLimit config
+    if (options.rateLimit !== undefined) {
+      const wantAdaptive = !!options.rateLimit?.adaptive;
+      if (wantAdaptive && !this._adaptiveLimiter) {
+        const rl = options.rateLimit;
+        this._adaptiveLimiter = new AdaptiveLimiter({
+          cpuThresholdPercent: rl.cpuThresholdPercent,
+          memThresholdPercent: rl.memThresholdPercent,
+          cooldownMs: rl.cooldownMs,
+        });
+        this._adaptiveLimiter.on(
+          "adapted",
+          (event: {
+            multiplier: number;
+            cpuPercent: number;
+            memPercent: number;
+          }) => {
+            this._logger?.info?.("Adaptive rate limit adjusted", event);
+            this.emit("rateLimit:adapted" as any, event);
+          },
+        );
+        this._adaptiveLimiter.start();
+      } else if (!wantAdaptive && this._adaptiveLimiter) {
+        this._adaptiveLimiter.stop();
+        this._adaptiveLimiter = null;
+      }
+    }
+
+    // Restart the presence heartbeat with the new TTL
+    if (options.presenceTtlSeconds !== undefined && this._presenceInterval) {
+      clearInterval(this._presenceInterval);
+      this._presenceInterval = null;
+      this._startPresenceRefresh();
+    }
+
     // Plugin: onReconfigure
     for (const plugin of this._plugins) {
       try {
@@ -1570,16 +1775,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   /**
    * Send a request to a specific client (local or remote).
    *
-   * 1. Checks local clients.
-   * 2. Checks Presence Registry -> Unicast.
-   * 3. Fallback: Broadcast.
-   */
-  /**
-   * Send a request to a specific client (local or remote).
+   * 1. Local clients are called directly.
+   * 2. Otherwise the presence registry routes the call to the owning node,
+   *    and the response is correlated back over the adapter (cross-node RPC).
+   * 3. Unknown identity → rejects with "Client <identity> not found".
    *
-   * 1. Checks local clients.
-   * 2. Checks Presence Registry -> Unicast.
-   * 3. Fallback: Error (Client not found).
+   * Backward compatibility: nodes running older versions deliver the call
+   * but never publish a response — such calls reject with TimeoutError.
    */
   // 1. Protocol-specific overload
   async sendToClient<V extends OCPPProtocol, M extends AllMethodNames<V>>(
@@ -1650,23 +1852,54 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         : await localClient.call(method as any, params as any, options);
     }
 
-    // 2. Check Registry & Unicast
+    // 2. Check Registry & Unicast (with response correlation — report H1)
     if (this._adapter?.getPresence) {
       const nodeId = await this._adapter.getPresence(identity);
       if (nodeId) {
-        // Found remote node — carry `version` across the cluster so the
-        // receiving node can resolve the same version-specific overload.
-        await this._adapter.publish(`ocpp:node:${nodeId}`, {
-          source: this._nodeId,
-          target: identity,
-          version,
-          method,
-          params,
-          options,
+        const correlationId = createId();
+        const timeoutMs =
+          (options?.timeoutMs ?? this._options.callTimeoutMs ?? 30_000) +
+          OCPPServer._REMOTE_RESPONSE_GRACE_MS;
+
+        const resultPromise = new Promise<unknown>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            this._pendingRemoteCalls.delete(correlationId);
+            reject(
+              new TimeoutError(
+                `Remote call to "${identity}" via node ${nodeId} timed out after ${timeoutMs}ms`,
+              ),
+            );
+          }, timeoutMs);
+          this._pendingRemoteCalls.set(correlationId, {
+            resolve,
+            reject,
+            timer,
+          });
         });
-        return;
-      } else {
-        // Node not found in registry
+
+        // Carry `version` across the cluster so the receiving node can
+        // resolve the same version-specific overload.
+        try {
+          await this._adapter.publish(`ocpp:node:${nodeId}`, {
+            source: this._nodeId,
+            target: identity,
+            version,
+            method,
+            params,
+            options,
+            correlationId,
+          });
+        } catch (err) {
+          // Publish failed (adapter down) — settle the pending call through
+          // resultPromise so nothing leaks and no unhandled rejection fires.
+          const pending = this._pendingRemoteCalls.get(correlationId);
+          if (pending) {
+            clearTimeout(pending.timer);
+            this._pendingRemoteCalls.delete(correlationId);
+            pending.reject(err);
+          }
+        }
+        return await resultPromise;
       }
     }
 
@@ -1771,31 +2004,22 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return calls.map(() => undefined);
     }
 
-    // Temporarily raise call concurrency to allow all calls to fly in parallel
-    const originalConcurrency = client.options.callConcurrency ?? 1;
-    if (calls.length > originalConcurrency) {
-      client.reconfigure({ callConcurrency: calls.length });
-    }
+    // Bypass the call queue so the batch pipelines in parallel without
+    // mutating the client's configured callConcurrency (report M9).
+    const results = await Promise.allSettled(
+      calls.map((c) =>
+        client.callImmediate(c.method, c.params, c.options ?? {}),
+      ),
+    );
 
-    try {
-      const results = await Promise.allSettled(
-        calls.map((c) => client.call(c.method, c.params, c.options ?? {})),
-      );
-
-      return results.map((r) => {
-        if (r.status === "fulfilled") return r.value;
-        this._logger?.warn?.("sendBatch: individual call failed", {
-          identity,
-          error: (r.reason as Error)?.message,
-        });
-        return undefined;
+    return results.map((r) => {
+      if (r.status === "fulfilled") return r.value;
+      this._logger?.warn?.("sendBatch: individual call failed", {
+        identity,
+        error: (r.reason as Error)?.message,
       });
-    } finally {
-      // Restore original concurrency
-      if (calls.length > originalConcurrency) {
-        client.reconfigure({ callConcurrency: originalConcurrency });
-      }
-    }
+      return undefined;
+    });
   }
 
   // ─── Pub/Sub Adapter ─────────────────────────────────────────
@@ -1815,6 +2039,44 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         this._onUnicast(msg);
       },
     );
+
+    // Presence heartbeat — refresh TTLs so long-lived connections never
+    // expire out of the cluster registry (report C3).
+    this._startPresenceRefresh();
+  }
+
+  private _startPresenceRefresh(): void {
+    if (this._presenceInterval || !this._adapter?.setPresence) return;
+    const ttlSec = this._options.presenceTtlSeconds ?? 300;
+    const intervalMs = Math.max(250, (ttlSec * 1000) / 2);
+    this._presenceInterval = setInterval(() => {
+      this._refreshPresence(ttlSec).catch((err) => {
+        this._logger?.warn?.("Presence refresh failed", { error: err });
+      });
+    }, intervalMs);
+    this._presenceInterval.unref();
+  }
+
+  private async _refreshPresence(ttlSec: number): Promise<void> {
+    const adapter = this._adapter;
+    if (!adapter) return;
+    const identities = Array.from(this._clientsByIdentity.keys());
+    if (identities.length === 0) return;
+    if (adapter.setPresenceBatch) {
+      await adapter.setPresenceBatch(
+        identities.map((identity) => ({
+          identity,
+          nodeId: this._nodeId,
+          ttl: ttlSec,
+        })),
+      );
+    } else if (adapter.setPresence) {
+      await Promise.all(
+        identities.map((identity) =>
+          adapter.setPresence!(identity, this._nodeId, ttlSec),
+        ),
+      );
+    }
   }
 
   private _onBroadcast(msg: unknown) {
@@ -1841,6 +2103,39 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _onUnicast(msg: unknown) {
     try {
       if (!msg || typeof msg !== "object") return;
+
+      // Response leg: a remote node answering one of our calls
+      const asResponse = msg as {
+        __type?: string;
+        correlationId?: string;
+        ok?: boolean;
+        result?: unknown;
+        error?: {
+          code?: string;
+          message?: string;
+          details?: Record<string, unknown>;
+        };
+      };
+      if (asResponse.__type === "callResult" && asResponse.correlationId) {
+        const pending = this._pendingRemoteCalls.get(asResponse.correlationId);
+        if (!pending) return; // late or duplicate response
+        this._pendingRemoteCalls.delete(asResponse.correlationId);
+        clearTimeout(pending.timer);
+        if (asResponse.ok) {
+          pending.resolve(asResponse.result);
+        } else {
+          pending.reject(
+            createRPCError(
+              asResponse.error?.code ?? "GenericError",
+              asResponse.error?.message,
+              asResponse.error?.details ?? {},
+            ),
+          );
+        }
+        return;
+      }
+
+      // Request leg: deliver to a locally connected client
       const payload = msg as {
         source: string;
         target: string;
@@ -1848,10 +2143,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         method: string;
         params: unknown;
         options?: CallOptions;
+        correlationId?: string;
       };
 
-      // Unicast is meant for ME, but specifically for a TARGET client.
-      // Resolve the target via O(1) identity lookup.
       const client = this._clientsByIdentity.get(payload.target);
       if (client) {
         // Forward the version when present so the call resolves against the
@@ -1864,22 +2158,42 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
               payload.options,
             )
           : client.call(payload.method, payload.params as any, payload.options);
-        delivery.catch((err) => {
-          if ((err as Error).name !== "TimeoutError") {
-            this._logger?.error?.("Error delivering unicast to client", {
-              identity: payload.target,
-              error: err,
+        delivery.then(
+          (result) => {
+            this._publishRemoteResult(payload, { ok: true, result });
+          },
+          (err) => {
+            this._publishRemoteResult(payload, {
+              ok: false,
+              error: {
+                code: (err as any)?.rpcErrorCode ?? "GenericError",
+                message: (err as Error)?.message ?? "",
+                details: (err as any)?.details ?? {},
+              },
             });
-          }
-        });
+            if ((err as Error).name !== "TimeoutError") {
+              this._logger?.error?.("Error delivering unicast to client", {
+                identity: payload.target,
+                error: err,
+              });
+            }
+          },
+        );
         return;
       }
-      // If we got here, we received a unicast for a client we don't have.
-      // This implies the Registry is stale.
+
+      // Unknown target — the registry is stale. Tell the caller immediately
+      // instead of letting it time out, and clean up the stale entry.
       this._logger?.warn?.("Received unicast for unknown client", {
         target: payload.target,
       });
-      // Corrective action: Clean up stale registry entry?
+      this._publishRemoteResult(payload, {
+        ok: false,
+        error: {
+          code: "GenericError",
+          message: `Client ${payload.target} not found on node ${this._nodeId}`,
+        },
+      });
       if (this._adapter?.removePresence) {
         this._adapter.removePresence(payload.target).catch(() => {});
       }
@@ -1888,6 +2202,33 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         error: (err as Error).message,
       });
     }
+  }
+
+  /** Publish the result of a remotely requested call back to the origin node. */
+  private _publishRemoteResult(
+    request: { source?: string; correlationId?: string },
+    body: {
+      ok: boolean;
+      result?: unknown;
+      error?: {
+        code?: string;
+        message?: string;
+        details?: Record<string, unknown>;
+      };
+    },
+  ): void {
+    if (!request.correlationId || !request.source || !this._adapter) return;
+    this._adapter
+      .publish(`ocpp:node:${request.source}`, {
+        __type: "callResult",
+        correlationId: request.correlationId,
+        ...body,
+      })
+      .catch((err) => {
+        this._logger?.error?.("Failed to publish remote call result", {
+          error: err,
+        });
+      });
   }
 
   async publish(channel: string, data: unknown): Promise<void> {

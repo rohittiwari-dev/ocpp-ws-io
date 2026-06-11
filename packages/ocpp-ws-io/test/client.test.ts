@@ -973,7 +973,8 @@ describe("OCPPClient - Version-Aware Call", () => {
       query: { baz: "qux" },
     });
     const url2 = (clientWithExistingQuery as any)._buildEndpoint();
-    expect(url2).toBe("ws://localhost:9999?foo=bar/CS_Q2&baz=qux");
+    // Identity belongs in the pathname, not appended into the query (low fix)
+    expect(url2).toBe("ws://localhost:9999/CS_Q2?foo=bar&baz=qux");
   });
 
   it("should build TLS options correctly", () => {
@@ -1071,5 +1072,26 @@ describe("OCPPClient - Version-Aware Call", () => {
         message: { status: "InvalidStatus" },
       }),
     );
+  });
+});
+
+describe("_buildEndpoint (low)", () => {
+  const build = (endpoint: string, query?: Record<string, string>) =>
+    (
+      new OCPPClient({ identity: "CP/1", endpoint, query }) as any
+    )._buildEndpoint() as string;
+
+  it("identity goes into the path, not the query string", () => {
+    expect(build("ws://h/base?x=1")).toBe("ws://h/base/CP%2F1?x=1");
+  });
+
+  it("query option merges with endpoint query", () => {
+    expect(build("ws://h/base?x=1", { y: "2" })).toBe(
+      "ws://h/base/CP%2F1?x=1&y=2",
+    );
+  });
+
+  it("plain endpoint unchanged behavior", () => {
+    expect(build("ws://h/base")).toBe("ws://h/base/CP%2F1");
   });
 });

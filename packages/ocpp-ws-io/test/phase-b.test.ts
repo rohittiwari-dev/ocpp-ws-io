@@ -76,6 +76,10 @@ describe("Phase B — Offline Queue", () => {
       promises.push(client.call("Method" + i, {}));
     }
 
+    // Evicted calls (Method0, Method1) are rejected with an overflow error (H2)
+    await expect(promises[0]).rejects.toThrow(/overflow/i);
+    await expect(promises[1]).rejects.toThrow(/overflow/i);
+
     // Check internal queue size
     // @ts-expect-error — accessing private field
     expect(client._offlineQueue.length).toBe(3);

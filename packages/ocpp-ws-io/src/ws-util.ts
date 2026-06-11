@@ -6,6 +6,7 @@
  * Close code validation per RFC 6455 Section 7.4.
  */
 
+import { timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import type { Duplex } from "node:stream";
 
@@ -188,9 +189,10 @@ export function parseBasicAuth(
     const prefix = Buffer.from(`${identity}:`);
 
     // Identity-prefix matching: the decoded buffer must start with `identity:`
+    // (constant-time to avoid a timing oracle on the identity).
     if (
       decoded.length > prefix.length &&
-      decoded.subarray(0, prefix.length).equals(prefix)
+      timingSafeEqual(decoded.subarray(0, prefix.length), prefix)
     ) {
       return decoded.subarray(prefix.length);
     }
@@ -198,8 +200,9 @@ export function parseBasicAuth(
     // Fallback: standard first-colon split (for non-OCPP or mismatched identity)
     const colonIdx = decoded.indexOf(0x3a); // ':'
     if (colonIdx !== -1) {
-      const user = decoded.subarray(0, colonIdx).toString("utf8");
-      if (user === identity) {
+      const user = decoded.subarray(0, colonIdx);
+      const expected = Buffer.from(identity);
+      if (user.length === expected.length && timingSafeEqual(user, expected)) {
         return decoded.subarray(colonIdx + 1);
       }
     }

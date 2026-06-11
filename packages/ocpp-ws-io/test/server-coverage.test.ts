@@ -159,9 +159,14 @@ describe("OCPPServer Coverage", () => {
   test("sendToClient publishes version across the cluster (unicast)", async () => {
     adapter.getPresence.mockResolvedValue("remote-node");
 
-    await (server.sendToClient as any)("cp-remote", "ocpp2.0.1", "Reset", {
+    // Remote calls now block on a correlated response (H1); the mock adapter
+    // never answers, so don't await — assert the published request instead.
+    const pending = (server.sendToClient as any)("cp-remote", "ocpp2.0.1", "Reset", {
       type: "Soft",
     });
+    pending.catch(() => {}); // rejected with "Server closing" on teardown
+
+    await vi.waitFor(() => expect(adapter.publish).toHaveBeenCalled());
 
     expect(adapter.publish).toHaveBeenCalledWith(
       "ocpp:node:remote-node",
@@ -170,6 +175,7 @@ describe("OCPPServer Coverage", () => {
         version: "ocpp2.0.1",
         method: "Reset",
         params: { type: "Soft" },
+        correlationId: expect.any(String),
       }),
     );
   });
@@ -198,5 +204,60 @@ describe("OCPPServer Coverage", () => {
       { type: "Hard" },
       undefined,
     );
+  });
+});
+
+describe("reconfigure applies changes (low)", () => {
+  test("maxPayloadBytes rebuilds the WebSocketServer", async () => {
+    const srv = new OCPPServer({ maxPayloadBytes: 65536 });
+    srv.reconfigure({ maxPayloadBytes: 1024 });
+    expect(((srv as any)._wss.options as any).maxPayload).toBe(1024);
+    await srv.close({ force: true });
+  });
+
+  test("rateLimit.adaptive toggles the limiter", async () => {
+    const srv = new OCPPServer({});
+    expect((srv as any)._adaptiveLimiter).toBeNull();
+    srv.reconfigure({
+      rateLimit: { limit: 10, windowMs: 1000, adaptive: true },
+    });
+    expect((srv as any)._adaptiveLimiter).not.toBeNull();
+    srv.reconfigure({ rateLimit: { limit: 10, windowMs: 1000 } });
+    expect((srv as any)._adaptiveLimiter).toBeNull();
+    await srv.close({ force: true });
+  });
+});
+
+describe("final review fixes", () => {
+  test("close() shuts down the worker pool; listen() re-creates it", async () => {
+    const srv = new OCPPServer({ workerThreads: { poolSize: 1 } });
+    expect((srv as any)._workerPool).not.toBeNull();
+    await srv.close({ force: true });
+    expect((srv as any)._workerPool).toBeNull();
+
+    const http = await srv.listen(0);
+    expect((srv as any)._workerPool).not.toBeNull();
+    await srv.close({ force: true });
+    expect((srv as any)._workerPool).toBeNull();
+    void http;
+  });
+
+  test("remote sendToClient settles cleanly when adapter.publish fails", async () => {
+    const srv = new OCPPServer();
+    const failingAdapter: any = {
+      publish: vi.fn().mockRejectedValue(new Error("redis down")),
+      subscribe: vi.fn().mockResolvedValue(undefined),
+      getPresence: vi.fn().mockResolvedValue("remote-node"),
+      setPresence: vi.fn(),
+      removePresence: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    await srv.setAdapter(failingAdapter);
+
+    await expect(srv.sendToClient("cp-x", "Reset", {})).rejects.toThrow(
+      "redis down",
+    );
+    expect((srv as any)._pendingRemoteCalls.size).toBe(0);
+    await srv.close({ force: true });
   });
 });

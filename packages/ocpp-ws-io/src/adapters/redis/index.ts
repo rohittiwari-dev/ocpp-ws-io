@@ -6,12 +6,17 @@ import {
 } from "./helpers.js";
 
 export interface RedisAdapterOptions {
-  /** Redis client for publishing */
-  pubClient: RedisLikeClient;
-  /** Redis client for subscribing (must be a separate connection) */
-  subClient: RedisLikeClient;
+  /** Redis client for publishing (required unless `driver` is provided) */
+  pubClient?: RedisLikeClient;
+  /** Redis client for subscribing — must be a separate connection (required unless `driver` is provided) */
+  subClient?: RedisLikeClient;
   /** Redis client for blocking stream operations (recommended for reliability) */
   blockingClient?: RedisLikeClient;
+  /**
+   * Pre-built driver (e.g. a ClusterDriver) used directly as the primary
+   * driver. When set, pubClient/subClient/blockingClient are ignored.
+   */
+  driver?: RedisPubSubDriver;
   /** Optional key prefix for channels (default: 'ocpp-ws-io:') */
   prefix?: string;
   /** StreamMaxLen for trimming (default: 1000) */
@@ -63,9 +68,6 @@ export class RedisAdapter implements EventAdapterInterface {
   private _polling = false;
   private _closed = false;
 
-  // Per-stream sequence counter for message ordering
-  private _sequenceCounters = new Map<string, number>();
-
   // Rehydration callbacks
   private _unsubError?: () => void;
   private _unsubReconnect?: () => void;
@@ -83,12 +85,21 @@ export class RedisAdapter implements EventAdapterInterface {
     this._streamTtlSeconds = options.streamTtlSeconds ?? 300;
     this._presenceTtlSeconds = options.presenceTtlSeconds ?? 300;
 
-    // Primary driver (always created)
-    this._driver = createDriver(
-      options.pubClient,
-      options.subClient,
-      options.blockingClient,
-    );
+    // Primary driver — either user-provided (e.g. ClusterDriver) or built
+    // from raw pub/sub clients.
+    if (options.driver) {
+      this._driver = options.driver;
+    } else if (options.pubClient && options.subClient) {
+      this._driver = createDriver(
+        options.pubClient,
+        options.subClient,
+        options.blockingClient,
+      );
+    } else {
+      throw new Error(
+        "RedisAdapter requires either `driver` or both `pubClient` and `subClient`",
+      );
+    }
 
     // Connection pool — default 1 (backward compatible)
     const poolSize = options.poolSize ?? 1;
@@ -125,18 +136,6 @@ export class RedisAdapter implements EventAdapterInterface {
 
   async publish(channel: string, data: unknown): Promise<void> {
     const prefixedChannel = this._prefix + channel;
-
-    // Attach sequence ID to unicast messages for ordering
-    const payload = data as Record<string, unknown> | null;
-    if (
-      payload &&
-      typeof payload === "object" &&
-      channel.startsWith("ocpp:node:")
-    ) {
-      const seq = (this._sequenceCounters.get(channel) ?? 0) + 1;
-      this._sequenceCounters.set(channel, seq);
-      (payload as Record<string, unknown>).__seq = seq;
-    }
 
     const message = JSON.stringify(data);
 
@@ -207,7 +206,12 @@ export class RedisAdapter implements EventAdapterInterface {
         // Since we trim the stream (MAXLEN), this will only replay recent pending messages.
         if (!this._streams.has(prefixedChannel)) {
           this._streams.add(prefixedChannel);
-          this._streamOffsets.set(prefixedChannel, "0");
+          // Fresh stream → start from "0" (a brand-new nodeId stream is
+          // empty, so this replays nothing). Re-subscribes keep their last
+          // consumed id to avoid replaying retained entries (report M4).
+          if (!this._streamOffsets.has(prefixedChannel)) {
+            this._streamOffsets.set(prefixedChannel, "0");
+          }
           this._ensurePolling();
         }
       } else {
@@ -225,7 +229,8 @@ export class RedisAdapter implements EventAdapterInterface {
 
     if (this._streams.has(prefixedChannel)) {
       this._streams.delete(prefixedChannel);
-      this._streamOffsets.delete(prefixedChannel); // Cleanup offset
+      // Offsets are intentionally kept so a later re-subscribe resumes
+      // where it left off instead of replaying from "0".
     } else {
       await this._driver.unsubscribe(prefixedChannel);
     }
@@ -238,7 +243,6 @@ export class RedisAdapter implements EventAdapterInterface {
     this._handlers.clear();
     this._streams.clear();
     this._presenceCache.clear();
-    this._sequenceCounters.clear();
     if (this._unsubError) this._unsubError();
     if (this._unsubReconnect) this._unsubReconnect();
     // Disconnect all pool drivers
@@ -287,9 +291,16 @@ export class RedisAdapter implements EventAdapterInterface {
         id: this._streamOffsets.get(key) || "$",
       }));
 
+      const canBlock = this._driver.hasBlockingClient === true;
       try {
-        // Block for 1s. This allows picking up new subscriptions reasonably fast.
-        const entries = await this._driver.xread(streamsArg, undefined, 1000);
+        // With a dedicated blocking connection, BLOCK 1s for low latency.
+        // Otherwise poll non-blocking and sleep, so the shared connection
+        // never stalls publishes/presence ops (report M1).
+        const entries = await this._driver.xread(
+          streamsArg,
+          undefined,
+          canBlock ? 1000 : undefined,
+        );
 
         if (entries) {
           for (const entry of entries) {
@@ -305,6 +316,8 @@ export class RedisAdapter implements EventAdapterInterface {
               }
             }
           }
+        } else if (!canBlock) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       } catch (_err) {
         // Log error? For now swallow to keep loop alive
@@ -345,6 +358,9 @@ export class RedisAdapter implements EventAdapterInterface {
 
   async removePresence(identity: string): Promise<void> {
     const key = `${this._prefix}presence:${identity}`;
+    // Drop the rehydration cache entry too — otherwise a Redis reconnect
+    // resurrects presence for disconnected clients (report H3).
+    this._presenceCache.delete(identity);
     await this._driver.del(key);
   }
 
@@ -355,7 +371,9 @@ export class RedisAdapter implements EventAdapterInterface {
     const streamDetails: Record<string, number> = {};
 
     // Calculate "consumer lag" by checking the length of all active streams
-    // Since we use MAXLEN for trimming, XLEN directly equals pending unread messages
+    // NOTE: XLEN counts all retained entries, including ones already
+    // consumed but not yet trimmed by MAXLEN — treat this as an upper-bound
+    // approximation of backlog, not an exact unread count (report M5).
     for (const streamKey of this._streams) {
       try {
         const length = await this._driver.xlen(streamKey);

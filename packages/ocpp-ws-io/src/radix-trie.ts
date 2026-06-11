@@ -1,4 +1,5 @@
 import type { OCPPRouter } from "./router.js";
+import { safeDecodeURIComponent } from "./util.js";
 
 /**
  * Result of a successful trie match.
@@ -185,7 +186,7 @@ export class RadixTrie {
     // Priority 2: Param match — use a copy of params for isolation
     if (node.paramChild) {
       const branchParams = { ...params };
-      branchParams[node.paramChild.paramName] = decodeURIComponent(segment);
+      branchParams[node.paramChild.paramName] = safeDecodeURIComponent(segment);
 
       this._matchRecursive(
         node.paramChild,

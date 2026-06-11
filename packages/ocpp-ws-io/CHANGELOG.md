@@ -1,5 +1,43 @@
 # ocpp-ws-io
 
+## v2.3.0 - Review Hardening (2026-06-11)
+
+Fixes every finding from the full-codebase security & reliability review
+(3 critical, 8 high, 14 medium, ~12 low). 52 new regression tests
+(840 total).
+
+### Fixed
+
+- **Worker-thread parse pool was silently non-functional**: `parse-worker.cjs` now ships in `dist/` and decodes binary frames (`Buffer` → `Uint8Array` across `postMessage`). The pool shuts down on `server.close()` so worker threads no longer pin the process, and is re-created on a later `listen()`.
+- **OCPP 2.1 strict-mode validation was a silent no-op**: `Request`/`Response`-style schema ids now resolve (validator and worker).
+- **Cluster presence TTL is heartbeat-refreshed** (every `presenceTtlSeconds / 2`); long-lived connections stay routable. Evicted duplicate connections no longer wipe the presence entry their replacement just registered.
+- **Cross-node `sendToClient` now returns the remote client's response** (correlation ids over the adapter). Stale registry entries answer immediately with "not found" instead of timing out; adapter publish failures settle the call cleanly (no leak, no unhandled rejection).
+- AbortSignal listeners detach when calls settle (node + browser clients); offline-queue overflow rejects the dropped call instead of stranding its promise.
+- Inbound message processing is serialized per connection — async plugins and worker parsing can no longer reorder OCPP messages.
+- Per-IP connection-rate buckets are garbage-collected; `x-forwarded-proto` is only honored behind the new `trustProxy` CORS option (scheme-spoofing fix).
+- External HTTP servers passed to `listen(..., { server })` are no longer 404-hijacked by `healthEndpoint` nor closed by `server.close()` (also respected by the `listen({ signal })` abort path).
+- Redis adapter: presence cache pruned on removal, no `__seq` payload mutation, stream offsets survive resubscribe, non-blocking polls when no dedicated blocking client exists, and a direct `driver` option (ClusterDriver is now actually usable; honest construction errors; cross-slot-safe presence batches).
+- Strict mode validates inbound CALLRESULT payloads; OCPP 1.6 emits the spec spelling `FormationViolation` (2.x keeps `FormatViolation`).
+- `message-dedup` only dedups CALLs (results/errors reuse the CALL id) and replays cached responses to retrying chargers; webhook plugin treats non-2xx as failure, clears timers, and backs off between retries.
+- Detailed CALLERRORs no longer include stack traces; Basic-Auth identity comparison is timing-safe; malformed percent-encoding in upgrade URLs no longer crashes the handshake.
+- `sendBatch` no longer mutates the client's `callConcurrency` (uses `callImmediate`); backpressured sends share one FIFO drain timer per client; `server.reconfigure()` actually applies `maxPayloadBytes` / `compression` / `rateLimit.adaptive` / `presenceTtlSeconds` changes; `connect()` failures reject instead of throwing uncaught when no `error` listener is attached; late `router.route()` patterns register with the server; client endpoints with query strings keep the identity in the pathname; `getPackageIdent()` reports the real version (drift-tested).
+
+### Added
+
+- `ServerOptions.maxConnections` — hard connection cap rejected at upgrade time (HTTP 503) with a `CONNECTION_LIMIT` security event.
+- `ServerOptions.presenceTtlSeconds` — cluster presence TTL / heartbeat basis.
+- `CORSOptions.trustProxy` — opt-in `x-forwarded-proto` handling behind a trusted proxy.
+- `RedisAdapterOptions.driver` — pass a pre-built driver (e.g. `ClusterDriver`) directly.
+- `OCPPClient.hasHandler()`, `OCPPClient.callImmediate()`, `OCPPClient.bufferedAmount`.
+
+### Migration notes
+
+- **`x-forwarded-proto` is now ignored by default.** If you enforce `allowedSchemes` behind a reverse proxy (nginx/Caddy), set `cors: { trustProxy: true }`.
+- **Remote `sendToClient` now resolves with the remote response** (previously `undefined` fire-and-forget). Calls to nodes running older versions reject with `TimeoutError`.
+- **OCPP 1.6 format errors are reported as `FormationViolation`** per the 1.6J spec (previously `FormatViolation`).
+- **`createValidator()` always returns a fresh instance** — custom schema sets are no longer shadowed by a global cache.
+- **The heartbeat plugin defers to an existing `Heartbeat` handler** instead of throwing.
+
 ## v2.2.4 - Security & Reliability Hardening
 
 ### Changes

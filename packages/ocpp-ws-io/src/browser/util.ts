@@ -68,10 +68,14 @@ const ERROR_PROPERTIES = [
 /**
  * Convert an Error into a plain, JSON-safe object.
  */
-export function getErrorPlainObject(err: Error): Record<string, unknown> {
+export function getErrorPlainObject(
+  err: Error,
+  includeStack = true,
+): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
   for (const prop of ERROR_PROPERTIES) {
+    if (prop === "stack" && !includeStack) continue;
     const value = (err as unknown as Record<string, unknown>)[prop];
     if (value !== undefined) {
       if (typeof value === "function" || typeof value === "symbol") continue;

@@ -18,6 +18,12 @@ export interface DedupRedisLike {
     value: string,
     ...args: unknown[]
   ): Promise<"OK" | string | null> | ("OK" | string | null);
+
+  /**
+   * Fetch a cached value (used to replay responses for duplicate CALLs).
+   * Optional — without it duplicates are silently dropped.
+   */
+  get?(key: string): Promise<string | null> | (string | null);
 }
 
 export interface MessageDedupOptions {
@@ -110,45 +116,65 @@ export function messageDedupPlugin(options: MessageDedupOptions): OCPPPlugin {
     return result === "OK";
   }
 
+  /** Plain SET with PX expiry, used to cache responses for replay */
+  async function setPX(key: string, value: string): Promise<void> {
+    if (style === "options") {
+      await redis.set(key, value, { PX: ttlMs });
+    } else {
+      await redis.set(key, value, "PX", ttlMs);
+    }
+  }
+
   return {
     name: "message-dedup",
 
     /**
-     * Intercepts messages before they are parsed or routed.
-     * Return `false` to drop the message from the pipeline.
+     * Intercepts CALL messages before they are parsed or routed.
+     * Duplicates are dropped; if the original's response is already cached,
+     * it is replayed so retrying chargers are not left to time out.
      */
     async onBeforeReceive(client, rawData) {
-      // 1. Parse just enough to find the MessageID.
-      // Message format: [MessageType, "MessageID", ...]
-      let messageId: string | undefined;
-
+      let parsed: unknown;
       try {
         const str =
           typeof rawData === "string" ? rawData : rawData?.toString() || "";
-        const parsed = JSON.parse(str);
-        if (Array.isArray(parsed) && parsed.length > 1) {
-          messageId = String(parsed[1]);
-        }
+        parsed = JSON.parse(str);
       } catch {
         // If it isn't valid JSON, let it pass through to the core validator
         // which will emit proper OCPP protocol errors.
         return undefined;
       }
 
-      if (!messageId) {
+      // Only CALLs are idempotency-checked — CALLRESULT/CALLERROR ids
+      // legitimately repeat the CALL id they answer (report M11).
+      if (
+        !Array.isArray(parsed) ||
+        parsed[0] !== 2 ||
+        typeof parsed[1] !== "string"
+      ) {
         return undefined;
       }
-
-      // 2. Compute distributed idempotency key
+      const messageId = parsed[1];
       const key = `${prefix}${client.identity}:${messageId}`;
 
-      // 3. Attempt to lock the key in Redis using NX (Not Exists) + PX (Expiry)
       try {
         const acquired = await setNX(key);
-
         if (!acquired) {
+          // Duplicate. Replay the original response when available so the
+          // retrying charger gets its answer (idempotent retry semantics).
+          if (redis.get) {
+            const cached = await redis.get(
+              `${prefix}resp:${client.identity}:${messageId}`,
+            );
+            if (cached) {
+              try {
+                client.sendRaw(cached);
+              } catch {
+                // socket gone — nothing to replay to
+              }
+            }
+          }
           log?.warn?.(`[message-dedup] Dropping duplicate message: ${key}`);
-          // Returning false drops the message completely
           return false;
         }
       } catch (err) {
@@ -158,6 +184,25 @@ export function messageDedupPlugin(options: MessageDedupOptions): OCPPPlugin {
 
       // Undefined strictly continues the middleware chain
       return undefined;
+    },
+
+    /**
+     * Caches outbound CALLRESULT/CALLERROR frames keyed by message id so
+     * duplicate CALL retries can be replayed.
+     */
+    onBeforeSend(client, message) {
+      if (
+        Array.isArray(message) &&
+        (message[0] === 3 || message[0] === 4) &&
+        typeof message[1] === "string" &&
+        redis.get // replay only useful when reads are possible
+      ) {
+        const respKey = `${prefix}resp:${client.identity}:${message[1]}`;
+        Promise.resolve(setPX(respKey, JSON.stringify(message))).catch(
+          () => {},
+        );
+      }
+      return true;
     },
   };
 }

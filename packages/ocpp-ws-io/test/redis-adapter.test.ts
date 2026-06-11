@@ -266,7 +266,7 @@ describe("RedisAdapter Streams", () => {
     expect(pub.expire).toHaveBeenCalled();
   });
 
-  it("should add sequence counters to unicast messages", async () => {
+  it("should not mutate unicast payloads (M3: __seq removed)", async () => {
     const pub = createStreamMock();
     const sub = createStreamMock();
     const adapter = new RedisAdapter({ pubClient: pub, subClient: sub });
@@ -274,8 +274,7 @@ describe("RedisAdapter Streams", () => {
     const data = { method: "Test", params: {} } as any;
     await adapter.publish("ocpp:node:n1", data);
 
-    // __seq should be attached
-    expect(data.__seq).toBe(1);
+    expect("__seq" in data).toBe(false);
   });
 
   it("should subscribe to streams and start polling", async () => {
@@ -476,5 +475,39 @@ describe("RedisAdapter publishBatch", () => {
     expect(pub.publish).toHaveBeenCalled();
 
     await adapter.disconnect();
+  });
+});
+
+describe("presence cache pruning (H3)", () => {
+  function stubClients() {
+    const pub: any = {
+      publish: vi.fn(async () => 1),
+      set: vi.fn(async () => "OK"),
+      get: vi.fn(async () => null),
+      del: vi.fn(async () => 1),
+      mget: vi.fn(async () => []),
+      xadd: vi.fn(async () => "1-1"),
+      xlen: vi.fn(async () => 0),
+      expire: vi.fn(async () => 1),
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    };
+    const sub: any = {
+      subscribe: vi.fn(async () => {}),
+      unsubscribe: vi.fn(async () => {}),
+      on: vi.fn(),
+    };
+    return { pub, sub };
+  }
+
+  it("removePresence deletes the rehydration cache entry", async () => {
+    const { pub, sub } = stubClients();
+    const adapter = new RedisAdapter({ pubClient: pub, subClient: sub });
+    await adapter.setPresence("CP-X", "node-1", 60);
+    expect((adapter as any)._presenceCache.has("CP-X")).toBe(true);
+
+    await adapter.removePresence("CP-X");
+    expect((adapter as any)._presenceCache.has("CP-X")).toBe(false);
+    expect(pub.del).toHaveBeenCalledWith("ocpp-ws-io:presence:CP-X");
   });
 });

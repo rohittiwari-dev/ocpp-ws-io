@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { OCPPServer } from "../src/server.js";
 import { OCPPClient } from "../src/client.js";
 
@@ -119,5 +119,42 @@ describe("Phase F4 — sendBatch()", () => {
     expect(serverClient!.options.callConcurrency).toBe(originalConc);
 
     await client.close({ force: true });
+  });
+});
+
+describe("sendBatch concurrency isolation (M9)", () => {
+  it("does not reconfigure the client's callConcurrency", async () => {
+    const server = new OCPPServer({ callConcurrency: 1 });
+    server.on("client", (c) =>
+      c.handle("GetConfiguration", () => ({ configurationKey: [] })),
+    );
+    const http = await server.listen(0);
+    const port = getPort(http);
+
+    const station = new OCPPClient({
+      identity: "CP-BATCH",
+      endpoint: `ws://127.0.0.1:${port}`,
+      reconnect: false,
+    });
+    station.handle("GetConfiguration", () => ({ configurationKey: [] }));
+    await station.connect();
+    await new Promise((r) => setTimeout(r, 50));
+
+    const serverClient = server.getLocalClient("CP-BATCH")!;
+    const spy = vi.spyOn(serverClient, "reconfigure");
+
+    const results = await server.sendBatch("CP-BATCH", [
+      { method: "GetConfiguration", params: {} },
+      { method: "GetConfiguration", params: {} },
+      { method: "GetConfiguration", params: {} },
+    ]);
+
+    expect(results).toHaveLength(3);
+    expect(results.every((r) => r !== undefined)).toBe(true);
+    expect(spy).not.toHaveBeenCalled();
+    expect(serverClient.options.callConcurrency).toBe(1);
+
+    await station.close({ force: true });
+    await server.close({ force: true });
   });
 });

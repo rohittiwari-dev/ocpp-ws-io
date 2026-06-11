@@ -17,6 +17,8 @@ export function heartbeatPlugin(): OCPPPlugin {
     name: "heartbeat",
 
     onConnection(client) {
+      // Don't clobber an application-registered Heartbeat handler
+      if (client.hasHandler("Heartbeat")) return;
       client.handle("Heartbeat", () => ({
         currentTime: new Date().toISOString(),
       }));

@@ -52,7 +52,8 @@ interface PendingCall {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
   timeoutHandle: ReturnType<typeof setTimeout>;
-  abortHandler?: () => void;
+  /** Detaches the abort listener from options.signal (if one was attached). */
+  removeAbortListener?: () => void;
   method: string;
   sentAt: number;
 }
@@ -527,6 +528,7 @@ export class BrowserOCPPClient<
 
       callResult = await new Promise<unknown>((resolve, reject) => {
         const timeoutHandle = setTimeout(() => {
+          this._pendingCalls.get(msgId)?.removeAbortListener?.();
           this._pendingCalls.delete(msgId);
           this._logger.warn?.("Call timed out", {
             messageId: msgId,
@@ -563,7 +565,8 @@ export class BrowserOCPPClient<
           options.signal.addEventListener("abort", abortHandler, {
             once: true,
           });
-          pending.abortHandler = abortHandler;
+          pending.removeAbortListener = () =>
+            options.signal?.removeEventListener("abort", abortHandler);
         }
 
         this._pendingCalls.set(msgId, pending);
@@ -739,8 +742,9 @@ export class BrowserOCPPClient<
             ? (err as RPCError)
             : createRPCError("InternalError", (err as Error).message);
 
+        // Never ship stack traces to remote peers (report M13)
         const details = this._options.respondWithDetailedErrors
-          ? getErrorPlainObject(err as Error)
+          ? getErrorPlainObject(err as Error, false)
           : {};
 
         const errorResponse: OCPPCallError = [
@@ -789,6 +793,7 @@ export class BrowserOCPPClient<
       this.emit("callResult", modifiedMessage);
 
       clearTimeout(pending.timeoutHandle);
+      pending.removeAbortListener?.();
       this._pendingCalls.delete(msgId);
       pending.resolve(ctxvals.payload);
     });
@@ -834,6 +839,7 @@ export class BrowserOCPPClient<
       this.emit("callError", modifiedMessage);
 
       clearTimeout(pending.timeoutHandle);
+      pending.removeAbortListener?.();
       this._pendingCalls.delete(msgId);
       pending.reject(resolvedRpcErr);
     });
@@ -852,10 +858,13 @@ export class BrowserOCPPClient<
     // Best-effort: try to extract messageId and respond with CALLERROR
     const match = rawMessage.match(/^\s*\[\s*2\s*,\s*"([^"]+)"/);
     if (match?.[1] && this._ws) {
+      // OCPP 1.6J spells this error "FormationViolation" (report M7)
+      const formatCode =
+        this._protocol === "ocpp1.6" ? "FormationViolation" : "FormatViolation";
       const errorResponse: OCPPCallError = [
         MessageType.CALLERROR,
         match[1],
-        "FormatViolation",
+        formatCode,
         error.message || "Invalid message format",
         {},
       ];
@@ -878,6 +887,7 @@ export class BrowserOCPPClient<
   private _rejectPendingCalls(reason: string): void {
     for (const [, pending] of this._pendingCalls) {
       clearTimeout(pending.timeoutHandle);
+      pending.removeAbortListener?.();
       pending.reject(new Error(reason));
     }
     this._pendingCalls.clear();
@@ -973,17 +983,18 @@ export class BrowserOCPPClient<
   // ─── Internal: Endpoint building ─────────────────────────────
 
   private _buildEndpoint(): string {
-    let url = this._options.endpoint;
-
-    if (!url.endsWith("/")) url += "/";
-    url += encodeURIComponent(this._identity);
+    // Use URL so identities land in the pathname even when the configured
+    // endpoint carries a query string (report: low/_buildEndpoint).
+    const url = new URL(this._options.endpoint);
+    if (!url.pathname.endsWith("/")) url.pathname += "/";
+    url.pathname += encodeURIComponent(this._identity);
 
     if (this._options.query) {
-      const params = new URLSearchParams(this._options.query);
-      url += (url.includes("?") ? "&" : "?") + params.toString();
+      for (const [k, v] of new URLSearchParams(this._options.query)) {
+        url.searchParams.append(k, v);
+      }
     }
-
-    return url;
+    return url.toString();
   }
 
   // ─── Internal: Cleanup ───────────────────────────────────────

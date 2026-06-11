@@ -398,7 +398,11 @@ export interface ClientOptions {
   strictModeMethods?: Array<AllMethodNames<OCPPProtocol>>;
   /** Custom validators for strict mode */
   strictModeValidators?: Validator[];
-  /** Max number of bad messages before closing (default: Infinity) */
+  /**
+   * Max number of bad messages before closing.
+   * Default: Infinity (never disconnects on bad messages) — set a finite
+   * value in production.
+   */
   maxBadMessages?: number;
   /** Include error details in responses (default: false) */
   respondWithDetailedErrors?: boolean;
@@ -537,6 +541,13 @@ export interface CORSOptions {
   allowedOrigins?: string[];
   /** Allowed WebSocket protocol schemes */
   allowedSchemes?: ("ws" | "wss")[];
+  /**
+   * Honor `X-Forwarded-Proto` from a reverse proxy when evaluating
+   * `allowedSchemes`. Leave false (default) unless the server is only
+   * reachable through a trusted proxy — otherwise clients can spoof the
+   * header to bypass wss-only rules.
+   */
+  trustProxy?: boolean;
 }
 
 // ─── Server Options ──────────────────────────────────────────────
@@ -560,7 +571,11 @@ interface ServerOptionsBase {
   strictModeValidators?: Validator[];
   /** Rate Limiting configuration — inherited */
   rateLimit?: RateLimitOptions;
-  /** Max bad messages — inherited (default: Infinity) */
+  /**
+   * Max bad messages — inherited.
+   * Default: Infinity (never disconnects on bad messages) — set a finite
+   * value in production.
+   */
   maxBadMessages?: number;
   /** Include error details in responses — inherited (default: false) */
   respondWithDetailedErrors?: boolean;
@@ -569,6 +584,12 @@ interface ServerOptionsBase {
    * (default: 7200000 / 2 hours)
    */
   sessionTtlMs?: number;
+  /**
+   * TTL (seconds) for cluster presence registry entries, and the basis for
+   * the automatic presence heartbeat (refreshed every ttl/2 while clients
+   * are connected). Default: 300.
+   */
+  presenceTtlSeconds?: number;
   /**
    * Maximum time (ms) to wait for the auth callback to resolve during
    * a WebSocket upgrade handshake. If the callback does not settle within
@@ -600,9 +621,19 @@ interface ServerOptionsBase {
    */
   maxSessions?: number;
   /**
+   * Hard cap on concurrent client connections, enforced before the TLS/auth
+   * handshake work is done (the connection-guard plugin only closes after
+   * the fact). Excess upgrades are rejected with HTTP 503.
+   */
+  maxConnections?: number;
+  /**
    * Enable the built-in HTTP health/metrics endpoint.
    * When enabled, non-upgrade HTTP requests to `/health` return a JSON health check,
    * and requests to `/metrics` return Prometheus-compatible text metrics.
+   * When attaching to a user-provided server (listen(..., { server })),
+   * only /health and /metrics are handled; all other routes are left to
+   * the application, and close() will not close the external server.
+   * Ensure your app does not also write responses for /health or /metrics.
    * (default: false)
    */
   healthEndpoint?: boolean;
@@ -786,6 +817,7 @@ export interface SecurityEvent {
     | "RATE_LIMIT_EXCEEDED"
     | "UPGRADE_ABORTED"
     | "CONNECTION_RATE_LIMIT"
+    | "CONNECTION_LIMIT"
     | "INVALID_PAYLOAD"
     | "ANOMALY_RAPID_RECONNECT"
     | "ANOMALY_AUTH_BRUTE_FORCE"

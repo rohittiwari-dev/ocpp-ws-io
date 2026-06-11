@@ -101,3 +101,27 @@ describe("getPackageIdent", () => {
     expect(getPackageIdent()).toBe(getPackageIdent());
   });
 });
+
+describe("getErrorPlainObject stack handling (M13)", () => {
+  it("includeStack=false omits the stack", () => {
+    const obj = getErrorPlainObject(new Error("x"), false);
+    expect(obj.stack).toBeUndefined();
+    expect(obj.message).toBe("x");
+  });
+
+  it("default keeps backward-compatible behavior", () => {
+    const obj = getErrorPlainObject(new Error("x"));
+    expect(obj.stack).toBeDefined();
+  });
+});
+
+import { readFileSync } from "node:fs";
+
+describe("getPackageIdent version (low)", () => {
+  it("matches package.json version", () => {
+    const pkg = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    );
+    expect(getPackageIdent()).toBe(`ocpp-ws-io/${pkg.version}`);
+  });
+});

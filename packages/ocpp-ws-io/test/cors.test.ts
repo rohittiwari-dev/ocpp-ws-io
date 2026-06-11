@@ -106,16 +106,22 @@ describe("CORS Utilities - checkCORS", () => {
     expect(checkCORS(wssReq, { allowedSchemes: ["ws"] }).allowed).toBe(false);
   });
 
-  it("should enforce allowedSchemes via X-Forwarded-Proto header", () => {
+  it("should enforce allowedSchemes via X-Forwarded-Proto header when trustProxy is set", () => {
     const httpsReq = mockRequest({ headers: { "x-forwarded-proto": "https" } });
     const wssFwdReq = mockRequest({ headers: { "x-forwarded-proto": "wss" } });
     const httpReq = mockRequest({ headers: { "x-forwarded-proto": "http" } });
 
-    expect(checkCORS(httpsReq, { allowedSchemes: ["wss"] }).allowed).toBe(true);
-    expect(checkCORS(wssFwdReq, { allowedSchemes: ["wss"] }).allowed).toBe(
-      true,
-    );
-    expect(checkCORS(httpReq, { allowedSchemes: ["wss"] }).allowed).toBe(false);
+    expect(
+      checkCORS(httpsReq, { allowedSchemes: ["wss"], trustProxy: true })
+        .allowed,
+    ).toBe(true);
+    expect(
+      checkCORS(wssFwdReq, { allowedSchemes: ["wss"], trustProxy: true })
+        .allowed,
+    ).toBe(true);
+    expect(
+      checkCORS(httpReq, { allowedSchemes: ["wss"], trustProxy: true }).allowed,
+    ).toBe(false);
   });
 
   it("should allow if Origin header is missing (charger safe) but allowedOrigins is set", () => {
@@ -144,5 +150,28 @@ describe("CORS Utilities - checkCORS", () => {
       checkCORS(req, { allowedOrigins: ["https://dashboard.example.com"] })
         .allowed,
     ).toBe(true);
+  });
+});
+
+describe("trustProxy (H5)", () => {
+  const plainReq = (headers: Record<string, string>) =>
+    ({
+      socket: { remoteAddress: "203.0.113.5" },
+      headers,
+    }) as any;
+
+  it("x-forwarded-proto is ignored by default (spoof attempt blocked)", () => {
+    const { allowed } = checkCORS(plainReq({ "x-forwarded-proto": "https" }), {
+      allowedSchemes: ["wss"],
+    });
+    expect(allowed).toBe(false);
+  });
+
+  it("x-forwarded-proto is honored when trustProxy is true", () => {
+    const { allowed } = checkCORS(plainReq({ "x-forwarded-proto": "https" }), {
+      allowedSchemes: ["wss"],
+      trustProxy: true,
+    });
+    expect(allowed).toBe(true);
   });
 });

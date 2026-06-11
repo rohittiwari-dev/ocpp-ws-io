@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { OCPPServer } from "../src/server.js";
 import type { OCPPPlugin } from "../src/types.js";
+import { OCPPClient } from "../src/client.js";
 import {
   sessionLogPlugin,
   heartbeatPlugin,
@@ -9,6 +10,8 @@ import {
   otelPlugin,
   webhookPlugin,
   anomalyPlugin,
+  messageDedupPlugin,
+  redisPubSubPlugin,
 } from "../src/plugins/index.js";
 
 // ─── sessionLogPlugin ──────────────────────────────────────────
@@ -70,7 +73,7 @@ describe("heartbeatPlugin", () => {
   it("should register a Heartbeat handler on connection", () => {
     const plugin = heartbeatPlugin();
     const handleSpy = vi.fn();
-    const fakeClient = { handle: handleSpy } as any;
+    const fakeClient = { handle: handleSpy, hasHandler: () => false } as any;
 
     plugin.onConnection!(fakeClient);
     expect(handleSpy).toHaveBeenCalledWith("Heartbeat", expect.any(Function));
@@ -358,9 +361,10 @@ describe("webhookPlugin", () => {
       handshake: { remoteAddress: "1.2.3.4" },
     } as any);
 
-    await new Promise((r) => setTimeout(r, 100));
-    // 2 attempts (initial + 1 retry), both fail silently
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    // 2 attempts (initial + 1 retry after ~250ms backoff), both fail silently
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2), {
+      timeout: 2000,
+    });
 
     vi.restoreAllMocks();
   });
@@ -547,5 +551,100 @@ describe("Plugin Integration", () => {
     ]);
 
     server.close({ force: true }).catch(() => {});
+  });
+});
+
+describe("messageDedupPlugin replay (M11)", () => {
+  function fakeRedis() {
+    const store = new Map<string, string>();
+    return {
+      store,
+      async set(key: string, value: string, ...args: unknown[]) {
+        if (args.includes("NX") && store.has(key)) return null;
+        store.set(key, value);
+        return "OK" as const;
+      },
+      async get(key: string) {
+        return store.get(key) ?? null;
+      },
+    };
+  }
+  const makeClient = () => ({ identity: "CP-D", sendRaw: vi.fn() }) as any;
+
+  it("only CALL messages are deduplicated", async () => {
+    const plugin = messageDedupPlugin({ redis: fakeRedis() });
+    const client = makeClient();
+    const callResult = JSON.stringify([3, "m1", { ok: 1 }]);
+    expect(await plugin.onBeforeReceive!(client, callResult)).toBeUndefined();
+    expect(await plugin.onBeforeReceive!(client, callResult)).toBeUndefined();
+  });
+
+  it("duplicate CALL replays the cached response", async () => {
+    const plugin = messageDedupPlugin({ redis: fakeRedis() });
+    const client = makeClient();
+    const call = JSON.stringify([2, "m2", "Heartbeat", {}]);
+    const response: any = [3, "m2", { currentTime: "t" }];
+
+    expect(await plugin.onBeforeReceive!(client, call)).toBeUndefined();
+    plugin.onBeforeSend!(client, response); // server responds -> cached
+    await new Promise((r) => setTimeout(r, 10));
+
+    const second = await plugin.onBeforeReceive!(client, call);
+    expect(second).toBe(false); // dropped
+    expect(client.sendRaw).toHaveBeenCalledWith(JSON.stringify(response));
+  });
+});
+
+describe("heartbeatPlugin handler collision (low)", () => {
+  it("does not throw when a Heartbeat handler already exists", () => {
+    const client: any = new OCPPClient({ identity: "x", endpoint: "ws://x" });
+    client.handle("Heartbeat", () => ({ currentTime: "user" }));
+
+    expect(() => heartbeatPlugin().onConnection!(client)).not.toThrow();
+    expect(client.hasHandler("Heartbeat")).toBe(true);
+  });
+
+  it("registers the default handler when none exists", () => {
+    const client: any = new OCPPClient({ identity: "y", endpoint: "ws://x" });
+    heartbeatPlugin().onConnection!(client);
+    expect(client.hasHandler("Heartbeat")).toBe(true);
+  });
+});
+
+describe("webhookPlugin retries (low)", () => {
+  it("retries non-2xx responses", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const plugin = webhookPlugin({
+      url: "https://example.test/hook",
+      events: ["connect"],
+      retries: 1,
+    });
+    plugin.onConnection!({
+      identity: "CP-W",
+      handshake: { remoteAddress: "1.1.1.1" },
+      protocol: "ocpp1.6",
+    } as any);
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("redisPubSubPlugin closing event (low)", () => {
+  it("publishes ocpp:closing when enabled", async () => {
+    const client = { publish: vi.fn(async () => 1) };
+    const plugin = redisPubSubPlugin({ client, events: ["closing"] });
+    plugin.onClosing!();
+    await vi.waitFor(() =>
+      expect(client.publish).toHaveBeenCalledWith(
+        "ocpp:closing",
+        expect.any(String),
+      ),
+    );
   });
 });

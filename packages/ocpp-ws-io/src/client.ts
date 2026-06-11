@@ -59,7 +59,8 @@ interface PendingCall {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
   timeoutHandle: ReturnType<typeof setTimeout>;
-  abortHandler?: () => void;
+  /** Detaches the abort listener from options.signal (if one was attached). */
+  removeAbortListener?: () => void;
   method: string;
   sentAt: number;
 }
@@ -111,7 +112,7 @@ export class OCPPClient<
   private _pendingResponses = new Set<string>();
   private _callQueue: Queue;
   private _pingTimer: ReturnType<typeof setTimeout> | null = null;
-  private _pongTimer: ReturnType<typeof setTimeout> | null = null;
+  protected _pongTimer: ReturnType<typeof setTimeout> | null = null;
   private _closePromise: Promise<{ code: number; reason: string }> | null =
     null;
   private _reconnectAttempt = 0;
@@ -252,6 +253,14 @@ export class OCPPClient<
   }
 
   /**
+   * Bytes currently queued in the underlying WebSocket send buffer
+   * (0 when disconnected). Useful for backpressure monitoring and drain checks.
+   */
+  get bufferedAmount(): number {
+    return this._ws?.bufferedAmount ?? 0;
+  }
+
+  /**
    * The current configuration options for this client.
    */
   public get options(): Readonly<ClientOptions> {
@@ -367,7 +376,10 @@ export class OCPPClient<
         this._logger?.error?.("Connection error", {
           error: err.message,
         });
-        this.emit("error", err);
+        // The connect() rejection is the primary failure signal — only emit
+        // "error" when someone listens, otherwise EventEmitter throws and
+        // the rejection below never runs.
+        if (this.listenerCount("error") > 0) this.emit("error", err);
         reject(err);
       };
 
@@ -385,7 +397,7 @@ export class OCPPClient<
         this._logger?.error?.("Unexpected HTTP response", {
           statusCode: res.statusCode,
         });
-        this.emit("error", err);
+        if (this.listenerCount("error") > 0) this.emit("error", err);
         reject(err);
       };
 
@@ -627,6 +639,16 @@ export class OCPPClient<
   }
 
   /**
+   * Check whether a handler is registered for a method
+   * (optionally version-scoped, matching the handle() overloads).
+   */
+  hasHandler(method: string, version?: string): boolean {
+    return version
+      ? this._handlers.has(`${version}:${method}`)
+      : this._handlers.has(method);
+  }
+
+  /**
    * Remove all registered handlers for this client, including the wildcard handler.
    */
   removeAllHandlers(): void {
@@ -716,7 +738,10 @@ export class OCPPClient<
         return new Promise((resolve, reject) => {
           const maxSize = this._options.offlineQueueMaxSize ?? 100;
           if (this._offlineQueue.length >= maxSize) {
-            this._offlineQueue.shift(); // Drop oldest
+            const dropped = this._offlineQueue.shift(); // Drop oldest
+            dropped?.reject(
+              new Error("Offline queue overflow — oldest queued call dropped"),
+            );
             this._logger?.warn?.(
               "Offline queue full — dropping oldest message",
               {
@@ -748,6 +773,28 @@ export class OCPPClient<
     }
 
     return this._callQueue.push(() => this._sendCall(method, params, options));
+  }
+
+  /**
+   * Execute a call immediately, bypassing the callConcurrency queue.
+   * Used by OCPPServer.sendBatch to pipeline warm-up calls without
+   * mutating the client's configured concurrency (report M9).
+   */
+  callImmediate<TResult = unknown>(
+    method: string,
+    params?: Record<string, unknown>,
+    options?: CallOptions,
+  ): Promise<TResult> {
+    if (this._state !== OPEN) {
+      return Promise.reject(
+        new Error(`Cannot call: client is in state ${this._state}`),
+      );
+    }
+    return this._sendCall(
+      method,
+      params ?? {},
+      options ?? {},
+    ) as Promise<TResult>;
   }
 
   // ─── Safe Call (Best Effort) ─────────────────────────────────
@@ -864,7 +911,10 @@ export class OCPPClient<
       const messageStr = JSON.stringify(message);
 
       callResult = await new Promise<unknown>((resolve, reject) => {
+        let removeAbortListener: (() => void) | undefined;
+
         const timeoutHandle = setTimeout(() => {
+          removeAbortListener?.();
           this._pendingCalls.delete(msgId);
           reject(
             new TimeoutError(
@@ -876,20 +926,22 @@ export class OCPPClient<
         const abortHandler = () => {
           clearTimeout(timeoutHandle);
           this._pendingCalls.delete(msgId);
-          reject(new Error("Aborted"));
+          reject(options.signal?.reason ?? new Error("Aborted"));
         };
 
         if (options.signal) {
-          options.signal.addEventListener("abort", abortHandler);
+          options.signal.addEventListener("abort", abortHandler, {
+            once: true,
+          });
+          removeAbortListener = () =>
+            options.signal?.removeEventListener("abort", abortHandler);
         }
 
         this._pendingCalls.set(msgId, {
           resolve,
           reject,
           timeoutHandle,
-          abortHandler: options.signal
-            ? () => options.signal?.removeEventListener("abort", abortHandler)
-            : undefined,
+          removeAbortListener,
           method: ctxvals.method,
           sentAt: Date.now(),
         });
@@ -899,6 +951,7 @@ export class OCPPClient<
             if (err) {
               // Failed to send
               clearTimeout(timeoutHandle);
+              removeAbortListener?.();
               this._pendingCalls.delete(msgId);
               reject(err);
             } else {
@@ -921,6 +974,7 @@ export class OCPPClient<
           // The promise remains pending until connected & flushed -> then response comes
         } else {
           clearTimeout(timeoutHandle);
+          removeAbortListener?.();
           this._pendingCalls.delete(msgId);
           reject(new Error(`WebSocket is not open (state: ${this._state})`));
         }
@@ -1041,8 +1095,7 @@ export class OCPPClient<
         // Worker pool already parsed — skip JSON.parse entirely
         message = preParsed as OCPPMessage;
       } else {
-        // Zero-copy — JSON.parse accepts Buffer directly (Node 18+),
-        // avoiding an intermediate string allocation per message.
+        // JSON.parse accepts a Buffer directly (implicit utf8 toString).
         message = JSON.parse(rawData as unknown as string) as OCPPMessage;
       }
       if (!Array.isArray(message)) throw new Error("Message is not an array");
@@ -1245,8 +1298,9 @@ export class OCPPClient<
               ? (err as RPCError)
               : createRPCError("InternalError", (err as Error).message);
 
+          // Never ship stack traces to remote peers (report M13)
           const details = this._options.respondWithDetailedErrors
-            ? getErrorPlainObject(err as Error)
+            ? getErrorPlainObject(err as Error, false)
             : {};
 
           const errorResponse: OCPPCallError = [
@@ -1327,10 +1381,22 @@ export class OCPPClient<
       // Keep backward-compatible "callResult" event
       this.emit("callResult", message);
 
-      clearTimeout(pendingCtx.timeoutHandle);
-      if (pendingCtx.abortHandler) {
-        // Remove abort listener if bound
+      // Strict mode: validate the inbound response payload against the
+      // method's .conf schema (report M6).
+      if (this._options.strictMode && this._protocol) {
+        try {
+          this._validateInbound(pendingCtx.method, ctxvals.payload, "conf");
+        } catch (err) {
+          clearTimeout(pendingCtx.timeoutHandle);
+          pendingCtx.removeAbortListener?.();
+          this._pendingCalls.delete(ctxvals.messageId);
+          pendingCtx.reject(err);
+          return;
+        }
       }
+
+      clearTimeout(pendingCtx.timeoutHandle);
+      pendingCtx.removeAbortListener?.();
       this._pendingCalls.delete(ctxvals.messageId);
       pendingCtx.resolve(ctxvals.payload);
     });
@@ -1372,6 +1438,7 @@ export class OCPPClient<
       const [, , code, msg, details] = ctxvals.error;
 
       clearTimeout(pendingCtx.timeoutHandle);
+      pendingCtx.removeAbortListener?.();
       this._pendingCalls.delete(ctxvals.messageId);
 
       const err = createRPCError(code, msg, details);
@@ -1394,10 +1461,13 @@ export class OCPPClient<
     // Pattern matches OCPP-J CALL format: [2, "messageId", ...]
     const match = rawMessage.match(/^\s*\[\s*2\s*,\s*"([^"]+)"/);
     if (match?.[1] && this._ws) {
+      // OCPP 1.6J spells this error "FormationViolation" (report M7)
+      const formatCode =
+        this._protocol === "ocpp1.6" ? "FormationViolation" : "FormatViolation";
       const errorResponse: OCPPCallError = [
         MessageType.CALLERROR,
         match[1],
-        "FormatViolation",
+        formatCode,
         error.message || "Invalid message format",
         {},
       ];
@@ -1433,14 +1503,21 @@ export class OCPPClient<
   private _rejectPendingCalls(reason: string): void {
     for (const [, pending] of this._pendingCalls) {
       clearTimeout(pending.timeoutHandle);
+      pending.removeAbortListener?.();
       pending.reject(new Error(reason));
     }
     this._pendingCalls.clear();
     this._pendingResponses.clear();
   }
 
-  private _onClose(code: number, reason: Buffer): void {
+  protected _onClose(code: number, reason: Buffer): void {
     this._stopPing();
+    // A pending pong timer must not fire a spurious pongTimeout for a
+    // connection that already closed (review fix).
+    if (this._pongTimer) {
+      clearTimeout(this._pongTimer);
+      this._pongTimer = null;
+    }
     const reasonStr = reason.toString();
     this._rejectPendingCalls(`Connection closed (${code}: ${reasonStr})`);
 
@@ -1600,6 +1677,14 @@ export class OCPPClient<
   /** Maximum bytes allowed in the ws send buffer before applying backpressure (512KB) */
   private static readonly _BACKPRESSURE_THRESHOLD = 512 * 1024;
 
+  /** Sends queued while the socket is backpressured (FIFO). */
+  private _backpressureQueue: Array<{
+    data: string;
+    cb?: (err?: Error) => void;
+    enqueuedAt: number;
+  }> = [];
+  private _backpressureTimer: ReturnType<typeof setInterval> | null = null;
+
   /**
    * Protected hook for plugins to intercept outbound messages before serialization.
    * Return `false` to suppress the message transmission.
@@ -1611,9 +1696,11 @@ export class OCPPClient<
   }
 
   /**
-   * Wraps ws.send() with backpressure protection.
-   * If bufferedAmount exceeds the threshold, waits for the buffer to drain
-   * before sending. Prevents OOM on slow 2G/3G charger connections.
+   * Wraps ws.send() with backpressure protection. When bufferedAmount
+   * exceeds the threshold, sends are queued and flushed FIFO by a single
+   * shared 50ms drain timer (one per client, not one per send — report M10).
+   * Entries older than 10s are sent regardless, preserving the previous
+   * timeout semantics. Prevents OOM on slow 2G/3G charger connections.
    */
   private _safeSend(
     ws: WebSocket | null,
@@ -1625,43 +1712,71 @@ export class OCPPClient<
       return;
     }
 
-    if (ws.bufferedAmount > OCPPClient._BACKPRESSURE_THRESHOLD) {
-      this._logger?.warn?.("Backpressure — pausing send", {
-        identity: this._identity,
-        bufferedAmount: ws.bufferedAmount,
-        threshold: OCPPClient._BACKPRESSURE_THRESHOLD,
-      });
-      // Emit identity + buffered amount for operator alerting
-      this.emit("backpressure", {
-        identity: this._identity,
-        bufferedAmount: ws.bufferedAmount,
-      });
+    if (
+      ws.bufferedAmount > OCPPClient._BACKPRESSURE_THRESHOLD ||
+      this._backpressureQueue.length > 0
+    ) {
+      if (this._backpressureQueue.length === 0) {
+        this._logger?.warn?.("Backpressure — pausing send", {
+          identity: this._identity,
+          bufferedAmount: ws.bufferedAmount,
+          threshold: OCPPClient._BACKPRESSURE_THRESHOLD,
+        });
+        // Emit identity + buffered amount for operator alerting
+        this.emit("backpressure", {
+          identity: this._identity,
+          bufferedAmount: ws.bufferedAmount,
+        });
+      }
+      this._backpressureQueue.push({ data, cb, enqueuedAt: Date.now() });
+      this._startBackpressureDrain(ws);
+      return;
+    }
 
-      // Poll until buffer drains below threshold (check every 50ms, timeout 10s)
-      let waited = 0;
-      const drainCheck = setInterval(() => {
-        waited += 50;
-        if (!ws || ws.readyState !== WebSocket.OPEN) {
-          clearInterval(drainCheck);
-          cb?.(new Error("WebSocket closed during backpressure wait"));
-          return;
+    ws.send(data, cb);
+  }
+
+  private _startBackpressureDrain(ws: WebSocket): void {
+    if (this._backpressureTimer) return;
+    this._backpressureTimer = setInterval(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        this._stopBackpressureDrain();
+        const failed = this._backpressureQueue.splice(0);
+        for (const entry of failed) {
+          entry.cb?.(new Error("WebSocket closed during backpressure wait"));
         }
+        return;
+      }
+      const now = Date.now();
+      while (this._backpressureQueue.length > 0) {
+        const head = this._backpressureQueue[0];
+        const timedOut = now - head.enqueuedAt >= 10_000;
         if (
           ws.bufferedAmount <= OCPPClient._BACKPRESSURE_THRESHOLD ||
-          waited >= 10000
+          timedOut
         ) {
-          clearInterval(drainCheck);
-          ws.send(data, cb);
+          this._backpressureQueue.shift();
+          ws.send(head.data, head.cb);
+        } else {
+          break;
         }
-      }, 50);
-    } else {
-      ws.send(data, cb);
+      }
+      if (this._backpressureQueue.length === 0) {
+        this._stopBackpressureDrain();
+      }
+    }, 50);
+  }
+
+  private _stopBackpressureDrain(): void {
+    if (this._backpressureTimer) {
+      clearInterval(this._backpressureTimer);
+      this._backpressureTimer = null;
     }
   }
 
   // ─── Internal: Ping/Pong ─────────────────────────────────────
 
-  private _startPing(): void {
+  protected _startPing(): void {
     if (this._options.pingIntervalMs <= 0) return;
 
     const pongTimeoutMs =
@@ -1669,7 +1784,6 @@ export class OCPPClient<
       this._options.pingIntervalMs + 5000;
 
     const doPing = () => {
-      // console.log("doPing called", this._state, !!this._ws, "interval", this._options.pingIntervalMs);
       if (this._state !== OPEN || !this._ws) return;
 
       if (this._options.deferPingsOnActivity) {
@@ -1717,7 +1831,7 @@ export class OCPPClient<
     }
   }
 
-  private _recordActivity(): void {
+  protected _recordActivity(): void {
     this._lastActivity = Date.now();
   }
 
@@ -1809,19 +1923,18 @@ export class OCPPClient<
   // ─── Internal: Endpoint building ─────────────────────────────
 
   private _buildEndpoint(): string {
-    let url = this._options.endpoint;
+    // Use URL so identities land in the pathname even when the configured
+    // endpoint carries a query string (report: low/_buildEndpoint).
+    const url = new URL(this._options.endpoint);
+    if (!url.pathname.endsWith("/")) url.pathname += "/";
+    url.pathname += encodeURIComponent(this._identity);
 
-    // Append identity to URL path
-    if (!url.endsWith("/")) url += "/";
-    url += encodeURIComponent(this._identity);
-
-    // Append query parameters
     if (this._options.query) {
-      const params = new URLSearchParams(this._options.query);
-      url += (url.includes("?") ? "&" : "?") + params.toString();
+      for (const [k, v] of new URLSearchParams(this._options.query)) {
+        url.searchParams.append(k, v);
+      }
     }
-
-    return url;
+    return url.toString();
   }
 
   private _buildWsOptions(): WebSocket.ClientOptions {
@@ -1902,6 +2015,11 @@ export class OCPPClient<
     if (this._reconnectTimer) {
       clearTimeout(this._reconnectTimer);
       this._reconnectTimer = null;
+    }
+    this._stopBackpressureDrain();
+    const queued = this._backpressureQueue.splice(0);
+    for (const entry of queued) {
+      entry.cb?.(new Error("Connection closed"));
     }
     this._closePromise = null;
     this._ws = null;

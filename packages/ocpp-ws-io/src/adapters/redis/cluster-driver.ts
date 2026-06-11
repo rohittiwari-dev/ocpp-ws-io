@@ -1,10 +1,10 @@
+import { createRequire } from "node:module";
 import type { RedisPubSubDriver, StreamEntry } from "./helpers.js";
 
 // ─── Redis Cluster Driver ───────────────────────────────────────
 //
 // Wraps an ioredis `Cluster` instance (or compatible) and exposes
-// the same RedisPubSubDriver interface. Hash tags ensure related
-// keys land on the same shard.
+// the same RedisPubSubDriver interface.
 
 export interface ClusterNode {
   host: string;
@@ -26,16 +26,12 @@ export interface ClusterDriverOptions {
  * Redis Cluster driver that implements `RedisPubSubDriver`.
  * Requires `ioredis` as a peer dependency.
  *
- * Hash-tag strategy:
- * - Presence keys: `{identity}` → sharded by station identity
- * - Stream keys: `{nodeId}` → sharded by server node ID
- *
  * @example
  * ```ts
- * const driver = createClusterDriver({
+ * const driver = new ClusterDriver({
  *   nodes: [{ host: '10.0.0.1', port: 6379 }, { host: '10.0.0.2', port: 6379 }],
  * });
- * const adapter = new RedisAdapter({ pubClient: {}, subClient: {}, driverFactory: () => driver });
+ * const adapter = new RedisAdapter({ driver });
  * ```
  */
 export class ClusterDriver implements RedisPubSubDriver {
@@ -43,38 +39,42 @@ export class ClusterDriver implements RedisPubSubDriver {
   private _subscriber: any;
   private _handlers = new Map<string, (msg: string) => void>();
 
+  /** Cluster connections share command pipelines — never issue blocking reads. */
+  readonly hasBlockingClient = false;
+
   constructor(_options: ClusterDriverOptions) {
-    // Dynamically require ioredis to avoid bundling
+    // Dynamically require ioredis to avoid bundling it. `__filename` exists
+    // in the CJS build natively and via the tsup shim in the ESM build.
+    let IoRedis: any;
     try {
-      const { createRequire } = require("node:module");
       const dynamicRequire = createRequire(__filename);
-      const Redis = dynamicRequire("ioredis");
-
-      const redisOpts = _options.redisOptions ?? {};
-      if (_options.natMap) {
-        (redisOpts as any).natMap = _options.natMap;
-      }
-
-      this._cluster = new Redis.Cluster(
-        _options.nodes.map((n) => ({ host: n.host, port: n.port })),
-        { redisOptions: redisOpts },
-      );
-
-      // Separate subscriber connection for Pub/Sub
-      this._subscriber = new Redis.Cluster(
-        _options.nodes.map((n) => ({ host: n.host, port: n.port })),
-        { redisOptions: redisOpts },
-      );
-
-      this._subscriber.on("message", (channel: string, message: string) => {
-        const handler = this._handlers.get(channel);
-        if (handler) handler(message);
-      });
+      IoRedis = dynamicRequire("ioredis");
     } catch {
       throw new Error(
         "ClusterDriver requires 'ioredis' as a peer dependency. Install it with: npm i ioredis",
       );
     }
+
+    const redisOpts = _options.redisOptions ?? {};
+    if (_options.natMap) {
+      (redisOpts as any).natMap = _options.natMap;
+    }
+
+    // Construction errors (bad nodes, auth, etc.) now propagate as-is
+    this._cluster = new IoRedis.Cluster(
+      _options.nodes.map((n) => ({ host: n.host, port: n.port })),
+      { redisOptions: redisOpts },
+    );
+    // Separate subscriber connection for Pub/Sub
+    this._subscriber = new IoRedis.Cluster(
+      _options.nodes.map((n) => ({ host: n.host, port: n.port })),
+      { redisOptions: redisOpts },
+    );
+
+    this._subscriber.on("message", (channel: string, message: string) => {
+      const handler = this._handlers.get(channel);
+      if (handler) handler(message);
+    });
   }
 
   async publish(channel: string, message: string): Promise<void> {
@@ -197,11 +197,13 @@ export class ClusterDriver implements RedisPubSubDriver {
     entries: { key: string; value: string; ttlSeconds: number }[],
   ): Promise<void> {
     if (entries.length === 0) return;
-    const pipeline = this._cluster.pipeline();
-    for (const { key, value, ttlSeconds } of entries) {
-      pipeline.set(key, value, "EX", ttlSeconds);
-    }
-    await pipeline.exec();
+    // Redis Cluster pipelines cannot span hash slots — issue per-key SETs
+    // and let the cluster client route each one (report M2).
+    await Promise.all(
+      entries.map(({ key, value, ttlSeconds }) =>
+        this._cluster.set(key, value, "EX", ttlSeconds),
+      ),
+    );
   }
 
   async expire(key: string, ttlSeconds: number): Promise<void> {

@@ -76,23 +76,27 @@ export function webhookPlugin(options: WebhookPluginOptions): OCPPPlugin {
     }
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeout);
       try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeout);
-
-        await fetch(options.url, {
+        const res = await fetch(options.url, {
           method: "POST",
           headers,
           body,
           signal: controller.signal,
         });
-
-        clearTimeout(timer);
+        if (!res.ok) {
+          throw new Error(`Webhook responded with HTTP ${res.status}`);
+        }
         return; // Success
       } catch {
-        if (attempt === maxRetries) {
-          // Silently fail — webhooks should not crash the server
+        if (attempt < maxRetries) {
+          // Exponential backoff between attempts (250ms, 500ms, 1s, ...)
+          await new Promise((r) => setTimeout(r, 250 * 2 ** attempt));
         }
+        // Final failure is swallowed — webhooks must never crash the server
+      } finally {
+        clearTimeout(timer);
       }
     }
   }
