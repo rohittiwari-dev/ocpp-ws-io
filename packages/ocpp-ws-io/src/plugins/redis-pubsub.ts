@@ -24,7 +24,8 @@ type RedisPubSubEvent =
   | "message"
   | "security"
   | "auth_failed"
-  | "eviction";
+  | "eviction"
+  | "closing";
 
 /**
  * Options for the Redis Pub/Sub plugin.

@@ -206,3 +206,24 @@ describe("OCPPServer Coverage", () => {
     );
   });
 });
+
+describe("reconfigure applies changes (low)", () => {
+  test("maxPayloadBytes rebuilds the WebSocketServer", async () => {
+    const srv = new OCPPServer({ maxPayloadBytes: 65536 });
+    srv.reconfigure({ maxPayloadBytes: 1024 });
+    expect(((srv as any)._wss.options as any).maxPayload).toBe(1024);
+    await srv.close({ force: true });
+  });
+
+  test("rateLimit.adaptive toggles the limiter", async () => {
+    const srv = new OCPPServer({});
+    expect((srv as any)._adaptiveLimiter).toBeNull();
+    srv.reconfigure({
+      rateLimit: { limit: 10, windowMs: 1000, adaptive: true },
+    });
+    expect((srv as any)._adaptiveLimiter).not.toBeNull();
+    srv.reconfigure({ rateLimit: { limit: 10, windowMs: 1000 } });
+    expect((srv as any)._adaptiveLimiter).toBeNull();
+    await srv.close({ force: true });
+  });
+});

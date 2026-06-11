@@ -1315,7 +1315,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         session: finalSession,
         protocol: selectedProtocol,
         adaptiveMultiplier: this._adaptiveLimiter
-          ? () => this._adaptiveLimiter!.multiplier
+          ? () => this._adaptiveLimiter?.multiplier ?? 1
           : undefined,
         workerPool: this._workerPool ?? undefined,
         plugins: this._plugins,
@@ -1683,6 +1683,45 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   reconfigure(options: Partial<ServerOptions>): void {
     const oldOptions = { ...this._options } as ServerOptions;
     Object.assign(this._options, options);
+
+    // Transport-level settings only apply to a fresh WebSocketServer —
+    // rebuild so new connections pick them up (existing sockets keep theirs).
+    if (
+      options.maxPayloadBytes !== undefined ||
+      options.compression !== undefined
+    ) {
+      this._wss?.close();
+      this._wss = this._createWss();
+    }
+
+    // Toggle the adaptive limiter to match the new rateLimit config
+    if (options.rateLimit !== undefined) {
+      const wantAdaptive = !!options.rateLimit?.adaptive;
+      if (wantAdaptive && !this._adaptiveLimiter) {
+        const rl = options.rateLimit;
+        this._adaptiveLimiter = new AdaptiveLimiter({
+          cpuThresholdPercent: rl.cpuThresholdPercent,
+          memThresholdPercent: rl.memThresholdPercent,
+          cooldownMs: rl.cooldownMs,
+        });
+        this._adaptiveLimiter.on(
+          "adapted",
+          (event: {
+            multiplier: number;
+            cpuPercent: number;
+            memPercent: number;
+          }) => {
+            this._logger?.info?.("Adaptive rate limit adjusted", event);
+            this.emit("rateLimit:adapted" as any, event);
+          },
+        );
+        this._adaptiveLimiter.start();
+      } else if (!wantAdaptive && this._adaptiveLimiter) {
+        this._adaptiveLimiter.stop();
+        this._adaptiveLimiter = null;
+      }
+    }
+
     // Plugin: onReconfigure
     for (const plugin of this._plugins) {
       try {

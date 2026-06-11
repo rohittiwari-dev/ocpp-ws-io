@@ -11,6 +11,7 @@ import {
   webhookPlugin,
   anomalyPlugin,
   messageDedupPlugin,
+  redisPubSubPlugin,
 } from "../src/plugins/index.js";
 
 // ─── sessionLogPlugin ──────────────────────────────────────────
@@ -360,9 +361,10 @@ describe("webhookPlugin", () => {
       handshake: { remoteAddress: "1.2.3.4" },
     } as any);
 
-    await new Promise((r) => setTimeout(r, 100));
-    // 2 attempts (initial + 1 retry), both fail silently
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    // 2 attempts (initial + 1 retry after ~250ms backoff), both fail silently
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2), {
+      timeout: 2000,
+    });
 
     vi.restoreAllMocks();
   });
@@ -606,5 +608,43 @@ describe("heartbeatPlugin handler collision (low)", () => {
     const client: any = new OCPPClient({ identity: "y", endpoint: "ws://x" });
     heartbeatPlugin().onConnection!(client);
     expect(client.hasHandler("Heartbeat")).toBe(true);
+  });
+});
+
+describe("webhookPlugin retries (low)", () => {
+  it("retries non-2xx responses", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const plugin = webhookPlugin({
+      url: "https://example.test/hook",
+      events: ["connect"],
+      retries: 1,
+    });
+    plugin.onConnection!({
+      identity: "CP-W",
+      handshake: { remoteAddress: "1.1.1.1" },
+      protocol: "ocpp1.6",
+    } as any);
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("redisPubSubPlugin closing event (low)", () => {
+  it("publishes ocpp:closing when enabled", async () => {
+    const client = { publish: vi.fn(async () => 1) };
+    const plugin = redisPubSubPlugin({ client, events: ["closing"] });
+    plugin.onClosing!();
+    await vi.waitFor(() =>
+      expect(client.publish).toHaveBeenCalledWith(
+        "ocpp:closing",
+        expect.any(String),
+      ),
+    );
   });
 });
