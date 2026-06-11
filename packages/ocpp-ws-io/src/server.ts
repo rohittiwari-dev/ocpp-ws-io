@@ -528,6 +528,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       this._state = "OPEN";
     }
 
+    // Re-create the worker pool after a close()/listen() restart cycle
+    // (close() shuts it down so worker threads don't pin the process).
+    if (this._options.workerThreads && !this._workerPool) {
+      const wt = this._options.workerThreads;
+      this._workerPool = createWorkerPool(typeof wt === "object" ? wt : {});
+    }
+
     // Handle upgrade requests
     const upgradeHandler = (
       req: IncomingMessage,
@@ -663,7 +670,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         "abort",
         () => {
           ac.abort();
-          httpServer.close();
+          // Mirror close(): detach our listeners, only close owned servers
+          const handlers = this._attachedHttpHandlers.get(httpServer);
+          if (handlers) {
+            httpServer.removeListener("upgrade", handlers.upgrade);
+            if (handlers.request) {
+              httpServer.removeListener("request", handlers.request);
+            }
+            this._attachedHttpHandlers.delete(httpServer);
+          }
+          if (this._ownedHttpServers.has(httpServer)) {
+            httpServer.close();
+            this._ownedHttpServers.delete(httpServer);
+          }
           this._httpServers.delete(httpServer);
         },
         { once: true },
@@ -1380,15 +1399,17 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           this._clients.delete(client);
           if (this._clientsByIdentity.get(identity) === client) {
             this._clientsByIdentity.delete(identity);
-          }
-          // Remove presence
-          if (this?._adapter?.removePresence) {
-            this._adapter.removePresence(identity).catch((err) => {
-              this._logger?.error?.("Error removing presence", {
-                identity,
-                error: err,
+            // Remove presence — only when this socket still owns the
+            // identity. An evicted duplicate must not wipe the presence
+            // the replacement connection just registered (review fix).
+            if (this._adapter?.removePresence) {
+              this._adapter.removePresence(identity).catch((err) => {
+                this._logger?.error?.("Error removing presence", {
+                  identity,
+                  error: err,
+                });
               });
-            });
+            }
           }
           // Plugin: onDisconnect
           for (const plugin of this._plugins) {
@@ -1647,6 +1668,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       this._adaptiveLimiter.stop();
     }
 
+    // Shut down the worker pool — its threads would otherwise keep the
+    // process alive after close() (review fix). listen() re-creates it.
+    if (this._workerPool) {
+      await this._workerPool.shutdown().catch(() => {});
+      this._workerPool = null;
+    }
+
     // Plugin: onClose
     for (const plugin of this._plugins) {
       try {
@@ -1720,6 +1748,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         this._adaptiveLimiter.stop();
         this._adaptiveLimiter = null;
       }
+    }
+
+    // Restart the presence heartbeat with the new TTL
+    if (options.presenceTtlSeconds !== undefined && this._presenceInterval) {
+      clearInterval(this._presenceInterval);
+      this._presenceInterval = null;
+      this._startPresenceRefresh();
     }
 
     // Plugin: onReconfigure
@@ -1844,15 +1879,26 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
         // Carry `version` across the cluster so the receiving node can
         // resolve the same version-specific overload.
-        await this._adapter.publish(`ocpp:node:${nodeId}`, {
-          source: this._nodeId,
-          target: identity,
-          version,
-          method,
-          params,
-          options,
-          correlationId,
-        });
+        try {
+          await this._adapter.publish(`ocpp:node:${nodeId}`, {
+            source: this._nodeId,
+            target: identity,
+            version,
+            method,
+            params,
+            options,
+            correlationId,
+          });
+        } catch (err) {
+          // Publish failed (adapter down) — settle the pending call through
+          // resultPromise so nothing leaks and no unhandled rejection fires.
+          const pending = this._pendingRemoteCalls.get(correlationId);
+          if (pending) {
+            clearTimeout(pending.timer);
+            this._pendingRemoteCalls.delete(correlationId);
+            pending.reject(err);
+          }
+        }
         return await resultPromise;
       }
     }

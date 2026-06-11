@@ -1512,6 +1512,12 @@ export class OCPPClient<
 
   protected _onClose(code: number, reason: Buffer): void {
     this._stopPing();
+    // A pending pong timer must not fire a spurious pongTimeout for a
+    // connection that already closed (review fix).
+    if (this._pongTimer) {
+      clearTimeout(this._pongTimer);
+      this._pongTimer = null;
+    }
     const reasonStr = reason.toString();
     this._rejectPendingCalls(`Connection closed (${code}: ${reasonStr})`);
 

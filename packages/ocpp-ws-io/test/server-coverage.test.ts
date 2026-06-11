@@ -227,3 +227,37 @@ describe("reconfigure applies changes (low)", () => {
     await srv.close({ force: true });
   });
 });
+
+describe("final review fixes", () => {
+  test("close() shuts down the worker pool; listen() re-creates it", async () => {
+    const srv = new OCPPServer({ workerThreads: { poolSize: 1 } });
+    expect((srv as any)._workerPool).not.toBeNull();
+    await srv.close({ force: true });
+    expect((srv as any)._workerPool).toBeNull();
+
+    const http = await srv.listen(0);
+    expect((srv as any)._workerPool).not.toBeNull();
+    await srv.close({ force: true });
+    expect((srv as any)._workerPool).toBeNull();
+    void http;
+  });
+
+  test("remote sendToClient settles cleanly when adapter.publish fails", async () => {
+    const srv = new OCPPServer();
+    const failingAdapter: any = {
+      publish: vi.fn().mockRejectedValue(new Error("redis down")),
+      subscribe: vi.fn().mockResolvedValue(undefined),
+      getPresence: vi.fn().mockResolvedValue("remote-node"),
+      setPresence: vi.fn(),
+      removePresence: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    await srv.setAdapter(failingAdapter);
+
+    await expect(srv.sendToClient("cp-x", "Reset", {})).rejects.toThrow(
+      "redis down",
+    );
+    expect((srv as any)._pendingRemoteCalls.size).toBe(0);
+    await srv.close({ force: true });
+  });
+});
