@@ -1,5 +1,26 @@
 # ocpp-ws-io
 
+## v2.3.1 - Subpath Type Declarations (2026-09-05)
+
+Patch release. No runtime changes — types only.
+
+### Fixed
+
+- **`ocpp-ws-io/browser` shipped without type declarations.** The two `tsup` configs run concurrently against the same `outDir`, and `clean: true` on the Node config raced the browser config's declaration output: `dist/browser.d.ts` and `dist/browser.d.mts` were written and then deleted whenever `dist/` already existed (always true at publish time, since `prepublishOnly` builds over it). TypeScript consumers importing `ocpp-ws-io/browser` resolved the JS through the `exports` map, found no `types` target, and fell back to an implicit `any`:
+
+  ```
+  Could not find a declaration file for module 'ocpp-ws-io/browser'.
+  '.../node_modules/ocpp-ws-io/dist/browser.js' implicitly has an 'any' type.
+  ```
+
+  Cleaning now happens once in the `build` script, before the concurrent tsup runs.
+
+- **Subpath types were invisible to `moduleResolution: "node"`.** Legacy TS resolution ignores `exports`, so every subpath (`/browser`, `/adapters/redis`, `/plugins`, `/logger`, `/express`, `/nestjs`, `/fastify`, `/hono`) resolved to `any` — only the root entry carried types. Added `typesVersions` so all subpaths resolve under `node`, `node16`, and `bundler`.
+
+### Added
+
+- `scripts/verify-dist.js`, run as part of `build`: fails the build if any file declared in `exports` / `main` / `module` / `types` is missing from `dist/`. An incomplete `dist` can no longer be published silently.
+
 ## v2.3.0 - Review Hardening (2026-06-11)
 
 Fixes every finding from the full-codebase security & reliability review

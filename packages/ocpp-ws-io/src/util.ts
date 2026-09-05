@@ -117,7 +117,7 @@ export function getErrorPlainObject(
 const PKG_NAME = "ocpp-ws-io";
 // Keep in sync with package.json — guarded by test/util.test.ts so a
 // version bump without updating this constant fails CI.
-const PKG_VERSION = "2.3.0";
+const PKG_VERSION = "2.3.1";
 
 /**
  * Get the package identifier string used in HTTP headers and logging.
