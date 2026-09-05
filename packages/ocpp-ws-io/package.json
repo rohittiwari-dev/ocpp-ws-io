@@ -9,6 +9,34 @@
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "adapters/redis": [
+        "dist/adapters/redis.d.ts"
+      ],
+      "browser": [
+        "dist/browser.d.ts"
+      ],
+      "logger": [
+        "dist/logger.d.ts"
+      ],
+      "plugins": [
+        "dist/plugins.d.ts"
+      ],
+      "express": [
+        "dist/express.d.ts"
+      ],
+      "nestjs": [
+        "dist/nestjs.d.ts"
+      ],
+      "fastify": [
+        "dist/fastify.d.ts"
+      ],
+      "hono": [
+        "dist/hono.d.ts"
+      ]
+    }
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -57,7 +85,8 @@
     }
   },
   "scripts": {
-    "build": "tsup",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsup && node scripts/verify-dist.js",
     "generate": "node scripts/generate-types.js",
     "test": "vitest run",
     "test:watch": "vitest",

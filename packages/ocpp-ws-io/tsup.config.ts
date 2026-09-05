@@ -17,7 +17,7 @@ export default defineConfig([
     dts: true,
     splitting: false,
     sourcemap: false,
-    clean: true,
+    clean: false,
     outDir: "dist",
     target: "node18",
     shims: true,
