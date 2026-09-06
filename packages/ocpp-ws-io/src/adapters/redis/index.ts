@@ -19,6 +19,17 @@ export interface RedisAdapterOptions {
   driver?: RedisPubSubDriver;
   /** Optional key prefix for channels (default: 'ocpp-ws-io:') */
   prefix?: string;
+  /**
+   * Where the adapter reports transport problems.
+   *
+   * Errors previously went to a hardcoded `console.error`, which is invisible
+   * to any structured logging setup and unroutable in production. Pass the
+   * server's logger (or any object with these methods) to get them.
+   */
+  logger?: {
+    warn?(msg: string, meta?: Record<string, unknown>): void;
+    error?(msg: string, meta?: Record<string, unknown>): void;
+  };
   /** StreamMaxLen for trimming (default: 1000) */
   streamMaxLen?: number;
   /**
@@ -79,7 +90,28 @@ export class RedisAdapter implements EventAdapterInterface {
   private _driverPool: RedisPubSubDriver[];
   private _nextPoolIndex: number;
 
+  private _logger?: RedisAdapterOptions["logger"];
+  /** Consecutive stream-poll failures; surfaced through metrics(). */
+  private _pollErrors = 0;
+  private _lastPollError?: string;
+
+  /** Report a transport problem, falling back to console when no logger is set. */
+  private _log(
+    level: "warn" | "error",
+    msg: string,
+    meta?: Record<string, unknown>,
+  ): void {
+    const fn = this._logger?.[level];
+    if (fn) {
+      fn.call(this._logger, msg, meta);
+      return;
+    }
+    // eslint-disable-next-line no-console
+    console[level](`[RedisAdapter] ${msg}`, meta ?? "");
+  }
+
   constructor(options: RedisAdapterOptions) {
+    this._logger = options.logger;
     this._prefix = options.prefix ?? "ocpp-ws-io:";
     this._streamMaxLen = options.streamMaxLen ?? 1000;
     this._streamTtlSeconds = options.streamTtlSeconds ?? 300;
@@ -116,7 +148,7 @@ export class RedisAdapter implements EventAdapterInterface {
     if (this._driver.onError) {
       this._unsubError = this._driver.onError((err) => {
         // Log for observability — consumers can attach their own logger
-        console.error("[RedisAdapter] Redis error:", err.message);
+        this._log("error", "Redis connection error", { error: err.message });
       });
     }
     if (this._driver.onReconnect) {
@@ -127,11 +159,28 @@ export class RedisAdapter implements EventAdapterInterface {
   }
 
   /** Get the next driver from the pool (round-robin) */
-  private _getPoolDriver(): RedisPubSubDriver {
+  /**
+   * Pick a pool connection for `channel`.
+   *
+   * Round-robining per call spread consecutive messages for the SAME target
+   * across independent TCP connections, so they could arrive out of order —
+   * which for OCPP unicast means a charger's commands reordering in transit.
+   * Hashing the channel keeps one destination pinned to one connection (so
+   * ordering holds) while still spreading different destinations across the
+   * pool, which is the whole point of having one.
+   */
+  private _getPoolDriver(channel?: string): RedisPubSubDriver {
     if (this._driverPool.length === 1) return this._driver;
-    const driver = this._driverPool[this._nextPoolIndex];
-    this._nextPoolIndex = (this._nextPoolIndex + 1) % this._driverPool.length;
-    return driver;
+    if (channel === undefined) {
+      const driver = this._driverPool[this._nextPoolIndex];
+      this._nextPoolIndex = (this._nextPoolIndex + 1) % this._driverPool.length;
+      return driver;
+    }
+    let hash = 0;
+    for (let i = 0; i < channel.length; i++) {
+      hash = (hash * 31 + channel.charCodeAt(i)) | 0;
+    }
+    return this._driverPool[Math.abs(hash) % this._driverPool.length];
   }
 
   async publish(channel: string, data: unknown): Promise<void> {
@@ -141,7 +190,7 @@ export class RedisAdapter implements EventAdapterInterface {
 
     // Unicast (Node-to-Node) -> Use Streams
     if (channel.startsWith("ocpp:node:")) {
-      const poolDriver = this._getPoolDriver();
+      const poolDriver = this._getPoolDriver(prefixedChannel);
       await poolDriver.xadd(prefixedChannel, { message }, this._streamMaxLen);
       // Set TTL lease on ephemeral stream key to prevent memory leaks
       await poolDriver
@@ -149,7 +198,10 @@ export class RedisAdapter implements EventAdapterInterface {
         .catch(() => {});
     } else {
       // Broadcast -> Use Pub/Sub
-      await this._getPoolDriver().publish(prefixedChannel, message);
+      await this._getPoolDriver(prefixedChannel).publish(
+        prefixedChannel,
+        message,
+      );
     }
   }
 
@@ -174,7 +226,8 @@ export class RedisAdapter implements EventAdapterInterface {
     const promises: Promise<void>[] = [];
 
     if (streamMessages.length > 0) {
-      const streamDriver = this._getPoolDriver();
+      // One driver for the batch; entries are grouped per stream by the driver.
+      const streamDriver = this._getPoolDriver(streamMessages[0]?.stream);
       promises.push(
         streamDriver
           .xaddBatch(streamMessages, this._streamMaxLen)
@@ -199,7 +252,7 @@ export class RedisAdapter implements EventAdapterInterface {
       promises.push(
         Promise.all(
           broadcastMessages.map((bm) =>
-            this._getPoolDriver().publish(bm.channel, bm.message),
+            this._getPoolDriver(bm.channel).publish(bm.channel, bm.message),
           ),
         ).then(() => {}), // Map `Promise<void[]>` to `Promise<void>`
       );
@@ -335,10 +388,30 @@ export class RedisAdapter implements EventAdapterInterface {
         } else if (!canBlock) {
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
-      } catch (_err) {
-        // Log error? For now swallow to keep loop alive
-        // Avoid tight loop on error
+      } catch (err) {
+        // Previously swallowed entirely, with no log, no counter and no health
+        // signal — a stream reader that had been failing for hours looked
+        // identical to an idle one, and cross-node delivery was simply gone.
+        this._pollErrors++;
+        this._lastPollError = (err as Error)?.message ?? String(err);
+        // Report the first failure and then every 60th, so a persistent outage
+        // stays visible without flooding the log once per second.
+        if (this._pollErrors === 1 || this._pollErrors % 60 === 0) {
+          this._log("error", "Stream poll failed", {
+            error: this._lastPollError,
+            consecutiveFailures: this._pollErrors,
+          });
+        }
         await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue;
+      }
+      // A clean pass clears the streak.
+      if (this._pollErrors > 0) {
+        this._log("warn", "Stream poll recovered", {
+          afterFailures: this._pollErrors,
+        });
+        this._pollErrors = 0;
+        this._lastPollError = undefined;
       }
     }
     this._polling = false;
@@ -487,6 +560,10 @@ return 0`;
       pendingMessages,
       activeStreams: this._streams.size,
       streamDetails,
+      // Health of the stream reader. Non-zero means cross-node delivery into
+      // this node is currently broken, which was previously invisible.
+      pollErrors: this._pollErrors,
+      ...(this._lastPollError ? { lastPollError: this._lastPollError } : {}),
     };
   }
 

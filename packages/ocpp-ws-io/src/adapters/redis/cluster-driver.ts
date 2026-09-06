@@ -19,6 +19,11 @@ export interface ClusterDriverOptions {
   /** Additional ioredis options passed to the Cluster constructor */
   redisOptions?: Record<string, unknown>;
   /**
+   * Set false to skip the dedicated blocking-read connection, trading cross-node
+   * latency for one fewer cluster connection. (default: true)
+   */
+  blockingReads?: boolean;
+  /**
    * @deprecated Never read. Key prefixing is configured on the adapter via
    * `RedisAdapterOptions.prefix`; this field was documented as driving hash-tag
    * generation but no hash tags were ever emitted. Cross-slot batches are
@@ -47,8 +52,21 @@ export class ClusterDriver implements RedisPubSubDriver {
   /** Distinguishes the initial connect from a genuine reconnect. */
   private _hasBeenReady = false;
 
-  /** Cluster connections share command pipelines — never issue blocking reads. */
-  readonly hasBlockingClient = false;
+  private _blocking: any;
+
+  /**
+   * True once a dedicated connection exists for blocking XREAD.
+   *
+   * A blocking read on a shared connection would head-of-line block every other
+   * command on it, which is why this used to be hardcoded false. But the
+   * consequence was that every Redis Cluster deployment fell back to
+   * non-blocking polls with a 1s sleep — up to a second of added latency on
+   * each direction of every cross-node RPC. A third, dedicated cluster
+   * connection removes that without risking the shared ones.
+   */
+  get hasBlockingClient(): boolean {
+    return !!this._blocking;
+  }
 
   constructor(_options: ClusterDriverOptions) {
     // Dynamically require ioredis to avoid bundling it. `__filename` exists
@@ -80,6 +98,17 @@ export class ClusterDriver implements RedisPubSubDriver {
     this._cluster = new IoRedis.Cluster(nodes(), clusterOpts);
     // Separate subscriber connection for Pub/Sub
     this._subscriber = new IoRedis.Cluster(nodes(), clusterOpts);
+
+    // Dedicated connection for blocking XREAD, unless explicitly disabled.
+    // Without it the adapter polls with a 1s sleep instead of blocking, which
+    // is a second of latency on each leg of a cross-node call.
+    if (_options.blockingReads !== false) {
+      this._blocking = new IoRedis.Cluster(nodes(), clusterOpts);
+      this._blocking.on("error", () => {
+        // Covered by onError() below once a handler is registered; this keeps
+        // an early error from being an uncaught exception.
+      });
+    }
 
     this._subscriber.on("message", (channel: string, message: string) => {
       const handler = this._handlers.get(channel);
@@ -223,7 +252,11 @@ export class ClusterDriver implements RedisPubSubDriver {
     for (const s of streams) args.push(s.key);
     for (const s of streams) args.push(s.id);
 
-    const result = (await this._cluster.xread(...args)) as any;
+    const client =
+      typeof block === "number" && this._blocking
+        ? this._blocking
+        : this._cluster;
+    const result = (await client.xread(...args)) as any;
     if (!result) return null;
 
     return result.map(([stream, messages]: any) => ({
@@ -244,7 +277,13 @@ export class ClusterDriver implements RedisPubSubDriver {
 
   async disconnect(): Promise<void> {
     this._handlers.clear();
-    await Promise.allSettled([this._cluster.quit(), this._subscriber.quit()]);
+    await Promise.allSettled([
+      this._cluster.quit(),
+      this._subscriber.quit(),
+      // Closed too, or it leaks a cluster connection and keeps the process
+      // alive after shutdown.
+      ...(this._blocking ? [this._blocking.quit()] : []),
+    ]);
   }
 
   async setPresenceBatch(
@@ -269,9 +308,11 @@ export class ClusterDriver implements RedisPubSubDriver {
     // subscriber is an uncaught exception that takes down the process.
     this._cluster.on("error", handler);
     this._subscriber.on("error", handler);
+    this._blocking?.on("error", handler);
     return () => {
       this._cluster.removeListener("error", handler);
       this._subscriber.removeListener("error", handler);
+      this._blocking?.removeListener("error", handler);
     };
   }
 

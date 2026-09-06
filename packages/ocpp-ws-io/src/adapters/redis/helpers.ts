@@ -102,6 +102,47 @@ export interface RedisPubSubDriver {
   readonly hasBlockingClient?: boolean;
 }
 
+/**
+ * Commands per pipeline / keys per MGET.
+ *
+ * An unbounded batch is a single command that occupies the Redis event loop for
+ * everyone else on the instance — at the 100k connections this library targets,
+ * one presence refresh was a 100k-command pipeline.
+ */
+const REDIS_BATCH_SIZE = 500;
+
+function chunk<T>(items: T[], size = REDIS_BATCH_SIZE): T[][] {
+  if (items.length <= size) return [items];
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size)
+    out.push(items.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Throw if any command in a pipeline/multi reply carries an error.
+ *
+ * ioredis and node-redis both return per-command results rather than rejecting,
+ * so `await pipeline.exec()` resolves happily even when every single command
+ * failed. Discarding that reply reported a total failure to the caller as
+ * success — presence silently not written, stream entries silently not added.
+ */
+function assertPipelineOk(replies: unknown, operation: string): void {
+  if (!Array.isArray(replies)) return;
+  for (const entry of replies) {
+    // ioredis shape: [Error | null, result]
+    if (Array.isArray(entry) && entry[0]) {
+      throw new Error(
+        `${operation}: ${(entry[0] as Error).message ?? String(entry[0])}`,
+      );
+    }
+    // node-redis surfaces errors as Error instances in the array
+    if (entry instanceof Error) {
+      throw new Error(`${operation}: ${entry.message}`);
+    }
+  }
+}
+
 export class IoRedisDriver implements RedisPubSubDriver {
   private _handlers = new Map<string, (msg: string) => void>();
 
@@ -161,7 +202,11 @@ export class IoRedisDriver implements RedisPubSubDriver {
 
   async mget(keys: string[]): Promise<(string | null)[]> {
     if (keys.length === 0) return [];
-    return await this.pub.mget(...keys);
+    const out: (string | null)[] = [];
+    for (const part of chunk(keys)) {
+      out.push(...(await this.pub.mget(...part)));
+    }
+    return out;
   }
 
   async del(key: string): Promise<void> {
@@ -231,7 +276,11 @@ export class IoRedisDriver implements RedisPubSubDriver {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = (await client.xread(...args)) as any;
 
-    if (!result) return null;
+    // Normalise "no data" to null. ioredis can hand back an empty array where
+    // node-redis returns nil, and the caller's poll loop treats a truthy result
+    // as "got something" — so an empty array skipped its backoff sleep and spun
+    // the loop hot.
+    if (!result || result.length === 0) return null;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return result.map(([stream, messages]: any) => ({
@@ -254,21 +303,27 @@ export class IoRedisDriver implements RedisPubSubDriver {
   async disconnect(): Promise<void> {
     this._handlers.clear();
     const close = async (c: any) => {
+      if (!c) return;
       if (c.quit) await c.quit();
       else if (c.disconnect) await c.disconnect();
     };
-    await Promise.all([close(this.pub), close(this.sub)]);
+    // The blocking client is a third connection and was never closed: it leaked
+    // a Redis connection per adapter and, being an open socket, kept the Node
+    // process alive after everything else had shut down.
+    await Promise.all([close(this.pub), close(this.sub), close(this.blocking)]);
   }
 
   async setPresenceBatch(
     entries: { key: string; value: string; ttlSeconds: number }[],
   ): Promise<void> {
     if (entries.length === 0) return;
-    const pipeline = this.pub.pipeline();
-    for (const { key, value, ttlSeconds } of entries) {
-      pipeline.set(key, value, "EX", ttlSeconds);
+    for (const part of chunk(entries)) {
+      const pipeline = this.pub.pipeline();
+      for (const { key, value, ttlSeconds } of part) {
+        pipeline.set(key, value, "EX", ttlSeconds);
+      }
+      assertPipelineOk(await pipeline.exec(), "setPresenceBatch");
     }
-    await pipeline.exec();
   }
 
   async expire(key: string, ttlSeconds: number): Promise<void> {
@@ -334,7 +389,11 @@ export class NodeRedisDriver implements RedisPubSubDriver {
 
   async mget(keys: string[]): Promise<(string | null)[]> {
     if (keys.length === 0) return [];
-    return await this.pub.mGet(keys);
+    const out: (string | null)[] = [];
+    for (const part of chunk(keys)) {
+      out.push(...(await this.pub.mGet(part)));
+    }
+    return out;
   }
 
   async del(key: string): Promise<void> {
@@ -427,18 +486,24 @@ export class NodeRedisDriver implements RedisPubSubDriver {
   }
 
   async disconnect(): Promise<void> {
-    await Promise.all([this.pub.disconnect(), this.sub.disconnect()]);
+    const close = async (c: any) => {
+      if (!c) return;
+      await c.disconnect();
+    };
+    await Promise.all([close(this.pub), close(this.sub), close(this.blocking)]);
   }
 
   async setPresenceBatch(
     entries: { key: string; value: string; ttlSeconds: number }[],
   ): Promise<void> {
     if (entries.length === 0) return;
-    const multi = this.pub.multi();
-    for (const { key, value, ttlSeconds } of entries) {
-      multi.set(key, value, { EX: ttlSeconds });
+    for (const part of chunk(entries)) {
+      const multi = this.pub.multi();
+      for (const { key, value, ttlSeconds } of part) {
+        multi.set(key, value, { EX: ttlSeconds });
+      }
+      assertPipelineOk(await multi.exec(), "setPresenceBatch");
     }
-    await multi.exec();
   }
 
   async expire(key: string, ttlSeconds: number): Promise<void> {

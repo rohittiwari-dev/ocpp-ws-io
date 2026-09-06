@@ -64,7 +64,12 @@ describe("RedisAdapter Connection Pooling", () => {
     await adapter.disconnect();
   });
 
-  test("poolSize=3 distributes writes via round-robin", async () => {
+  // Selection is by channel hash, not round-robin. Round-robining per call sent
+  // consecutive messages for the SAME target over different TCP connections,
+  // so they could arrive out of order — for OCPP unicast that means a charger's
+  // commands reordering in transit. What matters is that distinct destinations
+  // spread across the pool while each destination stays pinned.
+  test("poolSize=3 spreads distinct destinations across the pool", async () => {
     const driver2 = createMockDriver();
     const driver3 = createMockDriver();
     let factoryCallCount = 0;
@@ -79,26 +84,49 @@ describe("RedisAdapter Connection Pooling", () => {
       },
     });
 
-    // Write 1 → primary (index 0)
-    await adapter.publish("ocpp:node:n1", { test: 1 });
-    expect(primaryDriver.xadd).toHaveBeenCalledTimes(1);
+    const pool = [primaryDriver, driver2, driver3];
+    for (let i = 0; i < 24; i++) {
+      await adapter.publish(`ocpp:node:n${i}`, { test: i });
+    }
 
-    // Write 2 → driver2 (index 1)
-    await adapter.publish("ocpp:node:n2", { test: 2 });
-    expect(driver2.xadd).toHaveBeenCalledTimes(1);
-
-    // Write 3 → driver3 (index 2)
-    await adapter.publish("ocpp:node:n3", { test: 3 });
-    expect(driver3.xadd).toHaveBeenCalledTimes(1);
-
-    // Write 4 → back to primary (round-robin)
-    await adapter.publish("ocpp:node:n4", { test: 4 });
-    expect(primaryDriver.xadd).toHaveBeenCalledTimes(2);
+    const used = pool.filter((d) => d.xadd.mock.calls.length > 0).length;
+    expect(used).toBeGreaterThan(1);
+    const total = pool.reduce((n, d) => n + d.xadd.mock.calls.length, 0);
+    expect(total).toBe(24);
 
     await adapter.disconnect();
   });
 
-  test("pool distributes broadcast publishes via round-robin", async () => {
+  test("the same destination always uses the same connection", async () => {
+    const driver2 = createMockDriver();
+    const driver3 = createMockDriver();
+    let factoryCallCount = 0;
+
+    const adapter = new RedisAdapter({
+      pubClient: {} as any,
+      subClient: {} as any,
+      poolSize: 3,
+      driverFactory: () => {
+        factoryCallCount++;
+        return factoryCallCount === 1 ? driver2 : driver3;
+      },
+    });
+
+    const pool = [primaryDriver, driver2, driver3];
+    for (let i = 0; i < 10; i++) {
+      await adapter.publish("ocpp:node:same-target", { test: i });
+    }
+
+    // Every write for one target landed on exactly one connection, so their
+    // order on the wire is preserved.
+    const carriers = pool.filter((d) => d.xadd.mock.calls.length > 0);
+    expect(carriers).toHaveLength(1);
+    expect(carriers[0].xadd).toHaveBeenCalledTimes(10);
+
+    await adapter.disconnect();
+  });
+
+  test("broadcast publishes go through the pool", async () => {
     const driver2 = createMockDriver();
 
     const adapter = new RedisAdapter({
@@ -109,10 +137,17 @@ describe("RedisAdapter Connection Pooling", () => {
     });
 
     await adapter.publish("ocpp:broadcast", { msg: "a" });
-    expect(primaryDriver.publish).toHaveBeenCalledTimes(1);
-
     await adapter.publish("ocpp:broadcast", { msg: "b" });
-    expect(driver2.publish).toHaveBeenCalledTimes(1);
+
+    // One channel, one connection — and both messages went somewhere.
+    const total =
+      primaryDriver.publish.mock.calls.length +
+      driver2.publish.mock.calls.length;
+    expect(total).toBe(2);
+    const carriers = [primaryDriver, driver2].filter(
+      (d) => d.publish.mock.calls.length > 0,
+    );
+    expect(carriers).toHaveLength(1);
 
     await adapter.disconnect();
   });
