@@ -465,20 +465,27 @@ Scale OCPP RPC servers across multiple nodes with Redis pub/sub, Streams, and pr
     import { RedisAdapter } from "ocpp-ws-io/adapters/redis";
     import Redis from "ioredis";
 
-    const redis = new Redis(process.env.REDIS_URL);
+    // Pub/sub needs its own connection: a subscribed Redis client cannot
+    // issue other commands. `blockingClient` is optional and lets the adapter
+    // use blocking XREAD instead of polling, cutting cross-node RPC latency.
+    const pubClient = new Redis(process.env.REDIS_URL);
+    const subClient = pubClient.duplicate();
+    const blockingClient = pubClient.duplicate();
+
     const server = new OCPPServer({
      protocols: ["ocpp1.6"],
     });
 
-    // Uses Redis Streams for clustering reliability
-    await server.setAdapter(new RedisAdapter(redis));
+    await server.setAdapter(
+      new RedisAdapter({ pubClient, subClient, blockingClient }),
+    );
     ```
 
 **OCPP Redis Clustering Features:**
 
 - **Unicast Routing**: Send OCPP RPC messages to any charge point on any cluster node.
 - **Presence Tracking**: Real-time discovery of connected clients across the cluster.
-- **Durability**: Redis Streams for guaranteed message delivery.
+- **Durability**: cross-node unicast (`sendToClient`) is delivered over Redis Streams, so a message survives a moment when the target node is not subscribed. `broadcast` uses pub/sub and is fire-and-forget.
 - **Batch Operations**: Use `server.broadcastBatch` for efficient multi-node requests.
 
 ### Custom Clustering Adapters (RabbitMQ, Kafka, PubSub)

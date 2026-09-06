@@ -174,8 +174,24 @@ export class RedisAdapter implements EventAdapterInterface {
     const promises: Promise<void>[] = [];
 
     if (streamMessages.length > 0) {
+      const streamDriver = this._getPoolDriver();
       promises.push(
-        this._getPoolDriver().xaddBatch(streamMessages, this._streamMaxLen),
+        streamDriver
+          .xaddBatch(streamMessages, this._streamMaxLen)
+          .then(async () => {
+            // Same TTL lease `publish()` sets. MAXLEN trims entries but never
+            // removes the key, so without this every node id that ever
+            // received a batch leaves a stream key behind forever — one per
+            // pod restart on Kubernetes.
+            const seen = new Set(streamMessages.map((m) => m.stream));
+            await Promise.all(
+              [...seen].map((stream) =>
+                streamDriver
+                  .expire(stream, this._streamTtlSeconds)
+                  .catch(() => {}),
+              ),
+            );
+          }),
       );
     }
 

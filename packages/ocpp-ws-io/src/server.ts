@@ -1088,6 +1088,24 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       securityProfile: profile,
     };
 
+    // Unknown-path rejection.
+    //
+    // This MUST be evaluated independently of whether any middleware or auth
+    // callback was collected. Global middleware routers (server.use()) always
+    // match but never set `hasTerminalRoute`, so gating this behind an `else`
+    // on the auth branch let a single global middleware make every unmatched
+    // path reachable — and an unmatched path has no route auth callback, so
+    // the socket was upgraded without ever being authenticated.
+    if (hasPatternRouters && !hasTerminalRoute) {
+      // If specific routes were defined but user connected to an unknown path,
+      // reject the connection smoothly (e.g. connected to /wrong/path)
+      this._logger?.warn?.("Connection rejected: No matching route found", {
+        pathname,
+      });
+      abortHandshake(socket, 404, "Endpoint Not Found");
+      return;
+    }
+
     // Auth callback with AbortController + timeout
     let ctx: import("./types.js").ConnectionContext | undefined;
     let acceptOptions: import("./types.js").AuthAccept | undefined;
@@ -1271,14 +1289,6 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         socket.removeListener("error", onSocketGone);
         socket.removeListener("end", onSocketGone);
       }
-    } else if (hasPatternRouters && !hasTerminalRoute) {
-      // If specific routes were defined but user connected to an unknown path,
-      // reject the connection smoothly (e.g. connected to /wrong/path)
-      this._logger?.warn?.("Connection rejected: No matching route found", {
-        pathname,
-      });
-      abortHandshake(socket, 404, "Endpoint Not Found");
-      return;
     }
 
     // Socket readyState check before upgrade

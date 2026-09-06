@@ -157,12 +157,8 @@ const clusterDriver = new ClusterDriver({
   },
 });
 
-// Use the cluster driver as a pool factory
-const adapter = new RedisAdapter({
-  pubClient: {} as any, // Not used when driverFactory is provided
-  subClient: {} as any,
-  driverFactory: () => clusterDriver,
-});
+// Hand the driver straight to the adapter.
+const adapter = new RedisAdapter({ driver: clusterDriver });
 ```
 
 The `ClusterDriver` requires `ioredis` as a peer dependency. It automatically handles `MOVED`/`ASK` redirections and gracefully falls back to individual `GET` calls when `MGET` spans multiple hash slots.

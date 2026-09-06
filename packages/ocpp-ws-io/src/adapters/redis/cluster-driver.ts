@@ -38,6 +38,8 @@ export class ClusterDriver implements RedisPubSubDriver {
   private _cluster: any;
   private _subscriber: any;
   private _handlers = new Map<string, (msg: string) => void>();
+  /** Distinguishes the initial connect from a genuine reconnect. */
+  private _hasBeenReady = false;
 
   /** Cluster connections share command pipelines — never issue blocking reads. */
   readonly hasBlockingClient = false;
@@ -56,20 +58,22 @@ export class ClusterDriver implements RedisPubSubDriver {
     }
 
     const redisOpts = _options.redisOptions ?? {};
+
+    // `natMap` is a top-level Cluster option in ioredis — `redisOptions` is
+    // forwarded to each individual node connection, where natMap is never
+    // read. Nesting it there silently disabled NAT mapping in Docker/k8s.
+    const clusterOpts: Record<string, unknown> = { redisOptions: redisOpts };
     if (_options.natMap) {
-      (redisOpts as any).natMap = _options.natMap;
+      clusterOpts.natMap = _options.natMap;
     }
 
+    const nodes = () =>
+      _options.nodes.map((n) => ({ host: n.host, port: n.port }));
+
     // Construction errors (bad nodes, auth, etc.) now propagate as-is
-    this._cluster = new IoRedis.Cluster(
-      _options.nodes.map((n) => ({ host: n.host, port: n.port })),
-      { redisOptions: redisOpts },
-    );
+    this._cluster = new IoRedis.Cluster(nodes(), clusterOpts);
     // Separate subscriber connection for Pub/Sub
-    this._subscriber = new IoRedis.Cluster(
-      _options.nodes.map((n) => ({ host: n.host, port: n.port })),
-      { redisOptions: redisOpts },
-    );
+    this._subscriber = new IoRedis.Cluster(nodes(), clusterOpts);
 
     this._subscriber.on("message", (channel: string, message: string) => {
       const handler = this._handlers.get(channel);
@@ -211,12 +215,27 @@ export class ClusterDriver implements RedisPubSubDriver {
   }
 
   onError(handler: (err: Error) => void): () => void {
+    // Both connections must be covered: an unhandled 'error' event on the
+    // subscriber is an uncaught exception that takes down the process.
     this._cluster.on("error", handler);
-    return () => this._cluster.removeListener("error", handler);
+    this._subscriber.on("error", handler);
+    return () => {
+      this._cluster.removeListener("error", handler);
+      this._subscriber.removeListener("error", handler);
+    };
   }
 
   onReconnect(handler: () => void): () => void {
-    this._cluster.on("reconnecting", handler);
-    return () => this._cluster.removeListener("reconnecting", handler);
+    // 'reconnecting' fires while the connection is still DOWN — anything the
+    // handler does (e.g. presence rehydration) fails against a dead socket and
+    // is never retried. 'ready' is the event that means the cluster is usable.
+    // The first 'ready' is the initial connect, not a reconnect, so it is
+    // skipped; every later one is a genuine recovery.
+    const onReady = () => {
+      if (this._hasBeenReady) handler();
+      else this._hasBeenReady = true;
+    };
+    this._cluster.on("ready", onReady);
+    return () => this._cluster.removeListener("ready", onReady);
   }
 }
