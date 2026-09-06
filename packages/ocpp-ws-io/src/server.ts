@@ -69,6 +69,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   /** Every router registered on this server, for post-registration validation. */
   private _allRouters: OCPPRouter[] = [];
+
+  /** True once close() detached an adapter, so listen() can warn about it. */
+  private _adapterDetachedByClose = false;
   /** Routers with RegExp patterns (fallback linear scan). */
   private _regexRouters: OCPPRouter[] = [];
   private _clients = new Set<OCPPServerClient>();
@@ -117,11 +120,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       resolve: (value: unknown) => void;
       reject: (reason: unknown) => void;
       timer: ReturnType<typeof setTimeout>;
+      /** Node this call was routed to; only it may answer. */
+      targetNode?: string;
     }
   >();
 
   /** Extra wait on top of the call timeout to absorb cross-node transit. */
-  private static readonly _REMOTE_RESPONSE_GRACE_MS = 1000;
+  /**
+   * Default grace added to callTimeoutMs for a cross-node call. Covers a
+   * ROUND TRIP through the adapter (request out, result back), not one hop —
+   * the shipped Redis adapter can take ~1s per direction. Overridable via
+   * ServerOptions.remoteCallGraceMs.
+   */
+  private static readonly _REMOTE_RESPONSE_GRACE_MS = 2000;
   private _sessions: LRUMap<
     string,
     { data: Record<string, any>; lastActive: number }
@@ -535,6 +546,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     // Route config is chained onto the router after route() returns, so this
     // is the first point where every route's config is settled.
     this._warnRouteAdaptiveRateLimit();
+
+    if (this._adapterDetachedByClose && !this._adapter) {
+      this._logger?.warn?.(
+        "Restarting without an event adapter — close() disconnected the previous one. Cross-node routing stays disabled until setAdapter() is called again.",
+      );
+      this._adapterDetachedByClose = false;
+    }
 
     let httpServer: Server;
 
@@ -1779,9 +1797,20 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
     this._pendingRemoteCalls.clear();
 
-    // Disconnect adapter
+    // Disconnect adapter.
+    //
+    // disconnect() tears down the adapter's subscriptions and, for the Redis
+    // adapter, its connections. Nothing re-subscribes on a later listen(), so
+    // leaving `_adapter` set made a close()/listen() restart look clustered
+    // while cross-node RPC was silently dead: sendToClient still took the
+    // remote branch, published into a disconnected adapter, and waited out the
+    // full timeout. Detaching makes the state honest — the server behaves as a
+    // single node until setAdapter() is called again, which listen() warns
+    // about below.
     if (this._adapter) {
       await this._adapter.disconnect();
+      this._adapter = null;
+      this._adapterDetachedByClose = true;
     }
 
     this._state = "CLOSED";
@@ -1941,7 +1970,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         const correlationId = createId();
         const timeoutMs =
           (options?.timeoutMs ?? this._options.callTimeoutMs ?? 30_000) +
-          OCPPServer._REMOTE_RESPONSE_GRACE_MS;
+          (this._options.remoteCallGraceMs ??
+            OCPPServer._REMOTE_RESPONSE_GRACE_MS);
 
         const resultPromise = new Promise<unknown>((resolve, reject) => {
           const timer = setTimeout(() => {
@@ -1956,6 +1986,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             resolve,
             reject,
             timer,
+            // Recorded so the result leg can reject a reply that did not come
+            // from the node we actually asked.
+            targetNode: nodeId,
           });
         });
 
@@ -2089,10 +2122,35 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
     const client = this._clientsByIdentity.get(identity);
     if (!client) {
+      // Not on this node. This used to return an array of `undefined` with a
+      // "future enhancement" note, which is indistinguishable from "every call
+      // failed" — so in a cluster sendBatch silently did nothing for any
+      // charger that happened to live on another node.
+      //
+      // Route each call through sendToClient, which owns the cross-node path.
+      // The local fast path below pipelines through callImmediate; a remote
+      // batch cannot, but these calls are already crossing the network, so the
+      // per-call cost is dominated by transport either way.
+      if (this._adapter?.getPresence) {
+        this._logger?.debug?.("sendBatch: routing cross-node", { identity });
+        const remote = await Promise.allSettled(
+          calls.map((c) =>
+            this.sendToClient(identity, c.method, c.params, c.options),
+          ),
+        );
+        return remote.map((r) => {
+          if (r.status === "fulfilled") return r.value;
+          this._logger?.warn?.("sendBatch: remote call failed", {
+            identity,
+            error: (r.reason as Error)?.message,
+          });
+          return undefined;
+        });
+      }
+
       this._logger?.warn?.("sendBatch: client not found locally", {
         identity,
       });
-      // If adapter supports presence, attempt remote unicast batch (future enhancement)
       return calls.map(() => undefined);
     }
 
@@ -2118,6 +2176,23 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   async setAdapter(adapter: EventAdapterInterface): Promise<void> {
     this._adapter = adapter;
+    this._adapterDetachedByClose = false;
+
+    // The presence methods are optional on the interface, but without
+    // getPresence there is no way to discover which node owns an identity, so
+    // sendToClient can only ever reach clients on this node — it falls through
+    // to "Client not found" for everyone else. That is a silent loss of the
+    // headline clustering feature, so say it out loud at wire-up time.
+    if (!adapter.getPresence) {
+      this._logger?.warn?.(
+        "Adapter has no getPresence() — cross-node routing is disabled; sendToClient will only reach clients on this node",
+        { hasGetPresenceBatch: !!adapter.getPresenceBatch },
+      );
+    } else if (!adapter.setPresence) {
+      this._logger?.warn?.(
+        "Adapter has getPresence() but no setPresence() — this node never publishes its own clients, so other nodes cannot route to them",
+      );
+    }
 
     // 1. Subscribe to Broadcast
     await this._adapter.subscribe("ocpp:broadcast", (msg: unknown) =>
@@ -2326,10 +2401,12 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       const asResponse = msg as {
         __type?: string;
         correlationId?: string;
+        source?: string;
         ok?: boolean;
         result?: unknown;
         error?: {
           code?: string;
+          name?: string;
           message?: string;
           details?: Record<string, unknown>;
         };
@@ -2337,18 +2414,51 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       if (asResponse.__type === "callResult" && asResponse.correlationId) {
         const pending = this._pendingRemoteCalls.get(asResponse.correlationId);
         if (!pending) return; // late or duplicate response
+
+        // Only the node we asked may answer. Correlation ids are unguessable,
+        // so this is a consistency check rather than a security boundary — but
+        // a mis-routed or replayed frame settling an unrelated call is exactly
+        // the kind of bug that is impossible to diagnose after the fact.
+        if (
+          pending.targetNode &&
+          asResponse.source &&
+          asResponse.source !== pending.targetNode
+        ) {
+          this._logger?.warn?.(
+            "Discarding cross-node result from another node",
+            {
+              expected: pending.targetNode,
+              received: asResponse.source,
+            },
+          );
+          return;
+        }
+
         this._pendingRemoteCalls.delete(asResponse.correlationId);
         clearTimeout(pending.timer);
         if (asResponse.ok) {
           pending.resolve(asResponse.result);
         } else {
-          pending.reject(
-            createRPCError(
-              asResponse.error?.code ?? "GenericError",
-              asResponse.error?.message,
-              asResponse.error?.details ?? {},
-            ),
-          );
+          // ── #4: preserve the error's identity across the cluster ──
+          // The remote leg reports rpcErrorCode, which a TimeoutError does not
+          // have, so every remote timeout used to arrive as a GenericError.
+          // A caller could not write `catch (e) { if (e instanceof TimeoutError) }`
+          // and have it behave the same locally and cross-node.
+          if (asResponse.error?.name === "TimeoutError") {
+            pending.reject(
+              new TimeoutError(
+                asResponse.error.message ?? "Remote call timed out",
+              ),
+            );
+          } else {
+            pending.reject(
+              createRPCError(
+                asResponse.error?.code ?? "GenericError",
+                asResponse.error?.message,
+                asResponse.error?.details ?? {},
+              ),
+            );
+          }
         }
         return;
       }
@@ -2385,6 +2495,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
               ok: false,
               error: {
                 code: (err as any)?.rpcErrorCode ?? "GenericError",
+                // Carried so the origin can rebuild the same error class it
+                // would have thrown for a local call.
+                name: (err as Error)?.name,
                 message: (err as Error)?.message ?? "",
                 details: (err as any)?.details ?? {},
               },
@@ -2431,6 +2544,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       result?: unknown;
       error?: {
         code?: string;
+        name?: string;
         message?: string;
         details?: Record<string, unknown>;
       };
@@ -2441,6 +2555,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       .publish(`ocpp:node:${request.source}`, {
         __type: "callResult",
         correlationId: request.correlationId,
+        // Identifies the answering node so the origin can confirm the reply
+        // came from the node it actually asked.
+        source: this._nodeId,
         ...body,
       })
       .catch((err) => {
@@ -2459,20 +2576,41 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   async broadcast<V extends AllMethodNames<any>>(
     method: V,
     params: OCPPRequestType<any, V>,
-  ): Promise<void> {
-    const localPromises = Array.from(this._clients).map((client) =>
-      client.call(method as any, params as any).catch(() => {}),
+  ): Promise<import("./types.js").BroadcastResult> {
+    // Every local failure used to be swallowed by `.catch(() => {})` behind a
+    // `Promise<void>`, so a caller could not tell a clean fan-out from one
+    // where every charger rejected. The result reports what is knowable.
+    const targets = Array.from(this._clients);
+    const settled = await Promise.allSettled(
+      targets.map((client) => client.call(method as any, params as any)),
     );
 
-    const remotePromise = this._adapter
-      ? this._adapter.publish("ocpp:broadcast", {
+    const localFailed: Array<{ identity: string; error: string }> = [];
+    let localDelivered = 0;
+    settled.forEach((r, i) => {
+      if (r.status === "fulfilled") localDelivered++;
+      else
+        localFailed.push({
+          identity: targets[i]?.identity ?? "unknown",
+          error: (r.reason as Error)?.message ?? String(r.reason),
+        });
+    });
+
+    let remotePublished = false;
+    if (this._adapter) {
+      try {
+        await this._adapter.publish("ocpp:broadcast", {
           source: this._nodeId,
           method,
           params,
-        })
-      : Promise.resolve();
+        });
+        remotePublished = true;
+      } catch (err) {
+        this._logger?.error?.("Broadcast publish failed", { error: err });
+      }
+    }
 
-    await Promise.all([Promise.all(localPromises), remotePromise]);
+    return { localDelivered, localFailed, remotePublished };
   }
 
   /**

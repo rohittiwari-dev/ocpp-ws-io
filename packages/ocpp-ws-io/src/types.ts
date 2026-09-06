@@ -624,6 +624,21 @@ interface ServerOptionsBase {
    */
   presenceTtlSeconds?: number;
   /**
+   * Extra time (ms) added to `callTimeoutMs` when waiting for a cross-node
+   * call result, to cover adapter transport latency.
+   *
+   * A cross-node call crosses the adapter TWICE — once carrying the request to
+   * the owning node, once carrying the result back — so the grace must cover a
+   * round trip, not a single hop. The shipped Redis adapter reads streams with
+   * `BLOCK 1000` (or a non-blocking poll plus a 1s sleep when no dedicated
+   * blocking client is configured), so worst-case transport latency is ~2s.
+   * A smaller grace makes the origin give up while a perfectly good response
+   * is still in flight, surfacing spurious TimeoutErrors on calls that
+   * succeeded. Lower it only if your adapter delivers faster than this.
+   * (default: 2000)
+   */
+  remoteCallGraceMs?: number;
+  /**
    * Maximum time (ms) to wait for the auth callback to resolve during
    * a WebSocket upgrade handshake. If the callback does not settle within
    * this window, the socket is destroyed and an `upgradeAborted` event
@@ -912,6 +927,24 @@ export interface ServerEvents {
   ];
   listening: [];
   headers: [headers: string[], request: import("node:http").IncomingMessage];
+}
+
+/**
+ * Outcome of a `broadcast` / `broadcastBatch`.
+ *
+ * Local delivery is observable; delivery to other nodes is not. Broadcast
+ * reaches other nodes over pub/sub, which is fire-and-forget — a node that is
+ * not subscribed at that instant simply never sees the message, and nothing
+ * reports back. `remotePublished` therefore means "handed to the adapter",
+ * never "delivered".
+ */
+export interface BroadcastResult {
+  /** Clients on this node whose call completed successfully. */
+  localDelivered: number;
+  /** Clients on this node whose call failed, with the reason. */
+  localFailed: Array<{ identity: string; error: string }>;
+  /** True once the message was handed to the adapter. NOT proof of delivery. */
+  remotePublished: boolean;
 }
 
 // ─── Event Adapter Interface ─────────────────────────────────────
