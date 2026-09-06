@@ -43,7 +43,22 @@ const ocppPlugin: FastifyPluginAsync<OcppFastifyPluginOptions> = async (
     socket: Duplex,
     head: Buffer,
   ) => {
-    if (!shouldHandleUpgrade(req, options)) return;
+    if (!shouldHandleUpgrade(req, options)) {
+      // Node only closes an unhandled upgrade when NO 'upgrade' listener
+      // exists — once one is registered it assumes a listener took ownership.
+      // Returning here therefore left the socket open forever whenever this
+      // was the only listener, leaking one fd per filtered-out upgrade. When
+      // other listeners are attached, one of them may still want the socket,
+      // so it is left alone.
+      if (
+        fastify.server.listenerCount("upgrade") <= 1 &&
+        typeof socket?.destroy === "function" &&
+        !socket.destroyed
+      ) {
+        socket.destroy();
+      }
+      return;
+    }
     ocppServer.handleUpgrade(req, socket, head);
   };
 

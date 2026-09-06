@@ -48,6 +48,7 @@ import {
 import { createWorkerPool, type WorkerPool } from "./worker-pool.js";
 import {
   abortHandshake,
+  getClientIp,
   parseBasicAuth,
   parseSubprotocols,
 } from "./ws-util.js";
@@ -72,6 +73,15 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   /** True once close() detached an adapter, so listen() can warn about it. */
   private _adapterDetachedByClose = false;
+
+  /**
+   * Handshakes past the connection-cap gate but not yet registered as clients.
+   * Counted against maxConnections so concurrent async auth cannot overshoot.
+   */
+  private _pendingHandshakes = 0;
+
+  /** Subprotocol chosen per upgrade, read back by ws's handleProtocols. */
+  private _negotiatedProtocols = new WeakMap<IncomingMessage, string>();
   /** Routers with RegExp patterns (fallback linear scan). */
   private _regexRouters: OCPPRouter[] = [];
   private _clients = new Set<OCPPServerClient>();
@@ -883,18 +893,39 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     socket: Duplex,
     head: Buffer,
   ): Promise<void> {
+    // The raw socket carries no error listener until the auth block attaches
+    // one, and upgrades that never reach auth never got one at all. Every
+    // rejection path below writes to this socket, and a write to a peer that
+    // has already gone emits 'error' — with nothing listening that is an
+    // uncaught exception and the process dies. Attach first, before anything
+    // can write.
+    const onUpgradeSocketError = (err: Error) => {
+      this._logger?.debug?.("Upgrade socket error", { error: err.message });
+      if (!socket.destroyed) socket.destroy();
+    };
+    socket.on("error", onUpgradeSocketError);
+
     // Server state guard
     if (this._state !== "OPEN") {
       abortHandshake(socket, 503, "Server is shutting down");
       return;
     }
 
-    // Hard connection cap — reject before any expensive handshake work
+    // Hard connection cap — reject before any expensive handshake work.
+    //
+    // `_clients` only gains an entry once auth has completed, so counting it
+    // alone let every concurrently-arriving handshake pass the gate while the
+    // others were still awaiting an async auth callback: the cap was overshot
+    // by however many upgrades were in flight. In-flight handshakes are
+    // counted too, and released in the finally below.
     const maxConnections = this._options.maxConnections;
-    if (maxConnections !== undefined && this._clients.size >= maxConnections) {
+    if (
+      maxConnections !== undefined &&
+      this._clients.size + this._pendingHandshakes >= maxConnections
+    ) {
       const secEvt = {
         type: "CONNECTION_LIMIT" as const,
-        ip: req.socket.remoteAddress ?? "unknown",
+        ip: getClientIp(req as never, this._globalCORS?.trustProxy),
         timestamp: new Date().toISOString(),
         details: {
           activeConnections: this._clients.size,
@@ -911,10 +942,22 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return;
     }
 
+    // Reserve a slot for this handshake and release it on every exit path.
+    this._pendingHandshakes++;
+    let handshakeSlotReleased = false;
+    const releaseHandshakeSlot = () => {
+      if (handshakeSlotReleased) return;
+      handshakeSlotReleased = true;
+      this._pendingHandshakes = Math.max(0, this._pendingHandshakes - 1);
+    };
+    // Released by socket 'close' on every rejection path (abortHandshake now
+    // destroys), or explicitly below once the connection becomes a client.
+    socket.once("close", releaseHandshakeSlot);
+
     // Connection-level per-IP rate limit
     const connRateLimit = this._options.connectionRateLimit;
     if (connRateLimit) {
-      const ip = req.socket.remoteAddress ?? "unknown";
+      const ip = getClientIp(req as never, this._globalCORS?.trustProxy);
       const now = Date.now();
       let bucket = this._connectionBuckets.get(ip);
       if (!bucket) {
@@ -1388,8 +1431,15 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       this._wss = this._createWss();
     }
 
+    // Hand ws the protocol we negotiated so the response header matches.
+    if (selectedProtocol) {
+      this._negotiatedProtocols.set(req, selectedProtocol);
+    }
+
     // Complete WebSocket upgrade & create client
     this._wss.handleUpgrade(req, socket, head, (ws) => {
+      // The handshake is done; from here the connection is counted as a client.
+      releaseHandshakeSlot();
       const clientOptions: ClientOptions = {
         identity,
         endpoint: "",
@@ -2706,6 +2756,22 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _createWss(): WebSocketServer {
     return new WebSocketServer({
       noServer: true,
+      // Without this, ws picks the FIRST protocol the client offered, while
+      // _handleUpgrade separately selected the first one the *server* supports.
+      // When those differ the client is told it is speaking one version while
+      // the server validates another — e.g. a client offering
+      // ["ocpp2.0.1","ocpp1.6"] against a server supporting only ocpp1.6 got
+      // "ocpp2.0.1" echoed back. Hand ws the selection we actually made.
+      handleProtocols: (
+        protocols: Set<string>,
+        request: IncomingMessage,
+      ): string | false => {
+        const chosen = this._negotiatedProtocols.get(request);
+        if (chosen) return chosen;
+        // No server-side protocol list configured: keep ws's default of
+        // echoing the client's first offer.
+        return protocols.values().next().value ?? false;
+      },
       maxPayload: this._options.maxPayloadBytes ?? 65536,
       perMessageDeflate: this._buildCompressionConfig(),
     });

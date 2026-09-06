@@ -242,7 +242,57 @@ export function abortHandshake(
     .map(([k, v]) => `${k}: ${v}`)
     .join("\r\n");
 
+  // Destroy once the response has flushed. `socket.end()` alone only sends FIN
+  // and waits for the peer to close its side — a peer that ignores it, or a
+  // half-open connection through a dead middlebox, pins the fd forever. At
+  // rejection volume that is a file-descriptor leak. The timer covers a write
+  // that never drains because the peer's receive window is full.
+  const forceDestroy = setTimeout(() => {
+    if (!socket.destroyed) socket.destroy();
+  }, 5000);
+  (forceDestroy as unknown as { unref?: () => void }).unref?.();
+
+  const finish = () => {
+    clearTimeout(forceDestroy);
+    if (!socket.destroyed) socket.destroy();
+  };
+  socket.once("finish", finish);
+  // A rejected socket may already be gone; without a listener the resulting
+  // 'error' event is an uncaught exception.
+  socket.on("error", finish);
+
   socket.end(
     `HTTP/1.1 ${statusCode} ${statusText}\r\n${headerBlock}\r\n\r\n${body}`,
   );
+}
+
+/**
+ * The client's IP for rate limiting, allowlists and security events.
+ *
+ * `req.socket.remoteAddress` is the *proxy's* address behind a load balancer,
+ * so per-IP connection limits collapse into a single bucket for the whole fleet
+ * and IP allowlists match the proxy rather than the charger. `X-Forwarded-For`
+ * carries the real client, but it is attacker-controlled on a direct
+ * connection — so it is only read when the deployment has declared a trusted
+ * proxy, matching how `X-Forwarded-Proto` is already gated.
+ *
+ * The leftmost entry is the originating client; later entries are the proxy
+ * chain.
+ */
+export function getClientIp(
+  req: {
+    headers: Record<string, string | string[] | undefined>;
+    socket: { remoteAddress?: string };
+  },
+  trustProxy: boolean | undefined,
+): string {
+  const direct = req.socket.remoteAddress ?? "unknown";
+  if (trustProxy !== true) return direct;
+
+  const header = req.headers["x-forwarded-for"];
+  const raw = Array.isArray(header) ? header[0] : header;
+  if (!raw) return direct;
+
+  const first = raw.split(",")[0]?.trim();
+  return first && first.length > 0 ? first : direct;
 }
