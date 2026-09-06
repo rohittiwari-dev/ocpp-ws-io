@@ -19,6 +19,7 @@ Read these before upgrading — each changes what existing code does.
 - **`broadcast()` and `broadcastBatch()` return a `BroadcastResult`** instead of `void`. Source-compatible — existing `await` callers are unaffected.
 - **The presence heartbeat now refreshes three times per TTL** (was twice), with ±10% jitter and an overlap guard. At TTL/2 a single slow tick landed the next write exactly at expiry, dropping every connection on that node out of cluster routing.
 - **Reconnect backoff is floored at 50 ms.** `backoffMin: 0` collapsed the exponential term to zero and produced a tight reconnect loop.
+- **Connection pooling selects by destination, not round-robin.** `poolSize > 1` round-robined per call, so consecutive messages for the same target went over different TCP connections and could arrive out of order — for OCPP unicast, a charger's commands reordering in transit. One destination now stays pinned to one connection while different destinations still spread across the pool.
 - **A remote timeout now arrives as `TimeoutError`**, not `GenericError`, so `catch (e) { if (e instanceof TimeoutError) }` behaves the same locally and cross-node.
 
 ### Added
@@ -31,6 +32,8 @@ Read these before upgrading — each changes what existing code does.
 - `RedisPubSubDriver.evalScript()` — optional Lua execution, used for the fencing above. Provided by all three shipped drivers.
 - `Queue.clear()` — reject everything still queued.
 - `ClientOptions.handlerGraceMs` (default 1000) — startup window during which an inbound CALL waits for its handler instead of being rejected.
+- `RedisAdapterOptions.logger` — where the adapter reports transport problems. Errors previously went to a hardcoded `console.error`, invisible to structured logging.
+- `ClusterDriverOptions.blockingReads` (default `true`) — opens a dedicated connection for blocking XREAD. `hasBlockingClient` was hardcoded false, so every Redis Cluster deployment polled with a 1s sleep instead, adding up to a second of latency to each leg of every cross-node call.
 - `BroadcastResult` — local delivered/failed counts plus a `remotePublished` flag. That flag means "handed to the adapter", never "delivered": broadcast reaches other nodes over fire-and-forget pub/sub.
 
 ### Fixed
@@ -50,6 +53,14 @@ Read these before upgrading — each changes what existing code does.
 - `onError` bound only the command connection, so an `error` event on the subscriber was an uncaught exception — a Redis failover crashed every node.
 - Presence rehydration was triggered on `reconnecting`, which ioredis emits while the connection is still down. It ran against a dead socket, threw into an empty catch, and was never retried. It now binds `ready`.
 - `publishBatch` never set the stream TTL lease that `publish` sets, so every node id that received a batch left a stream key behind forever.
+
+**Redis adapter internals**
+
+- Pipeline and multi results were discarded. Both clients return per-command results rather than rejecting, so `exec()` resolved happily even when every command failed — a total failure was reported to the caller as success, with presence silently not written. Both drivers now inspect the reply and throw on the first failed command.
+- `disconnect()` never closed the blocking client: a leaked Redis connection per adapter, and an open socket keeping the Node process alive after shutdown. Fixed in both drivers and in `ClusterDriver`.
+- Presence batches and MGETs were unbounded — one refresh was a single command covering every identity, occupying the Redis event loop for everyone else on the instance. Both drivers now split at 500.
+- An empty `XREAD` reply spun the poll loop. ioredis can return an empty array where node-redis returns nil, and the loop treated any truthy result as data, skipping its backoff sleep entirely.
+- Stream-poll errors were swallowed with no log, counter or health signal, so a reader that had been failing for hours looked identical to an idle one while cross-node delivery into that node was gone. Failures are logged on the first occurrence and every 60th, recovery is logged, and the consecutive-failure count is exposed through `metrics()`.
 
 **Node client**
 
