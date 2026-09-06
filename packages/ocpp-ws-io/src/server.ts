@@ -66,6 +66,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _trie = new RadixTrie();
   /** Global middleware routers (server.use() with no patterns — catch-all). */
   private _globalMiddlewareRouters: OCPPRouter[] = [];
+
+  /** Every router registered on this server, for post-registration validation. */
+  private _allRouters: OCPPRouter[] = [];
   /** Routers with RegExp patterns (fallback linear scan). */
   private _regexRouters: OCPPRouter[] = [];
   private _clients = new Set<OCPPServerClient>();
@@ -367,6 +370,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    */
   plugin(...plugins: OCPPPlugin[]): this {
     for (const plugin of plugins) {
+      // Registering the same plugin object twice only ever doubles its hooks —
+      // double-counted metrics, duplicate webhooks. Two distinct instances that
+      // share a name (two webhooks to different URLs) are legitimate, so this
+      // compares identity, not name.
+      if (this._plugins.includes(plugin)) {
+        this._logger?.warn?.("Plugin already registered — skipping", {
+          name: plugin.name,
+        });
+        continue;
+      }
       this._plugins.push(plugin);
       this._logger?.info?.("Plugin registered", { name: plugin.name });
       if (plugin.onInit) {
@@ -448,7 +461,34 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * - No patterns → global middleware (catch-all)
    * @internal
    */
+  /**
+   * Warn when a route sets adaptive-limiter knobs. The adaptive limiter samples
+   * host CPU/memory and is process-wide, so it is only ever built from
+   * ServerOptions.rateLimit — a route-level `adaptive` is silently inert.
+   */
+  private _warnRouteAdaptiveRateLimit(): void {
+    for (const router of this._allRouters) {
+      const rl = router._routeConfig?.rateLimit;
+      if (!rl) continue;
+      const inert = (
+        [
+          "adaptive",
+          "cpuThresholdPercent",
+          "memThresholdPercent",
+          "cooldownMs",
+        ] as const
+      ).filter((k) => rl[k] !== undefined);
+      if (inert.length > 0) {
+        this._logger?.warn?.(
+          "Route-level rateLimit ignores process-wide adaptive options — set them in ServerOptions.rateLimit",
+          { ignored: inert },
+        );
+      }
+    }
+  }
+
   private _registerRouter(router: OCPPRouter): void {
+    this._allRouters.push(router);
     const stringPatterns = router.patterns.filter(
       (p): p is string => typeof p === "string",
     );
@@ -490,6 +530,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     host?: string,
     options?: ListenOptions,
   ): Promise<Server> {
+    // Route config is chained onto the router after route() returns, so this
+    // is the first point where every route's config is settled.
+    this._warnRouteAdaptiveRateLimit();
+
     let httpServer: Server;
 
     if (options?.server) {

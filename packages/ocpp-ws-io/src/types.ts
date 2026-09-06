@@ -519,7 +519,15 @@ export interface RouterConfig {
   strictMode?: boolean | OCPPProtocol[];
   /** If defined, restricts strict mode validation ONLY to these methods */
   strictModeMethods?: Array<AllMethodNames<OCPPProtocol>>;
-  /** Rate Limiting configuration — overrides server default */
+  /**
+   * Rate Limiting configuration — overrides server default.
+   *
+   * Note: only the per-connection knobs apply here. `adaptive` (and the
+   * `cpuThresholdPercent` / `memThresholdPercent` / `cooldownMs` values that
+   * configure it) are process-wide — the adaptive limiter samples host CPU and
+   * memory, so it cannot be scoped to one route. Set those in
+   * `ServerOptions.rateLimit`; setting them here logs a warning and is ignored.
+   */
   rateLimit?: RateLimitOptions;
 }
 
@@ -910,7 +918,14 @@ export interface EventAdapterInterface {
  * ```
  */
 export interface OCPPPlugin {
-  /** Unique plugin name (used for logging and deduplication) */
+  /**
+   * Plugin name, used for logging and diagnostics.
+   *
+   * This is NOT a deduplication key: two instances of the same plugin with
+   * different options (e.g. two webhook plugins posting to different URLs)
+   * legitimately share a name. Registering the *same plugin object* twice is
+   * rejected with a warning, since that only ever doubles its hooks.
+   */
   name: string;
 
   // ─── Existing Lifecycle Hooks ───────────────────────────────────
