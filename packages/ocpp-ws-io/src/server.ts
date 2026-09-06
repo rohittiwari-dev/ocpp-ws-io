@@ -103,7 +103,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _plugins: OCPPPlugin[] = [];
   private _workerPool: WorkerPool | null = null;
   private _telemetryInterval: ReturnType<typeof setInterval> | null = null;
-  private _presenceInterval: ReturnType<typeof setInterval> | null = null;
+  private _presenceInterval: ReturnType<typeof setTimeout> | null = null;
+  /** Guards against overlapping presence refreshes when one runs long. */
+  private _presenceRefreshInFlight = false;
 
   // Robustness & Clustering
   private readonly _nodeId = createId();
@@ -1394,6 +1396,17 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         logging: this._options.logging,
       };
 
+      // An auth callback may namespace the identity (multi-tenant servers where
+      // the same station id appears under different path prefixes). Apply it
+      // before anything keyed on identity — session lookup, _clientsByIdentity,
+      // presence — so all of them agree.
+      const overrideIdentity = (acceptOptions as AuthAccept | undefined)
+        ?.identity;
+      if (overrideIdentity && overrideIdentity !== identity) {
+        identity = overrideIdentity;
+        handshake.identity = overrideIdentity;
+      }
+
       const finalSession = {
         ...(ctx?.state || {}),
         ...(this._sessions.get(identity)?.data || {}),
@@ -1660,7 +1673,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
 
     if (this._presenceInterval) {
-      clearInterval(this._presenceInterval);
+      clearTimeout(this._presenceInterval);
       this._presenceInterval = null;
     }
 
@@ -1821,7 +1834,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
     // Restart the presence heartbeat with the new TTL
     if (options.presenceTtlSeconds !== undefined && this._presenceInterval) {
-      clearInterval(this._presenceInterval);
+      clearTimeout(this._presenceInterval);
       this._presenceInterval = null;
       this._startPresenceRefresh();
     }
@@ -2136,13 +2149,46 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _startPresenceRefresh(): void {
     if (this._presenceInterval || !this._adapter?.setPresence) return;
     const ttlSec = this._options.presenceTtlSeconds ?? 300;
-    const intervalMs = Math.max(250, (ttlSec * 1000) / 2);
-    this._presenceInterval = setInterval(() => {
-      this._refreshPresence(ttlSec).catch((err) => {
-        this._logger?.warn?.("Presence refresh failed", { error: err });
-      });
-    }, intervalMs);
-    this._presenceInterval.unref();
+
+    // Refresh three times per TTL, not twice.
+    //
+    // At TTL/2 a single slow or skipped tick puts the next write at exactly the
+    // expiry instant — zero margin, and every connection on this node silently
+    // drops out of cluster routing. TTL/3 survives one lost cycle.
+    const baseMs = Math.max(250, (ttlSec * 1000) / 3);
+
+    // Jitter each tick by ±10%. Nodes started together by an orchestrator would
+    // otherwise refresh in lockstep, hammering the registry in synchronised
+    // bursts (and, with large fleets, a single burst can exceed the TTL).
+    const nextDelay = () => baseMs * (0.9 + Math.random() * 0.2);
+
+    const tick = () => {
+      // Overlap guard: a refresh slower than the interval would otherwise stack
+      // up, and each stacked run re-reads and re-writes every identity.
+      if (this._presenceRefreshInFlight) {
+        this._logger?.warn?.(
+          "Presence refresh still running when the next tick fired — skipping",
+        );
+      } else {
+        this._presenceRefreshInFlight = true;
+        this._refreshPresence(ttlSec)
+          .catch((err) => {
+            this._logger?.warn?.("Presence refresh failed", { error: err });
+          })
+          .finally(() => {
+            this._presenceRefreshInFlight = false;
+          });
+      }
+      schedule();
+    };
+
+    const schedule = () => {
+      if (this._state !== "OPEN") return;
+      this._presenceInterval = setTimeout(tick, nextDelay());
+      this._presenceInterval.unref();
+    };
+
+    schedule();
   }
 
   private async _refreshPresence(ttlSec: number): Promise<void> {
@@ -2190,8 +2236,24 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return;
     }
 
+    // Chunk every bulk registry call. At the 100k connections this library
+    // advertises, an unchunked refresh is one 100k-key MGET and one
+    // 100k-command pipeline per cycle — enough to stall the Redis event loop
+    // for everyone else on the instance.
+    const CHUNK = 1000;
+    const chunk = <T>(xs: T[]): T[][] => {
+      if (xs.length <= CHUNK) return [xs];
+      const out: T[][] = [];
+      for (let i = 0; i < xs.length; i += CHUNK)
+        out.push(xs.slice(i, i + CHUNK));
+      return out;
+    };
+
     if (adapter.getPresenceBatch) {
-      const owners = await adapter.getPresenceBatch(identities);
+      const owners: (string | null)[] = [];
+      for (const part of chunk(identities)) {
+        owners.push(...(await adapter.getPresenceBatch(part)));
+      }
       const mine: string[] = [];
       identities.forEach((identity, i) => {
         const owner = owners[i];
@@ -2207,13 +2269,15 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
 
     if (adapter.setPresenceBatch) {
-      await adapter.setPresenceBatch(
-        identities.map((identity) => ({
-          identity,
-          nodeId: this._nodeId,
-          ttl: ttlSec,
-        })),
-      );
+      for (const part of chunk(identities)) {
+        await adapter.setPresenceBatch(
+          part.map((identity) => ({
+            identity,
+            nodeId: this._nodeId,
+            ttl: ttlSec,
+          })),
+        );
+      }
     } else if (adapter.setPresence) {
       await Promise.all(
         identities.map((identity) =>

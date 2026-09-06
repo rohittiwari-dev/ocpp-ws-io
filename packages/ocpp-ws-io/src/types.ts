@@ -747,6 +747,27 @@ export interface AuthAccept<TSession = Record<string, unknown>> {
   protocol?: string;
   /** Session data attached to the client */
   session?: TSession;
+  /**
+   * Override the connection identity.
+   *
+   * By default the identity is the `:identity` route param, falling back to the
+   * last path segment. That is the charge point id alone, so two chargers with
+   * the same station id on different paths — `/tenant-a/CP001` and
+   * `/tenant-b/CP001` — collide: they share a `_clientsByIdentity` entry, share
+   * a cluster presence key, and the second connection evicts the first.
+   *
+   * Namespace it here when a single server serves more than one tenant:
+   *
+   * ```ts
+   * server.route("/:tenant/:identity").auth((ctx) => {
+   *   ctx.accept({ identity: `${ctx.handshake.params.tenant}:${ctx.handshake.params.identity}` });
+   * });
+   * ```
+   *
+   * The value is used for routing, presence and session storage, so it must be
+   * unique across the whole cluster.
+   */
+  identity?: string;
 }
 
 export type AuthCallback<TSession = Record<string, unknown>> = (
