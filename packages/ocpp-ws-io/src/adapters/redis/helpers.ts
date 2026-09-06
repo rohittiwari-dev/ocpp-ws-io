@@ -87,6 +87,14 @@ export interface RedisPubSubDriver {
   xlen(stream: string): Promise<number>;
 
   /**
+   * Run a Lua script atomically. Used for presence fencing (compare-and-set /
+   * compare-and-delete), which cannot be done correctly with separate GET and
+   * SET round-trips. Optional: the adapter degrades to a racy read-then-write
+   * when a driver does not provide it.
+   */
+  evalScript?(script: string, keys: string[], args: string[]): Promise<unknown>;
+
+  /**
    * True when the driver has a dedicated connection for blocking XREAD.
    * Without it, BLOCK would head-of-line-block every other command on the
    * shared connection, so the adapter falls back to non-blocking polls.
@@ -137,6 +145,14 @@ export class IoRedisDriver implements RedisPubSubDriver {
     } else {
       await this.pub.set(key, value);
     }
+  }
+
+  async evalScript(
+    script: string,
+    keys: string[],
+    args: string[],
+  ): Promise<unknown> {
+    return this.pub.eval(script, keys.length, ...keys, ...args);
   }
 
   async get(key: string): Promise<string | null> {
@@ -302,6 +318,14 @@ export class NodeRedisDriver implements RedisPubSubDriver {
     } else {
       await this.pub.set(key, value);
     }
+  }
+
+  async evalScript(
+    script: string,
+    keys: string[],
+    args: string[],
+  ): Promise<unknown> {
+    return this.pub.eval(script, { keys, arguments: args });
   }
 
   async get(key: string): Promise<string | null> {

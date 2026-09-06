@@ -380,6 +380,88 @@ export class RedisAdapter implements EventAdapterInterface {
     await this._driver.del(key);
   }
 
+  // ─── Presence Fencing ──────────────────────────────────────────────
+  //
+  // Unfenced presence writes let a node that no longer owns an identity
+  // clobber the entry another node just wrote — routine under reconnect
+  // churn, when a charger moves from node A to node B and A's teardown or
+  // heartbeat lands afterwards. GET-then-SET cannot fix it (the race just
+  // moves), so both operations run as Lua on the server.
+
+  /** DEL only if the value still matches. Returns 1 when deleted. */
+  private static readonly _DEL_IF_OWNED = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0`;
+
+  /** SET+EXPIRE only if absent or already ours. Returns 1 when claimed. */
+  private static readonly _CLAIM_IF_FREE = `
+local owner = redis.call('GET', KEYS[1])
+if owner == false or owner == ARGV[1] then
+  redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+  return 1
+end
+return 0`;
+
+  async removePresenceIfOwned(
+    identity: string,
+    nodeId: string,
+  ): Promise<boolean> {
+    const key = `${this._prefix}presence:${identity}`;
+    if (!this._driver.evalScript) {
+      // Driver cannot run scripts — fall back to a read-then-delete. Still
+      // narrows the window enormously versus an unconditional DEL.
+      const owner = await this._driver.get(key);
+      if (owner !== nodeId) return false;
+      this._presenceCache.delete(identity);
+      await this._driver.del(key);
+      return true;
+    }
+
+    const deleted = await this._driver.evalScript(
+      RedisAdapter._DEL_IF_OWNED,
+      [key],
+      [nodeId],
+    );
+    if (Number(deleted) === 1) {
+      this._presenceCache.delete(identity);
+      return true;
+    }
+    return false;
+  }
+
+  async claimPresence(
+    identity: string,
+    nodeId: string,
+    ttl: number,
+  ): Promise<boolean> {
+    const key = `${this._prefix}presence:${identity}`;
+    const ttlSeconds = ttl || this._presenceTtlSeconds;
+
+    if (!this._driver.evalScript) {
+      const owner = await this._driver.get(key);
+      if (owner !== null && owner !== nodeId) return false;
+      this._presenceCache.set(identity, { nodeId, ttl: ttlSeconds });
+      await this._driver.set(key, nodeId, ttlSeconds);
+      return true;
+    }
+
+    const claimed = await this._driver.evalScript(
+      RedisAdapter._CLAIM_IF_FREE,
+      [key],
+      [nodeId, String(ttlSeconds)],
+    );
+    if (Number(claimed) === 1) {
+      this._presenceCache.set(identity, { nodeId, ttl: ttlSeconds });
+      return true;
+    }
+    // Another node owns it — drop our stale rehydration entry so a Redis
+    // reconnect does not resurrect our claim.
+    this._presenceCache.delete(identity);
+    return false;
+  }
+
   // ─── Observability Pipeline ────────────────────────────────────────
 
   async metrics(): Promise<Record<string, unknown>> {

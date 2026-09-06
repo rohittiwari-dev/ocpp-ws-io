@@ -890,6 +890,36 @@ export interface EventAdapterInterface {
     entries: { identity: string; nodeId: string; ttl?: number }[],
   ): Promise<void>;
 
+  // ── Presence Fencing (Optional, but required for correct multi-node) ──
+  //
+  // `setPresence` / `removePresence` are unconditional, so a node that no
+  // longer owns an identity can overwrite or delete the entry another node
+  // just wrote. That happens routinely: a charger drops from node A and
+  // reconnects to node B, then A's close handler fires and deletes B's entry,
+  // leaving the charger unroutable cross-node until the next heartbeat.
+  //
+  // These two methods make the write conditional on current ownership.
+  // Implement them atomically (a Lua script on Redis); the server falls back
+  // to the unfenced calls when an adapter does not provide them.
+
+  /**
+   * Delete the presence entry for `identity` only if it currently names
+   * `nodeId`. Returns true if it was deleted, false if another node owns it
+   * (or no entry exists).
+   */
+  removePresenceIfOwned?(identity: string, nodeId: string): Promise<boolean>;
+
+  /**
+   * Claim or refresh presence for `identity` — set it to `nodeId` with `ttl`
+   * only if the entry is absent or already names `nodeId`. Returns false when
+   * a different node owns it, which tells the caller its local socket is stale.
+   */
+  claimPresence?(
+    identity: string,
+    nodeId: string,
+    ttl: number,
+  ): Promise<boolean>;
+
   // Observability Pipeline (Optional)
   metrics?(): Promise<Record<string, unknown>>;
 }

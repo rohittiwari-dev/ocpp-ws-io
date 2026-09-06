@@ -86,3 +86,70 @@ describe("unknown routes vs global middleware", () => {
     expect(server.hasLocalClient("CP001")).toBe(true);
   });
 });
+
+// A global auth callback used to shadow every route-specific one: the collect
+// order is global -> trie -> regex with a first-wins `matchedHandler`, so a
+// catch-all auth latched before the trie was consulted and the route's own
+// callback never ran. Specificity wins now.
+describe("route auth vs global auth precedence", () => {
+  const servers: OCPPServer[] = [];
+  const clients: OCPPClient[] = [];
+
+  afterEach(async () => {
+    await Promise.all(clients.splice(0).map((c) => c.close().catch(() => {})));
+    await Promise.all(servers.splice(0).map((s) => s.close().catch(() => {})));
+  });
+
+  async function connect(port: number, base: string, identity = "CP001") {
+    const client = new OCPPClient({
+      endpoint: `ws://localhost:${port}${base}`,
+      identity,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+    clients.push(client);
+    return client.connect();
+  }
+
+  test("a route's own auth runs instead of the global one", async () => {
+    const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    servers.push(server);
+
+    const order: string[] = [];
+    server.use(async (ctx) => {
+      await ctx.next();
+    });
+    server.auth((ctx) => {
+      order.push("global");
+      ctx.accept();
+    });
+    server.route("/ocpp/:identity").auth((ctx) => {
+      order.push("route");
+      ctx.accept();
+    });
+
+    const http = await server.listen(0);
+    const port = (http.address() as { port: number }).port;
+
+    await connect(port, "/ocpp");
+    expect(order).toEqual(["route"]);
+  });
+
+  test("the global auth still guards routes that define none", async () => {
+    const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+    servers.push(server);
+
+    const order: string[] = [];
+    server.auth((ctx) => {
+      order.push("global");
+      ctx.accept();
+    });
+    server.route("/ocpp/:identity");
+
+    const http = await server.listen(0);
+    const port = (http.address() as { port: number }).port;
+
+    await connect(port, "/ocpp");
+    expect(order).toEqual(["global"]);
+  });
+});

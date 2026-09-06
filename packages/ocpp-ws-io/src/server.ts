@@ -979,13 +979,21 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
 
     // 1. Global middleware routers — always match (catch-all)
+    //
+    // Their auth callback is held separately: the collection order below is
+    // global -> trie -> regex, and a first-wins `matchedHandler` meant a global
+    // auth latched before the trie was even consulted, silently discarding
+    // every route-specific auth callback. Specificity wins now — a route's own
+    // auth beats the catch-all, and the global one is used only when no matched
+    // route defines its own.
+    let globalHandler: AuthCallback | undefined;
     for (const router of this._globalMiddlewareRouters) {
       matchedRouters.push(router);
       if (router.middlewares.length > 0) {
         matchedMiddlewares.push(...router.middlewares);
       }
-      if (router.authCallback && !matchedHandler) {
-        matchedHandler = router.authCallback as AuthCallback | undefined;
+      if (router.authCallback && !globalHandler) {
+        globalHandler = router.authCallback as AuthCallback | undefined;
       }
     }
 
@@ -1038,6 +1046,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           break; // Stop checking patterns within this single router
         }
       }
+    }
+
+    // Fall back to the catch-all auth only when no matched route defined one.
+    if (!matchedHandler && globalHandler) {
+      matchedHandler = globalHandler;
+    } else if (matchedHandler && globalHandler) {
+      this._logger?.debug?.(
+        "Route-specific auth takes precedence over global auth",
+        { pathname },
+      );
     }
 
     // Determine the identity:
@@ -1454,16 +1472,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           if (this._clientsByIdentity.get(identity) === client) {
             this._clientsByIdentity.delete(identity);
             // Remove presence — only when this socket still owns the
-            // identity. An evicted duplicate must not wipe the presence
-            // the replacement connection just registered (review fix).
-            if (this._adapter?.removePresence) {
-              this._adapter.removePresence(identity).catch((err) => {
-                this._logger?.error?.("Error removing presence", {
-                  identity,
-                  error: err,
-                });
-              });
-            }
+            // identity. The local check above catches an evicted duplicate on
+            // THIS node; the fenced delete below catches the cross-node case,
+            // where the charger has already reconnected elsewhere and that
+            // node owns the registry entry. An unconditional DEL here wiped
+            // the new owner's entry and left the charger unroutable until the
+            // next heartbeat.
+            this._removePresenceFenced(identity);
           }
           // Plugin: onDisconnect
           for (const plugin of this._plugins) {
@@ -2099,6 +2114,25 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     this._startPresenceRefresh();
   }
 
+  /**
+   * Delete this identity's presence entry, but only if the registry still
+   * names this node. Falls back to an unconditional delete for adapters that
+   * do not implement fencing.
+   */
+  private _removePresenceFenced(identity: string): void {
+    const adapter = this._adapter;
+    if (!adapter) return;
+    const done = adapter.removePresenceIfOwned
+      ? adapter.removePresenceIfOwned(identity, this._nodeId)
+      : adapter.removePresence?.(identity);
+    done?.catch((err: unknown) => {
+      this._logger?.error?.("Error removing presence", {
+        identity,
+        error: err,
+      });
+    });
+  }
+
   private _startPresenceRefresh(): void {
     if (this._presenceInterval || !this._adapter?.setPresence) return;
     const ttlSec = this._options.presenceTtlSeconds ?? 300;
@@ -2114,8 +2148,64 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private async _refreshPresence(ttlSec: number): Promise<void> {
     const adapter = this._adapter;
     if (!adapter) return;
-    const identities = Array.from(this._clientsByIdentity.keys());
+    let identities = Array.from(this._clientsByIdentity.keys());
     if (identities.length === 0) return;
+
+    // Do not re-claim identities another node owns.
+    //
+    // This loop used to write `nodeId = us` for every local identity
+    // unconditionally. A node holding a half-open socket — peer gone, no FIN
+    // received — still lists that identity, so it kept stealing the entry back
+    // from the node actually serving the charger, and routing flapped on every
+    // heartbeat until the dead socket was reaped.
+    //
+    // `claimPresence` is the atomic version and is used when the set is small
+    // enough that per-identity round-trips are affordable. Above that the batch
+    // path stays, filtered by one bulk read: still a read-then-write race, but
+    // a foreign owner is now detected instead of trampled, so a zombie node
+    // backs off consistently rather than flapping.
+    const foreign: string[] = [];
+
+    const warnForeign = () => {
+      if (foreign.length === 0) return;
+      this._logger?.warn?.(
+        "Presence held by another node — local socket is stale",
+        { identities: foreign.slice(0, 20), count: foreign.length },
+      );
+    };
+
+    // No batch write available, but atomic claim is: use it. Preferring this
+    // over setPresenceBatch would turn one pipelined round-trip into N, which
+    // is the wrong trade at 100k connections.
+    if (!adapter.setPresenceBatch && adapter.claimPresence) {
+      const results = await Promise.all(
+        identities.map((identity) =>
+          adapter.claimPresence!(identity, this._nodeId, ttlSec)
+            .then((ok) => (ok ? null : identity))
+            .catch(() => null),
+        ),
+      );
+      foreign.push(...results.filter((x): x is string => x !== null));
+      warnForeign();
+      return;
+    }
+
+    if (adapter.getPresenceBatch) {
+      const owners = await adapter.getPresenceBatch(identities);
+      const mine: string[] = [];
+      identities.forEach((identity, i) => {
+        const owner = owners[i];
+        if (owner === null || owner === undefined || owner === this._nodeId) {
+          mine.push(identity);
+        } else {
+          foreign.push(identity);
+        }
+      });
+      warnForeign();
+      identities = mine;
+      if (identities.length === 0) return;
+    }
+
     if (adapter.setPresenceBatch) {
       await adapter.setPresenceBatch(
         identities.map((identity) => ({
@@ -2248,9 +2338,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           message: `Client ${payload.target} not found on node ${this._nodeId}`,
         },
       });
-      if (this._adapter?.removePresence) {
-        this._adapter.removePresence(payload.target).catch(() => {});
-      }
+      // Fenced: the entry may already name a different node (the charger
+      // migrated while this message sat in the stream). Deleting it
+      // unconditionally disconnected a live client from cross-node routing.
+      this._removePresenceFenced(payload.target);
     } catch (err) {
       this._logger?.error?.("Error processing unicast", {
         error: (err as Error).message,

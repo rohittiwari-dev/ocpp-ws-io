@@ -18,7 +18,13 @@ export interface ClusterDriverOptions {
   natMap?: Record<string, { host: string; port: number }>;
   /** Additional ioredis options passed to the Cluster constructor */
   redisOptions?: Record<string, unknown>;
-  /** Key prefix (used for hash tag generation) */
+  /**
+   * @deprecated Never read. Key prefixing is configured on the adapter via
+   * `RedisAdapterOptions.prefix`; this field was documented as driving hash-tag
+   * generation but no hash tags were ever emitted. Cross-slot batches are
+   * handled by falling back to individual commands instead — see `xaddBatch`
+   * and `mget`. Setting this has no effect.
+   */
   prefix?: string;
 }
 
@@ -125,6 +131,15 @@ export class ClusterDriver implements RedisPubSubDriver {
     await this._cluster.del(key);
   }
 
+  async evalScript(
+    script: string,
+    keys: string[],
+    args: string[],
+  ): Promise<unknown> {
+    // Every fencing script touches exactly one key, so it is slot-safe.
+    return this._cluster.eval(script, keys.length, ...keys, ...args);
+  }
+
   async xadd(
     stream: string,
     args: Record<string, string>,
@@ -146,8 +161,11 @@ export class ClusterDriver implements RedisPubSubDriver {
     maxLen?: number,
   ): Promise<void> {
     if (messages.length === 0) return;
-    const pipeline = this._cluster.pipeline();
-    for (const msg of messages) {
+
+    const buildArgs = (msg: {
+      stream: string;
+      args: Record<string, string>;
+    }): string[] => {
       const flatArgs: string[] = [];
       if (maxLen) {
         flatArgs.push("MAXLEN", "~", maxLen.toString());
@@ -156,9 +174,41 @@ export class ClusterDriver implements RedisPubSubDriver {
       for (const [k, v] of Object.entries(msg.args)) {
         flatArgs.push(k, v);
       }
-      pipeline.xadd(msg.stream, ...flatArgs);
+      return flatArgs;
+    };
+
+    const sendOne = (msg: { stream: string; args: Record<string, string> }) =>
+      this._cluster.xadd(msg.stream, ...buildArgs(msg));
+
+    // A cluster pipeline requires every key to live in one hash slot. Per-node
+    // stream keys are not hash-tagged, so any batch addressing more than one
+    // node is cross-slot: ioredis either rejects the whole pipeline or returns
+    // per-command errors, which used to be discarded so a total failure looked
+    // like success. Same try/fallback shape as mget() above.
+    //
+    // Only the failed entries are retried individually — replaying the whole
+    // batch would duplicate the ones that did land, and these are streams.
+    try {
+      const pipeline = this._cluster.pipeline();
+      for (const msg of messages) {
+        pipeline.xadd(msg.stream, ...buildArgs(msg));
+      }
+      const results = (await pipeline.exec()) as
+        | [Error | null, unknown][]
+        | null;
+
+      if (results) {
+        const failed = messages.filter((_, i) => results[i]?.[0]);
+        if (failed.length === 0) return;
+        await Promise.all(failed.map(sendOne));
+        return;
+      }
+    } catch {
+      // Pipeline rejected before dispatch — nothing was written, so it is safe
+      // to send every entry individually below.
     }
-    await pipeline.exec();
+
+    await Promise.all(messages.map(sendOne));
   }
 
   async xread(

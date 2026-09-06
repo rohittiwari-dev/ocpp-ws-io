@@ -79,6 +79,30 @@ export class InMemoryAdapter implements EventAdapterInterface {
       this._presence.set(identity, nodeId);
     }
   }
+
+  // ─── Presence Fencing ──────────────────────────────────────────────
+  // Trivially atomic here: a single process, no await between read and write.
+
+  async removePresenceIfOwned(
+    identity: string,
+    nodeId: string,
+  ): Promise<boolean> {
+    if (this._presence.get(identity) !== nodeId) return false;
+    this._presence.delete(identity);
+    return true;
+  }
+
+  async claimPresence(
+    identity: string,
+    nodeId: string,
+    // ttl is ignored in the memory adapter
+    _ttl: number,
+  ): Promise<boolean> {
+    const owner = this._presence.get(identity);
+    if (owner !== undefined && owner !== nodeId) return false;
+    this._presence.set(identity, nodeId);
+    return true;
+  }
 }
 
 /**
