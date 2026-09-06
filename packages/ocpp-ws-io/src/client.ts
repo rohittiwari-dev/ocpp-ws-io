@@ -319,7 +319,27 @@ export class OCPPClient<
     this._reconnectAttempt = 0;
     this._closeRequested = false;
 
-    return this._connectInternal();
+    try {
+      return await this._connectInternal();
+    } catch (err) {
+      // `reconnect: true` has to mean "keep trying", including from the very
+      // first attempt. Reconnection previously started only once an
+      // *established* connection dropped, so a charge point that booted while
+      // the CSMS was down threw once and never retried — the exact outage the
+      // option exists for. connect() still rejects, so the caller learns about
+      // the failure; the retry runs in the background and close() cancels it.
+      const msg = err instanceof Error ? err.message : "";
+      if (
+        (this._options as ClientOptions).retryInitialConnect === true &&
+        this._options.reconnect &&
+        this._options.maxReconnects > 0 &&
+        !this._closeRequested &&
+        !OCPPClient._INTOLERABLE_ERRORS.has(msg)
+      ) {
+        this._scheduleReconnect();
+      }
+      throw err;
+    }
   }
 
   private async _connectInternal(): Promise<{

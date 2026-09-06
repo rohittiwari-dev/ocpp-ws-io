@@ -355,6 +355,20 @@ export interface LoggingConfig {
 
 export interface ClientOptions {
   /**
+   * Retry in the background when the *first* `connect()` fails.
+   *
+   * `reconnect` only governs an already-established connection dropping, so a
+   * charge point that boots while the CSMS is unreachable throws once and never
+   * retries — the exact outage the option exists for. Enable this and a failed
+   * initial connect schedules the normal backoff sequence; `connect()` still
+   * rejects, so the caller learns about the failure either way.
+   *
+   * Off by default: without it, `connect()` failing leaves no timers behind,
+   * which is what callers that handle their own retry expect. (default: false)
+   */
+  retryInitialConnect?: boolean;
+
+  /**
    * Maximum time (ms) to wait for the WebSocket upgrade to complete.
    *
    * Without this a peer that accepts the TCP connection but never finishes the

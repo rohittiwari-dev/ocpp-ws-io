@@ -141,3 +141,62 @@ describe("client lifecycle holes", () => {
 function server0Connected(server: OCPPServer): boolean {
   return server.stats().connectedClients > 0;
 }
+
+// `reconnect` only governed an already-established connection dropping, so a
+// charge point booting while the CSMS was unreachable threw once and never
+// retried. `retryInitialConnect` opts into retrying from the first attempt;
+// the default stays off so a failed connect() leaves no timers behind.
+describe("initial connect retry", () => {
+  const clients: OCPPClient[] = [];
+  afterEach(async () => {
+    await Promise.all(clients.splice(0).map((c) => c.close().catch(() => {})));
+  });
+
+  function deadClient(retryInitialConnect: boolean) {
+    const client = new OCPPClient({
+      // Port 1 refuses immediately.
+      endpoint: "ws://127.0.0.1:1",
+      identity: "CP-BOOT",
+      protocols: ["ocpp1.6"],
+      reconnect: true,
+      maxReconnects: 5,
+      backoffMin: 20,
+      backoffMax: 40,
+      retryInitialConnect,
+    });
+    client.on("error", () => {});
+    clients.push(client);
+    return client;
+  }
+
+  test("off by default: a failed connect() schedules nothing", async () => {
+    const client = deadClient(false);
+    await expect(client.connect()).rejects.toThrow();
+
+    const internals = client as unknown as { _reconnectTimer: unknown };
+    expect(internals._reconnectTimer).toBeNull();
+    expect(client.state).toBe(OCPPClient.CLOSED);
+  });
+
+  test("enabled: a failed connect() still rejects but retries in the background", async () => {
+    const client = deadClient(true);
+    const attempts: number[] = [];
+    client.on("reconnect", (e: { attempt: number }) => attempts.push(e.attempt));
+
+    await expect(client.connect()).rejects.toThrow();
+    await new Promise((r) => setTimeout(r, 150));
+
+    expect(attempts.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("close() stops the background retry", async () => {
+    const client = deadClient(true);
+    await expect(client.connect()).rejects.toThrow();
+    await client.close();
+    await new Promise((r) => setTimeout(r, 150));
+
+    const internals = client as unknown as { _reconnectTimer: unknown };
+    expect(internals._reconnectTimer).toBeNull();
+    expect(client.state).toBe(OCPPClient.CLOSED);
+  });
+});
