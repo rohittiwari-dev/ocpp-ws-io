@@ -167,6 +167,56 @@ The `ClusterDriver` requires `ioredis` as a peer dependency. It automatically ha
 
 If you don't use Redis, you can easily implement your own clustering mechanism (e.g., using RabbitMQ, NATS, or Kafka) by using the `defineAdapter` helper function or by creating a class that implements `EventAdapterInterface`.
 
+<Callout type="warn">
+**`getPresence()` is what makes routing cross-node.** The presence methods are
+optional on the interface, but without `getPresence()` the server has no way to
+discover which node owns an identity, so `sendToClient` can only ever reach
+clients on the calling node — everything else falls through to
+"Client not found". An adapter missing it logs a warning at `setAdapter()`.
+</Callout>
+
+### Presence fencing
+
+`setPresence()` and `removePresence()` are unconditional writes, which is not
+safe with more than one node. A charger that drops from node A and reconnects to
+node B leaves A's teardown running afterwards, and an unconditional
+`removePresence()` there deletes the entry B just wrote — the charger becomes
+unroutable until the next heartbeat.
+
+Implement these two optional methods and the server uses them instead. Both must
+be **atomic** on the server side (a Lua script on Redis, a transaction
+elsewhere); a read followed by a write in your adapter just moves the race:
+
+```typescript
+/** DEL the entry only if it currently names `nodeId`. */
+removePresenceIfOwned?(identity: string, nodeId: string): Promise<boolean>;
+
+/**
+ * Set the entry to `nodeId` with `ttl` only if it is absent or already ours.
+ * Returning false tells the server another node owns this identity and its
+ * local socket is stale.
+ */
+claimPresence?(identity: string, nodeId: string, ttl: number): Promise<boolean>;
+```
+
+Adapters that omit them keep working — the server falls back to the
+unconditional calls, with the race described above. The shipped `RedisAdapter`
+and `InMemoryAdapter` both implement them.
+
+### Delivery guarantees
+
+The two cross-node paths are not equivalent, and the difference matters:
+
+| Path | Transport | Guarantee |
+| --- | --- | --- |
+| `sendToClient`, `sendBatch` (unicast) | Redis Streams | Survives a moment when the target node is not subscribed |
+| `broadcast`, `broadcastBatch` | Redis Pub/Sub | Fire-and-forget — a node not subscribed at that instant never sees it |
+
+`broadcast()` returns a `BroadcastResult`. Its `remotePublished` flag means the
+message was handed to the adapter, **not** that any other node received it —
+pub/sub cannot tell you that. Only `localDelivered` and `localFailed` describe
+actual delivery.
+
 Using `defineAdapter` is the recommended way to create highly-typed adapters without boilerplate classes:
 
 ```typescript
