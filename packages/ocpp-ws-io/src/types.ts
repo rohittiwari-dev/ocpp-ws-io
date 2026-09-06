@@ -355,6 +355,25 @@ export interface LoggingConfig {
 
 export interface ClientOptions {
   /**
+   * How long (ms) an inbound CALL waits for its handler during startup.
+   *
+   * The socket starts dispatching the moment it opens, so a CSMS that sends
+   * `Reset` immediately can arrive before the application has registered its
+   * handlers. Answering `NotImplemented` there tells the peer the charger does
+   * not support an action it does support — a false statement on the wire, and
+   * one that only happens sometimes, which makes it very hard to diagnose.
+   *
+   * Within this window after the socket opens, a CALL with no matching handler
+   * waits for one to be registered instead of being rejected. It is answered
+   * the moment the handler appears, or rejected with `NotImplemented` when the
+   * window closes. Outside the window, an unknown action is rejected
+   * immediately as before, so genuinely unsupported actions are never delayed.
+   *
+   * Set `0` to disable and reject immediately. (default: 1000)
+   */
+  handlerGraceMs?: number;
+
+  /**
    * Retry in the background when the *first* `connect()` fails.
    *
    * `reconnect` only governs an already-established connection dropping, so a

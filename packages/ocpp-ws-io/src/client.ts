@@ -122,6 +122,13 @@ export class OCPPClient<
    * check whether the caller closed the client while it was in flight.
    */
   private _closeRequested = false;
+
+  /** When the current socket opened; anchors the startup handler grace window. */
+  private _openedAt = 0;
+  /** Callers parked waiting for a handler to appear during that window. */
+  private _handlerWaiters = new Set<() => void>();
+  /** Cap on parked messages, so an unknown-action flood cannot pile up. */
+  private static readonly _MAX_HANDLER_WAITERS = 100;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _badMessageCount = 0;
   private _lastActivity = 0;
@@ -375,6 +382,7 @@ export class OCPPClient<
         // cumulative lifetime budget (OCPP 2.0.1 §J.1 backoff resets on connect).
         this._reconnectAttempt = 0;
 
+        this._openedAt = Date.now();
         this._attachWebsocket(ws);
         this._startPing();
 
@@ -652,6 +660,7 @@ export class OCPPClient<
         throw new Error(`Handler for '${args[0]}' is already registered.`);
       }
       this._handlers.set(args[0], args[1] as CallHandler);
+      this._releaseHandlerWaiters();
     } else if (
       args.length === 3 &&
       typeof args[0] === "string" &&
@@ -666,6 +675,7 @@ export class OCPPClient<
         );
       }
       this._handlers.set(key, args[2] as CallHandler);
+      this._releaseHandlerWaiters();
     } else {
       throw new Error(
         "Invalid arguments: provide (version, method, handler), (method, handler), or (wildcardHandler)",
@@ -1107,6 +1117,42 @@ export class OCPPClient<
 
   // ─── Internal: WebSocket attachment ──────────────────────────
 
+  /** Wake everything parked in the startup handler grace window. */
+  private _releaseHandlerWaiters(): void {
+    if (this._handlerWaiters.size === 0) return;
+    const waiters = [...this._handlerWaiters];
+    this._handlerWaiters.clear();
+    for (const w of waiters) w();
+  }
+
+  /**
+   * Park an inbound CALL that has no handler yet, for the remainder of the
+   * startup grace window. Resolves as soon as any handler is registered, or
+   * when the window closes — the caller re-checks either way.
+   */
+  private async _awaitHandlerGrace(): Promise<void> {
+    const graceMs = (this._options as ClientOptions).handlerGraceMs ?? 1000;
+    if (graceMs <= 0 || this._openedAt === 0) return;
+
+    const remaining = graceMs - (Date.now() - this._openedAt);
+    if (remaining <= 0) return;
+    if (this._handlerWaiters.size >= OCPPClient._MAX_HANDLER_WAITERS) return;
+
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        this._handlerWaiters.delete(finish);
+        resolve();
+      };
+      const timer = setTimeout(finish, remaining);
+      timer.unref?.();
+      this._handlerWaiters.add(finish);
+    });
+  }
+
   protected _attachWebsocket(ws: WebSocket): void {
     ws.on("message", (data: WebSocket.RawData) => this._onMessage(data));
     ws.on("close", (code: number, reason: Buffer) =>
@@ -1332,10 +1378,22 @@ export class OCPPClient<
             );
           }
 
-          const specificHandler =
+          const lookupHandler = () =>
             (this._protocol
               ? this._handlers.get(`${this._protocol}:${ctxvals.method}`)
               : undefined) ?? this._handlers.get(ctxvals.method);
+
+          let specificHandler = lookupHandler();
+
+          // Startup grace. The socket dispatches as soon as it opens, so a CALL
+          // can arrive before the application has finished registering its
+          // handlers — and rejecting it would tell the peer this charger does
+          // not support an action it does support. Wait briefly instead; see
+          // ClientOptions.handlerGraceMs.
+          if (!specificHandler && !this._wildcardHandler) {
+            await this._awaitHandlerGrace();
+            specificHandler = lookupHandler();
+          }
 
           if (!specificHandler && !this._wildcardHandler) {
             throw new RPCNotImplementedError(

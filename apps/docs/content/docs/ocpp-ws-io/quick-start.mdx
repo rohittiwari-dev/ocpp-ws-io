@@ -17,9 +17,9 @@ const client = new OCPPClient({
 });
 
 // Register a handler — params are auto-typed for OCPP 1.6 Reset.
-// Do this BEFORE connect(): the socket starts dispatching the moment it opens,
-// and a CALL with no registered handler is answered with a NotImplemented
-// CALLERROR. Registering after `await client.connect()` is already too late.
+// Registering before connect() is clearest. A CALL that arrives during startup
+// waits briefly for its handler instead of being rejected, so registering just
+// after connect() also works — see ClientOptions.handlerGraceMs.
 client.handle("Reset", ({ params, protocol }) => {
   console.log(`Reset requested (${protocol}):`, params.type);
   return { status: "Accepted" };

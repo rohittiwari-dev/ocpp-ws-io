@@ -78,10 +78,9 @@ const client = new OCPPClient({
  protocols: ["ocpp1.6"],
 });
 
-// Register inbound handlers BEFORE connecting. The socket starts dispatching
-// as soon as it opens, and a CALL with no handler is answered with a
-// NotImplemented CALLERROR — so a CSMS that sends Reset or
-// RemoteStartTransaction immediately would be rejected.
+// Register inbound handlers. Registering before connect() is clearest, but a
+// CALL arriving during startup waits briefly for its handler rather than being
+// rejected — see ClientOptions.handlerGraceMs.
 client.handle("ocpp1.6", "Reset", async ({ params }) => {
  console.log("Reset requested:", params.type);
  return { status: "Accepted" };

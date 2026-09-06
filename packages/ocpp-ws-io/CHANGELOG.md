@@ -30,6 +30,7 @@ Read these before upgrading — each changes what existing code does.
 - `EventAdapterInterface.removePresenceIfOwned()` and `.claimPresence()` — optional presence fencing, implemented atomically on Redis via Lua and directly on `InMemoryAdapter`. Without them a node that no longer owns an identity could delete or overwrite the entry another node had just written. Adapters that omit them keep the old unconditional behaviour.
 - `RedisPubSubDriver.evalScript()` — optional Lua execution, used for the fencing above. Provided by all three shipped drivers.
 - `Queue.clear()` — reject everything still queued.
+- `ClientOptions.handlerGraceMs` (default 1000) — startup window during which an inbound CALL waits for its handler instead of being rejected.
 - `BroadcastResult` — local delivered/failed counts plus a `remotePublished` flag. That flag means "handed to the adapter", never "delivered": broadcast reaches other nodes over fire-and-forget pub/sub.
 
 ### Fixed
@@ -82,9 +83,11 @@ Read these before upgrading — each changes what existing code does.
 
 - `ClusterDriverOptions.prefix`. Documented as driving hash-tag generation but never read. Key prefixing is configured on the adapter via `RedisAdapterOptions.prefix`.
 
-### Known behaviour
+### Fixed (client startup)
 
-- **Inbound handlers must be registered before `connect()`.** The socket starts dispatching as soon as it opens, and a CALL with no registered handler is answered with a `NotImplemented` CALLERROR — correct OCPP-J, but it means a CSMS that sends `Reset` immediately gets a rejection. Measured: registering even directly after `await client.connect()` is already too late.
+- **A CALL arriving before handlers were registered got a false `NotImplemented`.** The socket dispatches as soon as it opens, so a CSMS that sends `Reset` the instant a charger appears could beat the application's `handle()` calls. The client answered `NotImplemented` — telling the peer the charger does not support an action it *does* support. Measured before the fix: registering directly after `await client.connect()` was already too late, and registering after any further `await` was too late as well, so the only working order was register-then-connect. That ordering was neither enforced nor discoverable, and the failure was intermittent.
+
+  A CALL with no matching handler now waits for one during a bounded startup window (`ClientOptions.handlerGraceMs`, default 1000&nbsp;ms, `0` disables), and is answered the moment the handler is registered. Outside that window an unknown action is still rejected immediately, so genuinely unsupported actions are never delayed. The wait is capped at 100 parked messages so an unknown-action flood cannot pile up.
 
 ## v2.3.1 - Subpath Type Declarations (2026-09-05)
 
