@@ -138,7 +138,11 @@ export function amqpPlugin(options: AmqpPluginOptions): OCPPPlugin {
     identity: string | undefined,
     data: Record<string, unknown>,
   ): void {
-    if (!allowedEvents.has(event as AmqpEvent)) return;
+    // Sub-typed events carry a suffix in the routing key ("message.inbound"),
+    // but `events` is configured with base names ("message"). Gate on the base
+    // or every sub-typed event is silently dropped.
+    const base = event.split(".")[0] as AmqpEvent;
+    if (!allowedEvents.has(base)) return;
 
     const routingKey = buildRoutingKey(event, identity);
     const content = Buffer.from(JSON.stringify(data));

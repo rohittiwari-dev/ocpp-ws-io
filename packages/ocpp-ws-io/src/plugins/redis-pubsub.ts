@@ -130,7 +130,11 @@ export function redisPubSubPlugin(
   }
 
   function send(event: string, data: Record<string, unknown>): void {
-    if (!allowedEvents.has(event as RedisPubSubEvent)) return;
+    // Sub-typed events carry a suffix in the key ("message:inbound"), but
+    // `events` is configured with base names ("message"). Gate on the base or
+    // every sub-typed event is silently dropped.
+    const base = event.split(":")[0] as RedisPubSubEvent;
+    if (!allowedEvents.has(base)) return;
 
     const key = buildKey(event);
     const message = serialize(data);

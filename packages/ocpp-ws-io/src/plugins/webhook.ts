@@ -174,15 +174,24 @@ export function webhookPlugin(options: WebhookPluginOptions): OCPPPlugin {
     },
 
     onClosing() {
-      sendWebhook({
-        event: "closing",
+      // This is the only point a shutdown notification can be delivered: the
+      // server awaits a promise returned from onClosing, while onClose() runs
+      // after the drain and is synchronous. Returning the promise is what
+      // makes the server wait instead of the request racing process exit.
+      //
+      // "close" is the name in the default event list; "closing" is honoured
+      // for configs that named the hook instead. Previously this sent
+      // "closing" unconditionally, which the default list does not allow, so
+      // the shutdown webhook never fired at all.
+      return sendWebhook({
+        event: allowedEvents.has("closing") ? "closing" : "close",
         timestamp: new Date().toISOString(),
-      }).catch(() => {});
+      });
     },
 
     onClose() {
-      // Sync cleanup — no more webhooks. Shutdown notification
-      // was already sent via onClosing() which is properly awaited.
+      // Sync cleanup — no more webhooks. The shutdown notification is sent
+      // from onClosing(), which the server awaits.
     },
   };
 }
