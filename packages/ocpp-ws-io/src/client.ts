@@ -116,6 +116,12 @@ export class OCPPClient<
   private _closePromise: Promise<{ code: number; reason: string }> | null =
     null;
   private _reconnectAttempt = 0;
+  /**
+   * Set by close(), cleared by connect(). A reconnect timer that has already
+   * fired cannot be cancelled by clearTimeout, so the attempt itself has to
+   * check whether the caller closed the client while it was in flight.
+   */
+  private _closeRequested = false;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _badMessageCount = 0;
   private _lastActivity = 0;
@@ -311,6 +317,7 @@ export class OCPPClient<
 
     this._state = CONNECTING;
     this._reconnectAttempt = 0;
+    this._closeRequested = false;
 
     return this._connectInternal();
   }
@@ -440,6 +447,9 @@ export class OCPPClient<
 
     if (this._closePromise) return this._closePromise;
 
+    // Recorded before any await so an in-flight reconnect attempt can see it.
+    this._closeRequested = true;
+
     if (this._state === CLOSED) {
       // Already closed, so there is no socket to shut down — but a client that
       // never connected (or that gave up reconnecting) can still be holding
@@ -469,6 +479,20 @@ export class OCPPClient<
   ): Promise<{ code: number; reason: string }> {
     this._state = CLOSING;
     this._stopPing();
+
+    // Calls still waiting behind the concurrency limit have not been sent, so
+    // there is nothing to await — but nothing settled them either, and once the
+    // socket is gone they can never run. Reject them before draining the
+    // in-flight ones. (force skips this only in the sense that everything is
+    // rejected below anyway.)
+    const droppedFromQueue = this._callQueue.clear(
+      new Error("Client closed before the call was sent"),
+    );
+    if (droppedFromQueue > 0) {
+      this._logger?.debug?.("Rejected queued calls on close", {
+        count: droppedFromQueue,
+      });
+    }
 
     if (!force && awaitPending) {
       // Wait for pending calls to resolve
@@ -936,6 +960,18 @@ export class OCPPClient<
           );
         }, timeoutMs);
 
+        // The signal may already have aborted while this call waited its turn
+        // in the concurrency queue or the offline queue. addEventListener does
+        // not fire for an already-aborted signal, so without this check the
+        // frame went on the wire for a call the caller had abandoned — and
+        // nothing rejected it either, leaving the timeout as the only exit.
+        if (options.signal?.aborted) {
+          clearTimeout(timeoutHandle);
+          this._pendingCalls.delete(msgId);
+          reject(options.signal.reason ?? new Error("Aborted"));
+          return;
+        }
+
         const abortHandler = () => {
           clearTimeout(timeoutHandle);
           this._pendingCalls.delete(msgId);
@@ -1056,7 +1092,20 @@ export class OCPPClient<
     ws.on("close", (code: number, reason: Buffer) =>
       this._onClose(code, reason),
     );
-    ws.on("error", (err: Error) => this.emit("error", err));
+    ws.on("error", (err: Error) => {
+      // Node throws when 'error' is emitted with no listener attached. The
+      // connect-phase handlers already guard this; the post-open handler did
+      // not, so any socket error after the connection opened crashed a process
+      // that had not registered an error listener.
+      if (this.listenerCount("error") > 0) {
+        this.emit("error", err);
+      } else {
+        this._logger?.error?.("Socket error (no error listener attached)", {
+          identity: this._identity,
+          error: err.message,
+        });
+      }
+    });
     ws.on("ping", () => {
       this._recordActivity();
       this.emit("ping");
@@ -1193,10 +1242,23 @@ export class OCPPClient<
         this._handleIncomingCall(message as OCPPCall);
         break;
       case MessageType.CALLRESULT:
-        this._handleCallResult(message as OCPPCallResult);
+        // Async with no await: an error escaping it (a throwing middleware or
+        // response listener) became an unhandled rejection and took the
+        // process down. The message is already dispatched, so log and carry on.
+        this._handleCallResult(message as OCPPCallResult).catch((err) => {
+          this._logger?.error?.("Error handling CALLRESULT", {
+            identity: this._identity,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
         break;
       case MessageType.CALLERROR:
-        this._handleCallError(message as OCPPCallError);
+        this._handleCallError(message as OCPPCallError).catch((err) => {
+          this._logger?.error?.("Error handling CALLERROR", {
+            identity: this._identity,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
         break;
       default:
         this._onBadMessage(
@@ -1585,12 +1647,17 @@ export class OCPPClient<
   ]);
 
   private _scheduleReconnect(): void {
+    // close() may have landed between the socket dropping and this call.
+    if (this._closeRequested) return;
     this._reconnectAttempt++;
     this._state = CONNECTING;
 
     // Exponential backoff with jitter (OCPP 2.0.1 §J.1)
-    const base = this._options.backoffMin;
-    const max = this._options.backoffMax;
+    // Floor the base delay. `backoffMin: 0` collapsed the exponential term to
+    // zero, so a client that could not reach the CSMS reconnected in a tight
+    // loop, saturating a CPU and hammering the server it was waiting on.
+    const base = Math.max(50, this._options.backoffMin);
+    const max = Math.max(base, this._options.backoffMax);
     const delayMs = Math.min(
       max,
       base * 2 ** (this._reconnectAttempt - 1) * (0.5 + Math.random() * 0.5),
@@ -1607,9 +1674,30 @@ export class OCPPClient<
 
     this._reconnectTimer = setTimeout(async () => {
       this._reconnectTimer = null;
+      // close() clears a *pending* timer, but once this callback has fired
+      // there is nothing left to clear — so the attempt has to check for
+      // itself, both before connecting and after, or a closed client comes
+      // back to life and sits in CONNECTING forever.
+      if (this._closeRequested) {
+        this._state = CLOSED;
+        return;
+      }
       try {
         await this._connectInternal();
+        if (this._closeRequested) {
+          // The caller closed us while this attempt was in flight. Tear the
+          // socket we just opened straight back down.
+          this._logger?.debug?.(
+            "Closed during reconnect — dropping new socket",
+          );
+          this._ws?.terminate();
+          this._state = CLOSED;
+        }
       } catch (err) {
+        if (this._closeRequested) {
+          this._state = CLOSED;
+          return;
+        }
         // Intolerable errors — do not retry
         const msg = err instanceof Error ? err.message : "";
         if (OCPPClient._INTOLERABLE_ERRORS.has(msg)) {
@@ -1981,6 +2069,15 @@ export class OCPPClient<
         "User-Agent": getPackageIdent(),
       },
     };
+
+    // Bound the upgrade. `ws` aborts the handshake and emits an error when this
+    // elapses, which is what turns a black-holed peer into a failed attempt the
+    // reconnect logic can act on, instead of an indefinite CONNECTING.
+    const connectTimeoutMs =
+      (this._options as ClientOptions).connectTimeoutMs ?? 30_000;
+    if (connectTimeoutMs > 0) {
+      opts.handshakeTimeout = connectTimeoutMs;
+    }
 
     const profile = this._options.securityProfile ?? SecurityProfile.NONE;
 

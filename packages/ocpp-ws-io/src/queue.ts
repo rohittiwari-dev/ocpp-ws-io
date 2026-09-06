@@ -47,15 +47,39 @@ export class Queue {
     });
   }
 
+  /**
+   * Reject everything still queued and clear it. Tasks already running are left
+   * alone — they own a slot and will release it themselves.
+   */
+  clear(reason: unknown): number {
+    const dropped = this._queue.splice(0);
+    for (const item of dropped) item.reject(reason);
+    return dropped.length;
+  }
+
   private _drain(): void {
     while (this._running < this._concurrency && this._queue.length > 0) {
       const item = this._queue.shift();
+      if (!item) break;
       this._running++;
 
-      item
-        ?.fn()
-        .then(item.resolve)
-        .catch(item.reject)
+      // `fn()` may throw synchronously instead of returning a rejected
+      // promise. Calling it bare let that throw escape _drain() before
+      // .finally() was attached, so the slot taken by `this._running++` was
+      // never released — a handful of those and the queue deadlocks with
+      // nothing running.
+      //
+      // The call stays synchronous (callers rely on a task starting in the
+      // same tick it is dequeued); only the throw is converted.
+      let running: Promise<unknown>;
+      try {
+        running = item.fn();
+      } catch (err) {
+        running = Promise.reject(err);
+      }
+
+      Promise.resolve(running)
+        .then(item.resolve, item.reject)
         .finally(() => {
           this._running--;
           this._drain();

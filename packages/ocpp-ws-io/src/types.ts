@@ -354,6 +354,17 @@ export interface LoggingConfig {
 // ─── Client Options ──────────────────────────────────────────────
 
 export interface ClientOptions {
+  /**
+   * Maximum time (ms) to wait for the WebSocket upgrade to complete.
+   *
+   * Without this a peer that accepts the TCP connection but never finishes the
+   * handshake — a black-holed load balancer, a half-dead CSMS — parks
+   * `connect()` in CONNECTING forever, and with `reconnect` enabled no retry is
+   * ever scheduled because the attempt never fails. Set `0` to disable.
+   * (default: 30000)
+   */
+  connectTimeoutMs?: number;
+
   /** Unique identity for this client (charging station ID) */
   identity: string;
   /** WebSocket endpoint URL (ws:// or wss://) */
