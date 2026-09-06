@@ -138,7 +138,7 @@ describe("cross-node RPC", () => {
     ).toBe(true);
   });
 
-  test("an adapter without getPresence warns that routing is disabled", async () => {
+  test("an adapter with no presence lookup warns that routing is disabled", async () => {
     const warn = vi.fn();
     const server = new OCPPServer({
       protocols: ["ocpp1.6"],
@@ -156,7 +156,9 @@ describe("cross-node RPC", () => {
     });
 
     expect(
-      warn.mock.calls.some((c) => String(c[0]).includes("no getPresence()")),
+      warn.mock.calls.some((c) =>
+        String(c[0]).includes("neither getPresence() nor getPresenceBatch()"),
+      ),
     ).toBe(true);
   });
 

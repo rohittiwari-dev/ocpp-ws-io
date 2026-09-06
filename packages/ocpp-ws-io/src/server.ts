@@ -80,6 +80,15 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    */
   private _pendingHandshakes = 0;
 
+  /** In-flight presence deletions, awaited by close() before disconnecting. */
+  private _pendingPresenceRemovals = new Set<Promise<unknown>>();
+
+  /** Short-lived cache of remote node liveness, so the check is not per-call. */
+  private _nodeLiveness = new Map<string, { alive: boolean; at: number }>();
+  /** Nodes observed advertising liveness; only these can be judged dead. */
+  private _nodeLivenessSeen = new Set<string>();
+  private static readonly _NODE_LIVENESS_TTL_MS = 5000;
+
   /** Subprotocol chosen per upgrade, read back by ws's handleProtocols. */
   private _negotiatedProtocols = new WeakMap<IncomingMessage, string>();
   /** Routers with RegExp patterns (fallback linear scan). */
@@ -335,9 +344,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return true;
     }
 
-    if (this._adapter?.getPresence) {
-      const nodeId = await this._adapter.getPresence(identity);
-      return nodeId !== null && nodeId !== undefined;
+    if (this._canRoutePresence) {
+      const nodeId = await this._lookupPresence(identity);
+      return nodeId !== null;
     }
 
     return false;
@@ -1847,6 +1856,22 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
     this._pendingRemoteCalls.clear();
 
+    // Withdraw this node's liveness entry so other nodes stop routing here at
+    // once, instead of waiting out its TTL.
+    if (this._adapter?.removePresence) {
+      await Promise.resolve(
+        this._adapter.removePresence(OCPPServer._nodeKey(this._nodeId)),
+      ).catch(() => {});
+    }
+
+    // Let the per-client presence deletions land before the adapter goes away.
+    if (this._pendingPresenceRemovals.size > 0) {
+      await Promise.race([
+        Promise.allSettled([...this._pendingPresenceRemovals]),
+        new Promise((r) => setTimeout(r, 2000)),
+      ]);
+    }
+
     // Disconnect adapter.
     //
     // disconnect() tears down the adapter's subscriptions and, for the Redis
@@ -2014,8 +2039,21 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
 
     // 2. Check Registry & Unicast (with response correlation — report H1)
-    if (this._adapter?.getPresence) {
-      const nodeId = await this._adapter.getPresence(identity);
+    if (this._canRoutePresence) {
+      const nodeId = await this._lookupPresence(identity);
+      if (nodeId && !(await this._isNodeAlive(nodeId))) {
+        // The owning node is gone. Its entry would otherwise linger for the
+        // full TTL and every call to this charger would wait out the timeout.
+        this._logger?.warn?.(
+          "Owning node is no longer alive — clearing entry",
+          {
+            identity,
+            nodeId,
+          },
+        );
+        this._removePresenceFenced(identity, nodeId);
+        throw new Error(`Client ${identity} not found`);
+      }
       if (nodeId) {
         const correlationId = createId();
         const timeoutMs =
@@ -2053,7 +2091,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         // promise pending forever. Awaiting the result instead means the
         // timeout is always observed, whatever the transport does.
         this._adapter
-          .publish(`ocpp:node:${nodeId}`, {
+          ?.publish(`ocpp:node:${nodeId}`, {
             source: this._nodeId,
             target: identity,
             version,
@@ -2181,7 +2219,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       // The local fast path below pipelines through callImmediate; a remote
       // batch cannot, but these calls are already crossing the network, so the
       // per-call cost is dominated by transport either way.
-      if (this._adapter?.getPresence) {
+      if (this._canRoutePresence) {
         this._logger?.debug?.("sendBatch: routing cross-node", { identity });
         const remote = await Promise.allSettled(
           calls.map((c) =>
@@ -2225,6 +2263,28 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   // ─── Pub/Sub Adapter ─────────────────────────────────────────
 
   async setAdapter(adapter: EventAdapterInterface): Promise<void> {
+    // Detach the previous adapter first. Overwriting the field left the old
+    // adapter's subscriptions live: its handlers kept firing _onBroadcast and
+    // _onUnicast on this server, so a message arriving on both was processed
+    // twice, and its connections were never released. The old adapter is NOT
+    // disconnected — the caller owns it and may still be using it — but it
+    // stops driving this server.
+    const previous = this._adapter;
+    if (previous && previous !== adapter) {
+      this._stopPresenceRefresh();
+      try {
+        await previous.unsubscribe("ocpp:broadcast");
+        await previous.unsubscribe(`ocpp:node:${this._nodeId}`);
+      } catch (err) {
+        this._logger?.warn?.("Failed to unsubscribe the previous adapter", {
+          error: (err as Error).message,
+        });
+      }
+      this._logger?.info?.(
+        "Replaced the event adapter — the previous one is detached but not disconnected; disconnect it yourself if you are done with it",
+      );
+    }
+
     this._adapter = adapter;
     this._adapterDetachedByClose = false;
 
@@ -2233,10 +2293,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     // sendToClient can only ever reach clients on this node — it falls through
     // to "Client not found" for everyone else. That is a silent loss of the
     // headline clustering feature, so say it out loud at wire-up time.
-    if (!adapter.getPresence) {
+    if (!adapter.getPresence && !adapter.getPresenceBatch) {
       this._logger?.warn?.(
-        "Adapter has no getPresence() — cross-node routing is disabled; sendToClient will only reach clients on this node",
-        { hasGetPresenceBatch: !!adapter.getPresenceBatch },
+        "Adapter has neither getPresence() nor getPresenceBatch() — cross-node routing is disabled; sendToClient will only reach clients on this node",
       );
     } else if (!adapter.setPresence) {
       this._logger?.warn?.(
@@ -2257,9 +2316,104 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       },
     );
 
+    // Publish presence for clients that connected before the adapter existed.
+    // The heartbeat would eventually pick them up, but not for a third of the
+    // TTL — around 100s at the default — during which every one of them is
+    // invisible to the rest of the cluster. "Start single-node, attach Redis
+    // once it is reachable" is a normal startup shape.
+    // Runs unconditionally: besides any existing clients, this is what
+    // publishes THIS node's liveness entry. Gating it on having clients left a
+    // node invisible to its peers until the first heartbeat tick — a third of
+    // the TTL, ~100s at the default — during which every peer would have
+    // considered it dead.
+    {
+      const ttlSec = this._options.presenceTtlSeconds ?? 300;
+      try {
+        await this._refreshPresence(ttlSec);
+        if (this._clientsByIdentity.size > 0) {
+          this._logger?.debug?.("Published presence for existing clients", {
+            count: this._clientsByIdentity.size,
+          });
+        }
+      } catch (err) {
+        this._logger?.warn?.("Initial presence publish failed", {
+          error: (err as Error).message,
+        });
+      }
+    }
+
     // Presence heartbeat — refresh TTLs so long-lived connections never
     // expire out of the cluster registry (report C3).
     this._startPresenceRefresh();
+  }
+
+  /**
+   * Which node currently owns `identity`, or null.
+   *
+   * `getPresence` and `getPresenceBatch` are both optional, and the routing
+   * path only ever called the former — so an adapter that implemented only the
+   * batch variant reported no owner for anybody and cross-node routing silently
+   * did nothing.
+   */
+  private async _lookupPresence(identity: string): Promise<string | null> {
+    const adapter = this._adapter;
+    if (!adapter) return null;
+    if (adapter.getPresence) {
+      return (await adapter.getPresence(identity)) ?? null;
+    }
+    if (adapter.getPresenceBatch) {
+      const [owner] = await adapter.getPresenceBatch([identity]);
+      return owner ?? null;
+    }
+    return null;
+  }
+
+  /**
+   * Whether `nodeId` is still advertising itself.
+   *
+   * A crashed node leaves its clients in the registry for the full TTL — five
+   * minutes at the default — and every cross-node call aimed at them waited out
+   * callTimeoutMs plus the grace before failing, because nothing noticed the
+   * owner was gone. Checking liveness turns that into an immediate
+   * "not connected".
+   *
+   * Answers are cached briefly so this costs one extra registry read per node
+   * per few seconds, not one per call.
+   */
+  private async _isNodeAlive(nodeId: string): Promise<boolean> {
+    if (nodeId === this._nodeId) return true;
+    const cached = this._nodeLiveness.get(nodeId);
+    const now = Date.now();
+    if (cached && now - cached.at < OCPPServer._NODE_LIVENESS_TTL_MS) {
+      return cached.alive;
+    }
+    let alive = true;
+    try {
+      const seen = await this._lookupPresence(OCPPServer._nodeKey(nodeId));
+      if (seen !== null) {
+        alive = true;
+        // Remember that this node advertises itself, so a later absence is
+        // meaningful rather than ambiguous.
+        this._nodeLivenessSeen.add(nodeId);
+      } else {
+        // Fail safe. A missing entry is only evidence of death for a node we
+        // have previously watched advertise itself; otherwise it may simply be
+        // running a build that does not publish liveness, or one whose first
+        // heartbeat has not landed. Declaring those dead would break routing
+        // across a mixed-version cluster.
+        alive = !this._nodeLivenessSeen.has(nodeId);
+      }
+    } catch {
+      // A registry hiccup must not make every node look dead.
+      alive = true;
+    }
+    this._nodeLiveness.set(nodeId, { alive, at: now });
+    return alive;
+  }
+
+  /** True when this adapter can resolve owners at all. */
+  private get _canRoutePresence(): boolean {
+    return !!(this._adapter?.getPresence || this._adapter?.getPresenceBatch);
   }
 
   /**
@@ -2267,18 +2421,48 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * names this node. Falls back to an unconditional delete for adapters that
    * do not implement fencing.
    */
-  private _removePresenceFenced(identity: string): void {
+  private _removePresenceFenced(
+    identity: string,
+    /**
+     * The node the entry must still name for the delete to happen. Defaults to
+     * this node — the normal case, a client of ours going away. Garbage
+     * collecting a dead node's entry passes that node's id instead, so the
+     * delete is still fenced: if the charger has meanwhile reconnected
+     * elsewhere, the new owner's entry survives.
+     */
+    expectedOwner: string = this._nodeId,
+  ): void {
     const adapter = this._adapter;
     if (!adapter) return;
-    const done = adapter.removePresenceIfOwned
-      ? adapter.removePresenceIfOwned(identity, this._nodeId)
+    const raw = adapter.removePresenceIfOwned
+      ? adapter.removePresenceIfOwned(identity, expectedOwner)
       : adapter.removePresence?.(identity);
-    done?.catch((err: unknown) => {
-      this._logger?.error?.("Error removing presence", {
-        identity,
-        error: err,
+    if (!raw) return;
+    const done = Promise.resolve(raw);
+
+    // Tracked so close() can wait. These fire from each client's close handler,
+    // which close() does not await, so disconnecting the adapter straight
+    // afterwards raced them: the DELs were dropped and this node's clients
+    // stayed in the registry for the full TTL, with every cross-node call to
+    // them routed at a server that no longer exists.
+    const tracked: Promise<unknown> = done
+      .catch((err: unknown) => {
+        this._logger?.error?.("Error removing presence", {
+          identity,
+          error: err,
+        });
+      })
+      .finally(() => {
+        this._pendingPresenceRemovals.delete(tracked);
       });
-    });
+    this._pendingPresenceRemovals.add(tracked);
+  }
+
+  private _stopPresenceRefresh(): void {
+    if (this._presenceInterval) {
+      clearTimeout(this._presenceInterval);
+      this._presenceInterval = null;
+    }
   }
 
   private _startPresenceRefresh(): void {
@@ -2326,9 +2510,29 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     schedule();
   }
 
+  /** Registry key under which a node advertises that it is alive. */
+  private static _nodeKey(nodeId: string): string {
+    return `__node__:${nodeId}`;
+  }
+
   private async _refreshPresence(ttlSec: number): Promise<void> {
     const adapter = this._adapter;
     if (!adapter) return;
+
+    // Advertise this node's own liveness on the same cadence and TTL as the
+    // client entries. Reusing the presence API means no adapter has to grow a
+    // method for it. Consumed by _isNodeAlive() below.
+    if (adapter.setPresence) {
+      // Promise.resolve(): the interface declares Promise<void>, but an adapter
+      // that returns nothing must not crash the heartbeat.
+      await Promise.resolve(
+        adapter.setPresence(
+          OCPPServer._nodeKey(this._nodeId),
+          this._nodeId,
+          ttlSec,
+        ),
+      ).catch(() => {});
+    }
     let identities = Array.from(this._clientsByIdentity.keys());
     if (identities.length === 0) return;
 
