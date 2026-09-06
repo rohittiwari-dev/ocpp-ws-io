@@ -89,9 +89,10 @@ describe("RedisAdapter Connection Pooling", () => {
       await adapter.publish(`ocpp:node:n${i}`, { test: i });
     }
 
-    const used = pool.filter((d) => d.xadd.mock.calls.length > 0).length;
+    const writes = (d: RedisPubSubDriver) => vi.mocked(d.xadd).mock.calls.length;
+    const used = pool.filter((d) => writes(d) > 0).length;
     expect(used).toBeGreaterThan(1);
-    const total = pool.reduce((n, d) => n + d.xadd.mock.calls.length, 0);
+    const total = pool.reduce((n, d) => n + writes(d), 0);
     expect(total).toBe(24);
 
     await adapter.disconnect();
@@ -119,9 +120,11 @@ describe("RedisAdapter Connection Pooling", () => {
 
     // Every write for one target landed on exactly one connection, so their
     // order on the wire is preserved.
-    const carriers = pool.filter((d) => d.xadd.mock.calls.length > 0);
+    const carriers = pool.filter(
+      (d) => vi.mocked(d.xadd).mock.calls.length > 0,
+    );
     expect(carriers).toHaveLength(1);
-    expect(carriers[0].xadd).toHaveBeenCalledTimes(10);
+    expect(carriers[0]?.xadd).toHaveBeenCalledTimes(10);
 
     await adapter.disconnect();
   });
@@ -140,13 +143,10 @@ describe("RedisAdapter Connection Pooling", () => {
     await adapter.publish("ocpp:broadcast", { msg: "b" });
 
     // One channel, one connection — and both messages went somewhere.
-    const total =
-      primaryDriver.publish.mock.calls.length +
-      driver2.publish.mock.calls.length;
-    expect(total).toBe(2);
-    const carriers = [primaryDriver, driver2].filter(
-      (d) => d.publish.mock.calls.length > 0,
-    );
+    const sends = (d: RedisPubSubDriver) =>
+      vi.mocked(d.publish).mock.calls.length;
+    expect(sends(primaryDriver) + sends(driver2)).toBe(2);
+    const carriers = [primaryDriver, driver2].filter((d) => sends(d) > 0);
     expect(carriers).toHaveLength(1);
 
     await adapter.disconnect();

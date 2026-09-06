@@ -59,8 +59,11 @@ describe("startup handler grace", () => {
 
     await client.connect();
 
-    if (opts.registerAfterMs !== null) {
-      await new Promise((r) => setTimeout(r, opts.registerAfterMs));
+    const registerAfterMs = opts.registerAfterMs;
+    if (registerAfterMs !== null) {
+      // Read into a const first: capturing opts in the closure loses the
+      // narrowing from the null check.
+      await new Promise((r) => setTimeout(r, registerAfterMs));
       client.handle("ocpp1.6", "Reset", async () => ({ status: "Accepted" }));
     }
 

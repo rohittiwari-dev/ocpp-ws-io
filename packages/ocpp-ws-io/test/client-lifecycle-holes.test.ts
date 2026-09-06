@@ -116,21 +116,23 @@ describe("client lifecycle holes", () => {
       _connectInternal(): Promise<unknown>;
     };
     const realConnect = internals._connectInternal.bind(internals);
-    let release: (() => void) | null = null;
+    // Held in an object: TypeScript narrows a `let` assigned only inside a
+    // closure to `never` at the call site, so `release?.()` will not compile.
+    const held: { release: (() => void) | null } = { release: null };
     internals._connectInternal = () =>
       new Promise((resolve, reject) => {
-        release = () => realConnect().then(resolve, reject);
+        held.release = () => realConnect().then(resolve, reject);
       });
 
     internals._ws.terminate();
     // Let the backoff timer fire and enter the stubbed attempt.
     await new Promise((r) => setTimeout(r, 60));
-    expect(release).not.toBeNull();
+    expect(held.release).not.toBeNull();
 
     await client.close();
 
     // Now let the connection actually complete, after close() has returned.
-    release?.();
+    held.release?.();
     await new Promise((r) => setTimeout(r, 200));
 
     expect(client.state).toBe(OCPPClient.CLOSED);

@@ -51,7 +51,7 @@ describe("plugin registration", () => {
     servers.push(server);
 
     server.route("/ocpp/:identity").config({
-      rateLimit: { adaptive: true, maxPerSecond: 10 },
+      rateLimit: { adaptive: true, limit: 10, windowMs: 1000 },
     });
     await server.listen(0);
 
@@ -73,7 +73,7 @@ describe("plugin registration", () => {
     servers.push(server);
 
     server.route("/ocpp/:identity").config({
-      rateLimit: { maxPerSecond: 10 },
+      rateLimit: { limit: 10, windowMs: 1000 },
     });
     await server.listen(0);
 

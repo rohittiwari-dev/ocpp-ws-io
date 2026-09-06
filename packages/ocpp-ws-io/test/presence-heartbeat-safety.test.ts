@@ -62,12 +62,14 @@ describe("presence heartbeat safety", () => {
 
     let inFlight = 0;
     let maxConcurrent = 0;
-    let release: (() => void) | null = null;
+    // Held in an object; see client-lifecycle-holes for why a `let` will not
+    // type-check here.
+    const held: { release: (() => void) | null } = { release: null };
     adapter.setPresenceBatch = async () => {
       inFlight++;
       maxConcurrent = Math.max(maxConcurrent, inFlight);
       await new Promise<void>((r) => {
-        release = r;
+        held.release = r;
       });
       inFlight--;
     };
@@ -94,6 +96,6 @@ describe("presence heartbeat safety", () => {
       warn.mock.calls.some((c) => String(c[0]).includes("still running")),
     ).toBe(true);
 
-    release?.();
+    held.release?.();
   });
 });

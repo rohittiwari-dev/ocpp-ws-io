@@ -23,7 +23,11 @@ const inboundPayload = {
 
 describe("plugin event delivery", () => {
   test("amqp publishes sub-typed message events when 'message' is enabled", () => {
-    const channel = { publish: vi.fn(() => true) };
+    const channel = {
+      publish: vi.fn(
+        (_exchange: string, _routingKey: string, _content: Buffer) => true,
+      ),
+    };
     const plugin = amqpPlugin({
       channel: channel as never,
       events: ["message"],
@@ -32,12 +36,16 @@ describe("plugin event delivery", () => {
     plugin.onMessage?.(fakeClient, inboundPayload);
 
     expect(channel.publish).toHaveBeenCalledTimes(1);
-    const routingKey = channel.publish.mock.calls[0][1];
+    const routingKey = channel.publish.mock.calls[0]?.[1];
     expect(routingKey).toContain("message.inbound");
   });
 
   test("amqp still honours the events allowlist", () => {
-    const channel = { publish: vi.fn(() => true) };
+    const channel = {
+      publish: vi.fn(
+        (_exchange: string, _routingKey: string, _content: Buffer) => true,
+      ),
+    };
     const plugin = amqpPlugin({
       channel: channel as never,
       events: ["connect"],
@@ -49,7 +57,9 @@ describe("plugin event delivery", () => {
   });
 
   test("redis-pubsub publishes sub-typed message events when 'message' is enabled", () => {
-    const client = { publish: vi.fn(async () => 1) };
+    const client = {
+      publish: vi.fn(async (_key: string, _message: string) => 1),
+    };
     const plugin = redisPubSubPlugin({
       client: client as never,
       events: ["message"],
@@ -58,11 +68,13 @@ describe("plugin event delivery", () => {
     plugin.onMessage?.(fakeClient, inboundPayload);
 
     expect(client.publish).toHaveBeenCalledTimes(1);
-    expect(client.publish.mock.calls[0][0]).toContain("message:inbound");
+    expect(client.publish.mock.calls[0]?.[0]).toContain("message:inbound");
   });
 
   test("redis-pubsub still honours the events allowlist", () => {
-    const client = { publish: vi.fn(async () => 1) };
+    const client = {
+      publish: vi.fn(async (_key: string, _message: string) => 1),
+    };
     const plugin = redisPubSubPlugin({
       client: client as never,
       events: ["connect"],
@@ -74,7 +86,10 @@ describe("plugin event delivery", () => {
   });
 
   test("webhook sends a shutdown notification under the default event list", async () => {
-    const fetchMock = vi.fn(async () => new Response("", { status: 200 }));
+    const fetchMock = vi.fn(
+      async (_url: string, _init: { body: string }) =>
+        new Response("", { status: 200 }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     try {
@@ -86,9 +101,7 @@ describe("plugin event delivery", () => {
       await result;
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      const body = JSON.parse(
-        (fetchMock.mock.calls[0][1] as { body: string }).body,
-      );
+      const body = JSON.parse(fetchMock.mock.calls[0]?.[1].body ?? "{}");
       expect(body.event).toBe("close");
     } finally {
       vi.unstubAllGlobals();
@@ -96,7 +109,10 @@ describe("plugin event delivery", () => {
   });
 
   test("webhook uses 'closing' when the config named that event", async () => {
-    const fetchMock = vi.fn(async () => new Response("", { status: 200 }));
+    const fetchMock = vi.fn(
+      async (_url: string, _init: { body: string }) =>
+        new Response("", { status: 200 }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     try {
@@ -107,9 +123,7 @@ describe("plugin event delivery", () => {
       await plugin.onClosing?.();
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      const body = JSON.parse(
-        (fetchMock.mock.calls[0][1] as { body: string }).body,
-      );
+      const body = JSON.parse(fetchMock.mock.calls[0]?.[1].body ?? "{}");
       expect(body.event).toBe("closing");
     } finally {
       vi.unstubAllGlobals();
