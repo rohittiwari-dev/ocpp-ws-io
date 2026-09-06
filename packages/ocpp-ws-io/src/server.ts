@@ -1961,8 +1961,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
         // Carry `version` across the cluster so the receiving node can
         // resolve the same version-specific overload.
-        try {
-          await this._adapter.publish(`ocpp:node:${nodeId}`, {
+        //
+        // The publish is deliberately NOT awaited before resultPromise. An
+        // adapter whose publish() hangs rather than rejecting — a black-holed
+        // Redis connection with no socket timeout — would otherwise park us on
+        // that await while resultPromise's timer fires with nobody observing
+        // it: an unhandled rejection (fatal on Node by default) and a caller
+        // promise pending forever. Awaiting the result instead means the
+        // timeout is always observed, whatever the transport does.
+        this._adapter
+          .publish(`ocpp:node:${nodeId}`, {
             source: this._nodeId,
             target: identity,
             version,
@@ -1970,17 +1978,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             params,
             options,
             correlationId,
+          })
+          .catch((err) => {
+            // Publish failed (adapter down) — settle the pending call so
+            // nothing leaks and the caller sees the transport error rather
+            // than waiting out the full timeout.
+            const pending = this._pendingRemoteCalls.get(correlationId);
+            if (pending) {
+              clearTimeout(pending.timer);
+              this._pendingRemoteCalls.delete(correlationId);
+              pending.reject(err);
+            }
           });
-        } catch (err) {
-          // Publish failed (adapter down) — settle the pending call through
-          // resultPromise so nothing leaks and no unhandled rejection fires.
-          const pending = this._pendingRemoteCalls.get(correlationId);
-          if (pending) {
-            clearTimeout(pending.timer);
-            this._pendingRemoteCalls.delete(correlationId);
-            pending.reject(err);
-          }
-        }
+
         return await resultPromise;
       }
     }

@@ -120,6 +120,12 @@ export class OCPPClient<
   private _badMessageCount = 0;
   private _lastActivity = 0;
   private _outboundBuffer: string[] = [];
+  /**
+   * Cap on frames buffered while CONNECTING. Without one, a client that never
+   * finishes connecting accumulates every send until the process runs out of
+   * memory. Oldest frames are dropped first, matching the offline queue.
+   */
+  private static readonly _OUTBOUND_BUFFER_MAX = 1000;
   private _offlineQueue: Array<{
     method: string;
     params: unknown;
@@ -435,6 +441,13 @@ export class OCPPClient<
     if (this._closePromise) return this._closePromise;
 
     if (this._state === CLOSED) {
+      // Already closed, so there is no socket to shut down — but a client that
+      // never connected (or that gave up reconnecting) can still be holding
+      // offline-queued calls whose callers are waiting on a promise. Nothing
+      // will ever flush them, so settle them here instead of returning early
+      // and stranding them forever.
+      this._drainOfflineQueue("Client closed");
+      this._outboundBuffer.length = 0;
       return { code: 1000, reason: "" };
     }
 
@@ -970,7 +983,7 @@ export class OCPPClient<
           this._logger?.debug?.("Buffering call", {
             method: ctxvals.method,
           });
-          this._outboundBuffer.push(messageStr);
+          this._bufferOutbound(messageStr);
           // The promise remains pending until connected & flushed -> then response comes
         } else {
           clearTimeout(timeoutHandle);
@@ -986,6 +999,18 @@ export class OCPPClient<
     return callResult;
   }
 
+  /** Buffer a frame for flush on open, dropping the oldest past the cap. */
+  private _bufferOutbound(message: string): void {
+    if (this._outboundBuffer.length >= OCPPClient._OUTBOUND_BUFFER_MAX) {
+      this._outboundBuffer.shift();
+      this._logger?.warn?.("Outbound buffer full — dropped oldest frame", {
+        identity: this._identity,
+        max: OCPPClient._OUTBOUND_BUFFER_MAX,
+      });
+    }
+    this._outboundBuffer.push(message);
+  }
+
   /**
    * Send a raw string message over the WebSocket (use with caution).
    * Messages sent while CONNECTING are buffered and flushed on open.
@@ -994,7 +1019,7 @@ export class OCPPClient<
     if (this._state === OPEN && this._ws) {
       this._ws.send(message);
     } else if (this._state === CONNECTING) {
-      this._outboundBuffer.push(message);
+      this._bufferOutbound(message);
     } else {
       throw new Error("Cannot send: client is not connected");
     }
@@ -1534,6 +1559,12 @@ export class OCPPClient<
       } else {
         // No reconnect — this is a permanent close
         this._state = CLOSED;
+        // Nothing will ever flush the offline queue now, so settle it rather
+        // than leaving those callers pending forever.
+        this._drainOfflineQueue(
+          `Connection closed permanently (${code}: ${reasonStr})`,
+        );
+        this._outboundBuffer.length = 0;
         this.emit("close", { code, reason: reasonStr });
       }
     } else {
@@ -1800,8 +1831,14 @@ export class OCPPClient<
       this._ws.ping();
 
       // Start pong timeout — if no pong received, connection is dead
-      if (pongTimeoutMs > 0) {
+      // Only arm a pong deadline when none is outstanding. Overwriting the
+      // handle orphaned the previous timer — it still fired, and terminated
+      // whatever socket was current by then, including a healthy reconnect.
+      // Keeping the first unanswered ping's deadline also preserves dead-peer
+      // detection when pongTimeoutMs exceeds pingIntervalMs.
+      if (pongTimeoutMs > 0 && !this._pongTimer) {
         this._pongTimer = setTimeout(() => {
+          this._pongTimer = null;
           this._logger?.warn?.("Pong timeout — terminating dead connection", {
             identity: this._identity,
             timeoutMs: pongTimeoutMs,
@@ -2006,8 +2043,33 @@ export class OCPPClient<
 
   // ─── Internal: Cleanup ───────────────────────────────────────
 
+  /**
+   * Reject everything still waiting in the offline queue.
+   *
+   * These entries hold the caller's resolve/reject, so leaving them in place on
+   * a terminal close stranded those promises forever — the call never resolved,
+   * never rejected, and never timed out, because the timeout is only armed once
+   * a call is actually sent.
+   */
+  private _drainOfflineQueue(reason: string): void {
+    if (this._offlineQueue.length === 0) return;
+    const queued = this._offlineQueue.splice(0);
+    this._logger?.debug?.("Rejecting offline-queued calls", {
+      count: queued.length,
+      reason,
+    });
+    for (const entry of queued) {
+      entry.reject(new Error(reason));
+    }
+  }
+
   private _cleanup(): void {
     this._stopPing();
+    this._drainOfflineQueue("Client closed");
+    // Buffered frames belong to the connection that is going away. Keeping them
+    // replayed stale messages onto the next connect() — and, since nothing
+    // bounded this array, grew without limit across a long disconnect.
+    this._outboundBuffer.length = 0;
     if (this._pongTimer) {
       clearTimeout(this._pongTimer);
       this._pongTimer = null;
