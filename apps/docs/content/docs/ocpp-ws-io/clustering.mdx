@@ -101,8 +101,22 @@ Exposes the internal state of the `RedisAdapter`, including the Unicast Consumer
 
 ```typescript
 const telemetry = await adapter.metrics();
-console.log(telemetry.redisConsumerLag.pendingMessages); // "142"
+
+telemetry.pendingMessages; // 142  — upper bound on unconsumed stream entries
+telemetry.activeStreams; //  3    — streams currently polled
+telemetry.streamDetails; //  { "ocpp-ws-io:ocpp:node:abc": 142, ... }
+telemetry.pollErrors; //     0    — consecutive stream-read failures
+telemetry.lastPollError; //  present only while pollErrors > 0
 ```
+
+<Callout type="warn">
+`pendingMessages` counts retained entries via `XLEN`, including ones already
+consumed but not yet trimmed by `MAXLEN`. Treat it as an upper bound on backlog,
+not an exact unread count.
+
+`pollErrors` is the one to alert on: any non-zero value means cross-node
+delivery *into* this node is currently failing.
+</Callout>
 
 #### Pipeline Batching (`publishBatch`)
 
