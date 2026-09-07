@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { amqpPlugin } from "../src/plugins/amqp.js";
 import { kafkaPlugin } from "../src/plugins/kafka.js";
 import { mqttPlugin } from "../src/plugins/mqtt.js";
 import { redisPubSubPlugin } from "../src/plugins/redis-pubsub.js";
@@ -176,5 +177,94 @@ describe("redisPubSubPlugin", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+describe("failure reporting", () => {
+  it("mqtt reports a publish error through onPublishError", () => {
+    const errors: { error: Error; topic: string }[] = [];
+    const c = {
+      connected: true,
+      end: vi.fn(),
+      publish: vi.fn(
+        (
+          _t: string,
+          _m: string,
+          _o: unknown,
+          cb?: (e?: Error) => void,
+        ) => cb?.(new Error("broker refused")),
+      ),
+    };
+    const plugin = mqttPlugin({
+      client: c as never,
+      onPublishError: (error, ctx) => errors.push({ error, topic: ctx.topic }),
+    });
+
+    plugin.onConnection?.(client("CP001"));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.error.message).toBe("broker refused");
+    expect(errors[0]!.topic).toContain("connect");
+  });
+
+  it("mqtt reports an attempt made while disconnected", () => {
+    const errors: Error[] = [];
+    const c = { connected: false, end: vi.fn(), publish: vi.fn() };
+    const plugin = mqttPlugin({
+      client: c as never,
+      onPublishError: (error) => errors.push(error),
+    });
+    plugin.onConnection?.(client("CP001"));
+    expect(errors.map((e) => e.message)).toContain(
+      "MQTT client is not connected",
+    );
+  });
+
+  it("mqtt survives an onPublishError that throws", () => {
+    const c = {
+      connected: true,
+      end: vi.fn(),
+      publish: vi.fn(
+        (_t: string, _m: string, _o: unknown, cb?: (e?: Error) => void) =>
+          cb?.(new Error("boom")),
+      ),
+    };
+    const plugin = mqttPlugin({
+      client: c as never,
+      onPublishError: () => {
+        throw new Error("observer blew up");
+      },
+    });
+    expect(() => plugin.onConnection?.(client("CP001"))).not.toThrow();
+  });
+
+  it("amqp reports a dead channel through onError", () => {
+    const errors: { error: Error; event: string }[] = [];
+    const channel = {
+      publish: vi.fn(() => {
+        throw new Error("Channel closed");
+      }),
+      close: vi.fn(),
+    };
+    const plugin = amqpPlugin({
+      channel: channel as never,
+      onError: (error, ctx) => errors.push({ error, event: ctx.event }),
+    });
+
+    plugin.onConnection?.(client("CP001"));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.error.message).toBe("Channel closed");
+    expect(errors[0]!.event).toBe("connect");
+  });
+
+  it("amqp stays silent when no onError is supplied", () => {
+    const channel = {
+      publish: vi.fn(() => {
+        throw new Error("Channel closed");
+      }),
+      close: vi.fn(),
+    };
+    const plugin = amqpPlugin({ channel: channel as never });
+    // Unchanged default: the throw is swallowed, nothing escapes the hook.
+    expect(() => plugin.onConnection?.(client("CP001"))).not.toThrow();
   });
 });

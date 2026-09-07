@@ -36,6 +36,20 @@ export interface MqttPluginOptions {
   client: MqttClientLike;
 
   /**
+   * Called when a publish fails, or when one is attempted while the client
+   * reports itself disconnected.
+   *
+   * Publishing is fire-and-forget so a hook is never blocked, which also means
+   * a failure is otherwise invisible: mqtt.js queues messages while offline and
+   * drops them if the queue overflows or the client never reconnects. Supply
+   * this to count or log those instead of losing them silently.
+   *
+   * Purely observational — it cannot retry, and returning does not change what
+   * the plugin does next.
+   */
+  onPublishError?: (error: Error, ctx: { topic: string }) => void;
+
+  /**
    * Topic prefix for all published messages.
    * Identity is appended: `{prefix}/{identity}/{event}`
    * @default "ocpp"
@@ -132,6 +146,16 @@ export function mqttPlugin(options: MqttPluginOptions): OCPPPlugin {
     return identity ? `${prefix}/${identity}/${event}` : `${prefix}/${event}`;
   }
 
+  /** Never let an observer's own throw escape into the hook. */
+  function report(error: Error, topic: string): void {
+    if (!options.onPublishError) return;
+    try {
+      options.onPublishError(error, { topic });
+    } catch {
+      // An onPublishError that throws must not break message processing.
+    }
+  }
+
   function publish(topic: string, data: Record<string, unknown>): void {
     const payload = options.transform ? options.transform(data) : data;
     const message = JSON.stringify(payload);
@@ -147,8 +171,14 @@ export function mqttPlugin(options: MqttPluginOptions): OCPPPlugin {
           }),
       );
     } else {
-      // Fire-and-forget — don't block the hook
-      options.client.publish(topic, message, { qos });
+      // Fire-and-forget — don't block the hook. The callback is only there to
+      // surface failures; nothing waits on it.
+      if (options.onPublishError && !options.client.connected) {
+        report(new Error("MQTT client is not connected"), topic);
+      }
+      options.client.publish(topic, message, { qos }, (err) => {
+        if (err) report(err, topic);
+      });
     }
   }
 

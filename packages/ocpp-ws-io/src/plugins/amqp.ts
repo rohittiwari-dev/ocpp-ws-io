@@ -43,6 +43,19 @@ export interface AmqpPluginOptions {
   channel: AmqpChannelLike;
 
   /**
+   * Called when a publish throws — in practice, when the channel has closed.
+   *
+   * The plugin does not manage the channel and does not reconnect, so once
+   * amqplib closes it every later publish throws and is swallowed. Without
+   * this the plugin goes quiet and stays quiet with no signal. Supply it to
+   * detect that and re-create the channel yourself.
+   *
+   * Purely observational — it cannot retry, and the plugin's behaviour is
+   * unchanged whether or not it is set.
+   */
+  onError?: (error: Error, ctx: { event: string; routingKey: string }) => void;
+
+  /**
    * Exchange to publish to.
    * @default "ocpp.events"
    */
@@ -155,8 +168,16 @@ export function amqpPlugin(options: AmqpPluginOptions): OCPPPlugin {
       // channel.publish is synchronous (writes to TCP buffer)
       try {
         options.channel.publish(exchange, routingKey, content, pubOpts);
-      } catch {
-        // Channel may be closed — silently fail
+      } catch (err) {
+        // A closed channel throws here and keeps throwing, so this is the
+        // only place the plugin can report that it has gone dead.
+        if (options.onError) {
+          try {
+            options.onError(err as Error, { event, routingKey });
+          } catch {
+            // An onError that throws must not break message processing.
+          }
+        }
       }
     }
   }
