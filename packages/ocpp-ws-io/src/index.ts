@@ -59,7 +59,11 @@ export * from "./middleware.js";
 export { createRouter, OCPPRouter } from "./router.js";
 export { OCPPServer } from "./server.js";
 export { OCPPServerClient } from "./server-client.js";
-export { getStandardValidators } from "./standard-validators.js";
+export {
+  getStandardProtocols,
+  getStandardValidator,
+  getStandardValidators,
+} from "./standard-validators.js";
 // ─── Types ───────────────────────────────────────────────────────
 export {
   type AnyOCPPProtocol,

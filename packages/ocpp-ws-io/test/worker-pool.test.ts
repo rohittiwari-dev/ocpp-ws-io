@@ -34,28 +34,39 @@ describe("WorkerPool", () => {
     ).toThrow(/worker/i);
   });
 
-  test("worker validates CALL payloads via schemaInfo (C2 worker path)", async () => {
+  test("worker parses off-thread and returns the decoded message", async () => {
+    const worker = new Worker(workerPath);
+    try {
+      const result = await new Promise<any>((resolve, reject) => {
+        worker.once("message", resolve);
+        worker.once("error", reject);
+        worker.postMessage({ id: 1, buffer: '[2,"id9","Heartbeat",{}]' });
+      });
+      expect(result.id).toBe(1);
+      expect(result.message).toEqual([2, "id9", "Heartbeat", {}]);
+      expect(result.error).toBeUndefined();
+    } finally {
+      await worker.terminate();
+    }
+  });
+
+  test("worker decodes a Buffer payload, not just a string", async () => {
     const worker = new Worker(workerPath);
     try {
       const result = await new Promise<any>((resolve, reject) => {
         worker.once("message", resolve);
         worker.once("error", reject);
         worker.postMessage({
-          id: 1,
-          buffer: '[2,"id9","Heartbeat",{"bogus":true}]',
-          schemaInfo: {
-            schemas: {
-              "urn:Heartbeat.req": {
-                type: "object",
-                properties: {},
-                additionalProperties: false,
-              },
-            },
-          },
+          id: 2,
+          buffer: Buffer.from('[2,"id10","BootNotification",{"a":"b"}]'),
         });
       });
-      expect(result.validationError).toBeDefined();
-      expect(result.validationError.schemaId).toBe("urn:Heartbeat.req");
+      expect(result.message).toEqual([
+        2,
+        "id10",
+        "BootNotification",
+        { a: "b" },
+      ]);
     } finally {
       await worker.terminate();
     }

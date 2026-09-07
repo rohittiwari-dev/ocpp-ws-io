@@ -37,7 +37,6 @@ interface PendingTask {
 
 export interface ParseResult {
   message: unknown;
-  validationError?: { schemaId: string; errors: string };
 }
 
 export class WorkerPool {
@@ -88,12 +87,7 @@ export class WorkerPool {
 
     worker.on(
       "message",
-      (response: {
-        id: number;
-        message?: unknown;
-        validationError?: unknown;
-        error?: string;
-      }) => {
+      (response: { id: number; message?: unknown; error?: string }) => {
         const task = this._pending.get(response.id);
         if (!task) return;
         if (task.timer) clearTimeout(task.timer);
@@ -102,10 +96,7 @@ export class WorkerPool {
         if (response.error) {
           task.reject(new Error(response.error));
         } else {
-          task.resolve({
-            message: response.message,
-            validationError: response.validationError,
-          } as ParseResult);
+          task.resolve({ message: response.message } as ParseResult);
         }
       },
     );
@@ -175,13 +166,10 @@ export class WorkerPool {
   }
 
   /**
-   * Send raw data to a worker for JSON parsing + optional validation.
+   * Send raw data to a worker for JSON parsing.
    * Uses round-robin worker selection.
    */
-  parse(
-    data: Buffer | string,
-    schemaInfo?: { protocol: string; schemas: Record<string, unknown> },
-  ): Promise<ParseResult> {
+  parse(data: Buffer | string): Promise<ParseResult> {
     if (this._terminated) {
       return Promise.reject(new Error("WorkerPool has been shut down"));
     }
@@ -239,7 +227,7 @@ export class WorkerPool {
       });
 
       try {
-        worker.postMessage({ id, buffer: data, schemaInfo });
+        worker.postMessage({ id, buffer: data });
       } catch (err) {
         if (timer) clearTimeout(timer);
         this._pending.delete(id);

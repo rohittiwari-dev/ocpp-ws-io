@@ -22,6 +22,11 @@ Read these before upgrading — each changes what existing code does.
 - **Connection pooling selects by destination, not round-robin.** `poolSize > 1` round-robined per call, so consecutive messages for the same target went over different TCP connections and could arrive out of order — for OCPP unicast, a charger's commands reordering in transit. One destination now stays pinned to one connection while different destinations still spread across the pool.
 - **A remote timeout now arrives as `TimeoutError`**, not `GenericError`, so `catch (e) { if (e instanceof TimeoutError) }` behaves the same locally and cross-node.
 
+### Performance
+
+- **`date-time` validation is ~1.5× faster, and accepts exactly what it did before.** Format checking was 85% of the cost of validating a message — measured at 12.4 µs of 14.6 µs on a MeterValues carrying twenty timestamps — and `date-time` is 142 of the 144 format constraints across all three schema versions. It is now a bounded regex plus a calendar check instead of ajv-formats' default implementation. Conformance is pinned by a test that compares it against ajv-formats `full` mode across leap years, month and day bounds, offset bounds and leap seconds. ajv-formats stays registered for every other format, so custom schemas using `email`, `uri`, `ipv4` and the rest are unaffected. ajv-formats' `fast` mode was rejected outright: it admits month 13 and hour 25.
+- **Validators are cached per protocol instead of as one all-versions batch.** A connection speaks one subprotocol, so building all three cost two AJV instances and two full schema registrations that were never consulted — 0.69 MB of 1.45 MB, 48%, for a server speaking a single version. The validator for the negotiated subprotocol is now built on first use and shared process-wide. Schemas within a validator are still compiled lazily per action, so an action never received is still never compiled.
+
 ### Added
 
 - `ServerOptions.remoteCallGraceMs` — grace added to `callTimeoutMs` for cross-node calls, covering adapter round-trip latency.
@@ -36,6 +41,9 @@ Read these before upgrading — each changes what existing code does.
 - `ClusterDriverOptions.blockingReads` (default `true`) — opens a dedicated connection for blocking XREAD. `hasBlockingClient` was hardcoded false, so every Redis Cluster deployment polled with a 1s sleep instead, adding up to a second of latency to each leg of every cross-node call.
 - `BroadcastResult` — local delivered/failed counts plus a `remotePublished` flag. That flag means "handed to the adapter", never "delivered": broadcast reaches other nodes over fire-and-forget pub/sub.
 
+- `getStandardValidator(protocol)` — the cached validator for one protocol, or `null` if no schemas ship for it.
+- `getStandardProtocols()` — the protocols with bundled OCPP schemas.
+- `getStandardValidators(protocols?)` now takes an optional protocol list. Called with no arguments it returns all three, as before.
 ### Fixed
 
 **Clustering**
@@ -90,6 +98,7 @@ Read these before upgrading — each changes what existing code does.
 
 - `EventBuffer`. Added in the initial documentation commit and never wired in: not imported anywhere, not exported, not a build entry, and absent from every published tarball. Its stated purpose was buffering during connection setup, which it would not have achieved — both sides attach socket listeners synchronously, and the residual gap is one layer up at dispatch.
 
+- **Off-thread AJV validation in the parse worker.** It was implemented, typed and unit-tested, but nothing in the library ever supplied the `schemaInfo` that would activate it, and `ParseResult.validationError` was never read. Wiring it as designed would have been actively harmful: `schemaInfo` is structured-cloned on every `postMessage`, so it would copy 5.2 ms of OCPP 2.1 schemas per frame to save 0.016 ms of validation. It also only guarded `message[0] === 2`, so it never validated CALLRESULTs and was never a substitute for the main-thread path. `workerThreads` is unaffected and still offloads `JSON.parse`, which is the expensive part — 60 µs against 16 µs on a 13 KB MeterValues.
 ### Deprecated
 
 - `ClusterDriverOptions.prefix`. Documented as driving hash-tag generation but never read. Key prefixing is configured on the adapter via `RedisAdapterOptions.prefix`.

@@ -17,7 +17,7 @@ import { createLoggingMiddleware } from "./helpers/index.js";
 import { initLogger } from "./init-logger.js";
 import { type MiddlewareFunction, MiddlewareStack } from "./middleware";
 import { Queue } from "./queue.js";
-import { getStandardValidators } from "./standard-validators.js";
+import { getStandardValidator } from "./standard-validators.js";
 import {
   type CallHandler,
   type CallOptions,
@@ -147,7 +147,8 @@ export class OCPPClient<
     reject: (reason: unknown) => void;
   }> = [];
   private _middleware: MiddlewareStack<MiddlewareContext>;
-  private _validators: Validator[] = [];
+  /** Explicit validators from options; null means resolve per protocol. */
+  private _validators: Validator[] | null = null;
   private _strictProtocols: string[] | null = null;
   protected _handshake: unknown = null;
   protected _logger: LoggerLike = NOOP_LOGGER;
@@ -2070,11 +2071,11 @@ export class OCPPClient<
   // ─── Internal: Validation ────────────────────────────────────
 
   private _setupValidators(): void {
-    if (this._options.strictModeValidators) {
-      this._validators = this._options.strictModeValidators;
-    } else {
-      this._validators = getStandardValidators();
-    }
+    // Custom validators are taken as given. Standard ones are left null and
+    // resolved per protocol in _findValidator once the subprotocol is actually
+    // negotiated, so a connection never builds validators for versions it does
+    // not speak — and never misses one the peer chose.
+    this._validators = this._options.strictModeValidators ?? null;
 
     if (Array.isArray(this._options.strictMode)) {
       this._strictProtocols = this._options.strictMode;
@@ -2147,9 +2148,15 @@ export class OCPPClient<
       return null;
     }
 
-    return (
-      this._validators.find((v) => v.subprotocol === this._protocol) ?? null
-    );
+    if (this._validators) {
+      return (
+        this._validators.find((v) => v.subprotocol === this._protocol) ?? null
+      );
+    }
+
+    // Built on first use and cached process-wide, so this costs one lookup
+    // per validated message after the first.
+    return getStandardValidator(this._protocol);
   }
 
   // ─── Internal: Endpoint building ─────────────────────────────
