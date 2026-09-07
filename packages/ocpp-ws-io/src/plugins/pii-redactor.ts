@@ -40,15 +40,21 @@ export interface PiiRedactorOptions {
  * Redacts sensitive Personally Identifiable Information (PII) from message payloads.
  *
  * As a Level 4 (Middleware) plugin, this executes directly in the message processing chain.
- * It recursively scans and masks sensitive fields (e.g., `idTag`, `password`) in both
- * incoming and outgoing payloads. Because it mutates the payload inline, the redacted
- * data will be what application handlers, downstream plugins, and observability tools see.
+ * It recursively scans and masks sensitive fields (e.g., `idTag`, `password`), replacing
+ * the context payload with a redacted deep clone. Handlers, downstream plugins and
+ * observability tools all read that clone, so the real value stops there.
  *
- * ⚠️ **Caveat:** because it mutates the live payload (not a logging copy), redacting a
- * key on **incoming** messages also hides it from your handlers. The default
- * `sensitiveKeys` includes `idTag` — if your handlers authorize by `idTag`
- * (`Authorize`, `StartTransaction`), either pass `incoming: false` or drop `idTag`
- * from `sensitiveKeys` so the handler still receives the real value.
+ * ⚠️ **Caveat:** redacting a key on **incoming** messages also hides it from your
+ * handlers, since they read the same redacted payload. The default `sensitiveKeys`
+ * includes `idTag` — if your handlers authorize by `idTag` (`Authorize`,
+ * `StartTransaction`), either pass `incoming: false` or drop `idTag` from
+ * `sensitiveKeys` so the handler still receives the real value.
+ *
+ * ⚠️ **Coverage:** redaction applies to the four message types that run through the
+ * middleware chain — inbound and outbound CALL, and inbound CALLRESULT / CALLERROR.
+ * **Responses this server sends are not redacted:** outbound CALLRESULT and CALLERROR
+ * never enter the chain, so a broker plugin configured with `includePayload` receives
+ * them verbatim. Redact those at the sink if they can carry sensitive values.
  *
  * @example
  * ```ts
@@ -112,6 +118,17 @@ export function piiRedactorPlugin(options: PiiRedactorOptions): OCPPPlugin {
         ctx.params = redact(ctx.params);
       } else if (ctx.type === "incoming_result" && ctx.payload) {
         ctx.payload = redact(ctx.payload);
+      } else if (ctx.type === "incoming_error" && ctx.error) {
+        // A CALLERROR carries its detail object in the last slot, which is
+        // where a peer would echo back whatever it objected to.
+        const [kind, id, code, description, details] = ctx.error;
+        ctx.error = [
+          kind,
+          id,
+          code,
+          description,
+          redact(details) as Record<string, unknown>,
+        ];
       }
     }
 
@@ -120,6 +137,9 @@ export function piiRedactorPlugin(options: PiiRedactorOptions): OCPPPlugin {
       if (ctx.type === "outgoing_call" && ctx.params) {
         ctx.params = redact(ctx.params);
       } else if (ctx.type === "outgoing_result" && ctx.payload) {
+        // Unreachable today: outgoing_result and outgoing_error contexts are
+        // built only to feed the "message" event and never run through the
+        // middleware chain. Kept so this works if that wiring is ever added.
         ctx.payload = redact(ctx.payload);
       }
     }

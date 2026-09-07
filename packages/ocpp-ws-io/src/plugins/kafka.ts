@@ -99,7 +99,13 @@ export function kafkaPlugin(options: KafkaPluginOptions): OCPPPlugin {
     options.events ?? ["connect", "disconnect", "message", "security"],
   );
 
-  const connectionTimes = new Map<string, number>();
+  // Keyed by the client object, not the identity string. When a duplicate
+  // identity evicts an older connection, both sockets share one identity for a
+  // moment: the evicted one's late close would read and then delete the entry
+  // the new connection had just written, so both disconnect events reported a
+  // zero duration. A WeakMap also lets an evicted client be collected without
+  // waiting for its close to arrive.
+  const connectionTimes = new WeakMap<object, number>();
 
   function resolveTopic(event: string) {
     if (!topicRouting) return baseTopic;
@@ -116,8 +122,14 @@ export function kafkaPlugin(options: KafkaPluginOptions): OCPPPlugin {
     const topic = resolveTopic(event.split(".")[0]!);
     const value = JSON.stringify(data);
 
-    // Kafka partitions heavily rely on the key. We use identity (CP Name) as key
-    // so that messages for a particular charger process in-order on the same partition.
+    // Keying by identity co-partitions a charger's events: every one lands on
+    // the same partition, so a consumer reads them in log order.
+    //
+    // That is not the same as a guarantee that they are appended in the order
+    // the server observed them. Sends are dispatched without awaiting the
+    // previous one — through the worker or fire-and-forget — so two events for
+    // one charger can race, and a retried send can be appended after a later
+    // one. Order the events by their own timestamps if that matters.
     const key = identity ?? "server";
 
     if (options.worker) {
@@ -142,7 +154,7 @@ export function kafkaPlugin(options: KafkaPluginOptions): OCPPPlugin {
     name: "kafka",
 
     onConnection(client) {
-      connectionTimes.set(client.identity, Date.now());
+      connectionTimes.set(client, Date.now());
 
       send("connect", client.identity, {
         identity: client.identity,
@@ -153,11 +165,11 @@ export function kafkaPlugin(options: KafkaPluginOptions): OCPPPlugin {
     },
 
     onDisconnect(client, code, reason) {
-      const startTime = connectionTimes.get(client.identity);
+      const startTime = connectionTimes.get(client);
       const durationSec = startTime
         ? Math.round((Date.now() - startTime) / 1000)
         : 0;
-      connectionTimes.delete(client.identity);
+      connectionTimes.delete(client);
 
       send("disconnect", client.identity, {
         identity: client.identity,
@@ -226,7 +238,7 @@ export function kafkaPlugin(options: KafkaPluginOptions): OCPPPlugin {
     },
 
     onClose() {
-      connectionTimes.clear();
+      // connectionTimes is a WeakMap — entries are released with their clients.
       // We don't control the producer; user must disconnect it
     },
   };

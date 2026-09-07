@@ -511,7 +511,7 @@ High-throughput Kafka event streaming sink. Publishes OCPP lifecycle events to K
 | :--- | :--- | :--- | :--- |
 | `producer` | `KafkaProducerLike` | _required_ | Kafka producer instance. |
 | `topic` | `string` | `"ocpp.events"` | Base topic name. |
-| `events` | `KafkaEvent[]` | All | Filter which events to publish. |
+| `events` | `KafkaEvent[]` | `["connect", "disconnect", "message", "security"]` | Which events to publish. Note the default is **not** all of them &mdash; `"auth_failed"` and `"eviction"` only publish if you list them explicitly. |
 | `topicRouting` | `boolean` | `false` | Route events to `topic.{event}` subtopics. |
 
 ```typescript

@@ -125,6 +125,22 @@ export function redisPubSubPlugin(
   const serialize = options.serialize ?? JSON.stringify;
   const connectionTimes = new Map<string, number>();
 
+  // `mode: "stream"` falls back to PUBLISH when the client has no lowercase
+  // `xadd`, which silently trades durability for fire-and-forget. ioredis has
+  // it; node-redis and @redis/client expose `xAdd`, so those callers asked for
+  // streams and got pub/sub with nothing said. Warn rather than throw — an
+  // exception here would take down deployments that are running today.
+  const streamCapable = typeof options.client.xadd === "function";
+  if (mode === "stream" && !streamCapable) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[redisPubSubPlugin] mode: "stream" requested but the client has no ' +
+        "`xadd` method — falling back to PUBLISH, which is fire-and-forget " +
+        "and drops messages when no subscriber is listening. ioredis exposes " +
+        "`xadd`; node-redis exposes `xAdd` and needs an adapter.",
+    );
+  }
+
   function buildKey(event: string): string {
     return `${prefix}:${event}`;
   }
@@ -158,9 +174,11 @@ export function redisPubSubPlugin(
     };
 
     if (options.worker) {
-      options.worker.enqueue(`redis-${mode}`, () =>
-        doPublish().catch(() => {}),
-      );
+      // Hand the worker the raw promise. Catching here first meant a rejection
+      // could never reach a configured `AsyncWorkerOptions.onError`, so this
+      // was the one bridge plugin whose failures were unreportable — kafka,
+      // mqtt and amqp all pass theirs through.
+      options.worker.enqueue(`redis-${mode}`, doPublish);
     } else {
       // Fire-and-forget
       try {

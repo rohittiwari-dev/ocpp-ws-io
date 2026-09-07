@@ -1542,10 +1542,21 @@ export class OCPPClient<
       // Handled by createLoggingMiddleware
       const latencyMs = Date.now() - pendingCtx.sentAt;
 
+      // Rebuild from the post-middleware context, the way the inbound CALL
+      // path does. Emitting the raw frame handed observers the payload as it
+      // arrived, so a middleware that rewrote it — piiRedactorPlugin returns a
+      // redacted clone rather than mutating in place — was bypassed, and
+      // unredacted payloads reached broker plugins running includePayload.
+      const observedResult: OCPPCallResult = [
+        MessageType.CALLRESULT,
+        ctxvals.messageId,
+        ctxvals.payload,
+      ];
+
       // Emit enriched message event (replaces old "callResult" event)
-      this._emitMessageEvent(message, "IN", ctxvals, latencyMs);
+      this._emitMessageEvent(observedResult, "IN", ctxvals, latencyMs);
       // Keep backward-compatible "callResult" event
-      this.emit("callResult", message);
+      this.emit("callResult", observedResult);
 
       // Strict mode: validate the inbound response payload against the
       // method's .conf schema (report M6).
@@ -1596,10 +1607,14 @@ export class OCPPClient<
 
       const latencyMs = Date.now() - pendingCtx.sentAt;
 
+      // Same rebuild as the CALLRESULT path above: observers must see what
+      // middleware produced, not what arrived on the wire.
+      const observedError = ctxvals.error as OCPPCallError;
+
       // Emit enriched message event (replaces old "callError" event)
-      this._emitMessageEvent(message, "IN", ctxvals, latencyMs);
+      this._emitMessageEvent(observedError, "IN", ctxvals, latencyMs);
       // Keep backward-compatible "callError" event
-      this.emit("callError", message);
+      this.emit("callError", observedError);
 
       const [, , code, msg, details] = ctxvals.error;
 
