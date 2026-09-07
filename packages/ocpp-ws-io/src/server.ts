@@ -16,6 +16,7 @@ import { LRUMap } from "./lru-map.js";
 import { RadixTrie } from "./radix-trie.js";
 import { executeMiddlewareChain, OCPPRouter } from "./router.js";
 import { OCPPServerClient } from "./server-client.js";
+import { getStandardValidator } from "./standard-validators.js";
 import {
   type AllMethodNames,
   type AuthAccept,
@@ -209,6 +210,14 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     this._logger = initLogger(this._options.logging, {
       component: "OCPPServer",
     });
+
+    // Building a protocol's validator costs ~27 ms, against 0.9 µs to run one.
+    // Left to the first message that needs it, that lands on a charger's first
+    // BootNotification — which after a deploy is every charger at once, on the
+    // event loop. Doing it here happens before any socket exists and covers
+    // every route a server goes live by: listen(), the handleUpgrade getter,
+    // and the Express/Fastify/Hono/NestJS adapters that all call through it.
+    this._warmValidators();
 
     // Initialize adaptive rate limiter if enabled
     const rl = this._options.rateLimit;
@@ -856,6 +865,45 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       } catch (err) {
         this._logger?.error?.("Plugin onTLSUpdate error", {
           name: plugin.name,
+          error: (err as Error).message,
+        });
+      }
+    }
+  }
+
+  /**
+   * Build validators for the protocols this server will validate, ahead of the
+   * first message that needs one.
+   *
+   * Validators are cached process-wide, so several servers in one process
+   * share the work and this is a map lookup after the first. Does nothing
+   * unless strict mode is on — with validation off these would never be read.
+   */
+  private _warmValidators(): void {
+    const strict = this._options.strictMode;
+    if (!strict) return;
+
+    // strictMode may name a subset of protocols to validate; otherwise every
+    // configured protocol is fair game. The constructor has already rejected
+    // strictMode without protocols, so this is never empty.
+    const protocols = Array.isArray(strict)
+      ? strict
+      : (this._options.protocols ?? []);
+
+    for (const protocol of protocols) {
+      try {
+        if (!getStandardValidator(protocol)) {
+          // Not an error: a custom subprotocol validates through
+          // strictModeValidators, which the connection supplies itself.
+          this._logger?.debug?.("No bundled schemas for protocol", {
+            protocol,
+          });
+        }
+      } catch (err) {
+        // Warming is an optimisation. A failure here must not stop a server
+        // being constructed — the lazy path will retry and report properly.
+        this._logger?.warn?.("Could not prebuild validator", {
+          protocol,
           error: (err as Error).message,
         });
       }
