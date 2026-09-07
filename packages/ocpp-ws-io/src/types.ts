@@ -747,18 +747,81 @@ interface ServerOptionsBase {
   telemetry?: TelemetryConfig;
 }
 
-/** When strictMode is enabled, protocols MUST be specified */
+/**
+ * Server options with schema validation switched on.
+ *
+ * Selected by setting `strictMode`. `protocols` becomes required, because a
+ * validator is built per subprotocol and the server has to know which ones to
+ * prepare — the compiler enforces it here and the constructor throws as a
+ * backstop for JavaScript callers.
+ */
 interface StrictServerOptions extends ServerOptionsBase {
+  /**
+   * Validate every message against the official OCPP JSON schemas.
+   *
+   * Inbound requests, outbound requests, handler responses and inbound
+   * responses are all checked. A failure throws an `RPCError` carrying the
+   * matching OCPP-J code — `TypeConstraintViolation`,
+   * `OccurrenceConstraintViolation`, `PropertyConstraintViolation`,
+   * `FormatViolation` (`FormationViolation` on 1.6) — and emits
+   * `strictValidationFailure`.
+   *
+   * Pass an array to validate only some of the negotiated protocols:
+   * `strictMode: ["ocpp2.0.1"]` leaves an `ocpp1.6` connection unchecked.
+   *
+   * Validators for these protocols are built when the server is constructed,
+   * so the ~27 ms cost does not land on the first message a charger sends.
+   *
+   * @example
+   * new OCPPServer({ protocols: ["ocpp1.6"], strictMode: true })
+   */
   strictMode: true | OCPPProtocol[];
+
+  /**
+   * Subprotocols this server accepts, most preferred first, offered during the
+   * WebSocket handshake. Required here because `strictMode` is set.
+   *
+   * A route may narrow this with its own `protocols`; the connection uses the
+   * route's list when it has one and this list otherwise.
+   */
   protocols: AnyOCPPProtocol[];
 }
 
-/** When strictMode is disabled or omitted, protocols are optional */
+/**
+ * Server options with schema validation off — the default.
+ *
+ * Nothing checks message shape, so a malformed payload reaches your handler
+ * as-is. Set `strictMode` to switch to {@link StrictServerOptions}.
+ */
 interface RelaxedServerOptions extends ServerOptionsBase {
+  /**
+   * Schema validation. **Off by default** — omit it, or set `false`, and no
+   * message is validated in either direction.
+   *
+   * To enable it, set `true` (or a list of protocols), which also makes
+   * `protocols` required. See {@link StrictServerOptions.strictMode}.
+   */
   strictMode?: false;
+
+  /**
+   * Subprotocols this server accepts, most preferred first, offered during the
+   * WebSocket handshake.
+   *
+   * Optional here. Left unset, the server accepts the client's choice without
+   * constraining it — fine for a plain WebSocket service, but a CSMS normally
+   * names the versions it speaks.
+   */
   protocols?: AnyOCPPProtocol[];
 }
 
+/**
+ * Options for {@link OCPPServer}.
+ *
+ * A union of two shapes: setting `strictMode` selects
+ * {@link StrictServerOptions}, which also requires `protocols`. Omitting it
+ * selects {@link RelaxedServerOptions}, where validation is off and
+ * `protocols` is optional.
+ */
 export type ServerOptions = StrictServerOptions | RelaxedServerOptions;
 
 // ─── Telemetry Config ────────────────────────────────────────────
