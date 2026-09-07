@@ -257,43 +257,34 @@ export class OCPPServerClient extends OCPPClient {
       }
     }
 
-    // Rate Limit Check
     const limits = this._options.rateLimit;
-    if (limits) {
-      // We need to parse just enough to find the method name if there are method rules
-      let method: string | undefined;
-      let pData: unknown;
 
-      if (limits.methods) {
-        try {
-          // JSON.parse accepts a Buffer directly (implicit utf8 toString)
-          pData = JSON.parse(data as unknown as string);
-          if (Array.isArray(pData) && pData[0] === 2) {
-            method = pData[2];
-          }
-        } catch {
-          // Ignore parse errors here, let _onMessage handle bad JSON
-        }
-      }
-
-      if (!this._checkRateLimit(method)) {
-        this._handleRateLimitExceeded(pData || data.toString());
-        return;
-      }
-
-      // If we parsed for rate limiting, pass the pre-parsed data to avoid double-parse
-      if (pData !== undefined) {
-        this._onMessage(data, pData);
+    // Without per-method rules the limiter needs nothing from the payload, so
+    // reject before spending anything on parsing — that is the whole point of
+    // a connection rate limit.
+    if (limits && !limits.methods) {
+      if (!this._checkRateLimit(undefined)) {
+        this._handleRateLimitExceeded(data.toString());
         return;
       }
     }
 
-    // Worker pool path: off-thread parse (awaited to preserve ordering)
+    // Parse, off-thread when a pool is available.
+    //
+    // Extracting the method name for per-method rate limiting used to be done
+    // with a main-thread JSON.parse that then returned early, so configuring
+    // `rateLimit.methods` alongside `workerThreads` left the pool allocated
+    // and permanently idle while every frame parsed on the event loop.
+    const needsMethod = !!limits?.methods;
+    let parsed: unknown;
+    let didParse = false;
+
     if (this._workerPool) {
       const raw = typeof data === "string" ? data : (data as Buffer);
       try {
         const result = await this._workerPool.parse(raw);
-        this._onMessage(data, result.message);
+        parsed = result.message;
+        didParse = true;
       } catch (err) {
         // Falls back to a main-thread parse, which also handles genuinely bad
         // JSON. That fallback used to be completely silent, so a pool that was
@@ -306,12 +297,42 @@ export class OCPPServerClient extends OCPPClient {
             reason,
           });
         }
-        this._onMessage(data);
+        if (needsMethod) {
+          try {
+            parsed = JSON.parse(data as unknown as string);
+            didParse = true;
+          } catch {
+            // Leave it to _onMessage, which reports bad JSON properly.
+          }
+        }
       }
-      return;
+    } else if (needsMethod) {
+      try {
+        // JSON.parse accepts a Buffer directly (implicit utf8 toString)
+        parsed = JSON.parse(data as unknown as string);
+        didParse = true;
+      } catch {
+        // Ignore parse errors here, let _onMessage handle bad JSON
+      }
     }
 
-    // Default path: main-thread parse
+    // Per-method rules need the action name, so this runs after the parse.
+    if (needsMethod) {
+      let method: string | undefined;
+      if (didParse && Array.isArray(parsed) && parsed[0] === 2) {
+        method = parsed[2];
+      }
+      if (!this._checkRateLimit(method)) {
+        this._handleRateLimitExceeded(didParse ? parsed : data.toString());
+        return;
+      }
+    }
+
+    // Hand over the parsed payload when we have one, so nothing parses twice.
+    if (didParse) {
+      this._onMessage(data, parsed);
+      return;
+    }
     this._onMessage(data);
   }
 

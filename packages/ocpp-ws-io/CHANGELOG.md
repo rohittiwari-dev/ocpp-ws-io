@@ -47,6 +47,14 @@ Read these before upgrading — each changes what existing code does.
 - `getStandardValidators(protocols?)` now takes an optional protocol list. Called with no arguments it returns all three, as before.
 ### Fixed
 
+**Configuration wiring**
+
+- **`rateLimit.methods` silently disabled `workerThreads`.** Extracting the action name for per-method limits was a main-thread `JSON.parse` followed by an early return that sat before the worker-pool branch, so a server configured for both — the pairing the docs recommend above 10k connections — ran with a fully allocated, permanently idle pool while every frame parsed on the event loop. The parse now goes through the worker when a pool is present and the method is read off its result. Without per-method rules the limiter still runs before any parse, so a flood is still rejected without paying for one.
+- **`connectionRateLimit` was not per-IP behind a proxy.** The client IP comes from the socket unless a proxy is trusted, and the only way to trust one was `cors({ trustProxy })` — whose own documentation described it as being about `X-Forwarded-Proto`. Behind a load balancer every charger therefore resolved to the proxy address and shared one bucket, turning a per-IP limit into a fleet-wide cap where `limit: 20` rejects the 21st charger regardless of source. `connectionRateLimit.trustProxy` now sets this directly, and the server warns once if it sees an `X-Forwarded-For` while trusting no proxy.
+- **`rateLimit.sampleIntervalMs` was dropped by `reconfigure()`.** The constructor forwarded it but the runtime rebuild passed only three of the AdaptiveLimiter's four knobs, so enabling adaptive limiting at runtime with `sampleIntervalMs: 500` silently sampled every 2000 ms.
+- **`poolSize > 1` without `driverFactory` silently ran a one-connection pool.** The factory is documented as required, but nothing enforced it and nothing warned, while the genuinely required clients throw two lines above. It now warns with the effective pool size.
+- Two Redis option docs described behaviour the code does not have: `poolSize` advertised round-robin, which was deliberately replaced by channel hashing because round-robin let a charger's commands overtake each other, and never mentioned that presence writes bypass the pool entirely; `blockingClient` never said it must be a third dedicated connection, and claimed a reliability benefit when it is a latency one.
+
 **Clustering**
 
 - `sendBatch` had no cross-node path at all. For any charger not on the calling node it returned an array of `undefined` behind a "future enhancement" comment — indistinguishable from "every call failed", and silent. It now routes through `sendToClient`.

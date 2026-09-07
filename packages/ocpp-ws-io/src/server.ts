@@ -99,6 +99,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _httpServers = new Set<Server>();
   /** HTTP servers created by listen() — we own their lifecycle. */
   private _ownedHttpServers = new Set<Server>();
+  /** Set once the proxy-header mismatch has been reported. */
+  private _warnedUntrustedProxy = false;
+
   /** Listeners we attached per server, for removal on close(). */
   private _attachedHttpHandlers = new Map<
     Server,
@@ -1015,7 +1018,31 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     // Connection-level per-IP rate limit
     const connRateLimit = this._options.connectionRateLimit;
     if (connRateLimit) {
-      const ip = getClientIp(req as never, this._globalCORS?.trustProxy);
+      // Rate limiting can trust a proxy without CORS being configured at all,
+      // so its own setting wins and the CORS one is the fallback.
+      const trustProxy =
+        connRateLimit.trustProxy ?? this._globalCORS?.trustProxy;
+      const ip = getClientIp(req as never, trustProxy);
+
+      // An X-Forwarded-For we are not trusting means every charger behind the
+      // proxy collapses onto one bucket and the per-IP limit is really a
+      // fleet-wide cap. Say so once rather than failing silently.
+      if (
+        trustProxy !== true &&
+        !this._warnedUntrustedProxy &&
+        req.headers["x-forwarded-for"] !== undefined
+      ) {
+        this._warnedUntrustedProxy = true;
+        this._logger?.warn?.(
+          "connectionRateLimit is counting per proxy address, not per client",
+          {
+            reason:
+              "X-Forwarded-For is present but no proxy is trusted, so every client behind it shares one bucket",
+            fix: "set connectionRateLimit.trustProxy (or cors({ trustProxy })) if this server is only reachable through a trusted proxy",
+            resolvedIp: ip,
+          },
+        );
+      }
       const now = Date.now();
       let bucket = this._connectionBuckets.get(ip);
       if (!bucket) {
@@ -1966,6 +1993,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           cpuThresholdPercent: rl.cpuThresholdPercent,
           memThresholdPercent: rl.memThresholdPercent,
           cooldownMs: rl.cooldownMs,
+          // Was omitted here while the constructor passed it, so enabling
+          // adaptive limiting at runtime silently reverted to the 2s default.
+          sampleIntervalMs: rl.sampleIntervalMs,
         });
         this._adaptiveLimiter.on(
           "adapted",

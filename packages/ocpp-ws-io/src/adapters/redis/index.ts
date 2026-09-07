@@ -10,7 +10,17 @@ export interface RedisAdapterOptions {
   pubClient?: RedisLikeClient;
   /** Redis client for subscribing — must be a separate connection (required unless `driver` is provided) */
   subClient?: RedisLikeClient;
-  /** Redis client for blocking stream operations (recommended for reliability) */
+  /**
+   * A third, dedicated Redis client used only for blocking stream reads.
+   *
+   * Must be its own connection. `XREAD ... BLOCK` occupies a connection for
+   * the whole block, so sharing `pubClient` here stalls every publish and
+   * presence command behind it for up to a second per poll.
+   *
+   * This is a latency option, not a reliability one: without it delivery still
+   * works, falling back to a non-blocking poll plus a 1s sleep, which adds up
+   * to a second to each leg of a cross-node call.
+   */
   blockingClient?: RedisLikeClient;
   /**
    * Pre-built driver (e.g. a ClusterDriver) used directly as the primary
@@ -43,20 +53,31 @@ export interface RedisAdapterOptions {
    */
   presenceTtlSeconds?: number;
   /**
-   * Number of Redis connections to pool for write operations (default: 1).
-   * Higher values distribute load via round-robin, eliminating TCP head-of-line blocking.
-   * Pub/Sub subscriptions always use the primary driver (pool index 0).
-   * - `1` = current single-connection behavior (backward compatible)
-   * - `N` = round-robin across N connections for xadd/set/publish
+   * Number of Redis connections to pool for message publishing (default: 1),
+   * spreading load across TCP connections instead of queueing behind one.
    *
-   * When poolSize > 1, additional pub/blocking clients are created by the factory.
-   * Provide `driverFactory` to control how additional drivers are created.
+   * A connection is chosen by hashing the destination channel, **not** by
+   * round-robin: everything addressed to one charger goes over one connection,
+   * so its commands cannot overtake each other in flight. Round-robin was
+   * removed for exactly that reason.
+   *
+   * Applies to `publish` and `publishBatch`. Pub/Sub subscriptions and every
+   * presence operation — `setPresence`, `getPresence`, `claimPresence`,
+   * batches and rehydration — always use the primary driver at pool index 0,
+   * so raising this does not spread presence load.
+   *
+   * Requires `driverFactory`; without one the pool stays at a single
+   * connection and the adapter warns.
    */
   poolSize?: number;
   /**
-   * Factory function to create additional driver instances for the pool.
-   * Each call should return a fresh, independent set of Redis connections.
-   * Required when `poolSize > 1`.
+   * Creates the extra driver instances for the pool. Each call must return a
+   * fresh, independent set of Redis connections — reusing one client across
+   * pool entries defeats the point.
+   *
+   * Required when `poolSize > 1`. Without it the pool silently stays at one
+   * connection, so the adapter logs a warning rather than leaving you to
+   * discover it from throughput.
    */
   driverFactory?: () => RedisPubSubDriver;
 }
@@ -138,9 +159,19 @@ export class RedisAdapter implements EventAdapterInterface {
     this._driverPool = [this._driver];
     this._nextPoolIndex = 0;
 
-    if (poolSize > 1 && options.driverFactory) {
-      for (let i = 1; i < poolSize; i++) {
-        this._driverPool.push(options.driverFactory());
+    if (poolSize > 1) {
+      if (options.driverFactory) {
+        for (let i = 1; i < poolSize; i++) {
+          this._driverPool.push(options.driverFactory());
+        }
+      } else {
+        // Silently running a one-connection pool looks identical to a working
+        // one until throughput is measured, so say so.
+        this._log(
+          "warn",
+          "poolSize ignored — driverFactory is required to create pool connections",
+          { poolSize, effectivePoolSize: 1 },
+        );
       }
     }
 

@@ -601,10 +601,18 @@ export interface CORSOptions {
   /** Allowed WebSocket protocol schemes */
   allowedSchemes?: ("ws" | "wss")[];
   /**
-   * Honor `X-Forwarded-Proto` from a reverse proxy when evaluating
-   * `allowedSchemes`. Leave false (default) unless the server is only
-   * reachable through a trusted proxy — otherwise clients can spoof the
-   * header to bypass wss-only rules.
+   * Trust a reverse proxy's forwarding headers. (default: false)
+   *
+   * Two effects: `X-Forwarded-Proto` is honoured when evaluating
+   * `allowedSchemes`, and `X-Forwarded-For` becomes the client IP for
+   * `allowedIPs` and `connectionRateLimit`.
+   *
+   * Leave false unless the server is only reachable through a trusted proxy —
+   * otherwise clients can spoof either header, bypassing wss-only rules or
+   * getting themselves a private rate-limit bucket.
+   *
+   * `connectionRateLimit.trustProxy` overrides this for IP resolution, so
+   * rate limiting can trust a proxy without enabling CORS.
    */
   trustProxy?: boolean;
 }
@@ -683,10 +691,22 @@ interface ServerOptionsBase {
    * before any auth, TLS or JSON parsing occurs — blocks DDoS connection floods in ~1µs.
    * - `limit`: Max upgrade requests per IP within `windowMs` (default: 20)
    * - `windowMs`: Sliding window in ms (default: 10000)
+   * - `trustProxy`: resolve the client IP from `X-Forwarded-For`
+   *
+   * **Behind a proxy, set `trustProxy`.** The client IP comes from the socket
+   * unless a proxy is trusted, so behind a load balancer or ingress every
+   * charger resolves to the proxy's address and shares one bucket — the per-IP
+   * limit silently becomes a fleet-wide cap. The server warns once if it sees
+   * an `X-Forwarded-For` header while no proxy is trusted.
+   *
+   * Only enable it when the server is reachable *only* through a trusted
+   * proxy; otherwise a client can spoof the header to get its own bucket.
+   * Falls back to `cors({ trustProxy })` when not set here.
    */
   connectionRateLimit?: {
     limit: number;
     windowMs: number;
+    trustProxy?: boolean;
   };
   /**
    * Maximum number of inactive sessions to retain in the bounded LRU cache.
