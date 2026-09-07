@@ -531,19 +531,26 @@ export interface RateLimitOptions {
   adaptive?: boolean;
   /**
    * CPU usage percent threshold to begin throttling.
-   * Applies only when `adaptive` is true. (default: 80)
+   * Applies only when `adaptive` is true. (default: 70)
    */
   cpuThresholdPercent?: number;
   /**
-   * Heap usage percent threshold to begin throttling.
+   * Memory usage percent threshold to begin throttling. This is process-wide
+   * memory against the applicable limit — the cgroup limit when one is set,
+   * otherwise host memory — not V8 heap.
    * Applies only when `adaptive` is true. (default: 85)
    */
   memThresholdPercent?: number;
   /**
    * Time (ms) both CPU and memory must stay below their thresholds
-   * before restoring the original rate. (default: 5000)
+   * before restoring the original rate. (default: 10000)
    */
   cooldownMs?: number;
+  /**
+   * How often (ms) to sample CPU and memory.
+   * Applies only when `adaptive` is true. (default: 2000)
+   */
+  sampleIntervalMs?: number;
 }
 
 // ─── Router Options ──────────────────────────────────────────────

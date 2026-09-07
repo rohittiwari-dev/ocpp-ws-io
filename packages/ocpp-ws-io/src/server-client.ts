@@ -69,8 +69,14 @@ export class OCPPServerClient extends OCPPClient {
   /**
    * Per-connection inbound pipeline. Serializes async pre-processing
    * (plugin onBeforeReceive, rate-limit parse, worker-pool parse) so
-   * messages are dispatched in wire order — OCPP transaction semantics
+   * messages are DISPATCHED in wire order — OCPP transaction semantics
    * depend on it (e.g. StartTransaction before StopTransaction).
+   *
+   * The guarantee ends at dispatch. An async handler is not awaited here, so
+   * two handlers can interleave once the first hits an await, and they may
+   * finish out of order. Handlers whose side effects must not overlap have to
+   * serialize themselves — per-identity, so one slow charger cannot stall the
+   * rest.
    */
   private _inboundChain: Promise<void> = Promise.resolve();
   /** Frames queued on the chain, used to pause the socket when it falls behind. */

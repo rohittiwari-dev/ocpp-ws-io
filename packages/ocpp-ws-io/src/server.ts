@@ -217,6 +217,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         cpuThresholdPercent: rl.cpuThresholdPercent,
         memThresholdPercent: rl.memThresholdPercent,
         cooldownMs: rl.cooldownMs,
+        sampleIntervalMs: rl.sampleIntervalMs,
       });
       this._adaptiveLimiter.on(
         "adapted",

@@ -1083,7 +1083,7 @@ export class OCPPClient<
    */
   sendRaw(message: string): void {
     if (this._state === OPEN && this._ws) {
-      this._ws.send(message);
+      this._safeSend(this._ws, message);
     } else if (this._state === CONNECTING) {
       this._bufferOutbound(message);
     } else {
@@ -1444,7 +1444,7 @@ export class OCPPClient<
             return result;
           }
 
-          this._ws?.send(JSON.stringify(response));
+          this._safeSend(this._ws, JSON.stringify(response));
           // Emit outbound CALLRESULT message event for observability
           this._emitMessageEvent(response, "OUT", {
             type: "outgoing_result",
@@ -1483,7 +1483,7 @@ export class OCPPClient<
             throw err;
           }
 
-          this._ws?.send(JSON.stringify(errorResponse));
+          this._safeSend(this._ws, JSON.stringify(errorResponse));
           // Emit outbound CALLERROR message event for observability
           this._emitMessageEvent(errorResponse, "OUT", {
             type: "outgoing_error",
@@ -1642,13 +1642,13 @@ export class OCPPClient<
         allowSend
           .then((allowed) => {
             if (allowed !== false) {
-              this._ws?.send(JSON.stringify(errorResponse));
+              this._safeSend(this._ws, JSON.stringify(errorResponse));
               this.emit("callError", errorResponse);
             }
           })
           .catch(() => {});
       } else if (allowSend !== false) {
-        this._ws.send(JSON.stringify(errorResponse));
+        this._safeSend(this._ws, JSON.stringify(errorResponse));
         this.emit("callError", errorResponse);
       }
     }
