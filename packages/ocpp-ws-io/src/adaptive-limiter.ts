@@ -1,5 +1,86 @@
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
 import { cpus, freemem, totalmem } from "node:os";
+
+// ── Container-aware resource limits ───────────────────────────────
+//
+// os.cpus() / totalmem() describe the HOST. Inside a container with a quota
+// they are the wrong denominator entirely, which left the adaptive limiter
+// either blind (a small container on a big host never looks busy) or
+// permanently tripped (a busy host makes every container throttle). cgroup v2
+// exposes the real limits; v1 paths are checked as a fallback, and the host
+// values are used when neither is present.
+
+function readFirst(paths: string[]): string | null {
+  for (const p of paths) {
+    try {
+      return readFileSync(p, "utf8").trim();
+    } catch {
+      // Not this one.
+    }
+  }
+  return null;
+}
+
+let cachedCpuLimit: number | null = null;
+
+/** Cores this process may use, honouring a cgroup CPU quota. */
+export function cpuLimit(): number {
+  if (cachedCpuLimit !== null) return cachedCpuLimit;
+  const hostCores = Math.max(1, cpus().length);
+
+  // cgroup v2: "<quota> <period>", or "max <period>" when unlimited.
+  const v2 = readFirst(["/sys/fs/cgroup/cpu.max"]);
+  if (v2) {
+    const [quota, period] = v2.split(/\s+/);
+    const q = Number(quota);
+    const p = Number(period);
+    if (quota !== "max" && Number.isFinite(q) && Number.isFinite(p) && p > 0) {
+      cachedCpuLimit = Math.max(0.1, Math.min(hostCores, q / p));
+      return cachedCpuLimit;
+    }
+  }
+
+  // cgroup v1: separate quota and period files.
+  const q1 = readFirst(["/sys/fs/cgroup/cpu/cpu.cfs_quota_us"]);
+  const p1 = readFirst(["/sys/fs/cgroup/cpu/cpu.cfs_period_us"]);
+  if (q1 && p1) {
+    const q = Number(q1);
+    const p = Number(p1);
+    if (q > 0 && p > 0) {
+      cachedCpuLimit = Math.max(0.1, Math.min(hostCores, q / p));
+      return cachedCpuLimit;
+    }
+  }
+
+  cachedCpuLimit = hostCores;
+  return cachedCpuLimit;
+}
+
+/** Memory in use and available to this process, honouring a cgroup limit. */
+export function memoryUsage(): { used: number; total: number } {
+  const v2Max = readFirst(["/sys/fs/cgroup/memory.max"]);
+  const v2Cur = readFirst(["/sys/fs/cgroup/memory.current"]);
+  if (v2Max && v2Cur && v2Max !== "max") {
+    const total = Number(v2Max);
+    const used = Number(v2Cur);
+    if (total > 0 && Number.isFinite(used)) return { used, total };
+  }
+
+  const v1Max = readFirst(["/sys/fs/cgroup/memory/memory.limit_in_bytes"]);
+  const v1Cur = readFirst(["/sys/fs/cgroup/memory/memory.usage_in_bytes"]);
+  if (v1Max && v1Cur) {
+    const total = Number(v1Max);
+    const used = Number(v1Cur);
+    // v1 reports an absurd sentinel when unlimited; ignore it.
+    if (total > 0 && total < Number.MAX_SAFE_INTEGER / 2 && used > 0) {
+      return { used, total };
+    }
+  }
+
+  const total = totalmem();
+  return { used: total - freemem(), total };
+}
 
 // ─── Adaptive Rate Limiter ──────────────────────────────────────
 //
@@ -74,17 +155,21 @@ export class AdaptiveLimiter extends EventEmitter {
     // ── CPU measurement ──
     const cpuUsage = process.cpuUsage(this._prevCpuUsage ?? undefined);
     const elapsedMs = now - this._prevTimestamp;
-    // CPU usage is in microseconds; normalize to percentage across all cores
+    // Divide by the cores this process may actually use. os.cpus() reports the
+    // HOST's core count, so a container limited to 1 core on a 64-core machine
+    // looked 1/64th as busy as it was — the limiter never engaged however hard
+    // the process was working.
     const cpuPercent =
-      ((cpuUsage.user + cpuUsage.system) / 1000 / elapsedMs / cpus().length) *
-      100;
+      ((cpuUsage.user + cpuUsage.system) / 1000 / elapsedMs / cpuLimit()) * 100;
     this._prevCpuUsage = process.cpuUsage();
     this._prevTimestamp = now;
 
     // ── Memory measurement ──
-    const total = totalmem();
-    const free = freemem();
-    const memPercent = ((total - free) / total) * 100;
+    // Prefer the cgroup limit over host memory for the same reason: host RAM
+    // says nothing about this container's headroom, and on a busy shared host
+    // it made every container throttle for someone else's usage.
+    const { used, total } = memoryUsage();
+    const memPercent = (used / total) * 100;
 
     // ── Decision logic ──
     const cpuOverload = cpuPercent > this._cpuThreshold;

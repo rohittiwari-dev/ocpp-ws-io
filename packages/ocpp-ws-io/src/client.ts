@@ -1881,6 +1881,10 @@ export class OCPPClient<
     enqueuedAt: number;
   }> = [];
   private _backpressureTimer: ReturnType<typeof setInterval> | null = null;
+  /** Frames held while the socket is over threshold, before dropping oldest. */
+  private static readonly _BACKPRESSURE_MAX_QUEUE = 1000;
+  /** How long a frame may wait for the peer to drain before it is failed. */
+  private static readonly _BACKPRESSURE_MAX_WAIT_MS = 10_000;
 
   /**
    * Protected hook for plugins to intercept outbound messages before serialization.
@@ -1925,6 +1929,20 @@ export class OCPPClient<
           bufferedAmount: ws.bufferedAmount,
         });
       }
+      // Bound the queue. Under sustained backpressure this array grew without
+      // limit, holding every frame in memory for a peer that is not reading.
+      if (
+        this._backpressureQueue.length >= OCPPClient._BACKPRESSURE_MAX_QUEUE
+      ) {
+        const dropped = this._backpressureQueue.shift();
+        dropped?.cb?.(
+          new Error("Backpressure queue full — oldest frame dropped"),
+        );
+        this._logger?.warn?.("Backpressure queue full — dropping oldest", {
+          identity: this._identity,
+          max: OCPPClient._BACKPRESSURE_MAX_QUEUE,
+        });
+      }
       this._backpressureQueue.push({ data, cb, enqueuedAt: Date.now() });
       this._startBackpressureDrain(ws);
       return;
@@ -1947,11 +1965,22 @@ export class OCPPClient<
       const now = Date.now();
       while (this._backpressureQueue.length > 0) {
         const head = this._backpressureQueue[0];
-        const timedOut = now - head.enqueuedAt >= 10_000;
-        if (
-          ws.bufferedAmount <= OCPPClient._BACKPRESSURE_THRESHOLD ||
-          timedOut
-        ) {
+        if (!head) break;
+
+        if (now - head.enqueuedAt >= OCPPClient._BACKPRESSURE_MAX_WAIT_MS) {
+          // Aged out. This used to send anyway, which flushed the whole
+          // backlog into a socket that was already over the threshold — the
+          // timeout defeated the backpressure it existed to apply. A frame the
+          // peer has not been able to accept for ten seconds is stale for OCPP
+          // purposes, so the caller is told instead.
+          this._backpressureQueue.shift();
+          head.cb?.(
+            new Error("Backpressure timeout — peer did not drain in time"),
+          );
+          continue;
+        }
+
+        if (ws.bufferedAmount <= OCPPClient._BACKPRESSURE_THRESHOLD) {
           this._backpressureQueue.shift();
           ws.send(head.data, head.cb);
         } else {

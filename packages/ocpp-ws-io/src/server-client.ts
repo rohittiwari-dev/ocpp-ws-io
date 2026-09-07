@@ -73,6 +73,11 @@ export class OCPPServerClient extends OCPPClient {
    * depend on it (e.g. StartTransaction before StopTransaction).
    */
   private _inboundChain: Promise<void> = Promise.resolve();
+  /** Frames queued on the chain, used to pause the socket when it falls behind. */
+  private _inboundDepth = 0;
+  private _inboundPaused = false;
+  private static readonly _INBOUND_HIGH_WATER = 100;
+  private static readonly _INBOUND_LOW_WATER = 25;
 
   private _checkRateLimit(method?: string): boolean {
     const limits = this._options.rateLimit;
@@ -157,10 +162,45 @@ export class OCPPServerClient extends OCPPClient {
   private _attachServerWebsocket(ws: WebSocket): void {
     ws.on("message", (data: RawData) => {
       this._recordActivity();
+
+      // Apply back-pressure to the peer while the chain is behind.
+      //
+      // Every arriving frame used to be appended unconditionally, and each one
+      // is held in memory until its turn. A sender faster than the processing
+      // stage — a slow plugin hook, an off-thread parse, a busy event loop —
+      // therefore grew this chain without limit, turning a fast charger into
+      // unbounded heap growth on the server. Pausing the socket lets TCP push
+      // the backlog back to the sender instead of buffering it here.
+      this._inboundDepth++;
+      if (
+        !this._inboundPaused &&
+        this._inboundDepth >= OCPPServerClient._INBOUND_HIGH_WATER
+      ) {
+        this._inboundPaused = true;
+        ws.pause();
+        this._logger?.warn?.("Inbound backlog high — pausing socket", {
+          identity: this.identity,
+          depth: this._inboundDepth,
+        });
+      }
+
       this._inboundChain = this._inboundChain
         .then(() => this._processInboundMessage(data))
         .catch(() => {
           // _processInboundMessage handles its own errors; never break the chain
+        })
+        .finally(() => {
+          this._inboundDepth--;
+          if (
+            this._inboundPaused &&
+            this._inboundDepth <= OCPPServerClient._INBOUND_LOW_WATER
+          ) {
+            this._inboundPaused = false;
+            ws.resume();
+            this._logger?.debug?.("Inbound backlog drained — resuming socket", {
+              identity: this.identity,
+            });
+          }
         });
     });
 
@@ -248,8 +288,18 @@ export class OCPPServerClient extends OCPPClient {
       try {
         const result = await this._workerPool.parse(raw);
         this._onMessage(data, result.message);
-      } catch {
-        // Parse failed — fall through to _onMessage which handles bad JSON
+      } catch (err) {
+        // Falls back to a main-thread parse, which also handles genuinely bad
+        // JSON. That fallback used to be completely silent, so a pool that was
+        // saturated, wedged or dead looked exactly like normal operation while
+        // every frame quietly reverted to the main thread.
+        const reason = (err as Error)?.message ?? String(err);
+        if (!/JSON|Unexpected token/i.test(reason)) {
+          this._logger?.warn?.("Worker parse unavailable — parsing inline", {
+            identity: this.identity,
+            reason,
+          });
+        }
         this._onMessage(data);
       }
       return;
