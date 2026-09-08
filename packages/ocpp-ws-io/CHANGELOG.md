@@ -1,124 +1,118 @@
 # ocpp-ws-io
 
-## Unreleased
+## v2.3.2 - Leap Towards Stability (2026-09-08)
 
-Review remediation. One security fix, several defects that were silent in clustered deployments, and a small amount of new API. Every fix carries a regression test that was confirmed to fail without it.
+A full static review of the package, worked subsystem by subsystem. One authentication bypass, a class of defects that were silent rather than wrong, and the API surface corrected where it described behaviour the code did not have. Every fix carries a regression test confirmed to fail without it; the suite went from 840 to 1050.
 
 ### Security
 
-- **Unmatched paths bypassed route auth whenever a global middleware existed.** The unknown-path 404 was an `else if` hanging off the auth branch. Global middleware routers (`server.use()`) always match but never mark a terminal route, so a single global middleware made the gate unreachable — and an unmatched path has no route auth callback, so the socket was upgraded without being authenticated. Any deployment combining `server.use()` with `server.route().auth()` was affected.
+- **An unmatched path was upgraded without authentication whenever a global `server.use()` middleware existed** — global middleware routers always match but never mark a terminal route, so the unknown-path 404 became unreachable and a path with no route had no auth callback to run. Any deployment combining `server.use()` with `server.route().auth()` was affected.
 
-### Behaviour changes
+### Breaking changes
 
-Read these before upgrading — each changes what existing code does.
-
-- **`replayBufferPlugin` no longer answers `{ status: "Accepted" }` for a command it only queued.** In OCPP, `Accepted` is the charge point's own commitment to carry a command out. Returning it for a command that never left made a parked command indistinguishable from a delivered one, so a CSMS reported a session as starting when nothing had reached the charger. The synthetic response is now `{ status: "Queued", queued: true, queuedAt, note }`, narrowable with the exported `isQueuedOffline()`. **Code branching on `status === "Accepted"` will now take its other path** — which is the correction, but check those call sites. `syntheticResponse: false` throws the original offline error, as before.
-
-- **Route auth now takes precedence over a global `server.auth()`.** Auth callbacks were collected global → trie → regex into a first-wins slot, so a catch-all auth latched before the trie was consulted and every route-specific callback was silently discarded. The global callback is now used only when the matched route defines none.
-- **Registering the same plugin object twice now registers it once.** It used to double every hook: double-counted metrics, duplicate webhooks, two `onClosing` calls on shutdown. Two *distinct* instances sharing a name (two webhook plugins posting to different URLs) are still both kept — deduplication is by identity, never by name.
-- **`close()` detaches the event adapter.** `disconnect()` tears down its subscriptions and connections, and nothing re-subscribed on a later `listen()`, so a restart cycle looked clustered while cross-node RPC was silently dead. A restarted server now runs single-node, and warns, until `setAdapter()` is called again.
-- **The cross-node call grace period is now 2000 ms** (was 1000). A cross-node call crosses the adapter twice — request out, result back — so the grace has to cover a round trip. With the shipped Redis adapter's `BLOCK 1000` per direction, the old value made the origin give up while a good response was still in flight, reporting a `TimeoutError` for a call that had succeeded. Configurable via `ServerOptions.remoteCallGraceMs`.
-- **`broadcast()` and `broadcastBatch()` return a `BroadcastResult`** instead of `void`. Source-compatible — existing `await` callers are unaffected.
-- **The presence heartbeat now refreshes three times per TTL** (was twice), with ±10% jitter and an overlap guard. At TTL/2 a single slow tick landed the next write exactly at expiry, dropping every connection on that node out of cluster routing.
-- **Reconnect backoff is floored at 50 ms.** `backoffMin: 0` collapsed the exponential term to zero and produced a tight reconnect loop.
-- **Connection pooling selects by destination, not round-robin.** `poolSize > 1` round-robined per call, so consecutive messages for the same target went over different TCP connections and could arrive out of order — for OCPP unicast, a charger's commands reordering in transit. One destination now stays pinned to one connection while different destinations still spread across the pool.
-- **A remote timeout now arrives as `TimeoutError`**, not `GenericError`, so `catch (e) { if (e instanceof TimeoutError) }` behaves the same locally and cross-node.
-
-### Performance
-
-- **`date-time` validation is ~1.5× faster, and accepts exactly what it did before.** Format checking was 85% of the cost of validating a message — measured at 12.4 µs of 14.6 µs on a MeterValues carrying twenty timestamps — and `date-time` is 142 of the 144 format constraints across all three schema versions. It is now a bounded regex plus a calendar check instead of ajv-formats' default implementation. Conformance is pinned by a test that compares it against ajv-formats `full` mode across leap years, month and day bounds, offset bounds and leap seconds. ajv-formats stays registered for every other format, so custom schemas using `email`, `uri`, `ipv4` and the rest are unaffected. ajv-formats' `fast` mode was rejected outright: it admits month 13 and hour 25.
-- **Validators are built when the server is constructed, not when the first message needs one.** Building a protocol's validator costs ~27 ms and compiling an action's schema another ~3.5 ms, against 0.9 µs to actually run one. Left lazy that landed on a charger's first `BootNotification`, on the event loop — and after a deploy that is every charger at once. Warming happens in the `OCPPServer` constructor rather than in `listen()`, so it also covers the `handleUpgrade` getter and the Express, Fastify, Hono and NestJS adapters that call through it. Only the protocols named by `protocols` (or by `strictMode`, when given a list) are built, and only when strict mode is on; with validation off nothing is built at all.
-- **Validators are cached per protocol instead of as one all-versions batch.** A connection speaks one subprotocol, so building all three cost two AJV instances and two full schema registrations that were never consulted — 0.69 MB of 1.45 MB, 48%, for a server speaking a single version. The validator for the negotiated subprotocol is now built on first use and shared process-wide. Schemas within a validator are still compiled lazily per action, so an action never received is still never compiled.
+- **`replayBufferPlugin` answers `{ status: "Queued" }` instead of `{ status: "Accepted" }`** for a command it only queued, since `Accepted` is the charge point's own commitment to carry it out — narrow it with the new `isQueuedOffline()`, and check any call site branching on `status === "Accepted"`.
+- **Route-level `auth()` now wins over a global `server.auth()`** instead of the first callback found winning, so a permissive global auth no longer silently discards every route-specific one.
+- **Registering the same plugin object twice now registers it once** rather than doubling every hook; two distinct instances sharing a name are still both kept.
+- **`close()` detaches the event adapter**, so a restarted server runs single-node and warns until `setAdapter()` is called again, rather than looking clustered while cross-node RPC was dead.
+- **Connection pooling selects by destination rather than round-robin**, so one charger's commands cannot overtake each other in flight.
+- **A remote timeout arrives as `TimeoutError`**, not `GenericError`, so `catch (e) { e instanceof TimeoutError }` behaves the same locally and cross-node.
+- **Connection-level rate limiting runs before plugin `onBeforeReceive`**, so a plugin no longer observes messages the limiter dropped — `onRateLimitExceeded` is the hook for watching drops.
+- **`broadcast()` and `broadcastBatch()` return a `BroadcastResult`** instead of `void`; existing `await` callers are unaffected.
 
 ### Added
 
-- `ServerOptions.remoteCallGraceMs` — grace added to `callTimeoutMs` for cross-node calls, covering adapter round-trip latency.
-- `ClientOptions.connectTimeoutMs` (default 30000) — bounds the WebSocket upgrade. Without it a peer that accepts TCP but never completes the handshake parked `connect()` in CONNECTING forever, and no retry was ever scheduled because the attempt never failed.
-- `ClientOptions.retryInitialConnect` (default `false`) — retry in the background when the *first* `connect()` fails. `reconnect` only ever governed an established connection dropping, so a charge point booting during a CSMS outage threw once and never retried. Off by default: enabling it unconditionally leaves timers behind for callers that handle their own retry.
-- `AuthAccept.identity` — override the connection identity from an auth callback. The default identity is the last path segment, so `/tenant-a/CP001` and `/tenant-b/CP001` collided on one registry entry and one presence key. Multi-tenant servers can now namespace by tenant.
-- `EventAdapterInterface.removePresenceIfOwned()` and `.claimPresence()` — optional presence fencing, implemented atomically on Redis via Lua and directly on `InMemoryAdapter`. Without them a node that no longer owns an identity could delete or overwrite the entry another node had just written. Adapters that omit them keep the old unconditional behaviour.
-- `RedisPubSubDriver.evalScript()` — optional Lua execution, used for the fencing above. Provided by all three shipped drivers.
+- `ClientOptions.connectTimeoutMs` (30000), `retryInitialConnect` (`false`) and `handlerGraceMs` (1000) — bound the WebSocket upgrade, retry a failed *first* connect, and let an early CALL wait for a handler that is about to be registered.
+- `ServerOptions.remoteCallGraceMs` and `pluginShutdownTimeoutMs` (5000) — cover adapter round-trip latency on cross-node calls, and stop one hung plugin blocking shutdown forever.
+- `ServerOptions.connectionRateLimit.trustProxy` — resolve the client IP from `X-Forwarded-For` without configuring CORS; the server warns once if it sees that header while trusting no proxy.
+- `AuthAccept.identity` — override the connection identity from an auth callback, so `/tenant-a/CP001` and `/tenant-b/CP001` stop colliding on one registry entry.
+- `EventAdapterInterface.removePresenceIfOwned()` / `.claimPresence()`, `RedisPubSubDriver.evalScript()` — optional presence fencing, atomic on Redis via Lua; adapters that omit them keep the old unconditional behaviour.
+- `RedisAdapterOptions.logger` and `ClusterDriverOptions.blockingReads` (`true`) — route transport errors into structured logging, and open a dedicated connection for blocking XREAD instead of polling with a 1s sleep.
+- `getStandardValidator(protocol)`, `getStandardProtocols()` and an optional protocol list on `getStandardValidators()` — build only the validators a server actually needs.
+- `webhookPlugin`: `maxConcurrent`, `includePayload`, and a `"message"` event that can now be enabled at all.
+- `mqttPlugin.onPublishError` and `amqpPlugin.onError` — optional, observational, and unset by default, so a bridge plugin that has stopped delivering can say so.
+- `replayBufferPlugin`: `maxQueueAgeMs` (300000), `replayable`, `maxReplayAttempts` (3), plus exported `SAFE_TO_REPLAY`, `isQueuedOffline()` and `QueuedOfflineResponse`.
 - `Queue.clear()` — reject everything still queued.
-- `ClientOptions.handlerGraceMs` (default 1000) — startup window during which an inbound CALL waits for its handler instead of being rejected.
-- `RedisAdapterOptions.logger` — where the adapter reports transport problems. Errors previously went to a hardcoded `console.error`, invisible to structured logging.
-- `ClusterDriverOptions.blockingReads` (default `true`) — opens a dedicated connection for blocking XREAD. `hasBlockingClient` was hardcoded false, so every Redis Cluster deployment polled with a 1s sleep instead, adding up to a second of latency to each leg of every cross-node call.
-- `BroadcastResult` — local delivered/failed counts plus a `remotePublished` flag. That flag means "handed to the adapter", never "delivered": broadcast reaches other nodes over fire-and-forget pub/sub.
 
-- `getStandardValidator(protocol)` — the cached validator for one protocol, or `null` if no schemas ship for it.
-- `getStandardProtocols()` — the protocols with bundled OCPP schemas.
-- `getStandardValidators(protocols?)` now takes an optional protocol list. Called with no arguments it returns all three, as before.
 ### Fixed
 
-**Configuration wiring**
+**Clustering and presence**
 
-- **`rateLimit.methods` silently disabled `workerThreads`.** Extracting the action name for per-method limits was a main-thread `JSON.parse` followed by an early return that sat before the worker-pool branch, so a server configured for both — the pairing the docs recommend above 10k connections — ran with a fully allocated, permanently idle pool while every frame parsed on the event loop. The parse now goes through the worker when a pool is present and the method is read off its result. Without per-method rules the limiter still runs before any parse, so a flood is still rejected without paying for one.
-- **`connectionRateLimit` was not per-IP behind a proxy.** The client IP comes from the socket unless a proxy is trusted, and the only way to trust one was `cors({ trustProxy })` — whose own documentation described it as being about `X-Forwarded-Proto`. Behind a load balancer every charger therefore resolved to the proxy address and shared one bucket, turning a per-IP limit into a fleet-wide cap where `limit: 20` rejects the 21st charger regardless of source. `connectionRateLimit.trustProxy` now sets this directly, and the server warns once if it sees an `X-Forwarded-For` while trusting no proxy.
-- **`rateLimit.sampleIntervalMs` was dropped by `reconfigure()`.** The constructor forwarded it but the runtime rebuild passed only three of the AdaptiveLimiter's four knobs, so enabling adaptive limiting at runtime with `sampleIntervalMs: 500` silently sampled every 2000 ms.
-- **`poolSize > 1` without `driverFactory` silently ran a one-connection pool.** The factory is documented as required, but nothing enforced it and nothing warned, while the genuinely required clients throw two lines above. It now warns with the effective pool size.
-- Two Redis option docs described behaviour the code does not have: `poolSize` advertised round-robin, which was deliberately replaced by channel hashing because round-robin let a charger's commands overtake each other, and never mentioned that presence writes bypass the pool entirely; `blockingClient` never said it must be a third dedicated connection, and claimed a reliability benefit when it is a latency one.
-
-**Clustering**
-
-- `sendBatch` had no cross-node path at all. For any charger not on the calling node it returned an array of `undefined` behind a "future enhancement" comment — indistinguishable from "every call failed", and silent. It now routes through `sendToClient`.
-- Three presence writes were unfenced, all reachable under ordinary reconnect churn: the disconnect handler guarded ownership only locally, so after a charger moved from node A to node B, A's close event deleted B's entry; `_onUnicast` deleted the registry entry for any target it did not hold, so a message queued in a stream while the charger migrated wiped the new owner's entry; and the heartbeat re-claimed every local identity unconditionally, so a node holding a half-open socket kept stealing an identity back and routing flapped every cycle.
-- Bulk presence calls are chunked at 1000. At the advertised 100k connections a refresh was one 100k-key MGET and one 100k-command pipeline per cycle.
-- Cross-node results were accepted from any publisher. The target node is now recorded with the pending call and replies from anyone else are discarded.
-- An adapter without `getPresence()` lost cross-node routing silently. `setAdapter()` now warns.
+- `sendBatch` had no cross-node path at all and returned an array of `undefined` for any charger not on the calling node.
+- Three presence writes were unfenced under ordinary reconnect churn, so a node could delete or steal back an identity another node had just claimed.
+- Bulk presence calls are chunked at 1000, where a 100k-connection node previously issued one 100k-key MGET per cycle.
+- Cross-node results were accepted from any publisher; replies now have to come from the node the call was sent to.
+- The presence heartbeat refreshes three times per TTL with jitter and an overlap guard, instead of landing the next write exactly at expiry.
+- An adapter without `getPresence()` lost cross-node routing in silence; `setAdapter()` now warns.
 
 **Redis adapter**
 
-- `ClusterDriver.xaddBatch` built one cluster pipeline across per-node stream keys. Those keys carry no hash tags, so any batch addressing more than one node is cross-slot: ioredis either rejects the pipeline or returns per-command errors, which were discarded so total failure looked like success. Results are now inspected and only failed entries retried individually.
-- `natMap` was nested inside `redisOptions`, where ioredis never reads it — NAT mapping did nothing in exactly the Docker and Kubernetes setups the option exists for.
-- `onError` bound only the command connection, so an `error` event on the subscriber was an uncaught exception — a Redis failover crashed every node.
-- Presence rehydration was triggered on `reconnecting`, which ioredis emits while the connection is still down. It ran against a dead socket, threw into an empty catch, and was never retried. It now binds `ready`.
-- `publishBatch` never set the stream TTL lease that `publish` sets, so every node id that received a batch left a stream key behind forever.
-
-**Redis adapter internals**
-
-- Pipeline and multi results were discarded. Both clients return per-command results rather than rejecting, so `exec()` resolved happily even when every command failed — a total failure was reported to the caller as success, with presence silently not written. Both drivers now inspect the reply and throw on the first failed command.
-- `disconnect()` never closed the blocking client: a leaked Redis connection per adapter, and an open socket keeping the Node process alive after shutdown. Fixed in both drivers and in `ClusterDriver`.
-- Presence batches and MGETs were unbounded — one refresh was a single command covering every identity, occupying the Redis event loop for everyone else on the instance. Both drivers now split at 500.
-- An empty `XREAD` reply spun the poll loop. ioredis can return an empty array where node-redis returns nil, and the loop treated any truthy result as data, skipping its backoff sleep entirely.
-- Stream-poll errors were swallowed with no log, counter or health signal, so a reader that had been failing for hours looked identical to an idle one while cross-node delivery into that node was gone. Failures are logged on the first occurrence and every 60th, recovery is logged, and the consecutive-failure count is exposed through `metrics()`.
+- `xaddBatch` pipelined across hash slots, which Redis Cluster rejects — failed entries are now retried individually rather than replaying the whole batch.
+- `natMap` was nested inside `redisOptions`, where ioredis never looks for it, so the Docker and Kubernetes setups it exists for were silently unfixed.
+- The subscriber connection had no `error` listener, so a routine Redis failover crashed every CSMS node at once.
+- Presence rehydration was triggered on `reconnecting`, which fires while the connection is still down, so it threw into an empty catch and never re-ran.
+- `publishBatch` omitted the TTL lease `publish` sets, leaving a permanent stream key behind on every pod restart.
+- Pipeline results were discarded, so total failure reported as success; the blocking client was never closed; batches were unbounded; an empty XREAD hot-spun; poll failures were invisible.
 
 **Node client**
 
-- A post-open socket error was re-emitted with no listener guard. Node throws when `error` is emitted with nothing listening, so any socket error after the connection opened crashed a process that had not attached a handler.
-- `_handleCallResult` / `_handleCallError` are async and were called without `await` or `catch`, so a throwing middleware or response listener became an unhandled rejection.
-- A call whose `AbortSignal` had already aborted was still transmitted. `addEventListener("abort")` never fires for an already-aborted signal, and the listener is only attached once the call reaches the front of the concurrency queue — so a call aborted while queued went on the wire and nothing rejected it either.
-- `close()` could be undone by a reconnect. It clears a pending reconnect timer, but once that timer has fired there is nothing left to clear: the attempt connected anyway and left a closed client alive in CONNECTING.
-- Offline-queued calls were stranded on close. They hold the caller's resolve/reject and nothing settled them, and they cannot time out because the call timeout is only armed once a call is sent.
-- The outbound buffer was unbounded and never cleared. It is now capped at 1000 frames, dropping oldest first.
-- Pong timers were overwritten rather than guarded. When `pongTimeoutMs` exceeds `pingIntervalMs` the next ping orphaned the live handle, which still fired and terminated whatever socket was current — including a healthy reconnect.
-- The concurrency queue leaked slots. A task throwing synchronously escaped `_drain()` before `.finally()` attached, so `_running` was never decremented — a handful of those and the queue deadlocked.
+- Offline-queued calls never settled after `close()` or after reconnects were exhausted.
+- `close()` during an in-flight reconnect resurrected the client and left it stuck in CONNECTING.
+- A post-open socket error was re-emitted with no listener guard, crashing the process.
+- An aborted call was still transmitted if it was waiting in the concurrency or offline queue.
+- Pong timers were overwritten without clearing, so a stale timer terminated the next healthy socket.
+- `_outboundBuffer` was never cleared or bounded, replaying stale messages on a later `connect()`.
+- Backpressure covered outbound CALLs only — every CALLRESULT and CALLERROR went out on a raw send.
+- Reconnect backoff is floored at 50 ms, where `backoffMin: 0` produced a tight loop.
+- A CALL arriving before handlers were registered was answered `NotImplemented`, telling the peer a charger does not support an action it does.
+
+**Handshake and sockets**
+
+- The server echoed the client's first subprotocol rather than the negotiated one, telling the peer it had agreed a version the server was not speaking.
+- `maxConnections` overshot under concurrent async auth, and three separate file-descriptor leaks let sockets accumulate.
+- `X-Forwarded-For` was never parsed, so every client behind a proxy resolved to the proxy's address.
+
+**Ordering, backpressure and the worker pool**
+
+- A stalled worker wedged a connection permanently and silently; `postMessage` to a dead worker hung; a crash-respawn loop had no backoff.
+- The per-connection inbound chain was unbounded and the socket was never paused, so a fast sender became unbounded heap growth.
+- `AdaptiveLimiter` measured the host rather than the container, leaving it blind or permanently tripped under cgroup limits.
+- Setting `rateLimit.methods` silently disabled `workerThreads` — the pairing the docs recommend above 10k connections ran with a fully allocated, idle pool.
+- `rateLimit.sampleIntervalMs` was honoured by the constructor and dropped by `reconfigure()`.
+- `RouterConfig.rateLimit.adaptive` was accepted by the type and ignored.
+
+**Validation**
+
+- `date-time` was 85% of the cost of validating a message and is now roughly 1.5× faster, accepting exactly what it did before — pinned by a test comparing it against `ajv-formats` across leap years, month and day bounds, offsets and leap seconds.
+- Validators are cached per protocol and built when the server is constructed, moving a measured 45 ms off the event loop at the moment a reconnect herd arrives.
 
 **Plugins**
 
-- `amqp` and `redis-pubsub` dropped every message event. Both emit sub-typed names (`message.inbound`, `message:inbound`) but gate on `events`, which is configured with base names (`message`), so nothing ever matched.
-- `webhook` never sent a shutdown notification. It enables `close` by default but only emitted `closing`, which the default list does not allow, and it fire-and-forgot the request instead of returning the promise the server awaits.
-- Route-level `rateLimit.adaptive` was accepted by the type and silently ignored. The adaptive limiter samples host CPU and memory, so it is process-wide by nature; setting it on a route now logs a warning at `listen()`.
+- An async hook that rejected became an unhandled rejection, which terminates the process by default — one plugin with a briefly unreachable backend took down the CSMS; fourteen dispatch sites also swallowed synchronous throws with an empty catch.
+- A duplicate-identity eviction fires the replacement's `onConnection` before the evicted socket's `onDisconnect`, so six plugins keyed by identity string had the late disconnect delete the survivor's state — `otel` ended the replacement's span, leaving the live connection untraced.
+- `close()` tore every plugin down but `listen()` never re-initialised them, so a restarted server came back with its plugins dead and the next `close()` sent them a second `onClose`.
+- A plugin registered while chargers were connected received their `onBeforeSend`, `onBeforeReceive` and eventual `onDisconnect` for connections it never saw open.
+- `onBeforeSend` and `onBeforeReceive` failed open silently, so a security plugin throwing on every message admitted everything with nothing recorded.
+- `/metrics` wrote its 200 header before awaiting `getCustomMetrics()`, so a slow plugin held the scrape open with no body and no way back to an error status.
+- `circuitBreakerPlugin` captured its `CircuitInfo` once per connection while the store is LRU-bounded, so above that bound the breaker silently stopped fast-failing.
+- `replayBufferPlugin` lost a command on any failure that did not look like a closed socket, and replayed a stale one whenever the charger returned — a `RemoteStartTransaction` queued for one driver and delivered an hour later reaches a connector where somebody else has since started a session.
+- `piiRedactorPlugin` did not cover inbound CALLRESULT or CALLERROR, so unredacted payloads reached broker plugins running `includePayload`; responses this server *sends* still cannot be redacted, and that limit is now documented.
+- `amqp`, `redis-pubsub` and `webhook` silently dropped every `message` event, and the webhook `close` notification was never sent.
+- `webhookPlugin` signed only the body, so a captured request replayed forever, and built its idempotency key from event plus millisecond, so chargers connecting together shared one key.
+- `redis-pubsub` swallowed publish failures before the async worker could report them, and `mode: "stream"` degraded to fire-and-forget PUBLISH in silence on clients without a lowercase `xadd`.
+- `kafkaPlugin` reported a session duration of zero for reconnecting chargers.
 
 **Documentation**
 
-- The README's only clustering example passed an ioredis client positionally into a constructor that takes an options object, and threw.
-- The Redis Cluster guide used `driverFactory`, which is only consulted when `poolSize > 1`, so the `ClusterDriver` was silently discarded and the adapter built its driver from two empty objects.
-- The durability claim now distinguishes the two paths: cross-node unicast is delivered over Redis Streams, `broadcast` is fire-and-forget pub/sub.
-- The client quickstart registers a handler before `connect()`. See "Known behaviour" below.
+- Both clustering examples threw: the README passed an ioredis client positionally to a constructor taking an options object, and the Redis Cluster guide built a `ClusterDriver` that was then never used.
+- The Kafka `events` default was documented as "all events" while the code publishes four of six, so `auth_failed` and `eviction` never fired unless named.
+- `ServerOptions.strictMode` and `protocols` had no documentation at all, making the opt-in default undiscoverable without reading source.
+- The plugin hook table said `onInit` fires when the server starts listening, and four ordering rules that this release turned into real defects were written down nowhere.
 
 ### Removed
 
-- `EventBuffer`. Added in the initial documentation commit and never wired in: not imported anywhere, not exported, not a build entry, and absent from every published tarball. Its stated purpose was buffering during connection setup, which it would not have achieved — both sides attach socket listeners synchronously, and the residual gap is one layer up at dispatch.
-
-- **Off-thread AJV validation in the parse worker.** It was implemented, typed and unit-tested, but nothing in the library ever supplied the `schemaInfo` that would activate it, and `ParseResult.validationError` was never read. Wiring it as designed would have been actively harmful: `schemaInfo` is structured-cloned on every `postMessage`, so it would copy 5.2 ms of OCPP 2.1 schemas per frame to save 0.016 ms of validation. It also only guarded `message[0] === 2`, so it never validated CALLRESULTs and was never a substitute for the main-thread path. `workerThreads` is unaffected and still offloads `JSON.parse`, which is the expensive part — 60 µs against 16 µs on a 13 KB MeterValues.
-### Deprecated
-
-- `ClusterDriverOptions.prefix`. Documented as driving hash-tag generation but never read. Key prefixing is configured on the adapter via `RedisAdapterOptions.prefix`.
-
-### Fixed (client startup)
-
-- **A CALL arriving before handlers were registered got a false `NotImplemented`.** The socket dispatches as soon as it opens, so a CSMS that sends `Reset` the instant a charger appears could beat the application's `handle()` calls. The client answered `NotImplemented` — telling the peer the charger does not support an action it *does* support. Measured before the fix: registering directly after `await client.connect()` was already too late, and registering after any further `await` was too late as well, so the only working order was register-then-connect. That ordering was neither enforced nor discoverable, and the failure was intermittent.
-
-  A CALL with no matching handler now waits for one during a bounded startup window (`ClientOptions.handlerGraceMs`, default 1000&nbsp;ms, `0` disables), and is answered the moment the handler is registered. Outside that window an unknown action is still rejected immediately, so genuinely unsupported actions are never delayed. The wait is capped at 100 parked messages so an unknown-action flood cannot pile up.
+- `EventBuffer` — added in the initial documentation commit and never wired in: not imported, not exported, not a build entry, absent from every published tarball.
+- Off-thread AJV validation in the parse worker — implemented and unit-tested, but nothing ever supplied the `schemaInfo` that activates it, and wiring it as designed would have cloned 5.2 ms of OCPP 2.1 schemas per frame to save 0.016 ms of validation. `workerThreads` is unaffected and still offloads `JSON.parse`.
+- `ClusterDriverOptions.prefix` — since deleting it would break compilation for anyone setting it this is notified here.
 
 ## v2.3.1 - Subpath Type Declarations (2026-09-05)
 
@@ -501,6 +495,7 @@ This patch release encapsulates several major registry layout optimizations and 
 - # Reliability, Middleware, and Type Safety
 
   ## 🚀 Features
+
   - **Redis Streams for Unicast**: Replaced Pub/Sub for node-to-node communication. This ensures **zero message loss** during temporary node restarts or network instability.
   - **Middleware System**: Added `client.use()` and server-side middleware for intercepting and modifying OCPP messages.
   - **Enhanced Logging**:
