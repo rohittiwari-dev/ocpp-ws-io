@@ -138,6 +138,40 @@ export class OCPPServerClient extends OCPPClient {
 
   // ─── Websocket Override & Hooks ─────────────────────────────────
 
+  /**
+   * Hook failures already reported on this connection.
+   *
+   * A plugin that throws once usually throws on every message, and these hooks
+   * run per message — logging each one would turn a broken plugin into a log
+   * flood at wire rate. The first failure per plugin and hook is reported and
+   * the rest are counted by their absence.
+   */
+  private _reportedPluginFailures = new Set<string>();
+
+  /**
+   * Report an interception hook that failed.
+   *
+   * Both hooks fail open: a broken plugin must not stop OCPP traffic. Failing
+   * open *silently* is the defect — a security plugin throwing on every
+   * message let everything through with nothing said anywhere.
+   */
+  private _reportInterceptionFailure(
+    pluginName: string,
+    hook: "onBeforeSend" | "onBeforeReceive",
+    err: unknown,
+  ): void {
+    const key = `${pluginName}:${hook}`;
+    if (this._reportedPluginFailures.has(key)) return;
+    this._reportedPluginFailures.add(key);
+
+    this._logger?.error?.(`Plugin ${hook} failed — message allowed through`, {
+      identity: this.identity,
+      name: pluginName,
+      error: (err as Error)?.message ?? String(err),
+      note: "logged once per plugin and hook for this connection",
+    });
+  }
+
   protected override _invokeBeforeSend(
     message: import("./types.js").OCPPMessage,
   ): boolean | Promise<boolean> {
@@ -152,12 +186,19 @@ export class OCPPServerClient extends OCPPClient {
           const result = p.onBeforeSend(this, message);
           if (result instanceof Promise) {
             promises.push(
-              result.then((res) => res !== false).catch(() => true),
+              result
+                .then((res) => res !== false)
+                .catch((err) => {
+                  this._reportInterceptionFailure(p.name, "onBeforeSend", err);
+                  return true;
+                }),
             );
           } else if (result === false) {
             return false;
           }
-        } catch (_err) {}
+        } catch (err) {
+          this._reportInterceptionFailure(p.name, "onBeforeSend", err);
+        }
       }
     }
 
@@ -276,8 +317,11 @@ export class OCPPServerClient extends OCPPClient {
           } else if (result === false) {
             return;
           }
-        } catch (_err) {
-          // Don't let plugin errors stop message processing
+        } catch (err) {
+          // Fail open — a broken plugin must not stop message processing — but
+          // say so, or a plugin rejecting every message admits everything with
+          // nothing recorded anywhere.
+          this._reportInterceptionFailure(p.name, "onBeforeReceive", err);
         }
       }
     }
