@@ -139,7 +139,13 @@ export function mqttPlugin(options: MqttPluginOptions): OCPPPlugin {
     options.events ?? ["connect", "disconnect", "message", "security"],
   );
   const qos = options.qos ?? 0;
-  const connectionTimes = new Map<string, number>();
+  // Keyed by the client object rather than the identity string. A duplicate
+  // identity evicts the older connection, and the new connection's
+  // onConnection fires before the evicted socket's onDisconnect — so keyed by
+  // identity, that late disconnect reads and deletes the entry the
+  // replacement had just written. A WeakMap also releases an evicted client
+  // without waiting for its close to arrive.
+  const connectionTimes = new WeakMap<object, number>();
 
   function buildTopic(event: string, identity?: string): string {
     if (options.topicBuilder) return options.topicBuilder(event, identity);
@@ -186,7 +192,7 @@ export function mqttPlugin(options: MqttPluginOptions): OCPPPlugin {
     name: "mqtt",
 
     onConnection(client) {
-      connectionTimes.set(client.identity, Date.now());
+      connectionTimes.set(client, Date.now());
       if (!allowedEvents.has("connect")) return;
 
       publish(buildTopic("connect", client.identity), {
@@ -199,15 +205,15 @@ export function mqttPlugin(options: MqttPluginOptions): OCPPPlugin {
 
     onDisconnect(client, code, reason) {
       if (!allowedEvents.has("disconnect")) {
-        connectionTimes.delete(client.identity);
+        connectionTimes.delete(client);
         return;
       }
 
-      const startTime = connectionTimes.get(client.identity);
+      const startTime = connectionTimes.get(client);
       const durationSec = startTime
         ? Math.round((Date.now() - startTime) / 1000)
         : 0;
-      connectionTimes.delete(client.identity);
+      connectionTimes.delete(client);
 
       publish(buildTopic("disconnect", client.identity), {
         identity: client.identity,
@@ -300,7 +306,7 @@ export function mqttPlugin(options: MqttPluginOptions): OCPPPlugin {
     },
 
     onClose() {
-      connectionTimes.clear();
+      // connectionTimes is a WeakMap — entries are released with their clients.
       // Graceful MQTT disconnect
       try {
         options.client.end(false);

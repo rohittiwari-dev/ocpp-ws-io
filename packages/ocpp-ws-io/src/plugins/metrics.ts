@@ -125,7 +125,13 @@ export function metricsPlugin(options?: MetricsPluginOptions): MetricsPlugin {
   let totalValidationFailures = 0;
   let totalSecurityEvents = 0;
 
-  const connectionTimes = new Map<string, number>();
+  // Keyed by the client object rather than the identity string. A duplicate
+  // identity evicts the older connection, and the new connection's
+  // onConnection fires before the evicted socket's onDisconnect — so keyed by
+  // identity, that late disconnect reads and deletes the entry the
+  // replacement had just written. A WeakMap also releases an evicted client
+  // without waiting for its close to arrive.
+  const connectionTimes = new WeakMap<object, number>();
 
   function getMetrics(): MetricsSnapshot {
     return {
@@ -185,17 +191,17 @@ export function metricsPlugin(options?: MetricsPluginOptions): MetricsPlugin {
       if (activeConnections > peakConnections) {
         peakConnections = activeConnections;
       }
-      connectionTimes.set(client.identity, Date.now());
+      connectionTimes.set(client, Date.now());
     },
 
     onDisconnect(client) {
       totalDisconnections++;
       activeConnections = Math.max(0, activeConnections - 1);
 
-      const startTime = connectionTimes.get(client.identity);
+      const startTime = connectionTimes.get(client);
       if (startTime) {
         totalDurationMs += Date.now() - startTime;
-        connectionTimes.delete(client.identity);
+        connectionTimes.delete(client);
       }
     },
 
@@ -336,7 +342,7 @@ export function metricsPlugin(options?: MetricsPluginOptions): MetricsPlugin {
         clearInterval(snapshotTimer);
         snapshotTimer = null;
       }
-      connectionTimes.clear();
+      // connectionTimes is a WeakMap — entries are released with their clients.
     },
   };
 

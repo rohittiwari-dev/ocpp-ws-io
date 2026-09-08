@@ -123,7 +123,13 @@ export function redisPubSubPlugin(
   );
   const maxLen = options.maxStreamLength ?? 10000;
   const serialize = options.serialize ?? JSON.stringify;
-  const connectionTimes = new Map<string, number>();
+  // Keyed by the client object rather than the identity string. A duplicate
+  // identity evicts the older connection, and the new connection's
+  // onConnection fires before the evicted socket's onDisconnect — so keyed by
+  // identity, that late disconnect reads and deletes the entry the
+  // replacement had just written. A WeakMap also releases an evicted client
+  // without waiting for its close to arrive.
+  const connectionTimes = new WeakMap<object, number>();
 
   // `mode: "stream"` falls back to PUBLISH when the client has no lowercase
   // `xadd`, which silently trades durability for fire-and-forget. ioredis has
@@ -198,7 +204,7 @@ export function redisPubSubPlugin(
     },
 
     onConnection(client) {
-      connectionTimes.set(client.identity, Date.now());
+      connectionTimes.set(client, Date.now());
 
       send("connect", {
         identity: client.identity,
@@ -209,11 +215,11 @@ export function redisPubSubPlugin(
     },
 
     onDisconnect(client, code, reason) {
-      const startTime = connectionTimes.get(client.identity);
+      const startTime = connectionTimes.get(client);
       const durationSec = startTime
         ? Math.round((Date.now() - startTime) / 1000)
         : 0;
-      connectionTimes.delete(client.identity);
+      connectionTimes.delete(client);
 
       send("disconnect", {
         identity: client.identity,
@@ -283,7 +289,7 @@ export function redisPubSubPlugin(
     },
 
     onClose() {
-      connectionTimes.clear();
+      // connectionTimes is a WeakMap — entries are released with their clients.
       try {
         if (options.client.quit) {
           options.client.quit();

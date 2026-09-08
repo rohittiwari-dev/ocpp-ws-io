@@ -62,8 +62,18 @@ interface TracerLike {
  */
 export function otelPlugin(options?: OtelPluginOptions): OCPPPlugin {
   let tracer: TracerLike | null = options?.tracer ?? null;
+  // Keyed by the client object rather than the identity string. A duplicate
+  // identity evicts the older connection, and the new connection's
+  // onConnection fires before the evicted socket's onDisconnect — so keyed
+  // by identity, that late disconnect ended the span the replacement had
+  // just started, leaving the live connection untraced and the trace closed
+  // at the wrong moment.
+  //
+  // A Map rather than a WeakMap because shutdown walks every open span, which
+  // a WeakMap cannot do. Entries are removed on disconnect and cleared on
+  // close, so it does not accumulate.
   const connectionSpans = new Map<
-    string,
+    object,
     { span: SpanLike; startTime: number }
   >();
 
@@ -109,11 +119,11 @@ export function otelPlugin(options?: OtelPluginOptions): OCPPPlugin {
       span.setAttribute("ocpp.protocol", client.protocol ?? "unknown");
       span.setAttribute("net.peer.ip", client.handshake.remoteAddress);
 
-      connectionSpans.set(client.identity, { span, startTime: Date.now() });
+      connectionSpans.set(client, { span, startTime: Date.now() });
     },
 
     onDisconnect(client, code) {
-      const entry = connectionSpans.get(client.identity);
+      const entry = connectionSpans.get(client);
       if (!entry) return;
 
       const durationMs = Date.now() - entry.startTime;
@@ -122,7 +132,7 @@ export function otelPlugin(options?: OtelPluginOptions): OCPPPlugin {
       entry.span.setStatus({ code: 1 }); // SpanStatusCode.OK
       entry.span.end();
 
-      connectionSpans.delete(client.identity);
+      connectionSpans.delete(client);
     },
 
     // ─── Message-Level Spans ───────────────────────────────────────
@@ -134,7 +144,7 @@ export function otelPlugin(options?: OtelPluginOptions): OCPPPlugin {
       // Only create spans for CALL messages (type 2) to avoid excessive spans
       if (msgType !== 2) {
         // For CALLRESULT/CALLERROR, add as event to connection span
-        const entry = connectionSpans.get(client.identity);
+        const entry = connectionSpans.get(client);
         if (entry) {
           entry.span.addEvent(
             msgType === 3 ? "ocpp.call_result" : "ocpp.call_error",
@@ -171,7 +181,7 @@ export function otelPlugin(options?: OtelPluginOptions): OCPPPlugin {
     // ─── Error Recording ───────────────────────────────────────────
 
     onError(client, error) {
-      const entry = connectionSpans.get(client.identity);
+      const entry = connectionSpans.get(client);
       if (!entry) return;
 
       entry.span.recordException(error);
@@ -181,7 +191,7 @@ export function otelPlugin(options?: OtelPluginOptions): OCPPPlugin {
     },
 
     onHandlerError(client, method, error) {
-      const entry = connectionSpans.get(client.identity);
+      const entry = connectionSpans.get(client);
       if (!entry) return;
 
       entry.span.recordException(error);
@@ -192,7 +202,7 @@ export function otelPlugin(options?: OtelPluginOptions): OCPPPlugin {
     },
 
     onBadMessage(client, rawMessage, error) {
-      const entry = connectionSpans.get(client.identity);
+      const entry = connectionSpans.get(client);
       if (!entry) return;
 
       entry.span.recordException(error);
@@ -206,7 +216,7 @@ export function otelPlugin(options?: OtelPluginOptions): OCPPPlugin {
     },
 
     onValidationFailure(client, _message, error) {
-      const entry = connectionSpans.get(client.identity);
+      const entry = connectionSpans.get(client);
       if (!entry) return;
 
       entry.span.recordException(error);
@@ -216,7 +226,7 @@ export function otelPlugin(options?: OtelPluginOptions): OCPPPlugin {
     },
 
     onRateLimitExceeded(client) {
-      const entry = connectionSpans.get(client.identity);
+      const entry = connectionSpans.get(client);
       if (!entry) return;
 
       entry.span.addEvent("ocpp.rate_limit_exceeded");
@@ -225,14 +235,14 @@ export function otelPlugin(options?: OtelPluginOptions): OCPPPlugin {
     // ─── Lifecycle & Performance Events ────────────────────────────
 
     onPongTimeout(client) {
-      const entry = connectionSpans.get(client.identity);
+      const entry = connectionSpans.get(client);
       if (!entry) return;
 
       entry.span.addEvent("ocpp.pong_timeout");
     },
 
     onBackpressure(client, bufferedAmount) {
-      const entry = connectionSpans.get(client.identity);
+      const entry = connectionSpans.get(client);
       if (!entry) return;
 
       entry.span.addEvent("ocpp.backpressure", {
@@ -241,7 +251,7 @@ export function otelPlugin(options?: OtelPluginOptions): OCPPPlugin {
     },
 
     onEviction(evictedClient, newClient) {
-      const entry = connectionSpans.get(evictedClient.identity);
+      const entry = connectionSpans.get(evictedClient);
       if (!entry) return;
 
       entry.span.addEvent("ocpp.evicted", {

@@ -45,13 +45,19 @@ export function sessionLogPlugin(options?: SessionLogOptions): OCPPPlugin {
   const isStandard = level === "standard" || level === "verbose";
   const isVerbose = level === "verbose";
 
-  const connectionTimes = new Map<string, number>();
+  // Keyed by the client object rather than the identity string. A duplicate
+  // identity evicts the older connection, and the new connection's
+  // onConnection fires before the evicted socket's onDisconnect — so keyed by
+  // identity, that late disconnect reads and deletes the entry the
+  // replacement had just written. A WeakMap also releases an evicted client
+  // without waiting for its close to arrive.
+  const connectionTimes = new WeakMap<object, number>();
 
   return {
     name: "session-log",
 
     onConnection(client) {
-      connectionTimes.set(client.identity, Date.now());
+      connectionTimes.set(client, Date.now());
       logger.info("[session] connected", {
         identity: client.identity,
         ip: client.handshake.remoteAddress,
@@ -60,11 +66,11 @@ export function sessionLogPlugin(options?: SessionLogOptions): OCPPPlugin {
     },
 
     onDisconnect(client, code, reason) {
-      const startTime = connectionTimes.get(client.identity);
+      const startTime = connectionTimes.get(client);
       const durationSec = startTime
         ? Math.round((Date.now() - startTime) / 1000)
         : 0;
-      connectionTimes.delete(client.identity);
+      connectionTimes.delete(client);
 
       logger.info("[session] disconnected", {
         identity: client.identity,
@@ -167,7 +173,7 @@ export function sessionLogPlugin(options?: SessionLogOptions): OCPPPlugin {
     },
 
     onClose() {
-      connectionTimes.clear();
+      // connectionTimes is a WeakMap — entries are released with their clients.
     },
   };
 }
