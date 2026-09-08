@@ -10,6 +10,7 @@ A full static review of the package, worked subsystem by subsystem. One authenti
 
 ### Breaking changes
 
+- **`piiRedactorPlugin` no longer redacts outbound payloads by default (`outgoing` is now `false`).** It redacts the payload rather than a logging copy, and an outbound message is built from the payload *after* middleware runs — so redacting `idTag`, the key the plugin's own example used, sent `"***REDACTED***"` to the charge point and broke every `RemoteStartTransaction`. Enable it only for keys the charger does not act on; redact at the sink otherwise.
 - **`replayBufferPlugin` answers `{ status: "Queued" }` instead of `{ status: "Accepted" }`** for a command it only queued, since `Accepted` is the charge point's own commitment to carry it out — narrow it with the new `isQueuedOffline()`, and check any call site branching on `status === "Accepted"`.
 - **Route-level `auth()` now wins over a global `server.auth()`** instead of the first callback found winning, so a permissive global auth no longer silently discards every route-specific one.
 - **Registering the same plugin object twice now registers it once** rather than doubling every hook; two distinct instances sharing a name are still both kept.

@@ -24,14 +24,30 @@ export interface PiiRedactorOptions {
   replacement?: string;
 
   /**
-   * Enable/disable redaction for incoming messages.
-   * @default true
+   * Redact inbound payloads. (default: true)
+   *
+   * The redacted value is what your handlers receive, since they read the same
+   * payload — see the caveat on the plugin itself.
    */
   incoming?: boolean;
 
   /**
-   * Enable/disable redaction for outgoing messages.
-   * @default true
+   * Redact outbound payloads. (default: **false**)
+   *
+   * ⚠️ **This changes what is transmitted to the charge point, not just what is
+   * logged.** The wire message is built from the payload after middleware has
+   * run — deliberately, since a middleware transforming outbound calls is a
+   * supported feature — so redacting here sends the replacement string to the
+   * charger. With `idTag` among `sensitiveKeys`, a `RemoteStartTransaction`
+   * arrives carrying `"***REDACTED***"` as the tag and the charge point tries
+   * to authorize that, which is not a logging problem but a broken command.
+   *
+   * It defaulted to `true` up to and including v2.3.1, which silently broke
+   * remote start for anyone redacting `idTag` — the very key the examples used.
+   *
+   * Leave it off and redact at the sink instead: a broker plugin's
+   * `includePayload`, or your logger. Enable it only when every key in
+   * `sensitiveKeys` is one the charge point does not need to act on.
    */
   outgoing?: boolean;
 }
@@ -44,22 +60,28 @@ export interface PiiRedactorOptions {
  * the context payload with a redacted deep clone. Handlers, downstream plugins and
  * observability tools all read that clone, so the real value stops there.
  *
- * ⚠️ **Caveat:** redacting a key on **incoming** messages also hides it from your
- * handlers, since they read the same redacted payload. The default `sensitiveKeys`
- * includes `idTag` — if your handlers authorize by `idTag` (`Authorize`,
- * `StartTransaction`), either pass `incoming: false` or drop `idTag` from
- * `sensitiveKeys` so the handler still receives the real value.
+ * ⚠️ **This redacts the payload itself, not a copy taken for logging.** Whatever
+ * reads the payload after the redactor sees the replacement, which is the point on
+ * the way in and a hazard on the way out:
  *
- * ⚠️ **Coverage:** redaction applies to the four message types that run through the
+ * - **Inbound** — your handlers receive the redacted value. Redacting `idTag` means
+ *   an `Authorize` handler cannot see the tag it is meant to authorize, so either
+ *   set `incoming: false` or leave such keys out of `sensitiveKeys`.
+ * - **Outbound** — `outgoing` is off by default because enabling it changes what is
+ *   *transmitted*: the wire message is built after middleware runs, so a redacted
+ *   `idTag` is sent to the charge point as `"***REDACTED***"` and the command fails.
+ *
+ * ⚠️ **Coverage:** redaction reaches the four message types that run through the
  * middleware chain — inbound and outbound CALL, and inbound CALLRESULT / CALLERROR.
- * **Responses this server sends are not redacted:** outbound CALLRESULT and CALLERROR
+ * **Responses this server sends are not covered:** outbound CALLRESULT and CALLERROR
  * never enter the chain, so a broker plugin configured with `includePayload` receives
- * them verbatim. Redact those at the sink if they can carry sensitive values.
+ * them verbatim. Redact those at the sink.
  *
  * @example
  * ```ts
+ * // Keys the charge point never needs to act on.
  * server.plugin(piiRedactorPlugin({
- *   sensitiveKeys: ['idTag', 'password', 'authorizationKey'],
+ *   sensitiveKeys: ['password', 'authorizationKey'],
  *   replacement: '[HIDDEN]'
  * }));
  * ```
@@ -81,7 +103,9 @@ export function piiRedactorPlugin(options: PiiRedactorOptions): OCPPPlugin {
   const keys = new Set(options.sensitiveKeys);
   const replacement = options.replacement ?? "***REDACTED***";
   const incoming = options.incoming ?? true;
-  const outgoing = options.outgoing ?? true;
+  // Off by default: redacting here alters what reaches the charge point, not
+  // just what is logged. See the option's documentation.
+  const outgoing = options.outgoing ?? false;
 
   /**
    * Recursively clones and redacts an object.
