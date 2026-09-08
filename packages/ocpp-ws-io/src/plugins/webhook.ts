@@ -23,9 +23,11 @@ export interface WebhookPluginOptions {
    * Which events to send.
    * @default ["init", "connect", "disconnect", "close"]
    *
-   * `"message"` fires once per OCPP message in either direction. That is one
-   * HTTP request per Heartbeat and per MeterValues, so at any real fleet size
-   * it needs `maxConcurrent` set — see that option.
+   * `"message"` fires once per OCPP message in **either direction**, so a
+   * single request/response pair is two webhooks: one for the inbound CALL and
+   * one for the outbound CALLRESULT. Budget for roughly twice the OCPP message
+   * rate, and set `maxConcurrent` — at any real fleet size this is one HTTP
+   * request per Heartbeat and per MeterValues.
    */
   events?: WebhookEvent[];
   /** Custom HTTP headers to include (e.g. Authorization). */
