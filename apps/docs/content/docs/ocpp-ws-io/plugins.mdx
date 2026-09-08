@@ -79,12 +79,12 @@ Every plugin implements the `OCPPPlugin` interface. The system provides 22 lifec
 ### 1. Connection & Server Lifecycle
 | Hook | Signature | Description |
 | :--- | :--- | :--- |
-| `onInit` | `(server)` | Server starts listening and plugin is mounted. |
-| `onConnection` | `(client)` | New charging station connects and is fully initialized. |
-| `onDisconnect` | `(client, code, reason)` | Client disconnects normally. |
-| `onEviction` | `(evicted, new)` | Client is forcibly disconnected because another client connected with the same identity. |
-| `onClosing` | `()` | Pre-shutdown hook before connections are drained. |
-| `onClose` | `()` | Server shutting down. |
+| `onInit` | `(server)` | Plugin is registered — **not** when the server starts listening. Runs again on `listen()` when a closed server is restarted, since `close()` has torn the plugin down. |
+| `onConnection` | `(client)` | New charging station connects and is fully initialized. Also fired once per already-connected client when a plugin is registered on a running server, so its per-connection state is not missing connections it never saw open. |
+| `onDisconnect` | `(client, code, reason)` | Client disconnects normally. Messages already queued on that connection's inbound chain are still delivered to `onMessage` afterwards, so a few observations can trail the disconnect. |
+| `onEviction` | `(evicted, new)` | Client is forcibly disconnected because another client connected with the same identity. The replacement's `onConnection` fires **before** the evicted socket's `onDisconnect`, so key any per-connection state by the client object rather than by identity. |
+| `onClosing` | `()` | Pre-shutdown hook before connections are drained. Awaited, but bounded by `pluginShutdownTimeoutMs` (default 5000) — a hook that overruns is abandoned so one plugin cannot hang shutdown. |
+| `onClose` | `()` | Server shutting down. Also bounded by `pluginShutdownTimeoutMs`. A server that is later restarted gets a fresh `onInit`, so treat this as a teardown that may be followed by another setup. |
 | `onReconfigure`| `(newOpts, oldOpts)` | Server configuration is hot-reloaded. |
 
 ### 2. Message Interception & Observability

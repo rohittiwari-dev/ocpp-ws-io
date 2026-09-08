@@ -1162,9 +1162,28 @@ export interface OCPPPlugin {
 
   // ─── Existing Lifecycle Hooks ───────────────────────────────────
 
-  /** Called when the plugin is registered via server.plugin(plugin) */
+  /**
+   * Called when the plugin is registered via `server.plugin(plugin)` — not
+   * when the server starts listening.
+   *
+   * Called a second time by `listen()` when a closed server is restarted,
+   * because `close()` has already sent this plugin `onClosing` and `onClose`.
+   * Treat it as "set up now", and expect it to be paired with an `onClose`
+   * that may itself be followed by another `onInit`.
+   */
   onInit?(server: import("./server.js").OCPPServer): void | Promise<void>;
-  /** Called for each new client connection after auth succeeds */
+  /**
+   * Called for each new client connection after auth succeeds.
+   *
+   * Also called once per already-connected client when the plugin is
+   * registered on a running server, so per-connection state is not left
+   * missing connections the plugin never saw open.
+   *
+   * On a duplicate-identity eviction the replacement's `onConnection` fires
+   * **before** the evicted socket's `onDisconnect`. Key per-connection state
+   * by this client object rather than by `client.identity`, or the evicted
+   * socket's late disconnect will delete the replacement's entry.
+   */
   onConnection?(
     client: import("./server-client.js").OCPPServerClient,
   ): void | Promise<void>;
@@ -1182,6 +1201,12 @@ export interface OCPPPlugin {
   /**
    * Called for every OCPP message (IN + OUT, CALL + CALLRESULT + CALLERROR).
    * Provides unified observability over all message traffic.
+   *
+   * Inbound messages are processed through a per-connection chain, so a few
+   * can still arrive here after that client's `onDisconnect` — anything read
+   * from per-connection state should tolerate the entry already being gone.
+   * Draining the chain first would hold the disconnect behind up to a hundred
+   * queued frames, which costs more than the trailing observations are worth.
    */
   onMessage?(
     client: import("./server-client.js").OCPPServerClient,
