@@ -128,13 +128,22 @@ export function circuitBreakerPlugin(
     name: "circuit-breaker",
 
     onConnection(client) {
-      const circuit = getCircuit(client.identity);
-
       // Install middleware to intercept outgoing calls
       client.use(async (ctx, next) => {
         if (ctx.type !== "outgoing_call") {
           return next();
         }
+
+        // Looked up per call rather than captured once in onConnection.
+        //
+        // `circuits` is LRU-bounded, so above maxTrackedClients a new identity
+        // evicts an older one. A captured reference survived that eviction and
+        // went on being mutated, while transition() — which looks the circuit
+        // up by identity — created a fresh entry and wrote its state there.
+        // Failures then accumulated on an object nothing consulted, and the
+        // breaker silently stopped opening for exactly the connections a
+        // busy server had most of.
+        const circuit = getCircuit(client.identity);
 
         // Check concurrent call limit
         if (circuit.concurrentCalls >= maxConcurrent) {

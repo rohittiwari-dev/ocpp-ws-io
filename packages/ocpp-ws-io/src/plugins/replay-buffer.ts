@@ -4,6 +4,14 @@ import type { MiddlewareContext, OCPPPlugin } from "../types.js";
 export interface ReplayRedisLike {
   rpush(key: string, ...values: string[]): Promise<number>;
   lpop(key: string): Promise<string | null>;
+  /**
+   * Push back onto the head of the queue.
+   *
+   * Optional so an existing client object keeps working, but without it a
+   * command whose replay fails cannot be returned to the queue and is dropped
+   * — see `maxReplayAttempts`. Both ioredis and node-redis provide it.
+   */
+  lpush?(key: string, ...values: string[]): Promise<number>;
 }
 
 export interface ReplayBufferOptions {
@@ -35,6 +43,22 @@ export interface ReplayBufferOptions {
    * @default 200
    */
   flushDelayMs?: number;
+
+  /**
+   * How many times one queued command may be replayed before it is dropped.
+   * @default 3
+   *
+   * A command is removed from Redis before it is replayed, and the interceptor
+   * only re-queues errors that look like a closed socket. Anything else — a
+   * timeout, a CALLERROR from the charger, a rejection from another plugin —
+   * used to lose the command outright, in a plugin whose whole purpose is not
+   * losing them. A failed replay is now returned to the head of the queue
+   * until this many attempts have been made, then dropped with an error.
+   *
+   * Requires `lpush` on the Redis client. Set `0` for the previous
+   * behaviour of one attempt and no return to the queue.
+   */
+  maxReplayAttempts?: number;
 
   /**
    * Optional logger. Falls back to silent no-op if not provided.
@@ -70,6 +94,7 @@ export function replayBufferPlugin(options: ReplayBufferOptions): OCPPPlugin {
   const synthetic = options.syntheticResponse ?? true;
   const flushConcurrency = options.flushConcurrency ?? 5;
   const flushDelayMs = options.flushDelayMs ?? 200;
+  const maxReplayAttempts = options.maxReplayAttempts ?? 3;
   const log = options.logger;
 
   // Track active flush operations so we can wait on shutdown
@@ -77,6 +102,17 @@ export function replayBufferPlugin(options: ReplayBufferOptions): OCPPPlugin {
 
   function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * How many times this command has already been replayed.
+   *
+   * The count rides in a fifth slot appended to the queued frame. Entries
+   * written before this existed have four, and read as zero attempts.
+   */
+  function readAttempts(parsed: unknown[]): number {
+    const n = parsed[4];
+    return typeof n === "number" && Number.isFinite(n) ? n : 0;
   }
 
   return {
@@ -149,6 +185,11 @@ export function replayBufferPlugin(options: ReplayBufferOptions): OCPPPlugin {
       const flushPromise = (async () => {
         try {
           let inflight = 0;
+          // Replays are fired without awaiting, so failures are collected here
+          // and returned to the queue once the drain has finished. Pushing back
+          // inside the loop would hand the very next lpop the same message.
+          const pending: Promise<void>[] = [];
+          const requeue: string[] = [];
 
           // eslint-disable-next-line no-constant-condition
           while (true) {
@@ -168,13 +209,41 @@ export function replayBufferPlugin(options: ReplayBufferOptions): OCPPPlugin {
             if (!Array.isArray(parsed) || parsed[0] !== 2) continue;
 
             // Send through the client's call() — it will assign a fresh MessageID
-            client.call(parsed[2], parsed[3]).catch((callErr) => {
-              log?.warn?.(
-                `[replay-buffer] Flush call failed for ${client.identity}/${parsed[2]}:`,
-                callErr,
-              );
-              // The interceptor middleware will re-queue if the client disconnected again
-            });
+            pending.push(
+              client.call(parsed[2], parsed[3]).then(
+                () => {},
+                (callErr) => {
+                  // The interceptor re-queues a closed socket. Every other
+                  // failure reaches here having already been lpop'd, so
+                  // without this the command is simply gone.
+                  const attempts = readAttempts(parsed) + 1;
+                  const exhausted =
+                    maxReplayAttempts <= 0 || attempts >= maxReplayAttempts;
+
+                  if (exhausted || !redis.lpush) {
+                    log?.error?.(
+                      `[replay-buffer] Dropping queued ${parsed[2]} for ${client.identity} after ${attempts} attempt(s):`,
+                      callErr,
+                    );
+                    return;
+                  }
+
+                  log?.warn?.(
+                    `[replay-buffer] Replay of ${parsed[2]} for ${client.identity} failed (attempt ${attempts}), returning it to the queue:`,
+                    callErr,
+                  );
+                  requeue.push(
+                    JSON.stringify([
+                      2,
+                      parsed[1],
+                      parsed[2],
+                      parsed[3],
+                      attempts,
+                    ]),
+                  );
+                },
+              ),
+            );
 
             inflight++;
 
@@ -183,6 +252,21 @@ export function replayBufferPlugin(options: ReplayBufferOptions): OCPPPlugin {
               await sleep(flushDelayMs);
               inflight = 0;
             }
+          }
+
+          // Wait for the replays before deciding what survived, then restore
+          // the failures at the head so their order relative to each other is
+          // kept and they are tried first on the next flush.
+          await Promise.allSettled(pending);
+          if (requeue.length > 0 && redis.lpush) {
+            await redis
+              .lpush(queueKey, ...requeue.reverse())
+              .catch((pushErr: unknown) => {
+                log?.error?.(
+                  `[replay-buffer] Could not return ${requeue.length} command(s) to the queue for ${client.identity}:`,
+                  pushErr,
+                );
+              });
           }
         } catch (err) {
           log?.error?.(

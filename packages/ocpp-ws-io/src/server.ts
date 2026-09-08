@@ -284,6 +284,35 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   }
 
   /**
+   * How long a plugin gets to contribute to a `/metrics` scrape.
+   *
+   * A metrics plugin reads counters it already holds, so this is generous.
+   * The point is that a scrape cannot be held open by one slow plugin.
+   */
+  private static readonly _METRICS_PLUGIN_TIMEOUT_MS = 2000;
+
+  /** Reject if a promise has not settled within `timeoutMs`. */
+  private _withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`timed out after ${timeoutMs}ms`)),
+        timeoutMs,
+      );
+      timer.unref?.();
+      promise.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      );
+    });
+  }
+
+  /**
    * Await a shutdown hook, but not forever.
    *
    * `close()` awaits every plugin's `onClosing` and then every `onClose`. With
@@ -846,28 +875,37 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
             `ocpp_ws_buffered_bytes ${s.webSockets?.bufferedAmount ?? 0}`,
             "",
           ];
-          res.writeHead(200, {
-            "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
-            "Cache-Control": "no-cache",
-          });
-          // Plugin: getCustomMetrics — append plugin-contributed Prometheus lines
+          // Plugin: getCustomMetrics — append plugin-contributed Prometheus lines.
+          //
+          // Collected before the response starts. Writing the header first and
+          // then awaiting meant a slow plugin left the scrape holding an open
+          // connection with a 200 and no body, and there was no way back to an
+          // error status once the header had gone. Prometheus scrapes on an
+          // interval, so each hung scrape stacked another held connection.
           for (const plugin of this._plugins) {
             if (plugin.getCustomMetrics) {
               try {
-                const custom = await plugin.getCustomMetrics();
+                // The hook may be sync or async; normalise before bounding it.
+                const custom = await this._withTimeout(
+                  Promise.resolve(plugin.getCustomMetrics()),
+                  OCPPServer._METRICS_PLUGIN_TIMEOUT_MS,
+                );
                 if (custom?.length) {
                   lines.push("");
                   lines.push(...custom);
                 }
               } catch (err) {
-                this._logger?.error?.("Plugin getCustomMetrics error", {
-                  name: plugin.name,
-                  error: (err as Error).message,
-                });
+                // A plugin that is slow or broken costs its own metrics, not
+                // the scrape — the rest of the output still goes out.
+                this._reportPluginError(plugin.name, "getCustomMetrics", err);
               }
             }
           }
 
+          res.writeHead(200, {
+            "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
+            "Cache-Control": "no-cache",
+          });
           res.end(lines.join("\n"));
           return;
         }
