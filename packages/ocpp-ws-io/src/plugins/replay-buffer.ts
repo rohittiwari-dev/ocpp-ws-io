@@ -57,6 +57,43 @@ export const SAFE_TO_REPLAY: readonly string[] = [
   "GetTransactionStatus",
 ];
 
+/**
+ * What a caller receives when a command was queued rather than delivered.
+ *
+ * Returned in place of the charge point's own response while
+ * {@link ReplayBufferOptions.syntheticResponse} is on. `status` is `"Queued"`
+ * rather than `"Accepted"` on purpose: in OCPP, `Accepted` is the charge
+ * point's commitment to carry the command out, and a caller that cannot tell
+ * the two apart will report a session as starting when nothing has reached the
+ * charger.
+ *
+ * ```ts
+ * const res = await server.sendToClient(id, "RemoteStartTransaction", params);
+ * if (isQueuedOffline(res)) {
+ *   // tell the driver it is pending, not that it started
+ * }
+ * ```
+ */
+export interface QueuedOfflineResponse {
+  status: "Queued";
+  queued: true;
+  /** When it entered the queue, ISO 8601. */
+  queuedAt: string;
+  note: string;
+}
+
+/** Narrow a response to the queued-offline case. */
+export function isQueuedOffline(
+  response: unknown,
+): response is QueuedOfflineResponse {
+  return (
+    typeof response === "object" &&
+    response !== null &&
+    (response as { queued?: unknown }).queued === true &&
+    (response as { status?: unknown }).status === "Queued"
+  );
+}
+
 export interface ReplayBufferOptions {
   /** User-provided Redis instance */
   redis: ReplayRedisLike;
@@ -68,9 +105,18 @@ export interface ReplayBufferOptions {
   prefix?: string;
 
   /**
-   * If true, queued messages will return a synthetic response to the caller
-   * immediately, rather than letting the caller timeout or fail.
+   * Resolve the caller's promise with a {@link QueuedOfflineResponse} when a
+   * command is queued, instead of letting the call fail.
    * @default true
+   *
+   * The response is `{ status: "Queued", queued: true, ... }` — deliberately
+   * **not** `"Accepted"`, which in OCPP is the charge point's own commitment
+   * to carry the command out. Check it with {@link isQueuedOffline} and tell
+   * the driver the command is pending rather than done.
+   *
+   * Set `false` to have the original offline error thrown instead. The command
+   * is still queued either way; this only decides how the caller hears about
+   * it.
    */
   syntheticResponse?: boolean;
 
@@ -180,12 +226,11 @@ export interface ReplayBufferOptions {
  * and is the safety mechanism of the plugin, not a tuning knob — use
  * `replayable` for finer control per action.
  *
- * ⚠️ **`syntheticResponse` is on by default and returns
- * `{ status: "Accepted" }`**, which in OCPP is the charger's own answer
- * meaning it will carry the command out. A caller cannot distinguish a
- * delivered command from a parked one, so a CSMS will tell the driver the
- * session is starting when nothing has reached the charger. Set it to `false`
- * if the caller needs to know the difference.
+ * `syntheticResponse` is on by default and resolves the caller with
+ * `{ status: "Queued", queued: true, ... }` — never `"Accepted"`, which in
+ * OCPP is the charge point's own commitment to carry the command out. Narrow
+ * it with `isQueuedOffline()` and report the command as pending rather than
+ * done.
  *
  * @example
  * ```ts
@@ -306,10 +351,16 @@ export function replayBufferPlugin(options: ReplayBufferOptions): OCPPPlugin {
           }
 
           if (synthetic) {
-            // Return a fake success so the caller's Promise resolves
+            // "Queued", not "Accepted". In OCPP, Accepted is the charger's own
+            // commitment to carry the command out — returning it here made a
+            // parked command indistinguishable from a delivered one, so a CSMS
+            // told the driver their session was starting when nothing had
+            // reached the charger. A caller can now tell, and say so.
             return {
-              status: "Accepted",
-              note: "Queued offline (ReplayBuffer)",
+              status: "Queued" as const,
+              queued: true as const,
+              queuedAt: new Date().toISOString(),
+              note: "Charge point offline — queued for replay when it reconnects",
             };
           }
 

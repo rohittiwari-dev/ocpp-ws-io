@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  isQueuedOffline,
   replayBufferPlugin,
   SAFE_TO_REPLAY,
 } from "../src/plugins/replay-buffer.js";
@@ -265,5 +266,75 @@ describe("replayable as an allow-list", () => {
     ]) {
       expect(SAFE_TO_REPLAY).not.toContain(unsafe);
     }
+  });
+});
+
+describe("the response a caller gets while the charger is offline", () => {
+  /** Drive the interceptor the plugin installs on the client. */
+  function intercept(opts: Record<string, unknown> = {}) {
+    const redis = fakeRedis();
+    let mw:
+      | ((ctx: unknown, next: () => Promise<unknown>) => Promise<unknown>)
+      | undefined;
+    const plugin = replayBufferPlugin({ redis: redis as never, ...opts });
+    plugin.onConnection?.({
+      identity: "CP001",
+      protocol: "ocpp1.6",
+      handshake: { remoteAddress: "127.0.0.1" },
+      use: (fn: never) => {
+        mw = fn;
+      },
+      call: () => Promise.resolve({}),
+    } as never);
+    return {
+      redis,
+      send: () =>
+        mw?.(
+          {
+            type: "outgoing_call",
+            messageId: "m1",
+            method: "RemoteStartTransaction",
+            params: { idTag: "USER-A" },
+          },
+          () => Promise.reject(new Error("WebSocket is not open")),
+        ),
+    };
+  }
+
+  it("says Queued, not Accepted", async () => {
+    const { send } = intercept();
+    const res = (await send()) as Record<string, unknown>;
+
+    // Accepted is the charge point's own commitment to carry the command out.
+    // Returning it for a command that never left made a parked command
+    // indistinguishable from a delivered one.
+    expect(res.status).toBe("Queued");
+    expect(res.status).not.toBe("Accepted");
+    expect(res.queued).toBe(true);
+    expect(typeof res.queuedAt).toBe("string");
+  });
+
+  it("is narrowable with isQueuedOffline", async () => {
+    const { send } = intercept();
+    expect(isQueuedOffline(await send())) .toBe(true);
+
+    // A real charge point response must not match.
+    expect(isQueuedOffline({ status: "Accepted" })).toBe(false);
+    expect(isQueuedOffline({ status: "Rejected" })).toBe(false);
+    expect(isQueuedOffline(null)).toBe(false);
+    expect(isQueuedOffline("Queued")).toBe(false);
+  });
+
+  it("queues the command either way", async () => {
+    const { redis, send } = intercept();
+    await send();
+    expect(redis.lists.get(QUEUE) ?? []).toHaveLength(1);
+  });
+
+  it("throws the original error when syntheticResponse is off", async () => {
+    const { redis, send } = intercept({ syntheticResponse: false });
+    await expect(send()).rejects.toThrow(/WebSocket is not open/);
+    // Still queued — the option only decides how the caller hears about it.
+    expect(redis.lists.get(QUEUE) ?? []).toHaveLength(1);
   });
 });

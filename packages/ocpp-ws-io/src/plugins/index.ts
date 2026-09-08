@@ -66,6 +66,8 @@ export {
   redisPubSubPlugin,
 } from "./redis-pubsub.js";
 export {
+  isQueuedOffline,
+  type QueuedOfflineResponse,
   type ReplayBufferOptions,
   type ReplayRedisLike,
   replayBufferPlugin,
