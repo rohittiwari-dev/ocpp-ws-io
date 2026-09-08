@@ -23,14 +23,6 @@ export interface ClusterDriverOptions {
    * latency for one fewer cluster connection. (default: true)
    */
   blockingReads?: boolean;
-  /**
-   * @deprecated Never read. Key prefixing is configured on the adapter via
-   * `RedisAdapterOptions.prefix`; this field was documented as driving hash-tag
-   * generation but no hash tags were ever emitted. Cross-slot batches are
-   * handled by falling back to individual commands instead — see `xaddBatch`
-   * and `mget`. Setting this has no effect.
-   */
-  prefix?: string;
 }
 
 /**
@@ -86,7 +78,9 @@ export class ClusterDriver implements RedisPubSubDriver {
     // `natMap` is a top-level Cluster option in ioredis — `redisOptions` is
     // forwarded to each individual node connection, where natMap is never
     // read. Nesting it there silently disabled NAT mapping in Docker/k8s.
-    const clusterOpts: Record<string, unknown> = { redisOptions: redisOpts };
+    const clusterOpts: Record<string, unknown> = {
+      redisOptions: redisOpts,
+    };
     if (_options.natMap) {
       clusterOpts.natMap = _options.natMap;
     }

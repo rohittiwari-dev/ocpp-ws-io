@@ -61,6 +61,45 @@ export interface ReplayBufferOptions {
   maxReplayAttempts?: number;
 
   /**
+   * How old a queued command may be when the charger reconnects, before it is
+   * discarded instead of replayed. (default: 300000 — five minutes)
+   *
+   * **This is the safety mechanism of this plugin, not a tuning knob.** These
+   * commands act on whatever the connector is doing at the moment they arrive,
+   * not on the situation that prompted them. A `RemoteStartTransaction` queued
+   * for one driver and delivered an hour later reaches a connector where a
+   * different driver has since started a session with an offline RFID tag —
+   * and starts, or bills, the wrong person. `UnlockConnector` releases a cable
+   * that now belongs to someone else. `RemoteStopTransaction` carries a
+   * `transactionId` that a charger may well have reused by then.
+   *
+   * The offline window this plugin is for is a network blip of seconds to
+   * minutes. Past that the world has moved on and the command is not merely
+   * late, it is wrong. Expired entries are dropped with a warning.
+   *
+   * Set `0` to disable expiry and replay regardless of age — only when every
+   * queued command is genuinely time-independent.
+   */
+  maxQueueAgeMs?: number;
+
+  /**
+   * Decide per command whether it may still be replayed.
+   *
+   * Called for each queued command that has survived `maxQueueAgeMs`, with the
+   * action name and how long it has been waiting. Return `false` to drop it.
+   *
+   * Use this when different commands tolerate different delays — a
+   * `GetConfiguration` is safe whenever it lands, a `RemoteStartTransaction`
+   * is not:
+   *
+   * ```ts
+   * replayable: (action, ageMs) =>
+   *   action.startsWith("Get") || ageMs < 30_000,
+   * ```
+   */
+  replayable?: (action: string, ageMs: number) => boolean;
+
+  /**
    * Optional logger. Falls back to silent no-op if not provided.
    */
   logger?: {
@@ -79,6 +118,24 @@ export interface ReplayBufferOptions {
  * queues the message in Redis, and automatically flushes the queue when the
  * client reconnects (even if it reconnects to a different server node).
  *
+ * ⚠️ **A queued command acts on whatever the connector is doing when it
+ * arrives, not on the situation that prompted it.** That is only safe while
+ * the gap is short. A `RemoteStartTransaction` queued for one driver and
+ * delivered an hour later reaches a connector where a different driver has
+ * since started a session with an offline RFID tag, and starts or bills the
+ * wrong person; `UnlockConnector` releases a cable that is now somebody
+ * else's; `RemoteStopTransaction` carries a `transactionId` the charger may
+ * have reused. `maxQueueAgeMs` (default five minutes) exists for exactly this
+ * and is the safety mechanism of the plugin, not a tuning knob — use
+ * `replayable` for finer control per action.
+ *
+ * ⚠️ **`syntheticResponse` is on by default and returns
+ * `{ status: "Accepted" }`**, which in OCPP is the charger's own answer
+ * meaning it will carry the command out. A caller cannot distinguish a
+ * delivered command from a parked one, so a CSMS will tell the driver the
+ * session is starting when nothing has reached the charger. Set it to `false`
+ * if the caller needs to know the difference.
+ *
  * @example
  * ```ts
  * server.plugin(replayBufferPlugin({
@@ -95,6 +152,7 @@ export function replayBufferPlugin(options: ReplayBufferOptions): OCPPPlugin {
   const flushConcurrency = options.flushConcurrency ?? 5;
   const flushDelayMs = options.flushDelayMs ?? 200;
   const maxReplayAttempts = options.maxReplayAttempts ?? 3;
+  const maxQueueAgeMs = options.maxQueueAgeMs ?? 300_000;
   const log = options.logger;
 
   // Track active flush operations so we can wait on shutdown
@@ -113,6 +171,17 @@ export function replayBufferPlugin(options: ReplayBufferOptions): OCPPPlugin {
   function readAttempts(parsed: unknown[]): number {
     const n = parsed[4];
     return typeof n === "number" && Number.isFinite(n) ? n : 0;
+  }
+
+  /**
+   * How long this command has been queued, or null when it predates the
+   * timestamp. Entries with no stamp are replayed rather than discarded —
+   * dropping a queue on upgrade would be its own kind of loss.
+   */
+  function readAgeMs(parsed: unknown[]): number | null {
+    const queuedAt = parsed[5];
+    if (typeof queuedAt !== "number" || !Number.isFinite(queuedAt)) return null;
+    return Math.max(0, Date.now() - queuedAt);
   }
 
   return {
@@ -146,11 +215,16 @@ export function replayBufferPlugin(options: ReplayBufferOptions): OCPPPlugin {
           }
 
           // Queue the message in Redis for later replay
+          // Slots five and six carry the replay attempt count and the moment
+          // this was queued. Entries written before those existed have four
+          // and read as no attempts and unknown age.
           const payload = JSON.stringify([
             2,
             ctx.messageId,
             ctx.method,
             ctx.params,
+            0,
+            Date.now(),
           ]);
 
           try {
@@ -208,6 +282,29 @@ export function replayBufferPlugin(options: ReplayBufferOptions): OCPPPlugin {
 
             if (!Array.isArray(parsed) || parsed[0] !== 2) continue;
 
+            const action = String(parsed[2]);
+            const ageMs = readAgeMs(parsed);
+
+            // These commands act on whatever the connector is doing when they
+            // arrive, not on the situation that prompted them. Replayed late
+            // enough, a RemoteStartTransaction reaches a connector where a
+            // different driver has since started a session with an offline
+            // tag, and starts or bills the wrong person; UnlockConnector
+            // releases a cable that is now somebody else's.
+            if (maxQueueAgeMs > 0 && ageMs !== null && ageMs > maxQueueAgeMs) {
+              log?.warn?.(
+                `[replay-buffer] Discarding ${action} for ${client.identity}: queued ${Math.round(ageMs / 1000)}s ago, past the ${Math.round(maxQueueAgeMs / 1000)}s limit`,
+              );
+              continue;
+            }
+
+            if (options.replayable && !options.replayable(action, ageMs ?? 0)) {
+              log?.warn?.(
+                `[replay-buffer] Discarding ${action} for ${client.identity}: rejected by replayable()`,
+              );
+              continue;
+            }
+
             // Send through the client's call() — it will assign a fresh MessageID
             pending.push(
               client.call(parsed[2], parsed[3]).then(
@@ -239,6 +336,10 @@ export function replayBufferPlugin(options: ReplayBufferOptions): OCPPPlugin {
                       parsed[2],
                       parsed[3],
                       attempts,
+                      // The original queue time is kept deliberately. Stamping
+                      // it afresh on each retry would let a command outlive
+                      // the age limit indefinitely by being retried.
+                      parsed[5],
                     ]),
                   );
                 },
