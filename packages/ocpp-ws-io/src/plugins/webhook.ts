@@ -1,4 +1,5 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
+import { Queue } from "../queue.js";
 import type { OCPPPlugin } from "../types.js";
 
 type WebhookEvent =
@@ -9,7 +10,8 @@ type WebhookEvent =
   | "security"
   | "auth_failed"
   | "eviction"
-  | "closing";
+  | "closing"
+  | "message";
 
 /**
  * Options for the webhook plugin.
@@ -17,16 +19,59 @@ type WebhookEvent =
 export interface WebhookPluginOptions {
   /** Webhook HTTP endpoint URL. */
   url: string;
-  /** Which lifecycle events to send (default: lifecycle events only). */
+  /**
+   * Which events to send.
+   * @default ["init", "connect", "disconnect", "close"]
+   *
+   * `"message"` fires once per OCPP message in either direction. That is one
+   * HTTP request per Heartbeat and per MeterValues, so at any real fleet size
+   * it needs `maxConcurrent` set — see that option.
+   */
   events?: WebhookEvent[];
   /** Custom HTTP headers to include (e.g. Authorization). */
   headers?: Record<string, string>;
-  /** HMAC-SHA256 secret for signing payloads (sent as `X-Signature` header). */
+  /**
+   * HMAC-SHA256 secret for signing payloads.
+   *
+   * The signature is computed over `` `${timestamp}.${body}` ``, and that same
+   * timestamp is sent as `X-Signature-Timestamp`. Verify by recomputing over
+   * both — signing the body alone would let anyone replay a captured request
+   * forever, since nothing in it would bind it to a moment in time.
+   *
+   * ```ts
+   * const expected = createHmac("sha256", secret)
+   *   .update(`${req.headers["x-signature-timestamp"]}.${rawBody}`)
+   *   .digest("hex");
+   * // then compare with timingSafeEqual, and reject a stale timestamp
+   * ```
+   */
   secret?: string;
   /** Fetch timeout in ms (default: 5000). */
   timeout?: number;
   /** Number of retries on failure (default: 1). */
   retries?: number;
+  /**
+   * Maximum webhook requests in flight at once.
+   *
+   * Unset means unbounded, which is the historical behaviour and fine for
+   * lifecycle events on a small fleet. It does not survive a reconnect storm:
+   * every charger reconnecting at once opens that many sockets simultaneously,
+   * and the failures that follow — port exhaustion, `ECONNRESET`, `EMFILE` —
+   * lose those webhooks outright rather than delaying them. A bound makes
+   * delivery slower and more reliable.
+   *
+   * Requests beyond the bound queue in memory rather than being dropped, so
+   * this trades latency and ordering for delivery, not the reverse.
+   */
+  maxConcurrent?: number;
+  /**
+   * Include the full OCPP message in `"message"` webhooks. (default: false)
+   *
+   * Off by default because payloads carry `idTag`s and credentials. Note that
+   * `piiRedactorPlugin` covers inbound messages but **not** the responses this
+   * server sends, which never enter the middleware chain.
+   */
+  includePayload?: boolean;
 }
 
 interface WebhookPayload {
@@ -58,21 +103,37 @@ export function webhookPlugin(options: WebhookPluginOptions): OCPPPlugin {
   const timeout = options.timeout ?? 5000;
   const maxRetries = options.retries ?? 1;
 
-  async function sendWebhook(payload: WebhookPayload): Promise<void> {
-    if (!allowedEvents.has(payload.event as WebhookEvent)) return;
+  // Unset means unbounded, which is what this plugin has always done.
+  const queue = options.maxConcurrent
+    ? new Queue(options.maxConcurrent)
+    : undefined;
 
+  async function deliver(payload: WebhookPayload): Promise<void> {
     const body = JSON.stringify(payload);
+
+    // Stable across retries of this event, distinct between events. Built from
+    // event+timestamp it collided: fifty chargers connecting inside the same
+    // millisecond share one key, and a receiver deduplicating on it would
+    // discard forty-nine real events.
+    const idempotencyKey = randomUUID();
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      "X-Idempotency-Key": idempotencyKey,
       ...options.headers,
     };
 
-    // HMAC-SHA256 signature
     if (options.secret) {
-      const signature = createHmac("sha256", options.secret)
-        .update(body)
+      // Sign timestamp and body together. Signing the body alone leaves
+      // nothing binding the request to a moment, so a captured request
+      // replays forever — and a timestamp sent outside the MAC is not
+      // evidence of anything, since an attacker can rewrite it freely.
+      const signedAt = Date.now().toString();
+      headers["X-Signature"] = createHmac("sha256", options.secret)
+        .update(`${signedAt}.${body}`)
         .digest("hex");
-      headers["X-Signature"] = signature;
+      headers["X-Signature-Timestamp"] = signedAt;
+      headers["X-Signature-Algorithm"] = "HMAC-SHA256";
     }
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -101,10 +162,33 @@ export function webhookPlugin(options: WebhookPluginOptions): OCPPPlugin {
     }
   }
 
+  /**
+   * Drop events nobody asked for, then hand the rest to the queue when one is
+   * configured. Queued requests wait rather than being discarded, so a bound
+   * costs latency and ordering, never delivery.
+   */
+  function sendWebhook(payload: WebhookPayload): Promise<void> {
+    if (!allowedEvents.has(payload.event as WebhookEvent)) {
+      return Promise.resolve();
+    }
+    return queue ? queue.push(() => deliver(payload)) : deliver(payload);
+  }
+
   return {
     name: "webhook",
 
-    onInit() {
+    onInit(server) {
+      if (allowedEvents.has("message") && !queue) {
+        server.log.warn(
+          'webhookPlugin: "message" events with no maxConcurrent set',
+          {
+            reason:
+              "one HTTP request per OCPP message, unbounded — a busy fleet exhausts sockets and loses webhooks rather than delaying them",
+            fix: "set maxConcurrent",
+          },
+        );
+      }
+
       sendWebhook({
         event: "init",
         timestamp: new Date().toISOString(),
@@ -169,6 +253,25 @@ export function webhookPlugin(options: WebhookPluginOptions): OCPPPlugin {
           identity: evictedClient.identity,
           evictedIp: evictedClient.handshake.remoteAddress,
           newIp: newClient.handshake.remoteAddress,
+        },
+      }).catch(() => {});
+    },
+
+    onMessage(client, { message, direction, ctx }) {
+      // Off unless "message" is in `events`; sendWebhook drops it otherwise.
+      // The metadata alone is enough for latency and volume dashboards, so the
+      // payload stays out unless asked for — it carries idTags and credentials,
+      // and the redactor does not cover the responses this server sends.
+      sendWebhook({
+        event: "message",
+        timestamp: ctx.timestamp,
+        data: {
+          identity: client.identity,
+          direction,
+          method: "method" in ctx ? ctx.method : undefined,
+          messageId: "messageId" in ctx ? ctx.messageId : undefined,
+          latencyMs: ctx.latencyMs,
+          ...(options.includePayload ? { message } : {}),
         },
       }).catch(() => {});
     },

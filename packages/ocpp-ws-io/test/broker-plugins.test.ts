@@ -152,31 +152,27 @@ describe("redisPubSubPlugin", () => {
     await expect(task!()).rejects.toThrow("redis down");
   });
 
-  it("warns when stream mode is asked for on a client without xadd", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      redisPubSubPlugin({
-        client: { publish: vi.fn() } as never,
-        mode: "stream",
-      });
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(String(warn.mock.calls[0]![0])).toContain("xadd");
-    } finally {
-      warn.mockRestore();
-    }
+  it("warns through the server logger when stream mode has no xadd", () => {
+    const warn = vi.fn();
+    const plugin = redisPubSubPlugin({
+      client: { publish: vi.fn() } as never,
+      mode: "stream",
+    });
+    plugin.onInit?.({ log: { warn } } as never);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]![0])).toContain("PUBLISH");
+    expect(JSON.stringify(warn.mock.calls[0]![1])).toContain("xAdd");
   });
 
   it("stays quiet when the client can do streams", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      redisPubSubPlugin({
-        client: { publish: vi.fn(), xadd: vi.fn() } as never,
-        mode: "stream",
-      });
-      expect(warn).not.toHaveBeenCalled();
-    } finally {
-      warn.mockRestore();
-    }
+    const warn = vi.fn();
+    const plugin = redisPubSubPlugin({
+      client: { publish: vi.fn(), xadd: vi.fn() } as never,
+      mode: "stream",
+    });
+    plugin.onInit?.({ log: { warn } } as never);
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 

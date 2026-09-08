@@ -128,18 +128,10 @@ export function redisPubSubPlugin(
   // `mode: "stream"` falls back to PUBLISH when the client has no lowercase
   // `xadd`, which silently trades durability for fire-and-forget. ioredis has
   // it; node-redis and @redis/client expose `xAdd`, so those callers asked for
-  // streams and got pub/sub with nothing said. Warn rather than throw — an
-  // exception here would take down deployments that are running today.
-  const streamCapable = typeof options.client.xadd === "function";
-  if (mode === "stream" && !streamCapable) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      '[redisPubSubPlugin] mode: "stream" requested but the client has no ' +
-        "`xadd` method — falling back to PUBLISH, which is fire-and-forget " +
-        "and drops messages when no subscriber is listening. ioredis exposes " +
-        "`xadd`; node-redis exposes `xAdd` and needs an adapter.",
-    );
-  }
+  // streams and got pub/sub with nothing said. Reported from onInit rather
+  // than thrown — an exception here would take down deployments running today.
+  const degradedToPubSub =
+    mode === "stream" && typeof options.client.xadd !== "function";
 
   function buildKey(event: string): string {
     return `${prefix}:${event}`;
@@ -191,6 +183,19 @@ export function redisPubSubPlugin(
 
   return {
     name: "redis-pubsub",
+
+    onInit(server) {
+      if (degradedToPubSub) {
+        server.log.warn(
+          'redisPubSubPlugin: mode "stream" fell back to PUBLISH',
+          {
+            reason:
+              "the supplied client exposes no lowercase xadd, so events are published fire-and-forget and dropped when no subscriber is listening",
+            fix: "ioredis exposes xadd; node-redis and @redis/client expose xAdd and need an adapter",
+          },
+        );
+      }
+    },
 
     onConnection(client) {
       connectionTimes.set(client.identity, Date.now());
