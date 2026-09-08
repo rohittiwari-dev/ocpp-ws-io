@@ -284,6 +284,58 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   }
 
   /**
+   * Await a shutdown hook, but not forever.
+   *
+   * `close()` awaits every plugin's `onClosing` and then every `onClose`. With
+   * no bound, one plugin whose promise never settles — a broker call with no
+   * timeout of its own is enough — hangs the shutdown indefinitely. That is
+   * not a graceful shutdown that takes a while; it is one that never ends, so
+   * the supervisor eventually sends SIGKILL and the sockets die unclean.
+   *
+   * A hook that overruns is abandoned and logged, and shutdown continues.
+   */
+  private async _awaitShutdownHook(
+    result: unknown,
+    pluginName: string,
+    hook: "onClosing" | "onClose",
+  ): Promise<void> {
+    if (!(result instanceof Promise)) return;
+
+    const timeoutMs = this._options.pluginShutdownTimeoutMs ?? 5000;
+    if (timeoutMs <= 0) {
+      // Explicitly opted out of the bound.
+      await result;
+      return;
+    }
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const overran = new Promise<"overran">((resolve) => {
+      timer = setTimeout(() => resolve("overran"), timeoutMs);
+      timer.unref?.();
+    });
+
+    try {
+      const outcome = await Promise.race([
+        result.then(() => "settled" as const),
+        overran,
+      ]);
+      if (outcome === "overran") {
+        // Abandoned, so its eventual rejection would otherwise be unhandled.
+        result.catch(() => {});
+        this._logger?.warn?.(`Plugin ${hook} exceeded the shutdown budget`, {
+          name: pluginName,
+          timeoutMs,
+          note: "shutdown continued without it",
+        });
+      }
+    } catch (err) {
+      this._reportPluginError(pluginName, hook, err);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  /**
    * Report a plugin hook failure without letting it escape.
    *
    * Most hooks are declared `void | Promise<void>`, so a plugin may legitimately
@@ -485,6 +537,27 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       this._plugins.push(plugin);
       this._logger?.info?.("Plugin registered", { name: plugin.name });
       this._initPlugin(plugin);
+
+      // Connections already open share this same plugin array, so the new
+      // plugin starts receiving onBeforeSend and onBeforeReceive for them
+      // immediately, and will be sent their onDisconnect when they close — for
+      // connections it never saw open. Anything holding per-connection state
+      // would then be reconciling a disconnect against nothing.
+      //
+      // Catching it up costs one onConnection per live client, at registration
+      // only. A plugin registered before listen() sees no clients here and is
+      // unaffected.
+      for (const client of this._clients) {
+        try {
+          this._guardPluginHook(
+            plugin.onConnection?.(client),
+            plugin.name,
+            "onConnection",
+          );
+        } catch (err) {
+          this._reportPluginError(plugin.name, "onConnection", err);
+        }
+      }
     }
     // Start telemetry push if configured and not already running
     this._startTelemetryPush();
@@ -1953,13 +2026,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     // Plugin: onClosing (pre-shutdown hook — before client drain)
     for (const plugin of this._plugins) {
       try {
-        const r = plugin.onClosing?.();
-        if (r instanceof Promise) await r;
+        await this._awaitShutdownHook(
+          plugin.onClosing?.(),
+          plugin.name,
+          "onClosing",
+        );
       } catch (err) {
-        this._logger?.error?.("Plugin onClosing error", {
-          name: plugin.name,
-          error: (err as Error).message,
-        });
+        this._reportPluginError(plugin.name, "onClosing", err);
       }
     }
 
@@ -2061,15 +2134,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     // Plugin: onClose
     for (const plugin of this._plugins) {
       try {
-        const result = plugin.onClose?.();
-        if (result instanceof Promise) {
-          await result;
-        }
+        await this._awaitShutdownHook(
+          plugin.onClose?.(),
+          plugin.name,
+          "onClose",
+        );
       } catch (err) {
-        this._logger?.error?.("Plugin onClose error", {
-          name: plugin.name,
-          error: (err as Error).message,
-        });
+        this._reportPluginError(plugin.name, "onClose", err);
       }
     }
 

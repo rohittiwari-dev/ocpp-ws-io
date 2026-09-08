@@ -652,6 +652,20 @@ interface ServerOptionsBase {
    */
   sessionTtlMs?: number;
   /**
+   * How long `close()` waits for any one plugin's `onClosing` or `onClose`
+   * before moving on. (default: 5000)
+   *
+   * Both hooks are awaited during shutdown. Unbounded, a single plugin whose
+   * promise never settles — a broker call with no timeout of its own is enough
+   * — hangs the shutdown indefinitely, and a supervisor eventually sends
+   * SIGKILL, which is a worse ending than the one the plugin was delaying.
+   *
+   * A hook that overruns is abandoned and logged, and shutdown continues. Set
+   * `0` to wait indefinitely instead, if a plugin genuinely must finish and
+   * you are willing to stake the shutdown on it.
+   */
+  pluginShutdownTimeoutMs?: number;
+  /**
    * TTL (seconds) for cluster presence registry entries, and the basis for
    * the automatic presence heartbeat (refreshed every ttl/2 while clients
    * are connected). Default: 300.

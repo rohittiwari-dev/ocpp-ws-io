@@ -77,3 +77,61 @@ describe("plugin lifecycle across a restart", () => {
     await expect(server.listen(0)).resolves.toBeDefined();
   }, 20000);
 });
+
+describe("a plugin registered while clients are already connected", () => {
+  let running: OCPPServer | undefined;
+  let conn: import("../src/client.js").OCPPClient | undefined;
+
+  afterEach(async () => {
+    await conn?.close({ force: true }).catch(() => {});
+    await running?.close().catch(() => {});
+    running = undefined;
+    conn = undefined;
+  });
+
+  it("is told about the connections it missed", async () => {
+    const { OCPPClient } = await import("../src/client.js");
+    const seen: string[] = [];
+
+    running = new OCPPServer({ protocols: ["ocpp1.6"] });
+    running.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
+    const http = await running.listen(0);
+    const addr = http.address();
+    const port = addr && typeof addr !== "string" ? addr.port : 0;
+
+    conn = new OCPPClient({
+      identity: "CP-EARLY",
+      endpoint: `ws://127.0.0.1:${port}`,
+      protocols: ["ocpp1.6"],
+    });
+    await conn.connect();
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Registered after the charger is already connected. Without the catch-up
+    // it would receive that charger's onDisconnect having never seen it open.
+    running.plugin({
+      name: "late-arrival",
+      onConnection: (c) => void seen.push(`connect:${c.identity}`),
+      onDisconnect: (c) => void seen.push(`disconnect:${c.identity}`),
+    });
+
+    expect(seen).toEqual(["connect:CP-EARLY"]);
+
+    await conn.close({ force: true });
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Every disconnect it sees is now matched by a connect it saw.
+    expect(seen).toEqual(["connect:CP-EARLY", "disconnect:CP-EARLY"]);
+  }, 20000);
+
+  it("sees nothing when registered before anything connects", async () => {
+    const seen: string[] = [];
+    running = new OCPPServer({ protocols: ["ocpp1.6"] });
+    running.plugin({
+      name: "early-arrival",
+      onConnection: (c) => void seen.push(c.identity),
+    });
+    await running.listen(0);
+    expect(seen).toEqual([]);
+  }, 20000);
+});
