@@ -70,12 +70,14 @@ export interface PiiRedactorOptions {
  * - **Outbound** — `outgoing` is off by default because enabling it changes what is
  *   *transmitted*: the wire message is built after middleware runs, so a redacted
  *   `idTag` is sent to the charge point as `"***REDACTED***"` and the command fails.
+ *   This applies to responses as well as commands — a redacted `idTagInfo` in an
+ *   `Authorize` result tells the charger the wrong thing about the driver.
  *
- * ⚠️ **Coverage:** redaction reaches the four message types that run through the
- * middleware chain — inbound and outbound CALL, and inbound CALLRESULT / CALLERROR.
- * **Responses this server sends are not covered:** outbound CALLRESULT and CALLERROR
- * never enter the chain, so a broker plugin configured with `includePayload` receives
- * them verbatim. Redact those at the sink.
+ * ⚠️ **Coverage:** redaction reaches the payload-bearing phases of the middleware
+ * chain — inbound and outbound CALL, inbound CALLRESULT / CALLERROR, and outbound
+ * CALLRESULT. A CALLERROR this server sends is **not** covered: its `details` object
+ * is not part of the middleware context, so a broker plugin running `includePayload`
+ * receives those verbatim. Redact them at the sink.
  *
  * @example
  * ```ts
@@ -161,9 +163,14 @@ export function piiRedactorPlugin(options: PiiRedactorOptions): OCPPPlugin {
       if (ctx.type === "outgoing_call" && ctx.params) {
         ctx.params = redact(ctx.params);
       } else if (ctx.type === "outgoing_result" && ctx.payload) {
-        // Unreachable today: outgoing_result and outgoing_error contexts are
-        // built only to feed the "message" event and never run through the
-        // middleware chain. Kept so this works if that wiring is ever added.
+        // Reached since outgoing_result was wired into the chain. Like the
+        // outbound CALL above, this redacts the response *on the wire*, not a
+        // logging copy — which is why `outgoing` defaults to false.
+        //
+        // outgoing_error is deliberately absent: its context carries only
+        // errorCode and errorDescription, both protocol-defined strings with
+        // nothing to redact. The `details` object, which could carry PII, is
+        // not part of the context.
         ctx.payload = redact(ctx.payload);
       }
     }

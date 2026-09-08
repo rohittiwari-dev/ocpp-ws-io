@@ -17,6 +17,22 @@ server.plugin(
 );
 ```
 
+## Plugin or middleware?
+
+The two overlap, and the dividing line is what you need to do to the message:
+
+- **A plugin hook observes or vetoes.** `onBeforeSend` and `onBeforeReceive` see every
+  message in both directions and can block one, but the value they return is not what
+  goes on the wire — they cannot rewrite a payload. Hooks also get lifecycle events a
+  middleware never sees: connect, disconnect, auth failure, error.
+- **[Middleware](/docs/ocpp-ws-io/middleware) transforms.** Assigning to `ctx.params`,
+  `ctx.payload`, `ctx.errorCode` or `ctx.errorDescription` changes the message that is
+  actually sent or handled.
+
+So: gate with a hook, change with middleware. A plugin can do both — it registers
+middleware from its `onConnection` hook, which is exactly how the two Level 4 plugins
+below work.
+
 ## Plugin Power Levels
 
 Plugins execute in registration order, but they are **designed** to be layered by power level. Register them from highest to lowest:
@@ -141,7 +157,7 @@ Recursively redacts Personally Identifiable Information from OCPP message payloa
 | `sensitiveKeys` | `string[]` | **required** | Keys to redact (matched recursively, at any depth). No default — you must list them explicitly. |
 | `replacement` | `string` | `"***REDACTED***"` | Replacement value for redacted keys. |
 | `incoming` | `boolean` | `true` | Redact inbound message payloads. |
-| `outgoing` | `boolean` | `true` | Redact outbound message payloads. |
+| `outgoing` | `boolean` | `false` | Redact outbound message payloads. Off by default — see the warning below. |
 
 ```typescript
 import { piiRedactorPlugin } from "ocpp-ws-io/plugins";
@@ -161,6 +177,16 @@ server.plugin(piiRedactorPlugin({
   or don't include `idTag`. Redaction is also **irreversible**; forward the
   original to a secure store *before* this plugin runs (a Level 1 plugin or a
   separate `onMessage` hook) if you need it.
+</Callout>
+
+<Callout type="warn">
+  **`outgoing` defaults to `false`, and turning it on corrupts commands.** An
+  outbound message is built from the payload *after* middleware runs, so redaction
+  applies to the wire, not to a logging copy. With `idTag` among `sensitiveKeys`,
+  every `RemoteStartTransaction` reaches the charger carrying `"***REDACTED***"` as
+  the tag and the charger tries to authorize that string — remote start fails, and
+  it presents as a charger fault. Only enable `outgoing` when the keys you are
+  redacting are ones the charge point does not need to act on.
 </Callout>
 
 ---

@@ -727,8 +727,16 @@ export class OCPPClient<
   // ─── Middleware ──────────────────────────────────────────────
 
   /**
-   * Register a middleware function to intercept calls and results.
+   * Register a middleware function, run for every phase of every message.
    * Middleware executes in the order registered.
+   *
+   * Middleware is the only place a payload can be **changed** — plugin hooks
+   * such as `onBeforeSend` and `onBeforeReceive` observe and may veto, but
+   * cannot rewrite. Reach for a plugin hook to allow or block a message, and
+   * for middleware to transform one.
+   *
+   * See {@link MiddlewareContext} for the phases, how a server exchange nests,
+   * and what happens when a middleware throws.
    */
   use(middleware: MiddlewareFunction<MiddlewareContext>): void {
     this._middleware.use(middleware);
@@ -1432,10 +1440,49 @@ export class OCPPClient<
             this._validateOutbound(ctxvals.method, result, "conf");
           }
 
+          // Run the response through the middleware chain before sending it.
+          //
+          // `outgoing_result` was declared as a context type and consumed by
+          // schemaVersioningPlugin — which transforms a response *down* for an
+          // older charge point — but the chain never executed for it, so that
+          // branch could not run.
+          //
+          // `onBeforeSend` sees this response too, but a CALLRESULT is
+          // `[3, messageId, payload]` and carries no action name, so a plugin
+          // there cannot tell which request it answers without correlating
+          // against pending state. Carrying `method` is why this context type
+          // exists.
+          //
+          // Validation above deliberately stays ahead of this: a handler's
+          // result is checked against the current schema, and only then adapted
+          // for whatever the peer speaks.
+          let payload = result;
+          try {
+            const outCtx: MiddlewareContext = {
+              type: "outgoing_result",
+              messageId: ctxvals.messageId,
+              method: ctxvals.method,
+              payload: result,
+            };
+            await this._middleware.execute(outCtx, async (c) => {
+              payload = (
+                c as Extract<MiddlewareContext, { type: "outgoing_result" }>
+              ).payload;
+            });
+          } catch (err) {
+            // Fail open with what the handler produced. A middleware that
+            // throws must not cost the charge point its response — it would
+            // sit waiting for a CALLRESULT that never arrives.
+            this._logger?.error?.("Middleware failed on outgoing result", {
+              method: ctxvals.method,
+              error: (err as Error)?.message ?? String(err),
+            });
+          }
+
           const response: OCPPCallResult = [
             MessageType.CALLRESULT,
             ctxvals.messageId,
-            result,
+            payload,
           ];
 
           const allowSend = this._invokeBeforeSend(response);
@@ -1451,7 +1498,9 @@ export class OCPPClient<
             type: "outgoing_result",
             messageId: ctxvals.messageId,
             method: ctxvals.method,
-            payload: result,
+            // What was sent, not what the handler returned — they differ once
+            // a middleware has transformed the response.
+            payload,
           });
           this.emit("callResult", response);
 
@@ -1469,11 +1518,44 @@ export class OCPPClient<
             ? getErrorPlainObject(err as Error, false)
             : {};
 
+          // Same treatment as the CALLRESULT path above: a CALLERROR on the
+          // wire carries no action name either, so this context is the only
+          // place a plugin can make an action-specific decision about one.
+          // The declared context exposes the code and description; `details`
+          // is not part of it and is sent as produced.
+          let errorCode = rpcErr.rpcErrorCode;
+          let errorDescription =
+            rpcErr.rpcErrorMessage || (err as Error).message || "";
+          try {
+            const outCtx: MiddlewareContext = {
+              type: "outgoing_error",
+              messageId: ctxvals.messageId,
+              method: ctxvals.method,
+              errorCode,
+              errorDescription,
+            };
+            await this._middleware.execute(outCtx, async (c) => {
+              const out = c as Extract<
+                MiddlewareContext,
+                { type: "outgoing_error" }
+              >;
+              errorCode = out.errorCode;
+              errorDescription = out.errorDescription;
+            });
+          } catch (mwErr) {
+            // Fail open. A middleware that throws while an error is being
+            // reported must not swallow the error report itself.
+            this._logger?.error?.("Middleware failed on outgoing error", {
+              method: ctxvals.method,
+              error: (mwErr as Error)?.message ?? String(mwErr),
+            });
+          }
+
           const errorResponse: OCPPCallError = [
             MessageType.CALLERROR,
             ctxvals.messageId,
-            rpcErr.rpcErrorCode,
-            rpcErr.rpcErrorMessage || (err as Error).message || "",
+            errorCode,
+            errorDescription,
             details,
           ];
 
@@ -1490,9 +1572,10 @@ export class OCPPClient<
             type: "outgoing_error",
             messageId: ctxvals.messageId,
             method: ctxvals.method,
-            errorCode: rpcErr.rpcErrorCode,
-            errorDescription:
-              rpcErr.rpcErrorMessage || (err as Error).message || "",
+            // What was sent, not what was thrown — they differ once a
+            // middleware has rewritten the code or description.
+            errorCode,
+            errorDescription,
           });
           this.emit("callError", errorResponse);
           // Emit handler error event for plugin observability

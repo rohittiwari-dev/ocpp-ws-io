@@ -211,20 +211,21 @@ interface MessageEventPayload {
  ctx: MessageEventContext; // Enriched context with metadata
 }
 
-interface MessageEventContext {
- type:
-  | "incoming_call"
-  | "outgoing_call"
-  | "incoming_result"
-  | "incoming_error";
- messageId: string;
- method?: string;
- params?: unknown;
- payload?: unknown;
+// MessageEventContext is MiddlewareContext plus timing, so it is a discriminated
+// union — narrow on `type` before reading a phase-specific field.
+type MessageEventContext = MiddlewareContext & {
  timestamp: string; // ISO 8601
- latencyMs?: number; // Response latency
- protocol?: string;
-}
+ latencyMs?: number; // Response latency, on result and error phases
+};
+
+// MiddlewareContext, by phase. All six run the middleware chain.
+type MiddlewareContext =
+ | { type: "incoming_call"; messageId: string; method: string; params: unknown; protocol?: string }
+ | { type: "outgoing_call"; messageId: string; method: string; params: unknown; options: CallOptions }
+ | { type: "incoming_result"; messageId: string; method: string; payload: unknown }
+ | { type: "incoming_error"; messageId: string; method: string; error: OCPPCallError }
+ | { type: "outgoing_result"; messageId: string; method: string; payload: unknown }
+ | { type: "outgoing_error"; messageId: string; method: string; errorCode: string; errorDescription: string };
 ```
 
 ## �🛠️ Advanced OCPP RPC Server Configuration & WebSocket Handshake

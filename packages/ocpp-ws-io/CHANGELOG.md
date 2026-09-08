@@ -2,7 +2,7 @@
 
 ## v2.3.2 - Leap Towards Stability (2026-09-08)
 
-A full static review of the package, worked subsystem by subsystem. One authentication bypass, a class of defects that were silent rather than wrong, and the API surface corrected where it described behaviour the code did not have. Every fix carries a regression test confirmed to fail without it; the suite went from 840 to 1050.
+A full static review of the package, worked subsystem by subsystem. One authentication bypass, a class of defects that were silent rather than wrong, and the API surface corrected where it described behaviour the code did not have. Every fix carries a regression test confirmed to fail without it; the suite went from 840 to 1062.
 
 ### Security
 
@@ -33,6 +33,7 @@ A full static review of the package, worked subsystem by subsystem. One authenti
 - `mqttPlugin.onPublishError` and `amqpPlugin.onError` — optional, observational, and unset by default, so a bridge plugin that has stopped delivering can say so.
 - `replayBufferPlugin`: `maxQueueAgeMs` (300000), `replayable`, `maxReplayAttempts` (3), plus exported `SAFE_TO_REPLAY`, `isQueuedOffline()` and `QueuedOfflineResponse`.
 - `Queue.clear()` — reject everything still queued.
+- Middleware now runs on the `outgoing_result` and `outgoing_error` phases, so a response and a CALLERROR can be transformed on the way out — previously the two context types were declared but their chain never executed. A middleware that throws while a response is being built fails open with what the handler produced, so a broken middleware cannot leave a charge point waiting for a CALLRESULT that never arrives.
 
 ### Fixed
 
@@ -96,7 +97,8 @@ A full static review of the package, worked subsystem by subsystem. One authenti
 - `/metrics` wrote its 200 header before awaiting `getCustomMetrics()`, so a slow plugin held the scrape open with no body and no way back to an error status.
 - `circuitBreakerPlugin` captured its `CircuitInfo` once per connection while the store is LRU-bounded, so above that bound the breaker silently stopped fast-failing.
 - `replayBufferPlugin` lost a command on any failure that did not look like a closed socket, and replayed a stale one whenever the charger returned — a `RemoteStartTransaction` queued for one driver and delivered an hour later reaches a connector where somebody else has since started a session.
-- `piiRedactorPlugin` did not cover inbound CALLRESULT or CALLERROR, so unredacted payloads reached broker plugins running `includePayload`; responses this server *sends* still cannot be redacted, and that limit is now documented.
+- `piiRedactorPlugin` did not cover inbound CALLRESULT or CALLERROR, so unredacted payloads reached broker plugins running `includePayload`; outbound CALLRESULT is now covered too, and the one remaining gap — the `details` object of a CALLERROR this server sends, which is not part of the middleware context — is documented.
+- `schemaVersioningPlugin` transformed requests but silently never transformed the responses going back, because the `outgoing_result` phase its rules were written against never ran the middleware chain. A CSMS adapting a fleet down to an older version sent every answer in the wrong shape.
 - `amqp`, `redis-pubsub` and `webhook` silently dropped every `message` event, and the webhook `close` notification was never sent.
 - `webhookPlugin` signed only the body, so a captured request replayed forever, and built its idempotency key from event plus millisecond, so chargers connecting together shared one key.
 - `redis-pubsub` swallowed publish failures before the async worker could report them, and `mode: "stream"` degraded to fire-and-forget PUBLISH in silence on clients without a lowercase `xadd`.

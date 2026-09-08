@@ -45,17 +45,44 @@ Middleware functions receive a `context` and a `next` function.
 
 ### Context Object
 
-The `ctx` object uses a discriminated union based on the `type` property. You can intercept all 4 phases of an RPC message:
+The `ctx` object is a discriminated union on the `type` property. All six phases of an
+RPC exchange run the chain — a request and its response in both directions, plus the
+two error phases. Every phase carries `messageId`, `method` and the fields below:
 
-| Property    | Type                                                                                   | Description                           |
-| :---------- | :------------------------------------------------------------------------------------- | :------------------------------------ |
-| `type`      | `"incoming_call"` \| `"outgoing_call"` \| `"incoming_result"` \| `"outgoing_result"` \| `"incoming_error"` \| `"outgoing_error"` | Phase and direction of the message    |
-| `method`    | `string`                                                                               | OCPP Action (e.g. `BootNotification`) |
-| `messageId` | `string`                                                                               | Unique ID of the message              |
-| `params`    | `any` _(only on calls)_                                                                | Payload of the CALL                   |
-| `payload`   | `any` _(only on results)_                                                              | Payload of the CALLRESULT             |
-| `error`     | `OCPPCallError` _(only on errors)_                                                     | Payload of the CALLERROR              |
-| `state`     | `Record<string, any>`                                                                  | Custom user data passed down the chain|
+| `ctx.type`         | Carries                          | Runs when                                              |
+| :----------------- | :------------------------------- | :----------------------------------------------------- |
+| `incoming_call`    | `params`, `protocol?`            | A CALL arrives, before your handler sees it             |
+| `outgoing_call`    | `params`, `options`              | You send a CALL, before it is written                   |
+| `incoming_result`  | `payload`                        | A CALLRESULT answers a call you made                    |
+| `outgoing_result`  | `payload`                        | Your handler returned, before the CALLRESULT is written |
+| `incoming_error`   | `error` (`OCPPCallError`)        | A CALLERROR answers a call you made                     |
+| `outgoing_error`   | `errorCode`, `errorDescription`  | Your handler threw, before the CALLERROR is written     |
+
+`method` on the two incoming response phases is correlated from the pending call — the
+wire message does not carry it. The same is true outbound: a CALLRESULT is
+`[3, messageId, payload]` and a CALLERROR is `[4, id, code, description, details]`, so
+`outgoing_result` and `outgoing_error` are the only place to make a decision that
+depends on *which* request is being answered.
+
+<Callout type="info">
+  **Middleware transforms; plugin hooks observe and veto.** Assigning to `ctx.params`,
+  `ctx.payload`, `ctx.errorCode` or `ctx.errorDescription` changes the message that is
+  actually sent or handled. Plugin hooks such as `onBeforeSend` and `onBeforeReceive`
+  can allow or block a message but cannot rewrite one. Reach for a hook to gate, and
+  middleware to change.
+</Callout>
+
+On the server, a request and its response nest — the response chain runs *inside* the
+request's, so a middleware written in the wrapping style sees its own exchange close
+last:
+
+```
+in:incoming_call → in:outgoing_result → out:outgoing_result → out:incoming_call
+```
+
+If a middleware throws while a response is being built, the library **fails open**: it
+sends what the handler produced and logs the failure. A broken middleware must never
+leave a charge point waiting for a CALLRESULT that never arrives.
 
 ```typescript
 import { defineRpcMiddleware } from "ocpp-ws-io/browser"; // Or "ocpp-ws-io" for Server/NodeClient
