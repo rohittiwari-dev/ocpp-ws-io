@@ -68,9 +68,14 @@ export class OCPPServerClient extends OCPPClient {
 
   /**
    * Per-connection inbound pipeline. Serializes async pre-processing
-   * (plugin onBeforeReceive, rate-limit parse, worker-pool parse) so
-   * messages are DISPATCHED in wire order — OCPP transaction semantics
-   * depend on it (e.g. StartTransaction before StopTransaction).
+   * (connection rate limit, plugin onBeforeReceive, worker-pool parse,
+   * per-method rate limit) so messages are DISPATCHED in wire order — OCPP
+   * transaction semantics depend on it (e.g. StartTransaction before
+   * StopTransaction).
+   *
+   * Connection-level rate limiting runs before the plugins so a flood is
+   * discarded without paying for a plugin's work; per-method limiting needs
+   * the action name and so runs after the parse.
    *
    * The guarantee ends at dispatch. An async handler is not awaited here, so
    * two handlers can interleave once the first hits an await, and they may
@@ -240,6 +245,26 @@ export class OCPPServerClient extends OCPPClient {
   }
 
   private async _processInboundMessage(data: RawData): Promise<void> {
+    const limits = this._options.rateLimit;
+
+    // Connection-level limiting runs first, ahead of the plugins.
+    //
+    // Without per-method rules the limiter needs nothing from the payload, so
+    // there is no reason to spend anything before it — and `onBeforeReceive`
+    // is not cheap: messageDedupPlugin parses the frame on the main thread and
+    // does a Redis round trip for every message. Running plugins first meant a
+    // flooding station bought a parse and a Redis write per message that the
+    // limiter was about to discard, so the limiter protected the handlers and
+    // nothing else.
+    //
+    // A plugin that wants to observe what was dropped gets `onRateLimitExceeded`.
+    if (limits && !limits.methods) {
+      if (!this._checkRateLimit(undefined)) {
+        this._handleRateLimitExceeded(data.toString());
+        return;
+      }
+    }
+
     // Plugin interception: onBeforeReceive
     for (const p of this._serverPlugins) {
       if (p.onBeforeReceive) {
@@ -254,18 +279,6 @@ export class OCPPServerClient extends OCPPClient {
         } catch (_err) {
           // Don't let plugin errors stop message processing
         }
-      }
-    }
-
-    const limits = this._options.rateLimit;
-
-    // Without per-method rules the limiter needs nothing from the payload, so
-    // reject before spending anything on parsing — that is the whole point of
-    // a connection rate limit.
-    if (limits && !limits.methods) {
-      if (!this._checkRateLimit(undefined)) {
-        this._handleRateLimitExceeded(data.toString());
-        return;
       }
     }
 

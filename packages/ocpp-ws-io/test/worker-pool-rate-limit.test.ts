@@ -23,12 +23,13 @@ class FakeSocket extends EventEmitter {
 }
 
 function makeClient(
-  options: Record<string, unknown>,
+  options: Record<string, unknown> & { plugins?: unknown[] },
   workerPool?: Partial<WorkerPool>,
 ) {
+  const { plugins, ...clientOptions } = options;
   const ws = new FakeSocket();
   const client = new OCPPServerClient(
-    { identity: "CP001", endpoint: "ws://localhost", ...options },
+    { identity: "CP001", endpoint: "ws://localhost", ...clientOptions },
     {
       ws: ws as never,
       handshake: {
@@ -44,6 +45,7 @@ function makeClient(
       session: {},
       protocol: "ocpp1.6",
       workerPool: workerPool as WorkerPool | undefined,
+      plugins: plugins as never,
     },
   );
   return { client, ws };
@@ -125,5 +127,43 @@ describe("rateLimit.methods alongside workerThreads", () => {
     expect(parse).toHaveBeenCalledTimes(1);
     // Still dispatched, with the method extracted inline for the limiter.
     expect(onMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("connection rate limiting runs before plugins", () => {
+  const frame = '[2,"id1","Heartbeat",{}]';
+
+  it("does not spend a plugin's work on a message it is about to drop", async () => {
+    // messageDedupPlugin parses on the main thread and does a Redis round trip
+    // per message. Running it before the limiter meant a flooding station
+    // bought one of each for every message the limiter then discarded.
+    const onBeforeReceive = vi.fn().mockResolvedValue(undefined);
+    const { client } = makeClient({
+      rateLimit: { limit: 1, windowMs: 60_000 },
+      plugins: [{ name: "expensive", onBeforeReceive }],
+    });
+
+    await deliver(client, frame);
+    await deliver(client, frame);
+    await deliver(client, frame);
+
+    // Only the message that survived the limiter reached the plugin.
+    expect(onBeforeReceive).toHaveBeenCalledTimes(1);
+  });
+
+  it("still lets a plugin block a message that is within the limit", async () => {
+    const onMessage = vi.fn();
+    const { client } = makeClient({
+      rateLimit: { limit: 100, windowMs: 60_000 },
+      plugins: [{ name: "blocker", onBeforeReceive: () => false }],
+    });
+    const spy = vi.spyOn(
+      client as unknown as { _onMessage(...a: unknown[]): void },
+      "_onMessage",
+    );
+
+    await deliver(client, frame);
+    expect(spy).not.toHaveBeenCalled();
+    void onMessage;
   });
 });
