@@ -265,6 +265,25 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   // ─── Plugin hook dispatch ────────────────────────────────────
 
   /**
+   * Run a plugin's `onInit`.
+   *
+   * Called when the plugin is registered, and again by `listen()` when the
+   * server is being restarted after a `close()`. `close()` sends every plugin
+   * `onClosing` and `onClose`, so without the second call a plugin that
+   * acquired anything at init stayed torn down for the rest of the process —
+   * and a later `close()` sent it a second `onClose` it had never been
+   * re-initialised for.
+   */
+  private _initPlugin(plugin: OCPPPlugin): void {
+    if (!plugin.onInit) return;
+    try {
+      this._guardPluginHook(plugin.onInit(this), plugin.name, "onInit");
+    } catch (err) {
+      this._reportPluginError(plugin.name, "onInit", err);
+    }
+  }
+
+  /**
    * Report a plugin hook failure without letting it escape.
    *
    * Most hooks are declared `void | Promise<void>`, so a plugin may legitimately
@@ -465,17 +484,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
       this._plugins.push(plugin);
       this._logger?.info?.("Plugin registered", { name: plugin.name });
-      if (plugin.onInit) {
-        const result = plugin.onInit(this);
-        if (result instanceof Promise) {
-          result.catch((err) => {
-            this._logger?.error?.("Plugin onInit error", {
-              name: plugin.name,
-              error: (err as Error).message,
-            });
-          });
-        }
-      }
+      this._initPlugin(plugin);
     }
     // Start telemetry push if configured and not already running
     this._startTelemetryPush();
@@ -660,6 +669,15 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     // Reset state if server was previously closed
     if (this._state === "CLOSED") {
       this._state = "OPEN";
+
+      // close() sent every plugin onClosing and onClose, and onInit otherwise
+      // runs only at registration — so a restarted server used to come back up
+      // with all of its plugins torn down, and the next close() sent them a
+      // second onClose they had never been re-initialised for. The worker pool
+      // and the event adapter are re-created for the same reason.
+      for (const plugin of this._plugins) {
+        this._initPlugin(plugin);
+      }
     }
 
     // Re-create the worker pool after a close()/listen() restart cycle
