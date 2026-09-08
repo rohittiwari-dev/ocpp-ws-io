@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { replayBufferPlugin } from "../src/plugins/replay-buffer.js";
+import {
+  replayBufferPlugin,
+  SAFE_TO_REPLAY,
+} from "../src/plugins/replay-buffer.js";
 
 /**
  * A queued command acts on whatever the connector is doing when it arrives,
@@ -171,5 +174,96 @@ describe("a command queued long before the charger came back", () => {
     await settle();
 
     expect(call).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("replayable as an allow-list", () => {
+  it("accepts an array of action names", async () => {
+    const redis = fakeRedis();
+    redis.seed(QUEUE, [
+      entry("GetConfiguration", 10_000),
+      entry("RemoteStartTransaction", 10_000),
+      entry("UnlockConnector", 10_000),
+    ]);
+    const seen: string[] = [];
+
+    const plugin = replayBufferPlugin({
+      redis: redis as never,
+      replayable: ["GetConfiguration"],
+    });
+    plugin.onConnection?.(
+      client(((m: string) => {
+        seen.push(m);
+        return Promise.resolve({});
+      }) as never),
+    );
+    await settle();
+
+    expect(seen).toEqual(["GetConfiguration"]);
+  });
+
+  it("is an allow-list, so an unanticipated action is dropped", async () => {
+    const redis = fakeRedis();
+    // Nothing in the config mentions this action either way.
+    redis.seed(QUEUE, [entry("SomeVendorExtension", 1_000)]);
+    const call = vi.fn(() => Promise.resolve({}));
+
+    const plugin = replayBufferPlugin({
+      redis: redis as never,
+      replayable: ["GetConfiguration"],
+    });
+    plugin.onConnection?.(client(call));
+    await settle();
+
+    // A deny-list would have replayed it; failing closed is the safer default.
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it("still replays everything in date when replayable is unset", async () => {
+    const redis = fakeRedis();
+    redis.seed(QUEUE, [entry("RemoteStartTransaction", 1_000)]);
+    const call = vi.fn(() => Promise.resolve({}));
+
+    const plugin = replayBufferPlugin({ redis: redis as never });
+    plugin.onConnection?.(client(call));
+    await settle();
+
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+
+  it("SAFE_TO_REPLAY can be spread and extended", async () => {
+    const redis = fakeRedis();
+    redis.seed(QUEUE, [
+      entry("GetDiagnostics", 5_000),
+      entry("RemoteStopTransaction", 5_000),
+      entry("RemoteStartTransaction", 5_000),
+    ]);
+    const seen: string[] = [];
+
+    const plugin = replayBufferPlugin({
+      redis: redis as never,
+      replayable: [...SAFE_TO_REPLAY, "RemoteStopTransaction"],
+    });
+    plugin.onConnection?.(
+      client(((m: string) => {
+        seen.push(m);
+        return Promise.resolve({});
+      }) as never),
+    );
+    await settle();
+
+    expect(seen).toEqual(["GetDiagnostics", "RemoteStopTransaction"]);
+  });
+
+  it("omits the actions that act on a connector's current state", () => {
+    for (const unsafe of [
+      "RemoteStartTransaction",
+      "RemoteStopTransaction",
+      "UnlockConnector",
+      "Reset",
+      "ChangeAvailability",
+    ]) {
+      expect(SAFE_TO_REPLAY).not.toContain(unsafe);
+    }
   });
 });

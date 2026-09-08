@@ -69,6 +69,7 @@ export {
   type ReplayBufferOptions,
   type ReplayRedisLike,
   replayBufferPlugin,
+  SAFE_TO_REPLAY,
 } from "./replay-buffer.js";
 export {
   type SchemaVersioningOptions,

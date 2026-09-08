@@ -14,6 +14,49 @@ export interface ReplayRedisLike {
   lpush?(key: string, ...values: string[]): Promise<number>;
 }
 
+/**
+ * Actions whose meaning does not depend on when they arrive.
+ *
+ * A starting point for {@link ReplayBufferOptions.replayable}, not a rule —
+ * these read state or ask the charger to report something, so replaying one
+ * late is at worst redundant. Everything absent from this list acts on the
+ * connector's *current* situation, which is precisely what has changed while
+ * the charger was away:
+ *
+ * - `RemoteStartTransaction` starts a charge for the driver it was queued for,
+ *   on a connector where somebody else may now be plugged in.
+ * - `RemoteStopTransaction` carries a `transactionId` the charger may have
+ *   reused, so it can stop an unrelated session.
+ * - `UnlockConnector` releases whichever cable is in the connector now.
+ * - `Reset` and `ChangeAvailability` interrupt whatever is running.
+ *
+ * Spread it and add back what your deployment can justify:
+ *
+ * ```ts
+ * replayBufferPlugin({
+ *   redis,
+ *   replayable: [...SAFE_TO_REPLAY, "RemoteStopTransaction"],
+ * })
+ * ```
+ */
+export const SAFE_TO_REPLAY: readonly string[] = [
+  "GetConfiguration",
+  "GetCompositeSchedule",
+  "GetDiagnostics",
+  "GetLocalListVersion",
+  "GetLog",
+  "GetInstalledCertificateIds",
+  "TriggerMessage",
+  "ExtendedTriggerMessage",
+  "DataTransfer",
+  "GetBaseReport",
+  "GetReport",
+  "GetVariables",
+  "GetMonitoringReport",
+  "GetChargingProfiles",
+  "GetTransactionStatus",
+];
+
 export interface ReplayBufferOptions {
   /** User-provided Redis instance */
   redis: ReplayRedisLike;
@@ -83,21 +126,29 @@ export interface ReplayBufferOptions {
   maxQueueAgeMs?: number;
 
   /**
-   * Decide per command whether it may still be replayed.
+   * Which commands may still be replayed. Unset replays everything that is
+   * within `maxQueueAgeMs`.
    *
-   * Called for each queued command that has survived `maxQueueAgeMs`, with the
-   * action name and how long it has been waiting. Return `false` to drop it.
+   * Give an array to allow only those actions — an allow-list, not a
+   * deny-list, so an action nobody anticipated is dropped rather than replayed
+   * by default:
    *
-   * Use this when different commands tolerate different delays — a
-   * `GetConfiguration` is safe whenever it lands, a `RemoteStartTransaction`
-   * is not:
+   * ```ts
+   * replayable: [...SAFE_TO_REPLAY, "RemoteStopTransaction"],
+   * ```
+   *
+   * Give a function when the decision depends on more than the action — how
+   * long it has waited, say, since a `GetConfiguration` is safe whenever it
+   * lands and a `RemoteStartTransaction` stops being safe quickly:
    *
    * ```ts
    * replayable: (action, ageMs) =>
    *   action.startsWith("Get") || ageMs < 30_000,
    * ```
+   *
+   * See {@link SAFE_TO_REPLAY} for a starting point.
    */
-  replayable?: (action: string, ageMs: number) => boolean;
+  replayable?: string[] | ((action: string, ageMs: number) => boolean);
 
   /**
    * Optional logger. Falls back to silent no-op if not provided.
@@ -171,6 +222,20 @@ export function replayBufferPlugin(options: ReplayBufferOptions): OCPPPlugin {
   function readAttempts(parsed: unknown[]): number {
     const n = parsed[4];
     return typeof n === "number" && Number.isFinite(n) ? n : 0;
+  }
+
+  // An array is an allow-list, so an action nobody anticipated is dropped
+  // rather than replayed. Resolved once here rather than per command.
+  const allowed = Array.isArray(options.replayable)
+    ? new Set(options.replayable)
+    : null;
+
+  function isReplayable(action: string, ageMs: number): boolean {
+    if (allowed) return allowed.has(action);
+    if (typeof options.replayable === "function") {
+      return options.replayable(action, ageMs);
+    }
+    return true;
   }
 
   /**
@@ -298,9 +363,9 @@ export function replayBufferPlugin(options: ReplayBufferOptions): OCPPPlugin {
               continue;
             }
 
-            if (options.replayable && !options.replayable(action, ageMs ?? 0)) {
+            if (!isReplayable(action, ageMs ?? 0)) {
               log?.warn?.(
-                `[replay-buffer] Discarding ${action} for ${client.identity}: rejected by replayable()`,
+                `[replay-buffer] Discarding ${action} for ${client.identity}: not in the replayable set`,
               );
               continue;
             }
