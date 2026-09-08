@@ -126,6 +126,24 @@ export class RPCOccurrenceConstraintViolationError extends RPCGenericError {
   }
 }
 
+/**
+ * The OCPP 1.6J spelling of {@link RPCOccurrenceConstraintViolationError} —
+ * one `r` in "Occurence", as 1.6 Part 4 has it. The browser client does not
+ * validate, so it never raises this itself; it exists so a CALLERROR arriving
+ * from a 1.6 server is reconstructed with its own code rather than collapsing
+ * into a generic error.
+ */
+export class RPCOccurenceConstraintViolationError extends RPCGenericError {
+  override readonly rpcErrorCode = "OccurenceConstraintViolation";
+  override readonly rpcErrorMessage =
+    "Payload for action is syntactically correct but at least one of the fields violates occurrence constraints";
+
+  constructor(message?: string, details: Record<string, unknown> = {}) {
+    super(message, details);
+    this.name = "RPCOccurenceConstraintViolationError";
+  }
+}
+
 export class RPCTypeConstraintViolationError extends RPCGenericError {
   override readonly rpcErrorCode = "TypeConstraintViolation";
   override readonly rpcErrorMessage =

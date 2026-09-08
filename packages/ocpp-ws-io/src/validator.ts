@@ -182,13 +182,21 @@ export class Validator {
     if (!isValid && validateFn.errors && validateFn.errors.length > 0) {
       const primaryError = validateFn.errors[0];
       let ocppErrorCode = keywordToOCPPError(primaryError.keyword);
-      // OCPP 1.6J names this error "FormationViolation"; 2.0.1+ renamed it
-      // to "FormatViolation" (report M7).
-      if (
-        ocppErrorCode === "FormatViolation" &&
-        this.subprotocol.startsWith("ocpp1.6")
-      ) {
-        ocppErrorCode = "FormationViolation";
+      // Two of these codes were renamed between 1.6 and 2.0.1, and a charge
+      // point's error enum is the version it speaks. Sending the wrong spelling
+      // means sending a code the peer does not have.
+      if (this.subprotocol.startsWith("ocpp1.6")) {
+        // 1.6J names this "FormationViolation"; 2.0.1+ renamed it to
+        // "FormatViolation" (report M7).
+        if (ocppErrorCode === "FormatViolation") {
+          ocppErrorCode = "FormationViolation";
+        } else if (ocppErrorCode === "OccurrenceConstraintViolation") {
+          // 1.6 Part 4 spells this "OccurenceConstraintViolation" — one `r`.
+          // The typo is the specification's own and is what 1.6 implementations
+          // accept. This fires on every missing required field, which is the
+          // most common validation failure there is.
+          ocppErrorCode = "OccurenceConstraintViolation";
+        }
       }
       const description = this._ajv.errorsText(validateFn.errors);
 

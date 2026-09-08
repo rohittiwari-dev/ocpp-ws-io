@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import WebSocket from "ws";
 import {
   type RPCError,
+  RPCFormatViolationError,
   RPCGenericError,
   RPCMessageTypeNotSupportedError,
   RPCNotImplementedError,
@@ -1262,8 +1263,31 @@ export class OCPPClient<
     if (typeof messageId !== "string") {
       this._onBadMessage(
         typeof rawData === "string" ? rawData : (rawData as Buffer).toString(),
-        new RPCMessageTypeNotSupportedError(
+        // A malformed frame, not an unsupported message type. The code is
+        // translated to the 1.6 spelling in _onBadMessage.
+        new RPCFormatViolationError(
           `Invalid MessageId type: ${typeof messageId} (expected string)`,
+        ),
+      );
+      return;
+    }
+
+    // The message type has to be settled before anything below can mean
+    // something. The structure and payload checks that follow both index into
+    // the frame by type, and for an unknown type they fell back to index 2 —
+    // so a frame carrying an unsupported MessageTypeId was reported as a
+    // malformed payload, and the switch's own MessageTypeNotSupported branch
+    // was unreachable in practice. 2.1 adds types 5 and 6, which is how a
+    // newer charge point reaches this.
+    if (
+      messageType !== MessageType.CALL &&
+      messageType !== MessageType.CALLRESULT &&
+      messageType !== MessageType.CALLERROR
+    ) {
+      this._onBadMessage(
+        JSON.stringify(message),
+        new RPCMessageTypeNotSupportedError(
+          `Unknown message type: ${messageType}`,
         ),
       );
       return;
@@ -1277,7 +1301,7 @@ export class OCPPClient<
     ) {
       this._onBadMessage(
         JSON.stringify(message),
-        new RPCMessageTypeNotSupportedError(
+        new RPCFormatViolationError(
           `Missing payload elements for message type ${messageType}`,
         ),
       );
@@ -1299,7 +1323,7 @@ export class OCPPClient<
     ) {
       this._onBadMessage(
         JSON.stringify(message),
-        new RPCMessageTypeNotSupportedError(
+        new RPCFormatViolationError(
           `Payload must be a JSON object, got ${
             payload === null
               ? "null"
@@ -1720,18 +1744,35 @@ export class OCPPClient<
     });
     this.emit("badMessage", { message: rawMessage, error });
 
-    // Best-effort: try to extract messageId from the raw string and respond
-    // with a proper CALLERROR so the sender isn't left waiting.
-    // Pattern matches OCPP-J CALL format: [2, "messageId", ...]
-    const match = rawMessage.match(/^\s*\[\s*2\s*,\s*"([^"]+)"/);
+    // Best-effort: extract the UniqueId from the raw string and answer with a
+    // CALLERROR, so the sender is not left waiting out its timeout.
+    //
+    // The pattern used to require a MessageTypeId of literally 2, which meant
+    // any other type id — including a well-formed frame carrying a readable
+    // UniqueId — was dropped in silence. OCPP-J requires a CALLERROR whenever
+    // the UniqueId can be determined, and 2.1 adds message types 5 and 6, so a
+    // newer charge point talking to an older server hit exactly this and waited
+    // out its full timeout on every message. Any leading integer is accepted
+    // now; the id is what matters.
+    const match = rawMessage.match(/^\s*\[\s*\d+\s*,\s*"([^"]+)"/);
     if (match?.[1] && this._ws) {
+      // Report the error that actually occurred. This previously sent the
+      // format-violation code whatever had gone wrong, so an unsupported
+      // message type was reported to the peer as a malformed payload.
+      const rpcCode = (error as { rpcErrorCode?: string }).rpcErrorCode;
       // OCPP 1.6J spells this error "FormationViolation" (report M7)
       const formatCode =
         this._protocol === "ocpp1.6" ? "FormationViolation" : "FormatViolation";
+      // A format violation is spelled differently per version, so it is
+      // resolved here rather than taken from the error as-is.
+      const code =
+        !rpcCode || rpcCode === "GenericError" || rpcCode === "FormatViolation"
+          ? formatCode
+          : rpcCode;
       const errorResponse: OCPPCallError = [
         MessageType.CALLERROR,
         match[1],
-        formatCode,
+        code,
         error.message || "Invalid message format",
         {},
       ];

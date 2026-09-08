@@ -263,6 +263,39 @@ describe("NestJS OCPP Integration", () => {
     await new Promise<void>((resolve) => nestHttpServer.close(() => resolve()));
   });
 
+  it("destroys a filtered-out upgrade socket when it is the only listener", async () => {
+    const server = new OCPPServer({ logging: false });
+    const nestHttpServer = http.createServer();
+    const service = new OcppService(
+      server,
+      { upgradePathPrefix: "/ocpp" },
+      { httpAdapter: { getHttpServer: () => nestHttpServer } } as any,
+    );
+    service.onModuleInit();
+
+    await new Promise<void>((resolve) => nestHttpServer.listen(0, resolve));
+
+    // Node only auto-closes an unhandled upgrade when NO 'upgrade' listener is
+    // registered. With one attached and filtering, returning early left the
+    // socket open forever — one leaked fd per non-matching upgrade. Express,
+    // Fastify and Hono all destroy it; Nest did not.
+    const ws = new WebSocket(
+      `ws://localhost:${getPort(nestHttpServer)}/not-ocpp`,
+    );
+    const outcome = await new Promise<string>((resolve) => {
+      ws.once("open", () => resolve("open"));
+      ws.once("error", () => resolve("closed"));
+      ws.once("close", () => resolve("closed"));
+      setTimeout(() => resolve("hung"), 2000);
+    });
+
+    expect(outcome).toBe("closed");
+
+    ws.close();
+    await service.onModuleDestroy();
+    await new Promise<void>((resolve) => nestHttpServer.close(() => resolve()));
+  }, 20000);
+
   it("uses boundary-safe prefix matching (no sibling-path hijack)", () => {
     const server = new OCPPServer({ logging: false });
     const service = new OcppService(server, {

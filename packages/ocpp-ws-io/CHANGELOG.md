@@ -2,7 +2,7 @@
 
 ## v2.3.2 - Leap Towards Stability (2026-09-08)
 
-A full static review of the package, worked subsystem by subsystem. One authentication bypass, a class of defects that were silent rather than wrong, and the API surface corrected where it described behaviour the code did not have. Every fix carries a regression test confirmed to fail without it; the suite went from 840 to 1062.
+A full review of the package, worked subsystem by subsystem. One authentication bypass, a class of defects that were silent rather than wrong, and the API surface corrected where it described behaviour the code did not have. Several of the findings came from driving real messages and reading what arrived rather than from reading the source, which is how the protocol-conformance and plugin defects below surfaced at all. Every fix carries a regression test confirmed to fail without it; the suite went from 840 to 1076.
 
 ### Security
 
@@ -11,6 +11,8 @@ A full static review of the package, worked subsystem by subsystem. One authenti
 ### Breaking changes
 
 - **`piiRedactorPlugin` no longer redacts outbound payloads by default (`outgoing` is now `false`).** It redacts the payload rather than a logging copy, and an outbound message is built from the payload *after* middleware runs — so redacting `idTag`, the key the plugin's own example used, sent `"***REDACTED***"` to the charge point and broke every `RemoteStartTransaction`. Enable it only for keys the charger does not act on; redact at the sink otherwise.
+- **OCPP 1.6 validation failures now report `OccurenceConstraintViolation`** (one `r`, as 1.6 Part 4 spells it) instead of the 2.0.1 `OccurrenceConstraintViolation`. 2.0.1 and 2.1 are unchanged. Check any 1.6 code branching on that string, or on `instanceof RPCOccurrenceConstraintViolationError`, and use the new `RPCOccurenceConstraintViolationError` there.
+- **A frame with an unsupported MessageTypeId is answered with a CALLERROR** rather than dropped, so a peer that was previously met with silence now receives `MessageTypeNotSupported`.
 - **`replayBufferPlugin` answers `{ status: "Queued" }` instead of `{ status: "Accepted" }`** for a command it only queued, since `Accepted` is the charge point's own commitment to carry it out — narrow it with the new `isQueuedOffline()`, and check any call site branching on `status === "Accepted"`.
 - **Route-level `auth()` now wins over a global `server.auth()`** instead of the first callback found winning, so a permissive global auth no longer silently discards every route-specific one.
 - **Registering the same plugin object twice now registers it once** rather than doubling every hook; two distinct instances sharing a name are still both kept.
@@ -33,6 +35,7 @@ A full static review of the package, worked subsystem by subsystem. One authenti
 - `mqttPlugin.onPublishError` and `amqpPlugin.onError` — optional, observational, and unset by default, so a bridge plugin that has stopped delivering can say so.
 - `replayBufferPlugin`: `maxQueueAgeMs` (300000), `replayable`, `maxReplayAttempts` (3), plus exported `SAFE_TO_REPLAY`, `isQueuedOffline()` and `QueuedOfflineResponse`.
 - `Queue.clear()` — reject everything still queued.
+- `RPCOccurenceConstraintViolationError` — the OCPP 1.6 spelling of the occurrence-constraint code, exported from both the Node and browser entry points and produced automatically for 1.6 subprotocols.
 - Middleware now runs on the `outgoing_result` and `outgoing_error` phases, so a response and a CALLERROR can be transformed on the way out — previously the two context types were declared but their chain never executed. A middleware that throws while a response is being built fails open with what the handler produced, so a broken middleware cannot leave a charge point waiting for a CALLRESULT that never arrives.
 
 ### Fixed
@@ -103,6 +106,24 @@ A full static review of the package, worked subsystem by subsystem. One authenti
 - `webhookPlugin` signed only the body, so a captured request replayed forever, and built its idempotency key from event plus millisecond, so chargers connecting together shared one key.
 - `redis-pubsub` swallowed publish failures before the async worker could report them, and `mode: "stream"` degraded to fire-and-forget PUBLISH in silence on clients without a lowercase `xadd`.
 - `kafkaPlugin` reported a session duration of zero for reconnecting chargers.
+
+**Protocol conformance**
+
+- OCPP 1.6 peers received `OccurrenceConstraintViolation`, the 2.0.1 spelling, where 1.6 Part 4 has `OccurenceConstraintViolation` with one `r` — a code no 1.6 charge point's enum contains. The matching `FormationViolation`/`FormatViolation` rename was already handled; this second one was missed, and it fires on every missing required field.
+- A frame whose MessageTypeId was not 2, 3 or 4 was dropped in silence even when its UniqueId was readable, so the sender waited out its full timeout instead of receiving the `MessageTypeNotSupported` the spec requires — reachable from any 2.1 charge point, since 2.1 adds message types 5 and 6.
+- Three structural checks — a non-string UniqueId, a short frame, a non-object payload — reported `MessageTypeNotSupported` where the problem was a malformed frame; they now report the format violation for the negotiated version. The message type is also settled before those checks run, since each of them indexes into the frame by type.
+
+**Server lifecycle**
+
+- `listen()` did not restart the session garbage collector after a `close()`, so a restarted server stopped expiring sessions by age and grew `_connectionBuckets` by one entry per distinct client IP for the life of the process.
+- Adaptive rate limiting was stopped by `close()` and never restarted, leaving the limiter attached and pinned at a multiplier of 1 — configured, reported as enabled, and silently never shedding load again.
+- The telemetry push was only ever started by `plugin()`, so a restarted server never pushed telemetry again unless the application happened to register another plugin.
+- A second `close()` while the first was still draining returned immediately, so `await server.close()` resolved on a server that was still shutting down — the ordinary shape of a SIGTERM and SIGINT handler both firing. Concurrent callers now await the same shutdown.
+- Cached node-liveness answers were never pruned; node ids are per-process, so a cluster doing rolling deploys accumulated one entry per release.
+
+**Framework adapters**
+
+- The NestJS adapter left a filtered-out WebSocket upgrade socket open instead of destroying it, leaking one file descriptor per non-matching upgrade. Express, Fastify and Hono already had this fix; Nest is the adapter most likely to be filtering, since a gateway pattern or `upgradePathPrefix` is the normal way to mount it. As in the others, a socket is only destroyed when no other `upgrade` listener could want it.
 
 **Documentation**
 

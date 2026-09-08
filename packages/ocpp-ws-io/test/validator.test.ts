@@ -123,8 +123,23 @@ describe("Validator", () => {
       }
     });
 
-    it("should throw for additionalProperties violation", () => {
+    it("should throw OccurenceConstraintViolation for additionalProperties (1.6 spelling)", () => {
       const v = new Validator("ocpp1.6", testSchemas);
+      try {
+        v.validate("urn:Heartbeat.req", { extraField: "nope" });
+        expect.unreachable("should have thrown");
+      } catch (err: unknown) {
+        // 1.6 Part 4 spells this with one `r` — the typo is the spec's own and
+        // is what a 1.6 charge point's error enum contains. Same treatment as
+        // FormationViolation in the test above.
+        expect((err as { rpcErrorCode: string }).rpcErrorCode).toBe(
+          "OccurenceConstraintViolation",
+        );
+      }
+    });
+
+    it("keeps the corrected spelling on 2.0.1", () => {
+      const v = new Validator("ocpp2.0.1", testSchemas);
       try {
         v.validate("urn:Heartbeat.req", { extraField: "nope" });
         expect.unreachable("should have thrown");

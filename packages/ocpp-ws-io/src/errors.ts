@@ -149,6 +149,29 @@ export class RPCOccurrenceConstraintViolationError extends RPCGenericError {
   }
 }
 
+/**
+ * The OCPP 1.6J spelling of {@link RPCOccurrenceConstraintViolationError}.
+ *
+ * 1.6 Part 4 names this code `OccurenceConstraintViolation` — one `r` in
+ * "Occurence". The typo is in the specification itself and is therefore
+ * normative: it is what a 1.6 charge point's error enum contains. 2.0.1
+ * corrected the spelling, so the two versions genuinely differ, the same way
+ * `FormationViolation` became `FormatViolation`.
+ *
+ * Emitted automatically for 1.6 subprotocols; you should not need to construct
+ * it directly.
+ */
+export class RPCOccurenceConstraintViolationError extends RPCGenericError {
+  override readonly rpcErrorCode = "OccurenceConstraintViolation";
+  override readonly rpcErrorMessage =
+    "Payload for action is syntactically correct but at least one of the fields violates occurrence constraints";
+
+  constructor(message?: string, details: Record<string, unknown> = {}) {
+    super(message, details);
+    this.name = "RPCOccurenceConstraintViolationError";
+  }
+}
+
 export class RPCTypeConstraintViolationError extends RPCGenericError {
   override readonly rpcErrorCode = "TypeConstraintViolation";
   override readonly rpcErrorMessage =

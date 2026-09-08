@@ -115,6 +115,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   >();
   private _wss: WebSocketServer | null = null;
   private _state: "OPEN" | "CLOSING" | "CLOSED" = "OPEN";
+  /** The close() in progress, so concurrent callers await the same shutdown. */
+  private _closing: Promise<void> | null = null;
   private _adapter: EventAdapterInterface | null = null;
   private _httpServerAbortControllers = new Set<AbortController>();
   private _logger: LoggerLike | null = null;
@@ -199,15 +201,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     this._wss = this._createWss();
 
     // Start Session Garbage Collector
-    this._gcInterval = setInterval(() => {
-      const now = Date.now();
-      for (const [identity, session] of this._sessions.entries()) {
-        if (now - session.lastActive > this._sessionTimeoutMs) {
-          this._sessions.delete(identity);
-        }
-      }
-      this._sweepConnectionBuckets(now);
-    }, 60 * 1000).unref(); // Run every minute, don't block exit
+    this._startSessionGC();
 
     // Initialize logger
     this._logger = initLogger(this._options.logging, {
@@ -780,6 +774,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       for (const plugin of this._plugins) {
         this._initPlugin(plugin);
       }
+
+      // Everything else close() stopped. Each of these was started once, in the
+      // constructor or at plugin registration, so a restarted server came back
+      // with the session GC dead (leaking a connection bucket per client IP),
+      // adaptive rate limiting stopped while still attached — so it stayed
+      // pinned at a multiplier of 1 and never shed load again, while every
+      // option still said it was enabled — and telemetry never pushed again.
+      this._startSessionGC();
+      this._adaptiveLimiter?.start();
+      this._startTelemetryPush();
     }
 
     // Re-create the worker pool after a close()/listen() restart cycle
@@ -2032,6 +2036,49 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   }
 
   /**
+   * Start the session garbage collector, which also sweeps the per-IP
+   * connection-rate buckets.
+   *
+   * Called from the constructor and again from `listen()` when a closed server
+   * restarts. `close()` clears the interval so the timer cannot hold work
+   * against a shut-down server, and for a long time nothing started it again:
+   * a restarted server kept `_connectionBuckets` — one entry per distinct
+   * client IP, and the only thing that ever removes one is the sweep below —
+   * for the rest of the process's life, and stopped expiring sessions by age.
+   * Idempotent, so calling it on an already-running server is a no-op.
+   */
+  private _startSessionGC(): void {
+    if (this._gcInterval) return;
+    this._gcInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [identity, session] of this._sessions.entries()) {
+        if (now - session.lastActive > this._sessionTimeoutMs) {
+          this._sessions.delete(identity);
+        }
+      }
+      this._sweepConnectionBuckets(now);
+      this._sweepNodeLiveness(now);
+    }, 60 * 1000).unref(); // Run every minute, don't block exit
+  }
+
+  /**
+   * Drop cached node-liveness answers that are far past their TTL.
+   *
+   * `_nodeLiveness` is keyed by node id and was only ever written to. Node ids
+   * are per-process, so a cluster doing rolling deploys mints new ones on every
+   * release and the map grew for the life of the process. `_nodeLivenessSeen`
+   * is deliberately left alone — it records that a node once advertised itself,
+   * which is what makes a later absence mean "dead" rather than "old build",
+   * and forgetting it would make routing flap across a mixed-version cluster.
+   */
+  private _sweepNodeLiveness(now: number): void {
+    const maxAge = OCPPServer._NODE_LIVENESS_TTL_MS * 60;
+    for (const [nodeId, entry] of this._nodeLiveness) {
+      if (now - entry.at > maxAge) this._nodeLiveness.delete(nodeId);
+    }
+  }
+
+  /**
    * Evict per-IP connection buckets that have been idle longer than the
    * rate-limit window. Recreating a bucket grants a full token allowance,
    * which is exactly what a full refill after `windowMs` idle would yield —
@@ -2053,8 +2100,22 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   // ─── Close ───────────────────────────────────────────────────
 
   async close(options: CloseOptions = {}): Promise<void> {
+    // A second close() while the first is still draining used to return at
+    // once, so `await server.close()` resolved on a server that was still
+    // shutting down. That is the normal shape of a shutdown path — a SIGTERM
+    // and a SIGINT handler, or a framework onClose alongside an explicit call —
+    // and the caller went on to exit the process mid-drain. Join the run in
+    // progress instead.
+    if (this._state === "CLOSING" && this._closing) return this._closing;
     if (this._state !== "OPEN") return;
 
+    this._closing = this._doClose(options).finally(() => {
+      this._closing = null;
+    });
+    return this._closing;
+  }
+
+  private async _doClose(options: CloseOptions = {}): Promise<void> {
     this._state = "CLOSING";
     this.emit("closing");
     this._logger?.info?.("Server closing", {

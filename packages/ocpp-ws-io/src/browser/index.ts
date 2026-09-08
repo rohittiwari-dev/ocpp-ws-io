@@ -19,6 +19,7 @@ export {
   RPCMessageTypeNotSupportedError,
   RPCNotImplementedError,
   RPCNotSupportedError,
+  RPCOccurenceConstraintViolationError,
   RPCOccurrenceConstraintViolationError,
   RPCPropertyConstraintViolationError,
   RPCProtocolError,

@@ -157,7 +157,28 @@ export class OcppService implements OnModuleInit, OnModuleDestroy {
   }
 
   private handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
-    if (!this.shouldHandleUpgrade(req)) return;
+    if (!this.shouldHandleUpgrade(req)) {
+      // Node only closes an unhandled upgrade when NO 'upgrade' listener
+      // exists — once one is registered it assumes a listener took ownership.
+      // Returning here therefore left the socket open forever whenever this
+      // was the only listener, leaking one fd per filtered-out upgrade. When
+      // other listeners are attached (a Nest @WebSocketGateway, say), one of
+      // them may still want the socket, so it is left alone.
+      //
+      // Express, Fastify and Hono took this fix; Nest was missed, and it is
+      // the adapter most likely to be filtering, since a gateway pattern or
+      // upgradePathPrefix is the normal way to mount it.
+      const httpServer = this.attachedHttpServer;
+      if (
+        httpServer &&
+        httpServer.listenerCount("upgrade") <= 1 &&
+        typeof socket?.destroy === "function" &&
+        !socket.destroyed
+      ) {
+        socket.destroy();
+      }
+      return;
+    }
     this.ocppServer.handleUpgrade(req, socket, head);
   }
 

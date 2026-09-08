@@ -45,6 +45,10 @@ export function createRPCError(
       return new errors.RPCPropertyConstraintViolationError(message, details);
     case "OccurrenceConstraintViolation":
       return new errors.RPCOccurrenceConstraintViolationError(message, details);
+    // The 1.6 spelling. Without this case it fell through to GenericError,
+    // which would replace one wrong code with another.
+    case "OccurenceConstraintViolation":
+      return new errors.RPCOccurenceConstraintViolationError(message, details);
     case "TypeConstraintViolation":
       return new errors.RPCTypeConstraintViolationError(message, details);
     default:
