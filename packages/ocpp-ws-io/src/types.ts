@@ -763,9 +763,29 @@ interface ServerOptionsBase {
    * only /health and /metrics are handled; all other routes are left to
    * the application, and close() will not close the external server.
    * Ensure your app does not also write responses for /health or /metrics.
+   *
+   * - `true` — endpoints enabled, no access control
+   * - `{ auth }` — endpoints enabled with access control
+   *
    * (default: false)
+   *
+   * @example
+   * ```ts
+   * // No auth — open to anyone (dev / internal network)
+   * const server = new OCPPServer({ healthEndpoint: true });
+   *
+   * // Bearer token — Prometheus sends `Authorization: Bearer <token>`
+   * const server = new OCPPServer({
+   *   healthEndpoint: { auth: { bearer: process.env.METRICS_TOKEN! } },
+   * });
+   *
+   * // Basic auth — `Authorization: Basic base64(user:pass)`
+   * const server = new OCPPServer({
+   *   healthEndpoint: { auth: { username: "admin", password: "s3cret" } },
+   * });
+   * ```
    */
-  healthEndpoint?: boolean;
+  healthEndpoint?: boolean | HealthEndpointOptions;
   /**
    * Maximum WebSocket payload size in bytes. Messages exceeding this limit
    * are rejected at the transport layer before JSON parsing, preventing OOM
@@ -957,6 +977,39 @@ export interface OCPPServerStats {
     /** Current messages waiting to be flushed to network (bytes) */
     bufferedAmount: number;
   };
+}
+
+// ─── Health Endpoint Options ─────────────────────────────────────
+
+/** Bearer-token auth for health/metrics endpoints. */
+export interface HealthEndpointBearerAuth {
+  /** Token the client sends as `Authorization: Bearer <token>`. */
+  bearer: string;
+}
+
+/** Basic auth for health/metrics endpoints. */
+export interface HealthEndpointBasicAuth {
+  /** Username for HTTP Basic auth. */
+  username: string;
+  /** Password for HTTP Basic auth. */
+  password: string;
+}
+
+/** Auth configuration — one of bearer token or basic credentials. */
+export type HealthEndpointAuth =
+  | HealthEndpointBearerAuth
+  | HealthEndpointBasicAuth;
+
+/** Configuration for the built-in `/health` and `/metrics` endpoints. */
+export interface HealthEndpointOptions {
+  /**
+   * Access control for the endpoints. When set, requests without valid
+   * credentials receive a `401 Unauthorized` response. Credentials are
+   * compared in constant time to prevent timing attacks.
+   *
+   * Omit to leave the endpoints open (equivalent to `healthEndpoint: true`).
+   */
+  auth?: HealthEndpointAuth;
 }
 
 // ─── Listen Options ──────────────────────────────────────────────

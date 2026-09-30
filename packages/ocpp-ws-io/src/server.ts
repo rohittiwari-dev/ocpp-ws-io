@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
   createServer as createHttpServer,
@@ -28,6 +29,8 @@ import {
   type ConnectionMiddleware,
   type EventAdapterInterface,
   type HandshakeInfo,
+  type HealthEndpointAuth,
+  type HealthEndpointOptions,
   type ListenOptions,
   type LoggerLike,
   type LoggerLikeNotOptional,
@@ -290,6 +293,41 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * The point is that a scrape cannot be held open by one slow plugin.
    */
   private static readonly _METRICS_PLUGIN_TIMEOUT_MS = 2000;
+
+  private _checkHealthAuth(
+    req: IncomingMessage,
+    auth: HealthEndpointAuth,
+  ): boolean {
+    const header = req.headers.authorization ?? "";
+
+    if ("bearer" in auth) {
+      if (!header.startsWith("Bearer ")) return false;
+      const token = header.slice(7);
+      const a = Buffer.from(token);
+      const b = Buffer.from(auth.bearer);
+      return a.length === b.length && timingSafeEqual(a, b);
+    }
+
+    if (!header.startsWith("Basic ")) return false;
+    try {
+      const decoded = Buffer.from(header.slice(6), "base64").toString();
+      const colonIdx = decoded.indexOf(":");
+      if (colonIdx === -1) return false;
+      const user = decoded.slice(0, colonIdx);
+      const pass = decoded.slice(colonIdx + 1);
+      const userA = Buffer.from(user);
+      const userB = Buffer.from(auth.username);
+      const passA = Buffer.from(pass);
+      const passB = Buffer.from(auth.password);
+      const userMatch =
+        userA.length === userB.length && timingSafeEqual(userA, userB);
+      const passMatch =
+        passA.length === passB.length && timingSafeEqual(passA, passB);
+      return userMatch && passMatch;
+    } catch {
+      return false;
+    }
+  }
 
   /** Reject if a promise has not settled within `timeoutMs`. */
   private _withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -838,9 +876,27 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         ) => void)
       | undefined;
     if (this._options.healthEndpoint) {
+      const heOpts: HealthEndpointOptions | undefined =
+        typeof this._options.healthEndpoint === "object"
+          ? this._options.healthEndpoint
+          : undefined;
+
       requestHandler = async (req, res) => {
         if (res.headersSent || res.writableEnded) return;
         const url = req.url ?? "";
+
+        if (
+          (url === "/health" || url === "/metrics") &&
+          heOpts?.auth &&
+          !this._checkHealthAuth(req, heOpts.auth)
+        ) {
+          res.writeHead(401, {
+            "Content-Type": "text/plain",
+            "WWW-Authenticate": "bearer" in heOpts.auth ? "Bearer" : "Basic",
+          });
+          res.end("Unauthorized");
+          return;
+        }
 
         if (url === "/health") {
           const s = this.stats();
