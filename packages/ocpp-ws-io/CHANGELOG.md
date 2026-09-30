@@ -15,6 +15,10 @@
 - Both timeouts are immediately reconfigurable via `server.reconfigure()` on owned HTTP servers.
 - `ServerOptions.healthEndpoint` now accepts `HealthEndpointOptions` in addition to `boolean`. Pass `{ auth: { bearer: "token" } }` for bearer-token auth or `{ auth: { username, password } }` for basic auth on `/health` and `/metrics` endpoints. Credentials are compared in constant time. Unauthenticated requests receive `401 Unauthorized`.
 
+### Fixed
+
+- **`_nodeLivenessSeen` now sheds dead entries during periodic liveness sweeps.** Previously, the set grew unboundedly across rolling deploys because retired node UUIDs were never removed. Dead nodes whose cached liveness entry has aged out (5 min) are now evicted from `_nodeLivenessSeen`, and both maps are cleared on `close()` for clean restart cycles.
+
 ## v2.3.2 - Leap Towards Stability (2026-09-08)
 
 A full review of the package, worked subsystem by subsystem. One authentication bypass, a class of defects that were silent rather than wrong, and the API surface corrected where it described behaviour the code did not have. Several of the findings came from driving real messages and reading what arrived rather than from reading the source, which is how the protocol-conformance and plugin defects below surfaced at all. Every fix carries a regression test confirmed to fail without it; the suite went from 840 to 1076.

@@ -2132,19 +2132,23 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   }
 
   /**
-   * Drop cached node-liveness answers that are far past their TTL.
+   * Drop cached node-liveness answers that are far past their TTL, and
+   * forget dead nodes from `_nodeLivenessSeen` so the Set does not grow
+   * unbounded across rolling deploys.
    *
-   * `_nodeLiveness` is keyed by node id and was only ever written to. Node ids
-   * are per-process, so a cluster doing rolling deploys mints new ones on every
-   * release and the map grew for the life of the process. `_nodeLivenessSeen`
-   * is deliberately left alone — it records that a node once advertised itself,
-   * which is what makes a later absence mean "dead" rather than "old build",
-   * and forgetting it would make routing flap across a mixed-version cluster.
+   * A node is safe to forget once its cached liveness entry is both dead
+   * and older than the presence TTL — its registry key has long expired,
+   * so removing it from `_nodeLivenessSeen` cannot cause a routing flap.
+   * If the same node ID ever reappears in the registry it will be
+   * re-added on the next `_isNodeAlive` call.
    */
   private _sweepNodeLiveness(now: number): void {
     const maxAge = OCPPServer._NODE_LIVENESS_TTL_MS * 60;
     for (const [nodeId, entry] of this._nodeLiveness) {
-      if (now - entry.at > maxAge) this._nodeLiveness.delete(nodeId);
+      if (now - entry.at > maxAge) {
+        this._nodeLiveness.delete(nodeId);
+        if (!entry.alive) this._nodeLivenessSeen.delete(nodeId);
+      }
     }
   }
 
@@ -2319,6 +2323,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       pending.reject(new Error("Server closing"));
     }
     this._pendingRemoteCalls.clear();
+    this._nodeLiveness.clear();
+    this._nodeLivenessSeen.clear();
 
     // Withdraw this node's liveness entry so other nodes stop routing here at
     // once, instead of waiting out its TTL.
