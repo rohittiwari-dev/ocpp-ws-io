@@ -5,7 +5,7 @@ import { OCPPServer } from "../src/server.js";
 
 /**
  * maxBadMessages counts bad messages in a row: every valid message resets the
- * count (as ocpp-rpc does). Counting over the whole connection slowly
+ * count. Counting over the whole connection slowly
  * disconnected working chargers that send an occasional odd frame. Empty
  * frames, which some charge point vendors send, are ignored outright.
  */

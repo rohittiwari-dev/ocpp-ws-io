@@ -9,6 +9,9 @@ import type {
   OCPPProtocolKey,
   OCPPRequestType,
   OCPPResponseType,
+  OCPPSendMethodMap,
+  OCPPSendRequestType,
+  SendMethodNames,
 } from "./generated/index.js";
 import type { Validator } from "./validator.js";
 
@@ -18,6 +21,9 @@ export type {
   OCPPProtocolKey,
   OCPPRequestType,
   OCPPResponseType,
+  OCPPSendMethodMap,
+  OCPPSendRequestType,
+  SendMethodNames,
 };
 
 // ─── Typed EventEmitter ──────────────────────────────────────────
@@ -110,6 +116,10 @@ export enum SecurityProfile {
 
 // ─── Message Types ───────────────────────────────────────────────
 
+/**
+ * RPC message type numbers. CALLRESULTERROR and SEND exist only in OCPP 2.1;
+ * on older protocols they are unknown message types and are ignored.
+ */
 export const MessageType = {
   CALL: 2,
   CALLRESULT: 3,
@@ -117,11 +127,6 @@ export const MessageType = {
   CALLRESULTERROR: 5,
   SEND: 6,
 } as const;
-
-/** OCPP 2.1 CALLRESULTERROR (5) and SEND (6): valid on 2.1, never answered. */
-export const OCPP21_UNANSWERED_MESSAGE_TYPES: ReadonlySet<number> = new Set([
-  5, 6,
-]);
 
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
@@ -136,10 +141,22 @@ export type OCPPCallError = [
   string,
   Record<string, unknown>,
 ];
+/** OCPP 2.1: sent back when a received CALLRESULT could not be processed. */
+export type OCPPCallResultError = [
+  5,
+  string,
+  string,
+  string,
+  Record<string, unknown>,
+];
+/** OCPP 2.1: an unconfirmed message that is never answered. */
+export type OCPPSend<T = unknown> = [6, string, string, T];
 export type OCPPMessage<T = unknown> =
   | OCPPCall<T>
   | OCPPCallResult<T>
-  | OCPPCallError;
+  | OCPPCallError
+  | OCPPCallResultError
+  | OCPPSend<T>;
 
 // ─── TLS Options ─────────────────────────────────────────────────
 
@@ -169,6 +186,11 @@ export interface HandlerContext<T = unknown> {
   params: T;
   /** Abort signal */
   signal: AbortSignal;
+  /**
+   * True for an OCPP 2.1 SEND message. Nothing is sent back for it: the
+   * handler's return value is ignored and a thrown error is only logged.
+   */
+  unconfirmed?: boolean;
 }
 
 export type CallHandler<TParams = unknown, TResult = unknown> = (
@@ -1119,6 +1141,8 @@ export interface ClientEvents {
   call: [OCPPCall];
   callResult: [OCPPCallResult];
   callError: [OCPPCallError];
+  /** OCPP 2.1: the peer could not process a CALLRESULT this side sent. */
+  callResultError: [OCPPCallResultError];
   badMessage: [{ message: string; error: Error }];
   handlerError: [{ method: string; error: Error }];
   pongTimeout: [{ identity: string }];
@@ -1539,6 +1563,8 @@ export type MiddlewareContext =
       method: string;
       params: unknown;
       protocol?: string;
+      /** True for an OCPP 2.1 SEND, which is never answered. */
+      unconfirmed?: boolean;
     }
   | {
       type: "outgoing_call";
@@ -1546,6 +1572,8 @@ export type MiddlewareContext =
       method: string;
       params: unknown;
       options: CallOptions;
+      /** True for an OCPP 2.1 SEND, which expects no answer. */
+      unconfirmed?: boolean;
     }
   | {
       type: "incoming_result";

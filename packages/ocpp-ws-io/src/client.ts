@@ -27,6 +27,7 @@ import {
   type CloseOptions,
   ConnectionState,
   type HandlerContext,
+  type JsonValue,
   type LoggerLike,
   type LoggerLikeNotOptional,
   type MessageDirection,
@@ -35,13 +36,16 @@ import {
   MessageType,
   type MiddlewareContext,
   NOREPLY,
-  OCPP21_UNANSWERED_MESSAGE_TYPES,
   type OCPPCall,
   type OCPPCallError,
   type OCPPCallResult,
+  type OCPPCallResultError,
   type OCPPMessage,
   type OCPPProtocol,
+  type OCPPSend,
+  type OCPPSendRequestType,
   SecurityProfile,
+  type SendMethodNames,
   type TypedEventEmitter,
   type WildcardHandler,
 } from "./types.js";
@@ -56,6 +60,47 @@ import type { Validator } from "./validator.js";
 import { isEmptyFrame, isValidStatusCode } from "./ws-util.js";
 
 const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
+
+/** Fewest elements a frame of each message type can have (Part 4 §4.2). */
+const MIN_FRAME_LENGTH: Readonly<Record<number, number>> = {
+  [MessageType.CALL]: 4,
+  [MessageType.CALLRESULT]: 3,
+  [MessageType.CALLERROR]: 5,
+  [MessageType.CALLRESULTERROR]: 5,
+  [MessageType.SEND]: 4,
+};
+
+/** Which error frame answers a bad message, and under which message ID. */
+interface BadMessageReply {
+  frame: typeof MessageType.CALLERROR | typeof MessageType.CALLRESULTERROR;
+  messageId: string;
+}
+
+/** A frame whose message ID could not be read is answered under ID "-1". */
+const UNREADABLE_ID_REPLY: BadMessageReply = {
+  frame: MessageType.CALLERROR,
+  messageId: "-1",
+};
+
+/** Which schema of a message is being validated. */
+type SchemaKind = "req" | "conf" | "send";
+
+/**
+ * Schema id for a message. A SEND has a single schema with no request/response
+ * suffix (`urn:NotifyPeriodicEventStream`).
+ */
+function schemaIdFor(method: string, kind: SchemaKind): string {
+  return kind === "send" ? `urn:${method}` : `urn:${method}.${kind}`;
+}
+
+/** Position of the payload (or error details) object per message type. */
+const PAYLOAD_INDEX: Readonly<Record<number, number>> = {
+  [MessageType.CALL]: 3,
+  [MessageType.CALLRESULT]: 2,
+  [MessageType.CALLERROR]: 4,
+  [MessageType.CALLRESULTERROR]: 4,
+  [MessageType.SEND]: 3,
+};
 
 interface PendingCall {
   resolve: (value: unknown) => void;
@@ -599,6 +644,19 @@ export class OCPPClient<
   ): void;
 
   /**
+   * Register a version-specific handler for an OCPP 2.1 SEND message —
+   * `handle("ocpp2.1", "NotifyPeriodicEventStream", handler)`. Nothing is sent
+   * back for a SEND: `ctx.unconfirmed` is true and the return value is ignored.
+   */
+  handle<V extends OCPPProtocol, M extends SendMethodNames<V>>(
+    version: V,
+    method: M,
+    handler: (
+      context: HandlerContext<OCPPSendRequestType<V, M>>,
+    ) => void | Promise<void>,
+  ): void;
+
+  /**
    * Register a handler for a custom/extension protocol/method not in the typed OCPP method maps.
    * `handle("my-protocol", "my-method", handler)`
    *
@@ -627,6 +685,18 @@ export class OCPPClient<
       | OCPPResponseType<P, M>
       | Promise<OCPPResponseType<P, M>>
       | typeof NOREPLY,
+  ): void;
+
+  /**
+   * Register a handler for an OCPP 2.1 SEND message on the client's default
+   * protocol — `handle("NotifyPeriodicEventStream", handler)`. Nothing is sent
+   * back for a SEND: `ctx.unconfirmed` is true and the return value is ignored.
+   */
+  handle<M extends SendMethodNames<P>>(
+    method: M,
+    handler: (
+      context: HandlerContext<OCPPSendRequestType<P, M>>,
+    ) => void | Promise<void>,
   ): void;
 
   /**
@@ -875,6 +945,74 @@ export class OCPPClient<
       params ?? {},
       options ?? {},
     ) as Promise<TResult>;
+  }
+
+  // ─── Send (OCPP 2.1 unconfirmed messages) ───────────────────
+
+  /**
+   * Send an OCPP 2.1 unconfirmed message (RPC type SEND), such as
+   * `send("NotifyPeriodicEventStream", {...})`. Nothing is answered, so this
+   * resolves once the frame is written. It does not wait behind an outstanding
+   * CALL (Part 4 §4.2.4) and throws on any protocol other than OCPP 2.1.
+   */
+  async send<M extends SendMethodNames<P>>(
+    method: M,
+    params: OCPPSendRequestType<P, M>,
+  ): Promise<void>;
+
+  /** Send a SEND message that is not in the typed maps. */
+  async send(method: string, params?: object): Promise<void>;
+
+  async send(
+    method: string,
+    params: OCPPSendRequestType<P, SendMethodNames<P>> | object = {},
+  ): Promise<void> {
+    if (this._protocol !== "ocpp2.1") {
+      throw new Error(
+        `SEND messages exist only in OCPP 2.1; this connection uses ${this._protocol ?? "no subprotocol"}`,
+      );
+    }
+    if (this._state !== OPEN || !this._ws) {
+      throw new Error(`Cannot send: client is in state ${this._state}`);
+    }
+
+    const messageId = createId();
+    const ctx: MiddlewareContext = {
+      type: "outgoing_call",
+      messageId,
+      method,
+      params,
+      options: {},
+      unconfirmed: true,
+    };
+
+    await this._middleware.execute(ctx, async (c) => {
+      const ctxvals = c as Extract<
+        MiddlewareContext,
+        { type: "outgoing_call" }
+      >;
+      if (this._options.strictMode && this._protocol) {
+        this._validateOutbound(ctxvals.method, ctxvals.params, "send");
+      }
+
+      const frame: OCPPSend = [
+        MessageType.SEND,
+        messageId,
+        ctxvals.method,
+        ctxvals.params,
+      ];
+      const allowSend = this._invokeBeforeSend(frame);
+      const allowed =
+        allowSend instanceof Promise ? await allowSend : allowSend;
+      if (allowed === false) return;
+
+      await new Promise<void>((resolve, reject) => {
+        this._safeSend(this._ws, JSON.stringify(frame), (err) =>
+          err ? reject(err) : resolve(),
+        );
+      });
+      this._emitMessageEvent(frame, "OUT", ctxvals);
+    });
   }
 
   // ─── Safe Call (Best Effort) ─────────────────────────────────
@@ -1247,103 +1385,91 @@ export class OCPPClient<
     // charger.
     if (preParsed === undefined && isEmptyFrame(rawData)) return;
 
+    const rawText = () =>
+      typeof rawData === "string" ? rawData : (rawData as Buffer).toString();
+
+    // Until the message ID has been read, a bad frame is answered under ID
+    // "-1" (2.0.1 / 2.1 §4.2.3: "When also the MessageId cannot be read").
     let message: OCPPMessage;
     try {
-      if (preParsed !== undefined) {
-        // Worker pool already parsed — skip JSON.parse entirely
-        message = preParsed as OCPPMessage;
-      } else {
-        // JSON.parse accepts a Buffer directly (implicit utf8 toString).
-        message = JSON.parse(rawData as unknown as string) as OCPPMessage;
-      }
-      if (!Array.isArray(message)) throw new Error("Message is not an array");
-    } catch (err) {
+      message =
+        preParsed !== undefined
+          ? // Worker pool already parsed — skip JSON.parse entirely
+            (preParsed as OCPPMessage)
+          : // JSON.parse accepts a Buffer directly (implicit utf8 toString).
+            (JSON.parse(rawData as unknown as string) as OCPPMessage);
+    } catch {
       this._onBadMessage(
-        typeof rawData === "string" ? rawData : (rawData as Buffer).toString(),
-        err as Error,
+        rawText(),
+        createRPCError("RpcFrameworkError", "Message must be a JSON structure"),
+        UNREADABLE_ID_REPLY,
+      );
+      return;
+    }
+    if (!Array.isArray(message)) {
+      this._onBadMessage(
+        rawText(),
+        createRPCError("RpcFrameworkError", "Message must be an array"),
+        UNREADABLE_ID_REPLY,
       );
       return;
     }
 
-    const messageType = message[0];
-    const messageId = message[1];
+    // Typed as parsed JSON: the frame is untrusted until checked below.
+    const messageType: JsonValue = message[0];
+    const messageId: JsonValue = message[1];
 
-    if (typeof messageId !== "string") {
+    if (typeof messageType !== "number") {
       this._onBadMessage(
-        typeof rawData === "string" ? rawData : (rawData as Buffer).toString(),
-        // A malformed frame, not an unsupported message type. The code is
-        // translated to the 1.6 spelling in _onBadMessage.
-        new RPCFormatViolationError(
-          `Invalid MessageId type: ${typeof messageId} (expected string)`,
-        ),
+        rawText(),
+        createRPCError("RpcFrameworkError", "Message type must be a number"),
+        UNREADABLE_ID_REPLY,
       );
       return;
     }
 
-    // The message type has to be settled before anything below can mean
-    // something. The structure and payload checks that follow both index into
-    // the frame by type, and for an unknown type they fell back to index 2 —
-    // so a frame carrying an unsupported MessageTypeId was reported as a
-    // malformed payload, and the switch's own MessageTypeNotSupported branch
-    // was unreachable in practice. 2.1 adds types 5 and 6, which is how a
-    // newer charge point reaches this.
-    //
-    // On a 2.1 connection those two are valid traffic that is not handled yet.
-    // Counting them as bad messages disconnected a charger for streaming SEND
-    // frames, and the spec forbids answering them, so they are dropped.
-    /* 
-      TODO: Consider emitting a warning or logging this, but do not treat it as a bad message since it's valid in OCPP 2.1 and may be handled in the future.
-    */
-    if (
-      this._protocol === "ocpp2.1" &&
-      OCPP21_UNANSWERED_MESSAGE_TYPES.has(messageType)
-    ) {
-      this._logger?.debug?.("Dropping unhandled OCPP 2.1 message", {
-        messageType,
-        messageId,
-      });
-      this._resetBadMessageCount();
-      return;
-    }
-    if (
-      messageType !== MessageType.CALL &&
-      messageType !== MessageType.CALLRESULT &&
-      messageType !== MessageType.CALLERROR
-    ) {
+    // A type number this protocol does not define is a bad message, answered
+    // with MessageTypeNotSupported (2.0.1 §4.4) under ID "-1": the frame's own
+    // ID is not read for a type the protocol does not define.
+    if (!this._isKnownMessageType(messageType)) {
       this._onBadMessage(
-        JSON.stringify(message),
+        rawText(),
         new RPCMessageTypeNotSupportedError(
           `Unknown message type: ${messageType}`,
         ),
+        UNREADABLE_ID_REPLY,
       );
       return;
     }
 
-    // Basic structure validation: CALL must have 4 elements, RESULT/ERROR must have 3/5
-    if (
-      (messageType === MessageType.CALL && message.length < 4) ||
-      (messageType === MessageType.CALLRESULT && message.length < 3) ||
-      (messageType === MessageType.CALLERROR && message.length < 5)
-    ) {
+    if (typeof messageId !== "string") {
+      this._onBadMessage(
+        rawText(),
+        createRPCError("RpcFrameworkError", "Message ID must be a string"),
+        UNREADABLE_ID_REPLY,
+      );
+      return;
+    }
+
+    if (message.length < MIN_FRAME_LENGTH[messageType]) {
       this._onBadMessage(
         JSON.stringify(message),
         new RPCFormatViolationError(
           `Missing payload elements for message type ${messageType}`,
         ),
+        this._replyTo(messageType, messageId),
       );
       return;
     }
 
     // Payload MUST be a JSON object (not array or primitive)
-    const payloadIndex =
-      messageType === MessageType.CALLERROR
-        ? 4
-        : messageType === MessageType.CALL
-          ? 3
-          : 2;
+    const payloadIndex = PAYLOAD_INDEX[messageType];
     // Every OCPP-J version allows an absent payload to be sent as null
     // (1.6J §4.2.1, 2.0.1/2.1 §4.1.5); it means the same as {}.
-    if (messageType === MessageType.CALL && message[3] === null) {
+    if (
+      (messageType === MessageType.CALL || messageType === MessageType.SEND) &&
+      message[3] === null
+    ) {
       (message as OCPPCall)[3] = {};
     } else if (messageType === MessageType.CALLRESULT && message[2] === null) {
       (message as OCPPCallResult)[2] = {};
@@ -1365,6 +1491,7 @@ export class OCPPClient<
                 : typeof payload
           }`,
         ),
+        this._replyTo(messageType, messageId),
       );
       return;
     }
@@ -1374,6 +1501,12 @@ export class OCPPClient<
     switch (messageType) {
       case MessageType.CALL:
         this._handleIncomingCall(message as OCPPCall);
+        break;
+      case MessageType.SEND:
+        this._handleIncomingSend(message as OCPPSend);
+        break;
+      case MessageType.CALLRESULTERROR:
+        this._handleCallResultError(message as OCPPCallResultError);
         break;
       case MessageType.CALLRESULT:
         // Async with no await: an error escaping it (a throwing middleware or
@@ -1394,14 +1527,127 @@ export class OCPPClient<
           });
         });
         break;
-      default:
-        this._onBadMessage(
-          JSON.stringify(message),
-          new RPCMessageTypeNotSupportedError(
-            `Unknown message type: ${messageType}`,
-          ),
-        );
     }
+  }
+
+  /** CALLRESULTERROR and SEND exist only in OCPP 2.1. */
+  private _isKnownMessageType(type: number): boolean {
+    if (
+      type === MessageType.CALL ||
+      type === MessageType.CALLRESULT ||
+      type === MessageType.CALLERROR
+    ) {
+      return true;
+    }
+    return (
+      this._protocol === "ocpp2.1" &&
+      (type === MessageType.CALLRESULTERROR || type === MessageType.SEND)
+    );
+  }
+
+  private _findHandler(method: string): CallHandler | undefined {
+    return (
+      (this._protocol
+        ? this._handlers.get(`${this._protocol}:${method}`)
+        : undefined) ?? this._handlers.get(method)
+    );
+  }
+
+  /**
+   * OCPP 2.1 SEND: routed to the action's handler like a CALL, but nothing is
+   * ever sent back, neither a result nor an error (Part 4 §4.2.4, Part 2
+   * FR.07). Failures are logged and surfaced as events only.
+   */
+  private async _handleIncomingSend(message: OCPPSend): Promise<void> {
+    const [, msgId, method, params] = message;
+    const ctx: MiddlewareContext = {
+      type: "incoming_call",
+      messageId: msgId,
+      method,
+      params,
+      protocol: this._protocol,
+      unconfirmed: true,
+    };
+
+    try {
+      await this._middleware.execute(ctx, async (c) => {
+        const ctxvals = c as Extract<
+          MiddlewareContext,
+          { type: "incoming_call" }
+        >;
+        const observed: OCPPSend = [
+          MessageType.SEND,
+          ctxvals.messageId,
+          ctxvals.method,
+          ctxvals.params,
+        ];
+        this._emitMessageEvent(observed, "IN", ctxvals);
+
+        if (this._state !== OPEN) return;
+
+        let handler = this._findHandler(ctxvals.method);
+        if (!handler && !this._wildcardHandler) {
+          await this._awaitHandlerGrace();
+          handler = this._findHandler(ctxvals.method);
+        }
+        if (!handler && !this._wildcardHandler) {
+          this._logger?.debug?.("No handler for SEND message", {
+            method: ctxvals.method,
+          });
+          return;
+        }
+
+        if (this._options.strictMode && this._protocol) {
+          try {
+            this._validateInbound(ctxvals.method, ctxvals.params, "send");
+          } catch {
+            // strictValidationFailure was emitted; there is nobody to tell.
+            return;
+          }
+        }
+
+        const context: HandlerContext = {
+          messageId: ctxvals.messageId,
+          method: ctxvals.method,
+          protocol: this._protocol,
+          params: ctxvals.params,
+          signal: new AbortController().signal,
+          unconfirmed: true,
+        };
+        try {
+          if (handler) {
+            await handler(context);
+          } else {
+            await this._wildcardHandler?.(ctxvals.method, context);
+          }
+        } catch (err) {
+          this._logger?.warn?.("Handler failed for SEND message", {
+            method: ctxvals.method,
+            error: (err as Error)?.message ?? String(err),
+          });
+          this.emit("handlerError", {
+            method: ctxvals.method,
+            error: err as Error,
+          });
+        }
+      });
+    } catch (err) {
+      this._logger?.error?.("Middleware failed on SEND message", {
+        method,
+        error: (err as Error)?.message ?? String(err),
+      });
+    }
+  }
+
+  /** OCPP 2.1: the peer could not process a CALLRESULT we sent. Never answered. */
+  private _handleCallResultError(message: OCPPCallResultError): void {
+    const [, msgId, errorCode, errorDescription] = message;
+    this._logger?.warn?.("Peer could not process a CALLRESULT", {
+      messageId: msgId,
+      errorCode,
+      errorDescription,
+    });
+    this.emit("callResultError", message);
   }
 
   private async _handleIncomingCall(message: OCPPCall): Promise<void> {
@@ -1440,18 +1686,17 @@ export class OCPPClient<
 
         try {
           if (this._pendingResponses.has(ctxvals.messageId)) {
+            // 1.6J Table 7 has no RpcFrameworkError; GenericError covers
+            // "any other error not covered by the previous ones".
             throw createRPCError(
-              "RpcFrameworkError",
+              this._protocol === "ocpp1.6"
+                ? "GenericError"
+                : "RpcFrameworkError",
               `Already processing call with ID: ${ctxvals.messageId}`,
             );
           }
 
-          const lookupHandler = () =>
-            (this._protocol
-              ? this._handlers.get(`${this._protocol}:${ctxvals.method}`)
-              : undefined) ?? this._handlers.get(ctxvals.method);
-
-          let specificHandler = lookupHandler();
+          let specificHandler = this._findHandler(ctxvals.method);
 
           // Startup grace. The socket dispatches as soon as it opens, so a CALL
           // can arrive before the application has finished registering its
@@ -1460,7 +1705,7 @@ export class OCPPClient<
           // ClientOptions.handlerGraceMs.
           if (!specificHandler && !this._wildcardHandler) {
             await this._awaitHandlerGrace();
-            specificHandler = lookupHandler();
+            specificHandler = this._findHandler(ctxvals.method);
           }
 
           if (!specificHandler && !this._wildcardHandler) {
@@ -1609,6 +1854,7 @@ export class OCPPClient<
               error: (mwErr as Error)?.message ?? String(mwErr),
             });
           }
+          errorDescription = this._fitErrorDescription(errorDescription);
 
           const errorResponse: OCPPCallError = [
             MessageType.CALLERROR,
@@ -1710,6 +1956,17 @@ export class OCPPClient<
           pendingCtx.removeAbortListener?.();
           this._pendingCalls.delete(ctxvals.messageId);
           pendingCtx.reject(err);
+          // 2.1 Part 2 FR.06: a response that fails the schema is answered
+          // with CALLRESULTERROR so the sender learns it was not processed.
+          if (this._protocol === "ocpp2.1") {
+            this._sendRpcError([
+              MessageType.CALLRESULTERROR,
+              ctxvals.messageId,
+              (err as RPCError).rpcErrorCode ?? "FormatViolation",
+              (err as Error).message ?? "",
+              {},
+            ]);
+          }
           return;
         }
       }
@@ -1781,7 +2038,42 @@ export class OCPPClient<
     this._badMessageWindowStart = 0;
   }
 
-  private _onBadMessage(rawMessage: string, error: Error): void {
+  /**
+   * A malformed CALL gets a CALLERROR (Part 4 §4.2.3, "the call is received"),
+   * and on OCPP 2.1 a malformed CALLRESULT gets a CALLRESULTERROR (2.1 Part 2
+   * FR.06). Nothing else is answered — a CALLERROR in particular, since two
+   * peers replying to each other's errors would loop.
+   */
+  private _replyTo(
+    messageType: number,
+    messageId: string,
+  ): BadMessageReply | undefined {
+    if (messageType === MessageType.CALL) {
+      return { frame: MessageType.CALLERROR, messageId };
+    }
+    if (
+      messageType === MessageType.CALLRESULT &&
+      this._protocol === "ocpp2.1"
+    ) {
+      return { frame: MessageType.CALLRESULTERROR, messageId };
+    }
+    return undefined;
+  }
+
+  /** ErrorDescription is string[255] on 2.0.1 and 2.1 (Table 7); 1.6 sets no limit. */
+  private _fitErrorDescription(description: string): string {
+    if (this._protocol !== "ocpp2.0.1" && this._protocol !== "ocpp2.1") {
+      return description;
+    }
+    const chars = Array.from(description);
+    return chars.length > 255 ? chars.slice(0, 255).join("") : description;
+  }
+
+  private _onBadMessage(
+    rawMessage: string,
+    error: Error,
+    reply?: BadMessageReply,
+  ): void {
     const now = Date.now();
     const windowMs = this._options.badMessageWindowMs;
 
@@ -1803,18 +2095,9 @@ export class OCPPClient<
     });
     this.emit("badMessage", { message: rawMessage, error });
 
-    // Best-effort: extract the UniqueId from the raw string and answer with a
-    // CALLERROR, so the sender is not left waiting out its timeout.
-    //
-    // The pattern used to require a MessageTypeId of literally 2, which meant
-    // any other type id — including a well-formed frame carrying a readable
-    // UniqueId — was dropped in silence. OCPP-J requires a CALLERROR whenever
-    // the UniqueId can be determined, and 2.1 adds message types 5 and 6, so a
-    // newer charge point talking to an older server hit exactly this and waited
-    // out its full timeout on every message. Any leading integer is accepted
-    // now; the id is what matters.
-    const match = rawMessage.match(/^\s*\[\s*\d+\s*,\s*"([^"]+)"/);
-    if (match?.[1] && this._ws) {
+    // The caller decides whether and how the frame is answered, so the sender
+    // of a malformed request is not left waiting out its timeout.
+    if (reply && this._ws) {
       // Report the error that actually occurred. This previously sent the
       // format-violation code whatever had gone wrong, so an unsupported
       // message type was reported to the peer as a malformed payload.
@@ -1828,34 +2111,33 @@ export class OCPPClient<
         !rpcCode || rpcCode === "GenericError" || rpcCode === "FormatViolation"
           ? formatCode
           : rpcCode;
-      const errorResponse: OCPPCallError = [
-        MessageType.CALLERROR,
-        match[1],
-        code,
-        error.message || "Invalid message format",
-        {},
-      ];
-
-      const allowSend = this._invokeBeforeSend(errorResponse);
-      if (allowSend instanceof Promise) {
-        allowSend
-          .then((allowed) => {
-            if (allowed !== false) {
-              this._safeSend(this._ws, JSON.stringify(errorResponse));
-              this.emit("callError", errorResponse);
-            }
-          })
-          .catch(() => {});
-      } else if (allowSend !== false) {
-        this._safeSend(this._ws, JSON.stringify(errorResponse));
-        this.emit("callError", errorResponse);
-      }
+      const description = error.message || "Invalid message format";
+      this._sendRpcError([reply.frame, reply.messageId, code, description, {}]);
     }
 
     if (this._badMessageCount >= this._options.maxBadMessages) {
       this.close({ code: 1002, reason: "Too many bad messages" }).catch(
         () => {},
       );
+    }
+  }
+
+  /** Send a CALLERROR or CALLRESULTERROR, honouring an onBeforeSend veto. */
+  private _sendRpcError(frame: OCPPCallError | OCPPCallResultError): void {
+    frame[3] = this._fitErrorDescription(frame[3]);
+    const send = () => {
+      this._safeSend(this._ws, JSON.stringify(frame));
+      if (frame[0] === MessageType.CALLERROR) this.emit("callError", frame);
+    };
+    const allowSend = this._invokeBeforeSend(frame);
+    if (allowSend instanceof Promise) {
+      allowSend
+        .then((allowed) => {
+          if (allowed !== false) send();
+        })
+        .catch(() => {});
+    } else if (allowSend !== false) {
+      send();
     }
   }
 
@@ -2285,7 +2567,7 @@ export class OCPPClient<
   private _validateOutbound(
     method: string,
     params: unknown,
-    suffix: "req" | "conf",
+    suffix: SchemaKind,
   ): void {
     const validator = this._findValidator();
     if (!validator) return;
@@ -2297,7 +2579,7 @@ export class OCPPClient<
       return; // Skip validation if method is not in the explicit strict list
     }
 
-    const schemaId = `urn:${method}.${suffix}`;
+    const schemaId = schemaIdFor(method, suffix);
     try {
       validator.validate(schemaId, params);
     } catch (err) {
@@ -2312,7 +2594,7 @@ export class OCPPClient<
   private _validateInbound(
     method: string,
     params: unknown,
-    suffix: "req" | "conf",
+    suffix: SchemaKind,
   ): void {
     const validator = this._findValidator();
     if (!validator) return;
@@ -2324,7 +2606,7 @@ export class OCPPClient<
       return; // Skip validation if method is not in the explicit strict list
     }
 
-    const schemaId = `urn:${method}.${suffix}`;
+    const schemaId = schemaIdFor(method, suffix);
     try {
       validator.validate(schemaId, params);
     } catch (err) {

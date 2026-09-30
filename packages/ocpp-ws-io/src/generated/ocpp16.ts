@@ -472,3 +472,7 @@ export interface OCPP16Methods {
   UnlockConnector: { request: UnlockConnectorRequest; response: UnlockConnectorResponse };
   UpdateFirmware: { request: UpdateFirmwareRequest; response: UpdateFirmwareResponse };
 }
+
+// ═══ SEND Message Map (unconfirmed, no response) ═══
+
+export type OCPP16SendMethods = Record<never, never>;

@@ -4,9 +4,17 @@
 
 ### Breaking changes
 
-- **`maxBadMessages` default changed from `Infinity` to `50`, and it now counts bad messages in a row.** Every valid message resets the count (as ocpp-rpc does), so a working charger that sends an occasional odd frame is never disconnected; only 50 consecutive malformed messages close the connection. Empty frames, which some charge point vendors send, are ignored rather than counted. Set `maxBadMessages: Infinity` explicitly to restore the previous behaviour (a startup warning is logged when this value is used).
+- **`maxBadMessages` default changed from `Infinity` to `50`, and it now counts bad messages in a row.** Every valid message resets the count, so a working charger that sends an occasional odd frame is never disconnected; only 50 consecutive malformed messages close the connection. Empty frames, which some charge point vendors send, are ignored rather than counted. Set `maxBadMessages: Infinity` explicitly to restore the previous behaviour (a startup warning is logged when this value is used).
+- **An unknown message type is answered under message ID `"-1"`.** A type number the negotiated protocol does not define (anything but 2–4, or 5–6 outside OCPP 2.1) is still a bad message answered with `MessageTypeNotSupported`, but the reply now carries message ID `"-1"` instead of echoing the frame's ID.
+- **A frame whose message ID cannot be read is answered with `RpcFrameworkError` under message ID `"-1"`** on every protocol version. This covers invalid JSON, a frame that is not an array, a message type that is not a number, and a message ID that is not a string. Such frames were previously answered only when an ID could be guessed from the raw text, and then with `FormatViolation` (`FormationViolation` on 1.6) under the guessed ID; otherwise they got no reply. 2.0.1 and 2.1 §4.2.3: "When also the MessageId cannot be read, the CALLERROR SHALL contain "-1"".
+- **On OCPP 1.6, a CALL reusing the message ID of a CALL still being handled is answered with `GenericError`** instead of `RpcFrameworkError`, which is not in the 1.6J error-code table (Table 7). 2.0.1 and 2.1 still answer with `RpcFrameworkError`.
+- **On OCPP 2.0.1 and 2.1, the error description of an outgoing CALLERROR or CALLRESULTERROR is cut to 255 characters**, the `string[255]` limit on `ErrorDescription` (Table 7). A longer description from a handler's error or from `createRPCError()` was sent in full. OCPP 1.6 sets no limit and is unchanged.
+- **A malformed CALLRESULT or CALLERROR is no longer answered with a CALLERROR.** A CALLERROR only ever answers a CALL (OCPP-J §4.2.3), and answering an error with an error let two peers loop. On OCPP 2.1 a malformed or schema-invalid CALLRESULT is answered with a CALLRESULTERROR instead (2.1 Part 2 FR.06).
 
 ### Added
+
+- **OCPP 2.1 SEND (message type 6).** An incoming SEND, such as `NotifyPeriodicEventStream`, reaches the handler registered with `handle()`, with `ctx.unconfirmed` set. It is never answered, even when the handler throws, is missing, or fails strict validation (2.1 Part 4 §4.2.4, Part 2 FR.07 / N15.FR.02). The new `send(method, params)` on the Node and browser clients sends one; it does not wait behind an outstanding CALL. SEND messages are typed through the generated `OCPP21SendMethods` map (`SendMethodNames`, `OCPPSendRequestType`), so `call()` cannot send them as a CALL.
+- **OCPP 2.1 CALLRESULTERROR (message type 5).** A received CALLRESULTERROR emits `callResultError` and is never answered. `MessageType` gains `CALLRESULTERROR` and `SEND`, and `OCPPSend` / `OCPPCallResultError` are exported.
 
 - `ClientOptions.badMessageWindowMs` / `ServerOptions.badMessageWindowMs` — also forgets a run of bad messages once it is older than the window. The window opens at the first bad message of a run, and the next bad message after it has elapsed starts a new count. Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` closes the connection on its 10th bad message in a row within a minute.
 - A startup warning is logged when `maxBadMessages` is set to `Infinity`, alerting operators to the unlimited malformed-message risk.
@@ -19,7 +27,6 @@
 ### Fixed
 
 - **A `null` payload is accepted as `{}`** on CALL and CALLRESULT frames, in both the Node and browser clients. Every OCPP-J version allows an absent payload to be sent as `null` (1.6J §4.2.1, 2.0.1/2.1 §4.1.5). It was answered with `FormationViolation` and counted as a bad message, so a charger using that notation was eventually disconnected.
-- **On an OCPP 2.1 connection, CALLRESULTERROR (5) and SEND (6) frames are dropped** instead of being answered with a CALLERROR and counted as bad messages. The spec forbids answering them, and counting them would disconnect a 2.1 charger streaming `NotifyPeriodicEventStream` under the new `maxBadMessages` default. Other protocols still treat them as malformed.
 
 ## v2.3.2 - Leap Towards Stability (2026-09-08)
 

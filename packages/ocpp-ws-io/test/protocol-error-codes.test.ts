@@ -10,9 +10,9 @@ import { OCPPServer } from "../src/server.js";
  * differently, and only one of the two renames was applied — so every 1.6
  * charge point sending a payload with a missing required field, the commonest
  * validation failure there is, got a code its enum does not contain. And a
- * frame whose MessageTypeId was anything but 2 was dropped in silence even
- * when its UniqueId was perfectly readable, leaving the sender to wait out its
- * full timeout.
+ * malformed CALL whose UniqueId is readable must be answered, or the sender
+ * waits out its full timeout. A MessageTypeId the protocol does not define is
+ * answered with MessageTypeNotSupported.
  */
 
 const portOf = (s: Server) => {
@@ -82,17 +82,19 @@ describe("OCPP-J error codes on the wire", () => {
     expect(r[0]?.[2]).toBe("OccurrenceConstraintViolation");
   }, 25000);
 
+  // Answered with MessageTypeNotSupported under message ID "-1", since the
+  // frame's own ID is not read for a type the protocol does not define. 2.1 adds types 5 and 6, so a newer charger talking to a 1.6
+  // server lands here.
   it("answers an unknown MessageTypeId instead of dropping it", async () => {
     const r = await send("ocpp1.6", [
       [99, "t99", "Heartbeat", {}],
       [5, "t5", "Heartbeat", {}],
     ]);
 
-    const byId = new Map(r.map((m) => [m[1], m]));
-    // 2.1 adds message types 5 and 6, so a newer charge point talking to an
-    // older server lands here and used to get nothing back at all.
-    expect(byId.get("t99")?.[2]).toBe("MessageTypeNotSupported");
-    expect(byId.get("t5")?.[2]).toBe("MessageTypeNotSupported");
+    expect(r.map((m) => m.slice(0, 3))).toEqual([
+      [4, "-1", "MessageTypeNotSupported"],
+      [4, "-1", "MessageTypeNotSupported"],
+    ]);
   }, 25000);
 
   it("still reports a malformed frame as a format violation, per version", async () => {

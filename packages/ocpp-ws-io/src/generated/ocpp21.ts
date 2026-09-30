@@ -1334,6 +1334,12 @@ export type UpdateFirmwareStatusEnumType = "Accepted" | "Rejected" | "AcceptedCa
 
 export type PriorityChargingStatusEnumType = "Accepted" | "Rejected" | "NoProfile";
 
+export interface StreamDataElementType {
+  t: number;
+  v: string;
+  customData?: CustomDataType;
+}
+
 // ═══ Method Types ═══
 
 export interface AdjustPeriodicEventStreamRequest {
@@ -2558,4 +2564,18 @@ export interface OCPP21Methods {
   UpdateFirmware: { request: UpdateFirmwareRequest; response: UpdateFirmwareResponse };
   UsePriorityCharging: { request: UsePriorityChargingRequest; response: UsePriorityChargingResponse };
   VatNumberValidation: { request: VatNumberValidationRequest; response: VatNumberValidationResponse };
+}
+
+// ═══ SEND Message Map (unconfirmed, no response) ═══
+
+export interface NotifyPeriodicEventStream {
+  data: StreamDataElementType[];
+  id: number;
+  pending: number;
+  basetime: string;
+  customData?: CustomDataType;
+}
+
+export interface OCPP21SendMethods {
+  NotifyPeriodicEventStream: { request: NotifyPeriodicEventStream };
 }

@@ -20,6 +20,7 @@ import WebSocketModule from "ws";
 import { OCPPServer } from "../src/server.js";
 import { BrowserOCPPClient } from "../src/browser/client.js";
 import { ConnectionState, MessageType } from "../src/browser/types.js";
+import { createRPCError } from "../src/browser/util.js";
 import type { OCPPServerClient } from "../src/server-client.js";
 
 // ─── Mock WebSocket shim ──────────────────────────────────────────
@@ -1108,6 +1109,7 @@ describe("BrowserOCPPClient", () => {
       expect(badMessages.length).toBe(1);
     });
 
+    // A bad message, answered MessageTypeNotSupported.
     it("should emit badMessage for unknown message type", async () => {
       let serverClient;
       server.on("client", (sc) => {
@@ -1130,7 +1132,7 @@ describe("BrowserOCPPClient", () => {
       serverClient!.sendRaw(JSON.stringify([99, "id", "payload"]));
       await new Promise((r) => setTimeout(r, 100));
 
-      expect(badMessages.length).toBe(1);
+      expect(badMessages).toHaveLength(1);
     });
 
     // 1.6J §4.2.1 and 2.x §4.1.5 allow an absent payload to be sent as null.
@@ -1191,6 +1193,90 @@ describe("BrowserOCPPClient", () => {
 
         expect(badMessages).toHaveLength(0);
         expect(client.state).toBe(ConnectionState.OPEN);
+      } finally {
+        await client.close({ force: true }).catch(() => {});
+        await server21.close({ force: true });
+      }
+    });
+
+    const stream21 = {
+      id: 1,
+      pending: 0,
+      basetime: "2026-01-01T00:00:00Z",
+      data: [{ t: 0, v: "230.4" }],
+    };
+
+    it("delivers an OCPP 2.1 SEND to its handler without replying", async () => {
+      const server21 = new OCPPServer({
+        protocols: ["ocpp2.1"],
+        logging: false,
+      });
+      let serverClient: OCPPServerClient | undefined;
+      server21.on("client", (sc) => {
+        serverClient = sc;
+      });
+      const port21 = getPort(await server21.listen(0));
+      try {
+        client = new BrowserOCPPClient({
+          identity: "CS21-SEND",
+          endpoint: `ws://localhost:${port21}`,
+          protocols: ["ocpp2.1"],
+          reconnect: false,
+        });
+        const seen: Array<{ unconfirmed?: boolean; params: unknown }> = [];
+        client.handle("NotifyPeriodicEventStream", (ctx) => {
+          seen.push({ unconfirmed: ctx.unconfirmed, params: ctx.params });
+        });
+        await client.connect();
+        await new Promise((r) => setTimeout(r, 100));
+
+        const outgoing: string[] = [];
+        const ws = (client as never as { _ws: { send(d: string): void } })._ws;
+        const send = ws.send.bind(ws);
+        ws.send = (d: string) => {
+          outgoing.push(d);
+          send(d);
+        };
+
+        serverClient!.sendRaw(
+          JSON.stringify([6, "s1", "NotifyPeriodicEventStream", stream21]),
+        );
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(seen).toEqual([{ unconfirmed: true, params: stream21 }]);
+        expect(outgoing).toEqual([]);
+      } finally {
+        await client.close({ force: true }).catch(() => {});
+        await server21.close({ force: true });
+      }
+    });
+
+    it("sends an OCPP 2.1 SEND with send()", async () => {
+      const server21 = new OCPPServer({
+        protocols: ["ocpp2.1"],
+        logging: false,
+      });
+      const seen: unknown[] = [];
+      server21.on("client", (sc) =>
+        sc.handle("NotifyPeriodicEventStream", (ctx) => {
+          seen.push(ctx.params);
+        }),
+      );
+      const port21 = getPort(await server21.listen(0));
+      try {
+        client = new BrowserOCPPClient({
+          identity: "CS21-OUT",
+          endpoint: `ws://localhost:${port21}`,
+          protocols: ["ocpp2.1"],
+          reconnect: false,
+        });
+        await client.connect();
+        await new Promise((r) => setTimeout(r, 100));
+
+        await client.send("NotifyPeriodicEventStream", stream21);
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(seen).toEqual([stream21]);
       } finally {
         await client.close({ force: true }).catch(() => {});
         await server21.close({ force: true });
@@ -1269,6 +1355,114 @@ describe("BrowserOCPPClient", () => {
 
       expect(badMessages).toHaveLength(0);
       expect(client.state).toBe(BrowserOCPPClient.OPEN);
+    });
+
+    /** Record every frame the browser client writes to its socket. */
+    const captureOutgoing = (c: BrowserOCPPClient) => {
+      const out: unknown[][] = [];
+      const ws = (c as never as { _ws: { send(d: string): void } })._ws;
+      const send = ws.send.bind(ws);
+      ws.send = (d: string) => {
+        out.push(JSON.parse(d));
+        send(d);
+      };
+      return out;
+    };
+
+    // 2.0.1 / 2.1 §4.2.3: when the MessageId cannot be read, reply under "-1".
+    it('answers a frame whose message ID cannot be read under "-1"', async () => {
+      let serverClient: OCPPServerClient | undefined;
+      server.on("client", (sc) => {
+        serverClient = sc;
+      });
+      client = new BrowserOCPPClient({
+        identity: "CS-UNREADABLE",
+        endpoint: `ws://localhost:${port}`,
+        protocols: ["ocpp1.6"],
+        reconnect: false,
+      });
+      await client.connect();
+      await new Promise((r) => setTimeout(r, 100));
+      const outgoing = captureOutgoing(client);
+
+      serverClient!.sendRaw("not json");
+      serverClient!.sendRaw(JSON.stringify([2, 123, "Reset", {}]));
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(outgoing.map((m) => m.slice(0, 3))).toEqual([
+        [4, "-1", "RpcFrameworkError"],
+        [4, "-1", "RpcFrameworkError"],
+      ]);
+    });
+
+    // 1.6J Table 7 has no RpcFrameworkError.
+    it("answers a duplicate in-flight message ID with GenericError on 1.6", async () => {
+      let serverClient: OCPPServerClient | undefined;
+      server.on("client", (sc) => {
+        serverClient = sc;
+      });
+      client = new BrowserOCPPClient({
+        identity: "CS-DUP",
+        endpoint: `ws://localhost:${port}`,
+        protocols: ["ocpp1.6"],
+        reconnect: false,
+      });
+      client.handle("Reset", async () => {
+        await new Promise((r) => setTimeout(r, 150));
+        return { status: "Accepted" };
+      });
+      await client.connect();
+      await new Promise((r) => setTimeout(r, 100));
+      const outgoing = captureOutgoing(client);
+
+      const frame = JSON.stringify([2, "dup", "Reset", { type: "Hard" }]);
+      serverClient!.sendRaw(frame);
+      serverClient!.sendRaw(frame);
+      await new Promise((r) => setTimeout(r, 300));
+
+      expect(outgoing.map((m) => m.slice(0, 3))).toContainEqual([
+        4,
+        "dup",
+        "GenericError",
+      ]);
+    });
+
+    // 2.0.1 / 2.1 Table 7: ErrorDescription is string[255].
+    it("limits the error description to 255 characters on 2.0.1", async () => {
+      const server201 = new OCPPServer({
+        protocols: ["ocpp2.0.1"],
+        logging: false,
+      });
+      let serverClient: OCPPServerClient | undefined;
+      server201.on("client", (sc) => {
+        serverClient = sc;
+      });
+      const port201 = getPort(await server201.listen(0));
+      try {
+        client = new BrowserOCPPClient({
+          identity: "CS-LONG",
+          endpoint: `ws://localhost:${port201}`,
+          protocols: ["ocpp2.0.1"],
+          reconnect: false,
+        });
+        client.handle("Reset", () => {
+          throw createRPCError("GenericError", "x".repeat(400));
+        });
+        await client.connect();
+        await new Promise((r) => setTimeout(r, 100));
+        const outgoing = captureOutgoing(client);
+
+        serverClient!.sendRaw(
+          JSON.stringify([2, "r1", "Reset", { type: "Immediate" }]),
+        );
+        await new Promise((r) => setTimeout(r, 150));
+
+        expect(outgoing[0]?.[0]).toBe(4);
+        expect(String(outgoing[0]?.[3])).toHaveLength(255);
+      } finally {
+        await client.close({ force: true }).catch(() => {});
+        await server201.close({ force: true });
+      }
     });
   });
 

@@ -19,18 +19,21 @@ const VERSIONS = [
     key: "ocpp16",
     file: "ocpp1_6.json",
     mapName: "OCPP16Methods",
+    sendMapName: "OCPP16SendMethods",
     protocol: "ocpp1.6",
   },
   {
     key: "ocpp201",
     file: "ocpp2_0_1.json",
     mapName: "OCPP201Methods",
+    sendMapName: "OCPP201SendMethods",
     protocol: "ocpp2.0.1",
   },
   {
     key: "ocpp21",
     file: "ocpp2_1.json",
     mapName: "OCPP21Methods",
+    sendMapName: "OCPP21SendMethods",
     protocol: "ocpp2.1",
   },
 ];
@@ -50,9 +53,13 @@ function main(baseDir = __dirname) {
     const schemaPath = path.join(SCHEMA_DIR, version.file);
     const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
     const methods = extractMethods(schema);
-    const code = generateVersionFile(version, methods);
+    const sendMethods = extractSendMethods(schema);
+    const code = generateVersionFile(version, methods, sendMethods);
     fs.writeFileSync(path.join(OUT_DIR, `${version.key}.ts`), code);
-    console.log(`✓ ${version.key}.ts  (${methods.size} methods)`);
+    const sendNote = sendMethods.size
+      ? `, ${sendMethods.size} SEND messages`
+      : "";
+    console.log(`✓ ${version.key}.ts  (${methods.size} methods${sendNote})`);
   }
 
   generateIndex(OUT_DIR);
@@ -89,9 +96,23 @@ function extractMethods(schema) {
   return methods;
 }
 
+// OCPP 2.1 unconfirmed messages (RPC type SEND) have a single schema whose id
+// carries no Request/Response suffix, e.g. `urn:NotifyPeriodicEventStream`.
+function extractSendMethods(schema) {
+  const sendMethods = new Map();
+  for (const entry of schema) {
+    const id = entry["$id"];
+    if (!id) continue;
+    const match = id.match(/^urn:([A-Za-z][A-Za-z0-9]*)$/);
+    if (!match || /(Request|Response)$/.test(match[1])) continue;
+    sendMethods.set(match[1], entry);
+  }
+  return sendMethods;
+}
+
 // ── Generate Version File ────────────────────────────────────────
 
-function generateVersionFile(version, methods) {
+function generateVersionFile(version, methods, sendMethods = new Map()) {
   const lines = [];
   lines.push(
     `// Auto-generated from ${version.file} — DO NOT EDIT`,
@@ -101,8 +122,12 @@ function generateVersionFile(version, methods) {
 
   // Collect all definitions across all schema entries
   const allDefinitions = new Map();
-  for (const [, schemas] of methods) {
-    for (const entry of [schemas.request, schemas.response]) {
+  const entryGroups = [
+    ...[...methods.values()].map((s) => [s.request, s.response]),
+    ...[...sendMethods.values()].map((entry) => [entry]),
+  ];
+  for (const entries of entryGroups) {
+    for (const entry of entries) {
       if (!entry?.definitions) continue;
       for (const [defName, defSchema] of Object.entries(entry.definitions)) {
         // Use first occurrence (schemas often duplicate definitions)
@@ -159,6 +184,25 @@ function generateVersionFile(version, methods) {
     lines.push(`  ${methodName}: { request: ${req}; response: ${res} };`);
   }
   lines.push("}", "");
+
+  // Unconfirmed (SEND) messages get their own map so call() cannot send them
+  // as a CALL and send() cannot send a CALL action.
+  lines.push("// ═══ SEND Message Map (unconfirmed, no response) ═══", "");
+  if (sendMethods.size === 0) {
+    lines.push(
+      `export type ${version.sendMapName} = Record<never, never>;`,
+      "",
+    );
+  } else {
+    for (const [name, entry] of sendMethods) {
+      lines.push(...generateInterface(name, entry, allDefinitions), "");
+    }
+    lines.push(`export interface ${version.sendMapName} {`);
+    for (const [name] of sendMethods) {
+      lines.push(`  ${name}: { request: ${name} };`);
+    }
+    lines.push("}", "");
+  }
 
   return lines.join("\n");
 }
@@ -285,9 +329,9 @@ function generateIndex(outDir) {
     "// Auto-generated index — DO NOT EDIT",
     "/* eslint-disable */",
     "",
-    'import type { OCPP16Methods } from "./ocpp16.js";',
-    'import type { OCPP201Methods } from "./ocpp201.js";',
-    'import type { OCPP21Methods } from "./ocpp21.js";',
+    'import type { OCPP16Methods, OCPP16SendMethods } from "./ocpp16.js";',
+    'import type { OCPP201Methods, OCPP201SendMethods } from "./ocpp201.js";',
+    'import type { OCPP21Methods, OCPP21SendMethods } from "./ocpp21.js";',
     "",
     "/**",
     " * Maps OCPP protocol strings to their method type maps.",
@@ -327,6 +371,28 @@ function generateIndex(outDir) {
     "  ? M extends keyof OCPPMethodMap[P] ? OCPPMethodMap[P][M] extends { response: infer R } ? R : never : never",
     "  : never;",
     "",
+    "/**",
+    " * Maps OCPP protocol strings to their unconfirmed (SEND) messages.",
+    " * Only OCPP 2.1 defines any; they are sent with send() and never answered.",
+    " */",
+    "export interface OCPPSendMethodMap {",
+    '  "ocpp1.6": OCPP16SendMethods;',
+    '  "ocpp2.0.1": OCPP201SendMethods;',
+    '  "ocpp2.1": OCPP21SendMethods;',
+    "}",
+    "",
+    "/** SEND message names for a protocol; distributes over union protocols. */",
+    "export type SendMethodNames<P extends keyof OCPPSendMethodMap> =",
+    "  P extends keyof OCPPSendMethodMap ? keyof OCPPSendMethodMap[P] & string : never;",
+    "",
+    "/** Payload type of a SEND message for a given protocol + message name. */",
+    "export type OCPPSendRequestType<",
+    "  P extends keyof OCPPSendMethodMap,",
+    "  M extends string,",
+    "> = P extends keyof OCPPSendMethodMap",
+    "  ? M extends keyof OCPPSendMethodMap[P] ? OCPPSendMethodMap[P][M] extends { request: infer R } ? R : never : never",
+    "  : never;",
+    "",
   ];
 
   fs.writeFileSync(path.join(outDir, "index.ts"), lines.join("\n"));
@@ -337,4 +403,10 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { main, extractMethods, generateVersionFile, jsonSchemaToTS };
+module.exports = {
+  main,
+  extractMethods,
+  extractSendMethods,
+  generateVersionFile,
+  jsonSchemaToTS,
+};

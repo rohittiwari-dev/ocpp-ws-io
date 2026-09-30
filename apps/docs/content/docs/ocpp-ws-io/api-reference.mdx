@@ -111,6 +111,24 @@ client.handle("Reset", ({ params }) => { ... });
 
 // Catch-all
 client.handle((method, { params }) => { ... });
+
+// OCPP 2.1 SEND message: never answered, ctx.unconfirmed is true
+client.handle("NotifyPeriodicEventStream", ({ params, unconfirmed }) => { ... });
+```
+
+A handler for an OCPP 2.1 SEND message (such as `NotifyPeriodicEventStream`) is registered the same way. Nothing is sent back for a SEND: the return value is ignored, and a thrown error is logged and emitted as `handlerError`, never sent to the peer.
+
+#### `send(method, params)`
+
+Send an OCPP 2.1 unconfirmed message (RPC type SEND, message type 6). It resolves once the frame is written, because no response exists. It does not wait behind an outstanding `call()`, as the spec allows a SEND at any time. It throws on any protocol other than `ocpp2.1`. Under `strictMode` the payload is validated against the message's schema.
+
+```typescript
+await client.send("NotifyPeriodicEventStream", {
+  id: 1,
+  pending: 0,
+  basetime: new Date().toISOString(),
+  data: [{ t: 0, v: "230.4" }],
+});
 ```
 
 #### `close(options?)`
@@ -387,6 +405,26 @@ client.handle("StatusNotification", ({ params }) => {
 });
 ```
 
+### Message types
+
+`MessageType` holds the RPC message type numbers: `CALL` (2), `CALLRESULT` (3), `CALLERROR` (4), and the OCPP 2.1 types `CALLRESULTERROR` (5) and `SEND` (6).
+
+| Received | On `ocpp1.6` / `ocpp2.0.1` | On `ocpp2.1` |
+| --- | --- | --- |
+| SEND (6) | Unknown type (see below) | Delivered to its handler, never answered |
+| CALLRESULTERROR (5) | Unknown type (see below) | `callResultError` event, never answered |
+| Any other unknown number | CALLERROR `MessageTypeNotSupported`, ID `"-1"` | CALLERROR `MessageTypeNotSupported`, ID `"-1"` |
+| Message ID cannot be read (invalid JSON, not an array, type not a number, ID not a string) | CALLERROR `RpcFrameworkError`, ID `"-1"` | CALLERROR `RpcFrameworkError`, ID `"-1"` |
+| Malformed CALL | Answered with CALLERROR | Answered with CALLERROR |
+| Malformed or schema-invalid CALLRESULT | Not answered | Answered with CALLRESULTERROR |
+| Malformed CALLERROR | Not answered | Not answered |
+
+An unknown message type counts as a bad message (emitting `badMessage`), and it is answered with a CALLERROR `MessageTypeNotSupported` under message ID `"-1"`, since the frame's own ID is not read for a type the protocol does not define. A frame whose message ID cannot be read is answered the same way with `RpcFrameworkError`, as 2.0.1 and 2.1 §4.2.3 require ("When also the MessageId cannot be read, the CALLERROR SHALL contain "-1""). A CALLERROR otherwise only answers a CALL, so two peers cannot loop by answering each other's errors.
+
+A CALL that reuses the message ID of a CALL still being handled is answered with `RpcFrameworkError` on OCPP 2.0.1 and 2.1, and with `GenericError` on OCPP 1.6, whose error-code table has no `RpcFrameworkError`.
+
+The error description of an outgoing CALLERROR or CALLRESULTERROR is cut to 255 characters on OCPP 2.0.1 and 2.1, where `ErrorDescription` is `string[255]`. OCPP 1.6 sets no limit, so descriptions are sent in full there.
+
 ---
 
 ## BrowserOCPPClient
@@ -526,6 +564,9 @@ client.on("callResult", (result) => {
 });
 client.on("callError", (error) => {
 	/* error received */
+});
+client.on("callResultError", (frame) => {
+	/* OCPP 2.1: the peer could not process a CALLRESULT we sent */
 });
 client.on("badMessage", ({ message, error }) => {
 	/* malformed */

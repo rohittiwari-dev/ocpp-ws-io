@@ -45,10 +45,14 @@ export {
   type OCPPCall,
   type OCPPCallError,
   type OCPPCallResult,
+  type OCPPCallResultError,
   type OCPPMessage,
   type OCPPProtocol,
   type OCPPRequestType,
   type OCPPResponseType,
+  type OCPPSend,
+  type OCPPSendRequestType,
+  type SendMethodNames,
   type WildcardHandler,
 } from "./types.js";
 // ─── Utilities ───────────────────────────────────────────────────

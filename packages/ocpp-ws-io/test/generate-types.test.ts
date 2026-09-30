@@ -2,7 +2,11 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 // @ts-ignore
-import { main, jsonSchemaToTS } from "../scripts/generate-types.js";
+import {
+  extractSendMethods,
+  jsonSchemaToTS,
+  main,
+} from "../scripts/generate-types.js";
 
 describe("Type Generation Script", () => {
   const outDir = path.join(__dirname, "generated-test-output");
@@ -132,5 +136,17 @@ describe("Type Generation Script", () => {
         definitions,
       ),
     ).toBe("Record<string, string>");
+  });
+
+  // OCPP 2.1 SEND messages have one schema with no Request/Response suffix.
+  it("picks out suffix-less SEND schemas only", () => {
+    const sendMethods = extractSendMethods([
+      { $id: "urn:NotifyPeriodicEventStream" },
+      { $id: "urn:BootNotificationRequest" },
+      { $id: "urn:BootNotificationResponse" },
+      { $id: "urn:Heartbeat.req" },
+      {},
+    ]);
+    expect([...sendMethods.keys()]).toEqual(["NotifyPeriodicEventStream"]);
   });
 });

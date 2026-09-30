@@ -4,6 +4,8 @@ import type {
   AllMethodNames as _AllMethodNames,
   OCPPRequestType as _OCPPRequestType,
   OCPPResponseType as _OCPPResponseType,
+  OCPPSendRequestType as _OCPPSendRequestType,
+  SendMethodNames as _SendMethodNames,
 } from "../generated/index.js";
 /**
  * Browser-compatible types for ocpp-ws-io/browser.
@@ -23,8 +25,10 @@ import type {
   OCPPCall as _OCPPCall,
   OCPPCallError as _OCPPCallError,
   OCPPCallResult as _OCPPCallResult,
+  OCPPCallResultError as _OCPPCallResultError,
   OCPPMessage as _OCPPMessage,
   OCPPProtocol as _OCPPProtocol,
+  OCPPSend as _OCPPSend,
   WildcardHandler as _WildcardHandler,
 } from "../types.js";
 
@@ -34,6 +38,8 @@ export type AnyOCPPProtocol = _AnyOCPPProtocol;
 export type OCPPCall<T = unknown> = _OCPPCall<T>;
 export type OCPPCallResult<T = unknown> = _OCPPCallResult<T>;
 export type OCPPCallError = _OCPPCallError;
+export type OCPPCallResultError = _OCPPCallResultError;
+export type OCPPSend<T = unknown> = _OCPPSend<T>;
 export type OCPPMessage<T = unknown> = _OCPPMessage<T>;
 export type HandlerContext<T = unknown> = _HandlerContext<T>;
 export type CallHandler<TParams = unknown, TResult = unknown> = _CallHandler<
@@ -55,6 +61,11 @@ export type OCPPResponseType<
   V extends OCPPProtocol,
   M extends AllMethodNames<V>,
 > = _OCPPResponseType<V, M>;
+export type SendMethodNames<V extends OCPPProtocol> = _SendMethodNames<V>;
+export type OCPPSendRequestType<
+  V extends OCPPProtocol,
+  M extends string,
+> = _OCPPSendRequestType<V, M>;
 
 // Re-export value types from the main package (these are browser-safe constants)
 export { ConnectionState, MessageType, NOREPLY } from "../types.js";
@@ -116,6 +127,8 @@ export interface BrowserClientEvents {
   call: [OCPPCall];
   callResult: [OCPPCallResult];
   callError: [OCPPCallError];
+  /** OCPP 2.1: the peer could not process a CALLRESULT this side sent. */
+  callResultError: [OCPPCallResultError];
   badMessage: [{ message: string; error: Error }];
   [key: string]: unknown[];
 }

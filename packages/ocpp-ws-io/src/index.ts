@@ -43,10 +43,22 @@ export type {
   OCPPProtocolKey,
   OCPPRequestType,
   OCPPResponseType,
+  OCPPSendMethodMap,
+  OCPPSendRequestType,
+  SendMethodNames,
 } from "./generated/index.js";
-export type { OCPP16Methods } from "./generated/ocpp16.js";
-export type { OCPP21Methods } from "./generated/ocpp21.js";
-export type { OCPP201Methods } from "./generated/ocpp201.js";
+export type {
+  OCPP16Methods,
+  OCPP16SendMethods,
+} from "./generated/ocpp16.js";
+export type {
+  OCPP21Methods,
+  OCPP21SendMethods,
+} from "./generated/ocpp21.js";
+export type {
+  OCPP201Methods,
+  OCPP201SendMethods,
+} from "./generated/ocpp201.js";
 export {
   combineAuth,
   createLoggingMiddleware,
@@ -100,9 +112,11 @@ export {
   type OCPPCall,
   type OCPPCallError,
   type OCPPCallResult,
+  type OCPPCallResultError,
   type OCPPMessage,
   type OCPPPlugin,
   type OCPPProtocol,
+  type OCPPSend,
   type OCPPServerStats,
   type PersistedSession,
   type RateLimitOptions,

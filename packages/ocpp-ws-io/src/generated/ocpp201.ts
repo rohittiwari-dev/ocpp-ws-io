@@ -1489,3 +1489,7 @@ export interface OCPP201Methods {
   UnpublishFirmware: { request: UnpublishFirmwareRequest; response: UnpublishFirmwareResponse };
   UpdateFirmware: { request: UpdateFirmwareRequest; response: UpdateFirmwareResponse };
 }
+
+// ═══ SEND Message Map (unconfirmed, no response) ═══
+
+export type OCPP201SendMethods = Record<never, never>;
