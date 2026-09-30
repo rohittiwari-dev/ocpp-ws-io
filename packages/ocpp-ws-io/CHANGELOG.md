@@ -14,6 +14,7 @@
 - `ServerOptions.requestTimeout` (default: 30 000) — max time for the complete HTTP request. Works alongside `headersTimeout` to protect the HTTP layer. Set `0` to disable.
 - Both timeouts are immediately reconfigurable via `server.reconfigure()` on owned HTTP servers.
 - `ServerOptions.healthEndpoint` now accepts `HealthEndpointOptions` in addition to `boolean`. Pass `{ auth: { bearer: "token" } }` for bearer-token auth or `{ auth: { username, password } }` for basic auth on `/health` and `/metrics` endpoints. Credentials are compared in constant time. Unauthenticated requests receive `401 Unauthorized`.
+- `EventAdapterInterface` gains optional `setSession()`, `getSession()`, and `removeSession()` methods. When implemented (the shipped `RedisAdapter` does), the server's in-memory LRU session cache becomes a read-through / write-through layer — sessions survive cross-node reconnection automatically. Activity-only writes are debounced (at most once per 30 s). No configuration required.
 
 ### Fixed
 

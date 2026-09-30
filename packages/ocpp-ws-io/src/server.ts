@@ -168,6 +168,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _gcInterval: NodeJS.Timeout | null = null;
   private readonly _sessionTimeoutMs: number;
 
+  /**
+   * Tracks the last time each identity's session was persisted to the adapter,
+   * so activity-only writes can be debounced (at most once per 30 s).
+   */
+  private _sessionLastPersisted = new Map<string, number>();
+  private static readonly _SESSION_PERSIST_DEBOUNCE_MS = 30_000;
+
   constructor(options: ServerOptions = {}) {
     super();
     this.setMaxListeners(0);
@@ -1795,6 +1802,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       this._negotiatedProtocols.set(req, selectedProtocol);
     }
 
+    // When the adapter supports session persistence and the LRU has no entry
+    // (cross-node reconnect), fetch from Redis and seed the local cache.
+    // Done here — before the synchronous handleUpgrade callback — because
+    // getSession is async.
+    let adapterSession: Record<string, unknown> | null = null;
+    if (!this._sessions.has(identity) && this._adapter?.getSession) {
+      try {
+        adapterSession = await this._adapter.getSession(identity);
+      } catch {
+        // Best-effort — fall through to an empty session.
+      }
+    }
+
     // Complete WebSocket upgrade & create client
     this._wss.handleUpgrade(req, socket, head, (ws) => {
       // The handshake is done; from here the connection is counted as a client.
@@ -1837,6 +1857,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
       const finalSession = {
         ...(ctx?.state || {}),
+        ...(adapterSession || {}),
         ...(this._sessions.get(identity)?.data || {}),
         ...(((acceptOptions as any)?.session as Record<string, unknown>) || {}),
       };
@@ -1853,7 +1874,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         plugins: this._plugins,
       });
 
-      this._updateSessionActivity(identity, client.session);
+      this._updateSessionActivity(identity, client.session, true);
 
       // ── Duplicate Identity Eviction ──
       // If a client with the same identity is already connected (e.g. 4G reconnect
@@ -2098,11 +2119,32 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _updateSessionActivity(
     identity: string,
     data: Record<string, unknown>,
+    force?: boolean,
   ) {
-    this._sessions.set(identity, {
-      data,
-      lastActive: Date.now(),
-    });
+    const now = Date.now();
+
+    // LRU is always updated — it serves as the hot cache on every path.
+    this._sessions.set(identity, { data, lastActive: now });
+
+    // When the adapter supports sessions, also persist to Redis.
+    // Activity-only writes are debounced (at most once per 30 s) to avoid
+    // flooding the store on high-message connections.
+    const adapter = this._adapter;
+    if (!adapter?.setSession) return;
+
+    if (!force) {
+      const lastPersisted = this._sessionLastPersisted.get(identity);
+      if (
+        lastPersisted !== undefined &&
+        now - lastPersisted < OCPPServer._SESSION_PERSIST_DEBOUNCE_MS
+      ) {
+        return;
+      }
+    }
+
+    this._sessionLastPersisted.set(identity, now);
+    const ttlSeconds = Math.ceil(this._sessionTimeoutMs / 1000);
+    adapter.setSession(identity, data, ttlSeconds).catch(() => {});
   }
 
   /**
@@ -2124,6 +2166,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       for (const [identity, session] of this._sessions.entries()) {
         if (now - session.lastActive > this._sessionTimeoutMs) {
           this._sessions.delete(identity);
+          this._sessionLastPersisted.delete(identity);
+          // Redis TTL handles adapter-side expiry — no removeSession call needed.
         }
       }
       this._sweepConnectionBuckets(now);
@@ -2325,6 +2369,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     this._pendingRemoteCalls.clear();
     this._nodeLiveness.clear();
     this._nodeLivenessSeen.clear();
+    this._sessionLastPersisted.clear();
 
     // Withdraw this node's liveness entry so other nodes stop routing here at
     // once, instead of waiting out its TTL.

@@ -1242,6 +1242,36 @@ export interface EventAdapterInterface {
     ttl: number,
   ): Promise<boolean>;
 
+  // ── Session Persistence (Optional) ──────────────────────────────
+  //
+  // When implemented, sessions survive cross-node reconnection: the
+  // server's in-memory LRU cache becomes a read-through / write-through
+  // layer backed by the adapter's store.  Adapters that omit these
+  // methods leave sessions purely local (the LRU is the only store).
+
+  /**
+   * Persist session data for `identity` with the given `ttl` (seconds).
+   * Called on every session-data change and periodically for activity
+   * bookkeeping.
+   */
+  setSession?(
+    identity: string,
+    data: Record<string, unknown>,
+    ttl: number,
+  ): Promise<void>;
+
+  /**
+   * Retrieve persisted session data. Returns `null` when no session
+   * exists for the identity. Called on LRU cache miss (e.g. a charger
+   * reconnecting to a different node).
+   */
+  getSession?(identity: string): Promise<Record<string, unknown> | null>;
+
+  /**
+   * Remove persisted session data for `identity`.
+   */
+  removeSession?(identity: string): Promise<void>;
+
   // Observability Pipeline (Optional)
   metrics?(): Promise<Record<string, unknown>>;
 }

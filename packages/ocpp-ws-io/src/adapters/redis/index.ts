@@ -566,6 +566,33 @@ return 0`;
     return false;
   }
 
+  // ─── Session Persistence ──────────────────────────────────────────
+
+  async setSession(
+    identity: string,
+    data: Record<string, unknown>,
+    ttl: number,
+  ): Promise<void> {
+    const key = `${this._prefix}session:${identity}`;
+    await this._driver.set(key, JSON.stringify(data), ttl);
+  }
+
+  async getSession(identity: string): Promise<Record<string, unknown> | null> {
+    const key = `${this._prefix}session:${identity}`;
+    const raw = await this._driver.get(key);
+    if (raw === null) return null;
+    try {
+      return JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  async removeSession(identity: string): Promise<void> {
+    const key = `${this._prefix}session:${identity}`;
+    await this._driver.del(key);
+  }
+
   // ─── Observability Pipeline ────────────────────────────────────────
 
   async metrics(): Promise<Record<string, unknown>> {

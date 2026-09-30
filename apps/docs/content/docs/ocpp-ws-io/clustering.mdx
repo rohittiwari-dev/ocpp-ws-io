@@ -231,6 +231,84 @@ message was handed to the adapter, **not** that any other node received it —
 pub/sub cannot tell you that. Only `localDelivered` and `localFailed` describe
 actual delivery.
 
+### Session persistence
+
+By default, sessions live in an in-memory LRU cache (bounded to `maxSessions`, default 50 000). When a charge point reconnects to a **different** node, its session is lost.
+
+The `RedisAdapter` implements three optional session methods that turn the LRU into a **read-through / write-through cache** backed by Redis:
+
+| Method | Redis Command | Purpose |
+| --- | --- | --- |
+| `setSession(identity, data, ttl)` | `SET ... EX` | Persist session data with expiry |
+| `getSession(identity)` | `GET` | Restore session on LRU miss |
+| `removeSession(identity)` | `DEL` | Clean up expired sessions |
+
+**How it works:**
+
+1. **On connect** — if the LRU has no entry for the identity, the server calls `getSession()` on the adapter. If Redis has the session, it is merged back into the local LRU and attached to the client.
+2. **On session change** — after each data change and periodically for activity, the server calls `setSession()` (debounced to at most once per 30 seconds for activity-only updates).
+3. **On GC eviction** — when the session GC removes a stale entry, it also calls `removeSession()` on the adapter.
+4. **On close()** — the debounce tracker is cleared; Redis entries are **not** deleted (other nodes may need them).
+
+No configuration required — just use `RedisAdapter` and session persistence is automatic. Session keys are stored under `{prefix}session:{identity}` with a TTL matching `sessionTtlMs`.
+
+<Callout type="info">
+Session data must be JSON-serializable (no functions, class instances, or circular
+references). This is already the case for typical OCPP session data (strings,
+numbers, plain objects).
+</Callout>
+
+### Hybrid adapters
+
+The `EventAdapterInterface` combines messaging (pub/sub) and storage (presence, sessions) in a single interface. **Redis is the recommended adapter** because it natively supports both.
+
+If you need a different message broker (RabbitMQ, Kafka, NATS), you can build a **hybrid adapter** that uses that broker for messaging and Redis for storage:
+
+```typescript
+import { defineAdapter } from "ocpp-ws-io";
+import Redis from "ioredis";
+
+const redis = new Redis(process.env.REDIS_URL);
+
+const hybridAdapter = defineAdapter({
+  // Messaging via RabbitMQ
+  publish: async (channel, data) => {
+    await rabbitmq.publish(channel, JSON.stringify(data));
+  },
+  subscribe: async (channel, handler) => {
+    rabbitmq.subscribe(channel, (msg) => handler(JSON.parse(msg)));
+  },
+  unsubscribe: async (channel) => { await rabbitmq.unsubscribe(channel); },
+  disconnect: async () => {
+    await rabbitmq.close();
+    await redis.quit();
+  },
+
+  // Storage via Redis (presence + sessions)
+  setPresence: async (identity, nodeId, ttl) => {
+    await redis.set(`presence:${identity}`, nodeId, "EX", ttl);
+  },
+  getPresence: async (identity) => {
+    return await redis.get(`presence:${identity}`);
+  },
+  removePresence: async (identity) => {
+    await redis.del(`presence:${identity}`);
+  },
+  setSession: async (identity, data, ttl) => {
+    await redis.set(`session:${identity}`, JSON.stringify(data), "EX", ttl);
+  },
+  getSession: async (identity) => {
+    const raw = await redis.get(`session:${identity}`);
+    return raw ? JSON.parse(raw) : null;
+  },
+  removeSession: async (identity) => {
+    await redis.del(`session:${identity}`);
+  },
+});
+```
+
+This gives you the message ordering guarantees of your preferred broker while keeping Redis for the key-value operations (presence routing and session persistence) that require a shared store.
+
 Using `defineAdapter` is the recommended way to create highly-typed adapters without boilerplate classes:
 
 ```typescript
@@ -261,7 +339,7 @@ const myRabbitMQAdapter = defineAdapter({
     await rabbitmq.close();
   },
 
-  // Optional: Advanced Presence Tracking
+  // Optional: Presence Tracking (requires a key-value store)
   setPresence: async (identity, nodeId, ttl) => {
     /* ... */
   },
@@ -269,6 +347,17 @@ const myRabbitMQAdapter = defineAdapter({
     /* ... */ return null;
   },
   removePresence: async (identity) => {
+    /* ... */
+  },
+
+  // Optional: Session Persistence (requires a key-value store)
+  setSession: async (identity, data, ttl) => {
+    /* ... */
+  },
+  getSession: async (identity) => {
+    /* ... */ return null;
+  },
+  removeSession: async (identity) => {
     /* ... */
   },
 });
