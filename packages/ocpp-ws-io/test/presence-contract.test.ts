@@ -139,6 +139,41 @@ describe("presence & adapter contract", () => {
   // Fail-safe: a node we have never seen advertise liveness may simply be
   // running a build that does not publish it. Declaring it dead would break
   // routing across a mixed-version cluster.
+  // Forgetting a dead node from the "seen" set made its absence look like an
+  // older build again, so calls to its remaining clients waited out the timeout.
+  test("a dead node stays known after the liveness sweep and close()", async () => {
+    const adapter = new InMemoryAdapter();
+    const a = new OCPPServer({ protocols: ["ocpp1.6"], callTimeoutMs: 5000 });
+    servers.push(a);
+    await a.setAdapter(adapter);
+    const internals = a as never as {
+      _isNodeAlive(n: string): Promise<boolean>;
+      _sweepNodeLiveness(now: number): void;
+      _nodeLiveness: Map<string, { alive: boolean; at: number }>;
+      _nodeLivenessSeen: Set<string>;
+    };
+
+    await adapter.setPresence("__node__:ghost", "ghost", 300);
+    await adapter.setPresence("CP-1", "ghost", 300);
+    await adapter.setPresence("CP-2", "ghost", 300);
+    await internals._isNodeAlive("ghost");
+    await adapter.removePresence("__node__:ghost");
+    internals._nodeLiveness.clear();
+    await expect(a.sendToClient("CP-1", "Heartbeat", {})).rejects.toThrow(
+      "not found",
+    );
+
+    internals._sweepNodeLiveness(Date.now() + 6 * 60 * 1000);
+    const started = Date.now();
+    await expect(a.sendToClient("CP-2", "Heartbeat", {})).rejects.toThrow(
+      "not found",
+    );
+    expect(Date.now() - started).toBeLessThan(1500);
+
+    await a.close();
+    expect(internals._nodeLivenessSeen.has("ghost")).toBe(true);
+  }, 20000);
+
   test("a node that never advertised liveness is still treated as alive", async () => {
     const adapter = new InMemoryAdapter();
     const a = new OCPPServer({ protocols: ["ocpp1.6"], callTimeoutMs: 300 });

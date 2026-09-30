@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
   createServer as createHttpServer,
@@ -38,6 +38,7 @@ import {
   type OCPPProtocol,
   type OCPPRequestType,
   type OCPPResponseType,
+  type PersistedSession,
   SecurityProfile,
   type ServerEvents,
   type ServerOptions,
@@ -85,7 +86,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _pendingHandshakes = 0;
 
   /** In-flight presence deletions, awaited by close() before disconnecting. */
-  private _pendingPresenceRemovals = new Set<Promise<unknown>>();
+  private _pendingAdapterWrites = new Set<Promise<unknown>>();
 
   /** Short-lived cache of remote node liveness, so the check is not per-call. */
   private _nodeLiveness = new Map<string, { alive: boolean; at: number }>();
@@ -174,6 +175,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    */
   private _sessionLastPersisted = new Map<string, number>();
   private static readonly _SESSION_PERSIST_DEBOUNCE_MS = 30_000;
+  /** Longest a connecting charger waits for the adapter's stored session. */
+  private static readonly _SESSION_FETCH_TIMEOUT_MS = 1000;
 
   constructor(options: ServerOptions = {}) {
     super();
@@ -199,6 +202,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       sessionTtlMs: 2 * 60 * 60 * 1000,
       ...options,
     };
+
+    OCPPServer._assertHealthEndpointAuth(this._options.healthEndpoint);
 
     this._sessionTimeoutMs = this._options.sessionTtlMs!;
 
@@ -301,39 +306,76 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    */
   private static readonly _METRICS_PLUGIN_TIMEOUT_MS = 2000;
 
+  /**
+   * Reject health-endpoint credentials that are missing or empty. A token read
+   * from an unset environment variable arrives as `undefined`; left to the
+   * request handler, it threw there on the first `/health` request and the
+   * unhandled rejection took the process down.
+   */
+  private static _assertHealthEndpointAuth(
+    option: boolean | HealthEndpointOptions | undefined,
+  ): void {
+    const auth = typeof option === "object" ? option.auth : undefined;
+    if (!auth) return;
+    if ("bearer" in auth) {
+      if (typeof auth.bearer !== "string" || auth.bearer === "") {
+        throw new Error(
+          "healthEndpoint.auth.bearer must be a non-empty string — check that the token's environment variable is set",
+        );
+      }
+      return;
+    }
+    if (
+      typeof auth.username !== "string" ||
+      auth.username === "" ||
+      typeof auth.password !== "string" ||
+      auth.password === ""
+    ) {
+      throw new Error(
+        "healthEndpoint.auth needs a non-empty username and password",
+      );
+    }
+  }
+
+  /** Constant-time string comparison that does not reveal either length. */
+  private static _safeEqual(a: string, b: string): boolean {
+    return timingSafeEqual(
+      createHash("sha256").update(a).digest(),
+      createHash("sha256").update(b).digest(),
+    );
+  }
+
   private _checkHealthAuth(
     req: IncomingMessage,
     auth: HealthEndpointAuth,
   ): boolean {
     const header = req.headers.authorization ?? "";
+    const space = header.indexOf(" ");
+    if (space === -1) return false;
+    // RFC 7235: the scheme name is case-insensitive.
+    const scheme = header.slice(0, space).toLowerCase();
+    const credentials = header.slice(space + 1).trim();
 
     if ("bearer" in auth) {
-      if (!header.startsWith("Bearer ")) return false;
-      const token = header.slice(7);
-      const a = Buffer.from(token);
-      const b = Buffer.from(auth.bearer);
-      return a.length === b.length && timingSafeEqual(a, b);
+      return (
+        scheme === "bearer" && OCPPServer._safeEqual(credentials, auth.bearer)
+      );
     }
 
-    if (!header.startsWith("Basic ")) return false;
-    try {
-      const decoded = Buffer.from(header.slice(6), "base64").toString();
-      const colonIdx = decoded.indexOf(":");
-      if (colonIdx === -1) return false;
-      const user = decoded.slice(0, colonIdx);
-      const pass = decoded.slice(colonIdx + 1);
-      const userA = Buffer.from(user);
-      const userB = Buffer.from(auth.username);
-      const passA = Buffer.from(pass);
-      const passB = Buffer.from(auth.password);
-      const userMatch =
-        userA.length === userB.length && timingSafeEqual(userA, userB);
-      const passMatch =
-        passA.length === passB.length && timingSafeEqual(passA, passB);
-      return userMatch && passMatch;
-    } catch {
-      return false;
-    }
+    if (scheme !== "basic") return false;
+    const decoded = Buffer.from(credentials, "base64").toString();
+    const colonIdx = decoded.indexOf(":");
+    if (colonIdx === -1) return false;
+    // Both halves are always compared, so timing does not reveal which failed.
+    const userMatch = OCPPServer._safeEqual(
+      decoded.slice(0, colonIdx),
+      auth.username,
+    );
+    const passMatch = OCPPServer._safeEqual(
+      decoded.slice(colonIdx + 1),
+      auth.password,
+    );
+    return userMatch && passMatch;
   }
 
   /** Reject if a promise has not settled within `timeoutMs`. */
@@ -869,10 +911,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     if (ownsServer) {
       this._ownedHttpServers.add(httpServer);
 
+      // `0` disables the timeout here exactly as it does in reconfigure().
       const headersTimeout = this._options.headersTimeout ?? 30_000;
       const requestTimeout = this._options.requestTimeout ?? 30_000;
-      if (headersTimeout > 0) httpServer.headersTimeout = headersTimeout;
-      if (requestTimeout > 0) httpServer.requestTimeout = requestTimeout;
+      httpServer.headersTimeout = headersTimeout > 0 ? headersTimeout : 0;
+      httpServer.requestTimeout = requestTimeout > 0 ? requestTimeout : 0;
     }
 
     // Health/Metrics HTTP endpoint
@@ -883,12 +926,17 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         ) => void)
       | undefined;
     if (this._options.healthEndpoint) {
+      // Re-checked here because reconfigure() can replace the option.
+      OCPPServer._assertHealthEndpointAuth(this._options.healthEndpoint);
       const heOpts: HealthEndpointOptions | undefined =
         typeof this._options.healthEndpoint === "object"
           ? this._options.healthEndpoint
           : undefined;
 
-      requestHandler = async (req, res) => {
+      const serveHealth = async (
+        req: IncomingMessage,
+        res: import("node:http").ServerResponse,
+      ): Promise<void> => {
         if (res.headersSent || res.writableEnded) return;
         const url = req.url ?? "";
 
@@ -899,7 +947,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         ) {
           res.writeHead(401, {
             "Content-Type": "text/plain",
-            "WWW-Authenticate": "bearer" in heOpts.auth ? "Bearer" : "Basic",
+            "WWW-Authenticate":
+              "bearer" in heOpts.auth
+                ? 'Bearer realm="ocpp-ws-io"'
+                : 'Basic realm="ocpp-ws-io", charset="UTF-8"',
           });
           res.end("Unauthorized");
           return;
@@ -996,6 +1047,21 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           res.writeHead(404, { "Content-Type": "text/plain" });
           res.end("Not Found");
         }
+      };
+      // The "request" listener ignores the returned promise, so a throw inside
+      // serveHealth would otherwise be an unhandled rejection.
+      requestHandler = (req, res) => {
+        serveHealth(req, res).catch((err: Error) => {
+          this._logger?.error?.("Health endpoint request failed", {
+            error: err?.message ?? String(err),
+          });
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "text/plain" });
+            res.end("Internal Server Error");
+          } else {
+            res.destroy();
+          }
+        });
       };
       httpServer.on("request", requestHandler);
     }
@@ -1782,6 +1848,27 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
     }
 
+    // Keyed by the identity auth settled on, so a namespaced charger never reads
+    // another tenant's entry. Skipped while the charger is still connected
+    // here: its LRU entry is then the live session and newer than the store.
+    const sessionIdentity =
+      (acceptOptions as AuthAccept | undefined)?.identity || identity;
+    let storedSession: PersistedSession | null = null;
+    let storedSessionUnavailable = false;
+    if (
+      this._adapter?.getSession &&
+      !this._clientsByIdentity.has(sessionIdentity)
+    ) {
+      try {
+        storedSession = await this._withTimeout(
+          this._adapter.getSession(sessionIdentity),
+          OCPPServer._SESSION_FETCH_TIMEOUT_MS,
+        );
+      } catch {
+        storedSessionUnavailable = true;
+      }
+    }
+
     // Socket readyState check before upgrade
     if ((socket as import("node:net").Socket).readyState !== "open") {
       this._logger?.debug?.("Socket closed before upgrade completion", {
@@ -1800,19 +1887,6 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     // Hand ws the protocol we negotiated so the response header matches.
     if (selectedProtocol) {
       this._negotiatedProtocols.set(req, selectedProtocol);
-    }
-
-    // When the adapter supports session persistence and the LRU has no entry
-    // (cross-node reconnect), fetch from Redis and seed the local cache.
-    // Done here — before the synchronous handleUpgrade callback — because
-    // getSession is async.
-    let adapterSession: Record<string, unknown> | null = null;
-    if (!this._sessions.has(identity) && this._adapter?.getSession) {
-      try {
-        adapterSession = await this._adapter.getSession(identity);
-      } catch {
-        // Best-effort — fall through to an empty session.
-      }
     }
 
     // Complete WebSocket upgrade & create client
@@ -1855,10 +1929,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         handshake.identity = overrideIdentity;
       }
 
+      // The stored copy replaces the LRU one rather than merging with it: this
+      // node's copy can predate changes made while the charger was elsewhere.
       const finalSession = {
         ...(ctx?.state || {}),
-        ...(adapterSession || {}),
-        ...(this._sessions.get(identity)?.data || {}),
+        ...(storedSession ?? this._sessions.get(identity)?.data ?? {}),
         ...(((acceptOptions as any)?.session as Record<string, unknown>) || {}),
       };
 
@@ -1874,7 +1949,15 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         plugins: this._plugins,
       });
 
-      this._updateSessionActivity(identity, client.session, true);
+      if (storedSessionUnavailable) {
+        // Don't overwrite what the unreachable store may hold with a local guess.
+        this._sessions.set(identity, {
+          data: client.session,
+          lastActive: Date.now(),
+        });
+      } else {
+        this._updateSessionActivity(identity, client.session, true);
+      }
 
       // ── Duplicate Identity Eviction ──
       // If a client with the same identity is already connected (e.g. 4G reconnect
@@ -1939,6 +2022,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           this._clients.delete(client);
           if (this._clientsByIdentity.get(identity) === client) {
             this._clientsByIdentity.delete(identity);
+            // Message-driven writes are debounced, so flush the final state
+            // for whichever node the charger reconnects to next.
+            this._updateSessionActivity(identity, client.session, true);
             // Remove presence — only when this socket still owns the
             // identity. The local check above catches an evicted duplicate on
             // THIS node; the fenced delete below catches the cross-node case,
@@ -2118,7 +2204,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   private _updateSessionActivity(
     identity: string,
-    data: Record<string, unknown>,
+    data: PersistedSession,
     force?: boolean,
   ) {
     const now = Date.now();
@@ -2144,7 +2230,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
     this._sessionLastPersisted.set(identity, now);
     const ttlSeconds = Math.ceil(this._sessionTimeoutMs / 1000);
-    adapter.setSession(identity, data, ttlSeconds).catch(() => {});
+    const write: Promise<void> = adapter
+      .setSession(identity, data, ttlSeconds)
+      .catch(() => {})
+      .finally(() => this._pendingAdapterWrites.delete(write));
+    this._pendingAdapterWrites.add(write);
   }
 
   /**
@@ -2166,33 +2256,40 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       for (const [identity, session] of this._sessions.entries()) {
         if (now - session.lastActive > this._sessionTimeoutMs) {
           this._sessions.delete(identity);
-          this._sessionLastPersisted.delete(identity);
-          // Redis TTL handles adapter-side expiry — no removeSession call needed.
         }
       }
+      this._sweepSessionPersistMarks(now);
       this._sweepConnectionBuckets(now);
       this._sweepNodeLiveness(now);
     }, 60 * 1000).unref(); // Run every minute, don't block exit
   }
 
   /**
-   * Drop cached node-liveness answers that are far past their TTL, and
-   * forget dead nodes from `_nodeLivenessSeen` so the Set does not grow
-   * unbounded across rolling deploys.
+   * Drop debounce marks old enough that they no longer suppress a write. Swept
+   * by age rather than alongside the LRU, which evicts without telling us.
+   */
+  private _sweepSessionPersistMarks(now: number): void {
+    for (const [identity, at] of this._sessionLastPersisted) {
+      if (now - at >= OCPPServer._SESSION_PERSIST_DEBOUNCE_MS) {
+        this._sessionLastPersisted.delete(identity);
+      }
+    }
+  }
+
+  /**
+   * Drop cached node-liveness answers that are far past their TTL.
    *
-   * A node is safe to forget once its cached liveness entry is both dead
-   * and older than the presence TTL — its registry key has long expired,
-   * so removing it from `_nodeLivenessSeen` cannot cause a routing flap.
-   * If the same node ID ever reappears in the registry it will be
-   * re-added on the next `_isNodeAlive` call.
+   * `_nodeLiveness` is keyed by node id and was only ever written to. Node ids
+   * are per-process, so a cluster doing rolling deploys mints new ones on every
+   * release and the map grew for the life of the process. `_nodeLivenessSeen`
+   * is deliberately left alone — it records that a node once advertised itself,
+   * which is what makes a later absence mean "dead" rather than "old build",
+   * and forgetting it would make routing flap across a mixed-version cluster.
    */
   private _sweepNodeLiveness(now: number): void {
     const maxAge = OCPPServer._NODE_LIVENESS_TTL_MS * 60;
     for (const [nodeId, entry] of this._nodeLiveness) {
-      if (now - entry.at > maxAge) {
-        this._nodeLiveness.delete(nodeId);
-        if (!entry.alive) this._nodeLivenessSeen.delete(nodeId);
-      }
+      if (now - entry.at > maxAge) this._nodeLiveness.delete(nodeId);
     }
   }
 
@@ -2367,8 +2464,6 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       pending.reject(new Error("Server closing"));
     }
     this._pendingRemoteCalls.clear();
-    this._nodeLiveness.clear();
-    this._nodeLivenessSeen.clear();
     this._sessionLastPersisted.clear();
 
     // Withdraw this node's liveness entry so other nodes stop routing here at
@@ -2379,10 +2474,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       ).catch(() => {});
     }
 
-    // Let the per-client presence deletions land before the adapter goes away.
-    if (this._pendingPresenceRemovals.size > 0) {
+    // Let per-client presence deletions and final session writes land before
+    // the adapter goes away.
+    if (this._pendingAdapterWrites.size > 0) {
       await Promise.race([
-        Promise.allSettled([...this._pendingPresenceRemovals]),
+        Promise.allSettled([...this._pendingAdapterWrites]),
         new Promise((r) => setTimeout(r, 2000)),
       ]);
     }
@@ -2992,9 +3088,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         });
       })
       .finally(() => {
-        this._pendingPresenceRemovals.delete(tracked);
+        this._pendingAdapterWrites.delete(tracked);
       });
-    this._pendingPresenceRemovals.add(tracked);
+    this._pendingAdapterWrites.add(tracked);
   }
 
   private _stopPresenceRefresh(): void {

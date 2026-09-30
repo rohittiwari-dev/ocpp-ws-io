@@ -1,382 +1,307 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
-import { OCPPServer } from "../src/server.js";
-import { OCPPClient } from "../src/client.js";
+import type { Server } from "node:http";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryAdapter } from "../src/adapters/adapter.js";
-import type { EventAdapterInterface } from "../src/types.js";
+import { OCPPClient } from "../src/client.js";
+import { OCPPServer } from "../src/server.js";
+import type { PersistedSession } from "../src/types.js";
 
-const getPort = (srv: import("node:http").Server): number => {
+const getPort = (srv: Server): number => {
   const addr = srv.address();
-  if (addr && typeof addr !== "string") return addr.port;
-  return 0;
+  return addr && typeof addr !== "string" ? addr.port : 0;
 };
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/**
- * Extends InMemoryAdapter with session persistence methods,
- * simulating what RedisAdapter provides — backed by a plain Map.
- */
+/** InMemoryAdapter plus a Map-backed session store, standing in for Redis. */
 class SessionAdapter extends InMemoryAdapter {
-  readonly store = new Map<string, { data: string; ttl: number }>();
+  readonly store = new Map<string, string>();
+  writes = 0;
 
-  async setSession(
-    identity: string,
-    data: Record<string, unknown>,
-    ttl: number,
-  ): Promise<void> {
-    this.store.set(identity, { data: JSON.stringify(data), ttl });
+  async setSession(identity: string, data: PersistedSession): Promise<void> {
+    this.writes++;
+    this.store.set(identity, JSON.stringify(data));
   }
 
-  async getSession(
-    identity: string,
-  ): Promise<Record<string, unknown> | null> {
-    const entry = this.store.get(identity);
-    if (!entry) return null;
-    return JSON.parse(entry.data) as Record<string, unknown>;
+  async getSession(identity: string): Promise<PersistedSession | null> {
+    const raw = this.store.get(identity);
+    return raw ? (JSON.parse(raw) as PersistedSession) : null;
   }
 
-  async removeSession(identity: string): Promise<void> {
-    this.store.delete(identity);
+  stored(identity: string): PersistedSession | null {
+    const raw = this.store.get(identity);
+    return raw ? (JSON.parse(raw) as PersistedSession) : null;
   }
 }
 
-// ─── Session Persistence: Hybrid LRU + Adapter ─────────────────
+interface ServerInternals {
+  _sessions: { has(identity: string): boolean; size: number };
+  _sessionLastPersisted: Map<string, number>;
+  _sweepSessionPersistMarks(now: number): void;
+}
+const internals = (s: OCPPServer): ServerInternals => s as never;
 
-describe("Session Persistence — adapter-backed hybrid", () => {
-  let server: OCPPServer;
-  const clients: OCPPClient[] = [];
+const servers: OCPPServer[] = [];
+const clients: OCPPClient[] = [];
 
-  afterEach(async () => {
-    for (const c of clients) await c.close({ force: true }).catch(() => {});
-    clients.length = 0;
-    if (server) await server.close({ force: true }).catch(() => {});
+afterEach(async () => {
+  for (const c of clients) await c.close({ force: true }).catch(() => {});
+  for (const s of servers) await s.close({ force: true }).catch(() => {});
+  clients.length = 0;
+  servers.length = 0;
+});
+
+async function startServer(
+  adapter?: InMemoryAdapter,
+  options: { maxSessions?: number } = {},
+) {
+  const server = new OCPPServer({
+    protocols: ["ocpp1.6"],
+    logging: false,
+    ...options,
   });
+  servers.push(server);
+  server.on("client", (c) =>
+    c.handle("Heartbeat", () => ({ currentTime: new Date().toISOString() })),
+  );
+  if (adapter) await server.setAdapter(adapter);
+  const port = getPort(await server.listen(0));
+  return { server, port };
+}
 
-  const connect = async (port: number, identity: string) => {
-    const c = new OCPPClient({
-      identity,
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
-    clients.push(c);
-    await c.connect();
-    await wait(50);
-    return c;
-  };
+async function connect(port: number, identity: string) {
+  const c = new OCPPClient({
+    identity,
+    endpoint: `ws://localhost:${port}`,
+    protocols: ["ocpp1.6"],
+    reconnect: false,
+    logging: false,
+  });
+  clients.push(c);
+  await c.connect();
+  await wait(30);
+  return c;
+}
 
-  // ── Write-through: session data reaches the adapter store ──
+async function disconnect(c: OCPPClient) {
+  await c.close();
+  await wait(30);
+}
 
-  it("should persist session to adapter on connect (force write)", async () => {
+describe("Session persistence — adapter with session support", () => {
+  it("stores the session when a charger connects", async () => {
     const adapter = new SessionAdapter();
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    await server.setAdapter(adapter);
-    const http = await server.listen(0);
-    const port = getPort(http);
+    const { port } = await startServer(adapter);
 
-    await connect(port, "CP-PERSIST");
+    await connect(port, "CP-CONNECT");
 
-    // The adapter store should have an entry for this identity.
-    const stored = await adapter.getSession("CP-PERSIST");
-    expect(stored).not.toBeNull();
-    expect(typeof stored).toBe("object");
+    expect(adapter.stored("CP-CONNECT")).toEqual({});
   });
 
-  // ── Read-through: LRU miss → adapter hit ──
-
-  it("should restore session from adapter when LRU has no entry", async () => {
+  // Message-driven writes are debounced, so changes made shortly before a
+  // disconnect used to be lost for the next node.
+  it("stores the latest session when a charger disconnects", async () => {
     const adapter = new SessionAdapter();
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    await server.setAdapter(adapter);
-    const http = await server.listen(0);
-    const port = getPort(http);
+    const { server, port } = await startServer(adapter);
 
-    // Step 1: connect, set session data, force-persist, then disconnect.
-    const c1 = await connect(port, "CP-READTHROUGH");
-    const sc1 = server.getLocalClient("CP-READTHROUGH")!;
-    sc1.session.fleet = "alpha";
-    sc1.session.priority = 5;
+    const c = await connect(port, "CP-FLUSH");
+    server.getLocalClient("CP-FLUSH")!.session.tx = "active-42";
+    await c.call("Heartbeat", {});
+    await disconnect(c);
 
-    // Mutating client.session does not auto-persist to adapter — explicitly
-    // force-persist the updated data so the adapter store has it.
-    // @ts-expect-error — accessing private method
-    server._updateSessionActivity("CP-READTHROUGH", sc1.session, true);
-    await wait(10);
-
-    await c1.close();
-    await wait(50);
-
-    // Step 2: purge the LRU to simulate a different-node reconnect.
-    // @ts-expect-error — accessing private _sessions for test
-    server._sessions.delete("CP-READTHROUGH");
-
-    // Step 3: reconnect — the server should read from adapter and merge.
-    const c2 = await connect(port, "CP-READTHROUGH");
-    const sc2 = server.getLocalClient("CP-READTHROUGH")!;
-
-    // The session data set in step 1 is present via adapter read-through.
-    expect(sc2.session.fleet).toBe("alpha");
-    expect(sc2.session.priority).toBe(5);
+    expect(adapter.stored("CP-FLUSH")).toEqual({ tx: "active-42" });
   });
 
-  // ── Without adapter: sessions stay purely in LRU ──
-
-  it("should work without adapter session methods (plain InMemoryAdapter)", async () => {
-    const adapter = new InMemoryAdapter(); // no session methods
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    await server.setAdapter(adapter);
-    const http = await server.listen(0);
-    const port = getPort(http);
-
-    const c1 = await connect(port, "CP-NOADAPTER");
-    const sc1 = server.getLocalClient("CP-NOADAPTER")!;
-    sc1.session.tag = "local-only";
-    await c1.close();
-    await wait(50);
-
-    // LRU still holds the session on same node.
-    const c2 = await connect(port, "CP-NOADAPTER");
-    const sc2 = server.getLocalClient("CP-NOADAPTER")!;
-    expect(sc2.session.tag).toBe("local-only");
-  });
-
-  // ── LRU miss + no adapter → empty session ──
-
-  it("should start with empty session when LRU purged and no adapter sessions", async () => {
-    const adapter = new InMemoryAdapter();
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    await server.setAdapter(adapter);
-    const http = await server.listen(0);
-    const port = getPort(http);
-
-    const c1 = await connect(port, "CP-EMPTY");
-    const sc1 = server.getLocalClient("CP-EMPTY")!;
-    sc1.session.data = "gone";
-    await c1.close();
-    await wait(50);
-
-    // @ts-expect-error — purge LRU
-    server._sessions.delete("CP-EMPTY");
-
-    const c2 = await connect(port, "CP-EMPTY");
-    const sc2 = server.getLocalClient("CP-EMPTY")!;
-    // No adapter session, LRU purged → session is empty.
-    expect(sc2.session.data).toBeUndefined();
-  });
-
-  // ── Debounce: activity writes are throttled ──
-
-  it("should debounce adapter writes (no flood on high-frequency updates)", async () => {
+  it("restores the session on another node", async () => {
     const adapter = new SessionAdapter();
-    const setSpy = vi.spyOn(adapter, "setSession");
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    await server.setAdapter(adapter);
-    const http = await server.listen(0);
-    const port = getPort(http);
+    const a = await startServer(adapter);
+    const b = await startServer(adapter);
 
-    await connect(port, "CP-DEBOUNCE");
+    const c1 = await connect(a.port, "CP-MOVE");
+    a.server.getLocalClient("CP-MOVE")!.session.fleet = "alpha";
+    await disconnect(c1);
 
-    // The connect path force-persists (1 call).
-    const callsAfterConnect = setSpy.mock.calls.length;
-    expect(callsAfterConnect).toBeGreaterThanOrEqual(1);
-
-    // Trigger _updateSessionActivity multiple times via the server's internal
-    // message path — we access the private method directly for isolation.
-    // @ts-expect-error — accessing private method
-    server._updateSessionActivity("CP-DEBOUNCE", { tick: 1 });
-    // @ts-expect-error
-    server._updateSessionActivity("CP-DEBOUNCE", { tick: 2 });
-    // @ts-expect-error
-    server._updateSessionActivity("CP-DEBOUNCE", { tick: 3 });
-
-    // All three should have been debounced — no additional adapter calls.
-    expect(setSpy.mock.calls.length).toBe(callsAfterConnect);
+    await connect(b.port, "CP-MOVE");
+    expect(b.server.getLocalClient("CP-MOVE")!.session.fleet).toBe("alpha");
   });
 
-  // ── Force bypass debounce ──
-
-  it("should bypass debounce when force=true", async () => {
+  // Node A kept its old copy in the LRU and preferred it, then its connect
+  // write pushed that old copy over node B's newer one in the store.
+  it("prefers the stored session over an older local copy", async () => {
     const adapter = new SessionAdapter();
-    const setSpy = vi.spyOn(adapter, "setSession");
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    await server.setAdapter(adapter);
-    const http = await server.listen(0);
-    const port = getPort(http);
+    const a = await startServer(adapter);
+    const b = await startServer(adapter);
 
-    await connect(port, "CP-FORCE");
-    const afterConnect = setSpy.mock.calls.length;
+    const c1 = await connect(a.port, "CP-PING");
+    a.server.getLocalClient("CP-PING")!.session.v = 1;
+    await disconnect(c1);
 
-    // @ts-expect-error
-    server._updateSessionActivity("CP-FORCE", { forced: true }, true);
-    expect(setSpy.mock.calls.length).toBe(afterConnect + 1);
+    const c2 = await connect(b.port, "CP-PING");
+    b.server.getLocalClient("CP-PING")!.session.v = 2;
+    await disconnect(c2);
 
-    // @ts-expect-error
-    server._updateSessionActivity("CP-FORCE", { forced: true }, true);
-    expect(setSpy.mock.calls.length).toBe(afterConnect + 2);
+    await connect(a.port, "CP-PING");
+    expect(a.server.getLocalClient("CP-PING")!.session.v).toBe(2);
+    expect(adapter.stored("CP-PING")).toEqual({ v: 2 });
   });
 
-  // ── Session merge priority ──
-
-  it("should merge session with correct priority: ctx.state < adapter < LRU < auth", async () => {
+  // The lookup ran on the raw URL identity, before the auth callback's
+  // override, so a namespaced charger read another tenant's entry.
+  it("looks sessions up by the identity auth settled on", async () => {
     const adapter = new SessionAdapter();
-
-    // Pre-seed adapter with session data (simulating cross-node data).
-    await adapter.setSession(
-      "CP-MERGE",
-      { fromAdapter: "yes", shared: "adapter-value" },
-      300,
+    await adapter.setSession("CP1", { owner: "other-tenant" });
+    await adapter.setSession("tenantA:CP1", { owner: "tenant-a" });
+    const { server, port } = await startServer(adapter);
+    server.auth((ctx) =>
+      ctx.accept({ protocol: "ocpp1.6", identity: "tenantA:CP1" }),
     );
 
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => {
-      // Auth-supplied session has highest priority.
-      ctx.accept({
-        protocol: "ocpp1.6",
-        session: { fromAuth: "yes", shared: "auth-wins" },
-      } as never);
-    });
-    await server.setAdapter(adapter);
-    const http = await server.listen(0);
-    const port = getPort(http);
+    await connect(port, "CP1");
 
-    const c = await connect(port, "CP-MERGE");
-    const sc = server.getLocalClient("CP-MERGE")!;
-
-    expect(sc.session.fromAdapter).toBe("yes");
-    expect(sc.session.fromAuth).toBe("yes");
-    // Auth overrides adapter for the shared key.
-    expect(sc.session.shared).toBe("auth-wins");
+    expect(server.getLocalClient("tenantA:CP1")!.session.owner).toBe(
+      "tenant-a",
+    );
   });
 
-  // ── close() clears debounce tracker ──
-
-  it("should clear debounce tracker on server close", async () => {
+  it("uses the live local session when the charger is still connected here", async () => {
     const adapter = new SessionAdapter();
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    await server.setAdapter(adapter);
-    const http = await server.listen(0);
-    const port = getPort(http);
+    const { server, port } = await startServer(adapter);
+    const getSpy = vi.spyOn(adapter, "getSession");
 
-    await connect(port, "CP-CLOSE");
+    await connect(port, "CP-DUP");
+    server.getLocalClient("CP-DUP")!.session.live = true;
+    const fetchesBefore = getSpy.mock.calls.length;
 
-    // @ts-expect-error — private field
-    expect(server._sessionLastPersisted.size).toBeGreaterThan(0);
+    await connect(port, "CP-DUP"); // duplicate identity replaces the first socket
 
-    await server.close({ force: true });
+    expect(getSpy.mock.calls.length).toBe(fetchesBefore);
+    expect(server.getLocalClient("CP-DUP")!.session.live).toBe(true);
+  });
 
-    // @ts-expect-error
-    expect(server._sessionLastPersisted.size).toBe(0);
+  // With no time limit, an unreachable store stopped every charger connecting.
+  it("still accepts chargers when the store does not answer", async () => {
+    const adapter = new SessionAdapter();
+    await adapter.setSession("CP-HANG", { v: "remote" });
+    adapter.getSession = () => new Promise<PersistedSession | null>(() => {});
+    const { server, port } = await startServer(adapter);
+
+    const started = Date.now();
+    await connect(port, "CP-HANG");
+
+    expect(server.getLocalClient("CP-HANG")).toBeDefined();
+    expect(Date.now() - started).toBeLessThan(3000);
+    // The local guess must not overwrite what the store may hold.
+    expect(adapter.stored("CP-HANG")).toEqual({ v: "remote" });
+  });
+
+  it("writes on messages at most once per debounce window", async () => {
+    const adapter = new SessionAdapter();
+    const { server, port } = await startServer(adapter);
+
+    const c = await connect(port, "CP-DEBOUNCE");
+    const afterConnect = adapter.writes;
+    await c.call("Heartbeat", {});
+    await c.call("Heartbeat", {});
+    expect(adapter.writes).toBe(afterConnect);
+
+    // Age the mark past the window: the next message writes again.
+    internals(server)._sessionLastPersisted.set(
+      "CP-DEBOUNCE",
+      Date.now() - 31_000,
+    );
+    await c.call("Heartbeat", {});
+    expect(adapter.writes).toBe(afterConnect + 1);
+  });
+
+  // Marks were only cleared alongside LRU entries, so identities the LRU
+  // evicted kept theirs forever.
+  it("sweeps debounce marks by age, independent of the LRU", async () => {
+    const adapter = new SessionAdapter();
+    const { server, port } = await startServer(adapter, { maxSessions: 2 });
+
+    for (let i = 0; i < 5; i++) {
+      await disconnect(await connect(port, `CP-G${i}`));
+    }
+    expect(internals(server)._sessions.size).toBe(2);
+    expect(internals(server)._sessionLastPersisted.size).toBe(5);
+
+    internals(server)._sweepSessionPersistMarks(Date.now() + 30_000);
+    expect(internals(server)._sessionLastPersisted.size).toBe(0);
+  });
+
+  it("recovers a session the LRU evicted", async () => {
+    const adapter = new SessionAdapter();
+    const { server, port } = await startServer(adapter, { maxSessions: 2 });
+
+    const c1 = await connect(port, "CP-A");
+    server.getLocalClient("CP-A")!.session.region = "EU";
+    await disconnect(c1);
+    await disconnect(await connect(port, "CP-B"));
+    await disconnect(await connect(port, "CP-C"));
+    expect(internals(server)._sessions.has("CP-A")).toBe(false);
+
+    await connect(port, "CP-A");
+    expect(server.getLocalClient("CP-A")!.session.region).toBe("EU");
+  });
+
+  it("lets final session writes land before close() disconnects the adapter", async () => {
+    const adapter = new SessionAdapter();
+    const write = adapter.setSession.bind(adapter);
+    adapter.setSession = async (identity, data) => {
+      await wait(100);
+      await write(identity, data);
+    };
+    const { server, port } = await startServer(adapter);
+
+    await connect(port, "CP-SHUTDOWN");
+    server.getLocalClient("CP-SHUTDOWN")!.session.last = "state";
+    await server.close();
+
+    expect(adapter.stored("CP-SHUTDOWN")).toEqual({ last: "state" });
+  });
+
+  it("gives auth-supplied session data precedence over the stored copy", async () => {
+    const adapter = new SessionAdapter();
+    await adapter.setSession("CP-MERGE", { fromStore: "yes", shared: "store" });
+    const { server, port } = await startServer(adapter);
+    server.auth((ctx) =>
+      ctx.accept({
+        protocol: "ocpp1.6",
+        session: { fromAuth: "yes", shared: "auth" },
+      }),
+    );
+
+    await connect(port, "CP-MERGE");
+
+    expect(server.getLocalClient("CP-MERGE")!.session).toEqual({
+      fromStore: "yes",
+      fromAuth: "yes",
+      shared: "auth",
+    });
   });
 });
 
-// ─── Session Persistence: No Adapter (pure LRU) ────────────────
-
-describe("Session Persistence — no adapter (pure LRU)", () => {
-  let server: OCPPServer;
-  const clients: OCPPClient[] = [];
-
-  afterEach(async () => {
-    for (const c of clients) await c.close({ force: true }).catch(() => {});
-    clients.length = 0;
-    if (server) await server.close({ force: true }).catch(() => {});
-  });
-
-  const connect = async (port: number, identity: string) => {
-    const c = new OCPPClient({
-      identity,
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
-    clients.push(c);
-    await c.connect();
-    await wait(50);
-    return c;
-  };
-
-  it("should preserve session in LRU across disconnect/reconnect on same node", async () => {
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const http = await server.listen(0);
-    const port = getPort(http);
+describe("Session persistence — no session support (LRU only)", () => {
+  it("keeps the session across a reconnect to the same node", async () => {
+    const { server, port } = await startServer(new InMemoryAdapter());
 
     const c1 = await connect(port, "CP-LRU");
-    const sc1 = server.getLocalClient("CP-LRU")!;
-    sc1.session.role = "charger";
-    await c1.close();
-    await wait(50);
+    server.getLocalClient("CP-LRU")!.session.role = "charger";
+    await disconnect(c1);
 
-    const c2 = await connect(port, "CP-LRU");
-    const sc2 = server.getLocalClient("CP-LRU")!;
-    expect(sc2.session.role).toBe("charger");
+    await connect(port, "CP-LRU");
+    expect(server.getLocalClient("CP-LRU")!.session.role).toBe("charger");
   });
 
-  it("should lose session when LRU evicts (no adapter fallback)", async () => {
-    server = new OCPPServer({ protocols: ["ocpp1.6"], maxSessions: 2 });
-    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const http = await server.listen(0);
-    const port = getPort(http);
+  it("loses a session the LRU evicted", async () => {
+    const { server, port } = await startServer(undefined, { maxSessions: 2 });
 
-    // Fill LRU to capacity.
     const c1 = await connect(port, "CP-A");
     server.getLocalClient("CP-A")!.session.id = "A";
-    const c2 = await connect(port, "CP-B");
-    server.getLocalClient("CP-B")!.session.id = "B";
+    await disconnect(c1);
+    await disconnect(await connect(port, "CP-B"));
+    await disconnect(await connect(port, "CP-C"));
 
-    // Third connection evicts the oldest (CP-A) from LRU.
-    const c3 = await connect(port, "CP-C");
-
-    await c1.close();
-    await wait(50);
-
-    // @ts-expect-error — verify LRU no longer has CP-A
-    const hasA = server._sessions.has("CP-A");
-    expect(hasA).toBe(false);
-  });
-
-  it("should recover from LRU eviction when adapter has session", async () => {
-    const adapter = new SessionAdapter();
-    server = new OCPPServer({ protocols: ["ocpp1.6"], maxSessions: 2 });
-    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    await server.setAdapter(adapter);
-    const http = await server.listen(0);
-    const port = getPort(http);
-
-    // Connect CP-A — written to both LRU and adapter.
-    const c1 = await connect(port, "CP-A");
-    server.getLocalClient("CP-A")!.session.region = "EU";
-
-    // Force-persist the updated session data to adapter.
-    // @ts-expect-error
-    server._updateSessionActivity(
-      "CP-A",
-      server.getLocalClient("CP-A")!.session,
-      true,
-    );
-    await wait(10);
-
-    await c1.close();
-    await wait(50);
-
-    // Fill LRU to push CP-A out.
-    await connect(port, "CP-B");
-    await connect(port, "CP-C");
-
-    // @ts-expect-error — CP-A should be evicted from LRU
-    expect(server._sessions.has("CP-A")).toBe(false);
-    // But adapter still has it.
-    expect(await adapter.getSession("CP-A")).not.toBeNull();
-
-    // Reconnect CP-A — adapter read-through should restore session.
-    const c4 = await connect(port, "CP-A");
-    const sc = server.getLocalClient("CP-A")!;
-    expect(sc.session.region).toBe("EU");
+    await connect(port, "CP-A");
+    expect(server.getLocalClient("CP-A")!.session.id).toBeUndefined();
   });
 });

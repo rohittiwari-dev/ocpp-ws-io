@@ -35,6 +35,7 @@ import {
   MessageType,
   type MiddlewareContext,
   NOREPLY,
+  OCPP21_UNANSWERED_MESSAGE_TYPES,
   type OCPPCall,
   type OCPPCallError,
   type OCPPCallResult,
@@ -1281,6 +1282,23 @@ export class OCPPClient<
     // malformed payload, and the switch's own MessageTypeNotSupported branch
     // was unreachable in practice. 2.1 adds types 5 and 6, which is how a
     // newer charge point reaches this.
+    //
+    // On a 2.1 connection those two are valid traffic that is not handled yet.
+    // Counting them as bad messages disconnected a charger for streaming SEND
+    // frames, and the spec forbids answering them, so they are dropped.
+    /* 
+      TODO: Consider emitting a warning or logging this, but do not treat it as a bad message since it's valid in OCPP 2.1 and may be handled in the future.
+    */
+    if (
+      this._protocol === "ocpp2.1" &&
+      OCPP21_UNANSWERED_MESSAGE_TYPES.has(messageType)
+    ) {
+      this._logger?.debug?.("Dropping unhandled OCPP 2.1 message", {
+        messageType,
+        messageId,
+      });
+      return;
+    }
     if (
       messageType !== MessageType.CALL &&
       messageType !== MessageType.CALLRESULT &&

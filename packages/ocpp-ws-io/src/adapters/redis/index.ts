@@ -1,4 +1,8 @@
-import type { EventAdapterInterface } from "../../types.js";
+import type {
+  EventAdapterInterface,
+  JsonValue,
+  PersistedSession,
+} from "../../types.js";
 import {
   createDriver,
   type RedisLikeClient,
@@ -570,27 +574,27 @@ return 0`;
 
   async setSession(
     identity: string,
-    data: Record<string, unknown>,
+    data: PersistedSession,
     ttl: number,
   ): Promise<void> {
     const key = `${this._prefix}session:${identity}`;
     await this._driver.set(key, JSON.stringify(data), ttl);
   }
 
-  async getSession(identity: string): Promise<Record<string, unknown> | null> {
+  async getSession(identity: string): Promise<PersistedSession | null> {
     const key = `${this._prefix}session:${identity}`;
     const raw = await this._driver.get(key);
     if (raw === null) return null;
     try {
-      return JSON.parse(raw) as Record<string, unknown>;
+      const parsed: JsonValue = JSON.parse(raw);
+      return parsed !== null &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed)
+        ? parsed
+        : null;
     } catch {
       return null;
     }
-  }
-
-  async removeSession(identity: string): Promise<void> {
-    const key = `${this._prefix}session:${identity}`;
-    await this._driver.del(key);
   }
 
   // ─── Observability Pipeline ────────────────────────────────────────

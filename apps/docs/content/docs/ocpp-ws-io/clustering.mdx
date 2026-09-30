@@ -233,29 +233,28 @@ actual delivery.
 
 ### Session persistence
 
-By default, sessions live in an in-memory LRU cache (bounded to `maxSessions`, default 50 000). When a charge point reconnects to a **different** node, its session is lost.
+By default, sessions live in an in-memory LRU cache on each node (bounded by `maxSessions`, default 50 000). When a charge point reconnects to a **different** node, that node has no copy and the session starts empty.
 
-The `RedisAdapter` implements three optional session methods that turn the LRU into a **read-through / write-through cache** backed by Redis:
+The `RedisAdapter` implements two optional session methods. With them, Redis holds the shared copy of every session and each node's LRU keeps a local one:
 
-| Method | Redis Command | Purpose |
+| Method | Redis command | Called |
 | --- | --- | --- |
-| `setSession(identity, data, ttl)` | `SET ... EX` | Persist session data with expiry |
-| `getSession(identity)` | `GET` | Restore session on LRU miss |
-| `removeSession(identity)` | `DEL` | Clean up expired sessions |
+| `setSession(identity, data, ttl)` | `SET ... EX` | When a charger connects, when it disconnects, and on its messages at most once every 30 seconds |
+| `getSession(identity)` | `GET` | When a charger connects, unless it is still connected to this node |
 
 **How it works:**
 
-1. **On connect** — if the LRU has no entry for the identity, the server calls `getSession()` on the adapter. If Redis has the session, it is merged back into the local LRU and attached to the client.
-2. **On session change** — after each data change and periodically for activity, the server calls `setSession()` (debounced to at most once per 30 seconds for activity-only updates).
-3. **On GC eviction** — when the session GC removes a stale entry, it also calls `removeSession()` on the adapter.
-4. **On close()** — the debounce tracker is cleared; Redis entries are **not** deleted (other nodes may need them).
+1. **On connect** — the server reads the session from Redis under the identity your auth callback settled on. A copy found in Redis replaces the node's local one, which may predate changes made while the charger was on another node. If the charger is still connected to this node (a new socket replacing a stale one), its live local session is used instead.
+2. **While connected** — messages refresh the session in Redis at most once every 30 seconds.
+3. **On disconnect** — the final session is written, so whichever node the charger reaches next sees every change. `close()` waits for these writes before disconnecting the adapter.
+4. **If Redis does not answer** — the read gives up after 1 second and the charger connects with the node's local copy, or an empty session. That copy is not written back on connect, so it cannot overwrite what Redis holds.
 
-No configuration required — just use `RedisAdapter` and session persistence is automatic. Session keys are stored under `{prefix}session:{identity}` with a TTL matching `sessionTtlMs`.
+No configuration required — just use `RedisAdapter` and session persistence is automatic. Session keys are stored under `{prefix}session:{identity}` and expire after `sessionTtlMs`. Since Redis holds every session, a smaller `maxSessions` (for example 2 000–3 000) is enough for the local copies.
 
 <Callout type="info">
 Session data must be JSON-serializable (no functions, class instances, or circular
-references). This is already the case for typical OCPP session data (strings,
-numbers, plain objects).
+references). The `PersistedSession` type describes the accepted shape. Typical
+OCPP session data (strings, numbers, plain objects) already fits.
 </Callout>
 
 ### Hybrid adapters
@@ -300,9 +299,6 @@ const hybridAdapter = defineAdapter({
   getSession: async (identity) => {
     const raw = await redis.get(`session:${identity}`);
     return raw ? JSON.parse(raw) : null;
-  },
-  removeSession: async (identity) => {
-    await redis.del(`session:${identity}`);
   },
 });
 ```
@@ -356,9 +352,6 @@ const myRabbitMQAdapter = defineAdapter({
   },
   getSession: async (identity) => {
     /* ... */ return null;
-  },
-  removeSession: async (identity) => {
-    /* ... */
   },
 });
 

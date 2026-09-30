@@ -88,7 +88,7 @@ export interface BrowserClientOptions {
    */
   maxBadMessages?: number;
   /**
-   * Sliding time window in ms for bad-message counting (default: undefined = lifetime).
+   * Counting window in ms for bad messages (default: undefined = lifetime).
    * @see Node `ClientOptions.badMessageWindowMs` for full documentation.
    */
   badMessageWindowMs?: number;

@@ -1133,6 +1133,44 @@ describe("BrowserOCPPClient", () => {
       expect(badMessages.length).toBe(1);
     });
 
+    it("drops OCPP 2.1 SEND frames on a 2.1 connection without counting them", async () => {
+      const server21 = new OCPPServer({
+        protocols: ["ocpp2.1"],
+        logging: false,
+      });
+      let serverClient: OCPPServerClient | undefined;
+      server21.on("client", (sc) => {
+        serverClient = sc;
+      });
+      const port21 = getPort(await server21.listen(0));
+      try {
+        client = new BrowserOCPPClient({
+          identity: "CS21",
+          endpoint: `ws://localhost:${port21}`,
+          protocols: ["ocpp2.1"],
+          reconnect: false,
+          maxBadMessages: 2,
+        });
+        await client.connect();
+        await new Promise((r) => setTimeout(r, 100));
+
+        const badMessages: unknown[] = [];
+        client.on("badMessage", (msg: unknown) => badMessages.push(msg));
+        for (let i = 0; i < 5; i++) {
+          serverClient!.sendRaw(
+            JSON.stringify([6, `s${i}`, "NotifyPeriodicEventStream", {}]),
+          );
+        }
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(badMessages).toHaveLength(0);
+        expect(client.state).toBe(ConnectionState.OPEN);
+      } finally {
+        await client.close({ force: true }).catch(() => {});
+        await server21.close({ force: true });
+      }
+    });
+
     it("should close after maxBadMessages is reached", async () => {
       let serverClient;
       server.on("client", (sc) => {

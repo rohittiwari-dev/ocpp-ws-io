@@ -4,21 +4,21 @@
 
 ### Breaking changes
 
-- **`maxBadMessages` default changed from `Infinity` to `50`.** Connections now auto-close after 50 malformed messages by default. Set `maxBadMessages: Infinity` explicitly to restore the previous behaviour (a startup warning is logged when this value is used).
+- **`maxBadMessages` default changed from `Infinity` to `50`.** Connections now close on their 50th malformed message by default. Set `maxBadMessages: Infinity` explicitly to restore the previous behaviour (a startup warning is logged when this value is used).
 
 ### Added
 
-- `ClientOptions.badMessageWindowMs` / `ServerOptions.badMessageWindowMs` — sliding time window for bad-message counting. When set, the counter resets after the window elapses since the first bad message, so transient bursts do not accumulate across the entire connection lifetime. Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` allows up to 10 bad messages per minute.
+- `ClientOptions.badMessageWindowMs` / `ServerOptions.badMessageWindowMs` — counting window for bad messages. The window opens at the first bad message and the count resets once it has elapsed, so transient bursts do not accumulate across the whole connection lifetime. Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` closes the connection on its 10th bad message within a minute.
 - A startup warning is logged when `maxBadMessages` is set to `Infinity`, alerting operators to the unlimited malformed-message risk.
-- `ServerOptions.headersTimeout` (default: 30 000) — max time the HTTP server waits for a client to finish sending headers. Hardens servers created by `listen()` against HTTP slowloris attacks. Set `0` to disable. User-provided servers are unaffected.
+- `ServerOptions.headersTimeout` (default: 30 000) — max time the HTTP server waits for a client to finish sending headers. Hardens servers created by `listen()` against HTTP slowloris attacks. Set `0` to disable, at startup or through `reconfigure()`. User-provided servers are unaffected.
 - `ServerOptions.requestTimeout` (default: 30 000) — max time for the complete HTTP request. Works alongside `headersTimeout` to protect the HTTP layer. Set `0` to disable.
 - Both timeouts are immediately reconfigurable via `server.reconfigure()` on owned HTTP servers.
-- `ServerOptions.healthEndpoint` now accepts `HealthEndpointOptions` in addition to `boolean`. Pass `{ auth: { bearer: "token" } }` for bearer-token auth or `{ auth: { username, password } }` for basic auth on `/health` and `/metrics` endpoints. Credentials are compared in constant time. Unauthenticated requests receive `401 Unauthorized`.
-- `EventAdapterInterface` gains optional `setSession()`, `getSession()`, and `removeSession()` methods. When implemented (the shipped `RedisAdapter` does), the server's in-memory LRU session cache becomes a read-through / write-through layer — sessions survive cross-node reconnection automatically. Activity-only writes are debounced (at most once per 30 s). No configuration required.
+- `ServerOptions.healthEndpoint` now accepts `HealthEndpointOptions` in addition to `boolean`. Pass `{ auth: { bearer: "token" } }` for bearer-token auth or `{ auth: { username, password } }` for basic auth on `/health` and `/metrics` endpoints. Credentials are compared in constant time. Unauthenticated requests receive `401 Unauthorized`. Missing or empty credentials throw when the server is created, so an unset token environment variable fails at startup rather than on the first probe.
+- `EventAdapterInterface` gains optional `setSession()` and `getSession()`, typed with the new exported `PersistedSession` and `JsonValue`. When implemented — the shipped `RedisAdapter` does — sessions survive a charger reconnecting to another node. The stored copy is read on connect (waiting at most 1 s) and replaces the node's local one. The session is written on connect, on disconnect, and at most every 30 s on messages, and `close()` waits for the final writes. No configuration required.
 
 ### Fixed
 
-- **`_nodeLivenessSeen` now sheds dead entries during periodic liveness sweeps.** Previously, the set grew unboundedly across rolling deploys because retired node UUIDs were never removed. Dead nodes whose cached liveness entry has aged out (5 min) are now evicted from `_nodeLivenessSeen`, and both maps are cleared on `close()` for clean restart cycles.
+- **On an OCPP 2.1 connection, CALLRESULTERROR (5) and SEND (6) frames are dropped** instead of being answered with a CALLERROR and counted as bad messages. The spec forbids answering them, and counting them would disconnect a 2.1 charger streaming `NotifyPeriodicEventStream` under the new `maxBadMessages` default. Other protocols still treat them as malformed.
 
 ## v2.3.2 - Leap Towards Stability (2026-09-08)
 

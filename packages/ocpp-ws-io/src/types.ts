@@ -114,7 +114,14 @@ export const MessageType = {
   CALL: 2,
   CALLRESULT: 3,
   CALLERROR: 4,
+  CALLRESULTERROR: 5,
+  SEND: 6,
 } as const;
+
+/** OCPP 2.1 CALLRESULTERROR (5) and SEND (6): valid on 2.1, never answered. */
+export const OCPP21_UNANSWERED_MESSAGE_TYPES: ReadonlySet<number> = new Set([
+  5, 6,
+]);
 
 export type MessageType = (typeof MessageType)[keyof typeof MessageType];
 
@@ -443,20 +450,21 @@ export interface ClientOptions {
   /** Custom validators for strict mode */
   strictModeValidators?: Validator[];
   /**
-   * Max number of bad messages before closing the connection.
+   * Number of bad messages at which the connection is closed (code 1002).
    *
-   * - `0` — zero tolerance, disconnect on the first bad message.
-   * - `50` (default) — allow up to 50 bad messages over the connection
-   *   lifetime (or per sliding window when {@link badMessageWindowMs} is set).
+   * - `0` or `1` — close on the first bad message.
+   * - `50` (default) — close on the 50th bad message over the connection
+   *   lifetime (or within one window when {@link badMessageWindowMs} is set).
    * - `Infinity` — never disconnect on bad messages (development only).
    */
   maxBadMessages?: number;
   /**
-   * Sliding time window in milliseconds for counting bad messages.
+   * Counting window in milliseconds for bad messages.
    *
-   * When set, the bad-message counter resets after this many milliseconds
-   * since the **first** bad message in the current window, so transient
-   * bursts do not accumulate across the entire connection lifetime.
+   * The window opens at the first bad message; once this many milliseconds
+   * have passed, the next bad message resets the count and opens a new
+   * window. Transient bursts then do not accumulate across the whole
+   * connection lifetime.
    *
    * - `undefined` (default) — lifetime counting, counter resets only on
    *   reconnect.
@@ -661,7 +669,7 @@ interface ServerOptionsBase {
    */
   maxBadMessages?: number;
   /**
-   * Sliding time window for bad-message counting — inherited.
+   * Counting window for bad messages — inherited.
    * @see {@link ClientOptions.badMessageWindowMs}
    */
   badMessageWindowMs?: number;
@@ -828,19 +836,23 @@ interface ServerOptionsBase {
    * left untouched.
    *
    * Protects against HTTP slowloris attacks that hold connections open by
-   * drip-feeding headers. Node.js defaults to 300 000 ms (5 min), which is
-   * far too generous for an OCPP upgrade endpoint.
+   * drip-feeding headers. Node.js defaults to 60 000 ms here (and 300 000 ms
+   * for `requestTimeout`), which is generous for an OCPP upgrade endpoint.
+   *
+   * Keep it at or below {@link requestTimeout}: the request timeout covers the
+   * headers too, so a longer header timeout has no effect. Node checks both
+   * every 30 s, so a limit takes effect 0–30 s after it expires.
    *
    * Set `0` to disable the timeout entirely.
    *
    * @default 30000
    * @example
    * ```ts
-   * // Tight timeout for production behind a load balancer
-   * const server = new OCPPServer({ headersTimeout: 10_000 });
-   *
-   * // Generous for local development
-   * const server = new OCPPServer({ headersTimeout: 120_000 });
+   * // Tight timeouts for production behind a load balancer
+   * const server = new OCPPServer({
+   *   headersTimeout: 10_000,
+   *   requestTimeout: 10_000,
+   * });
    * ```
    */
   headersTimeout?: number;
@@ -1005,7 +1017,8 @@ export interface HealthEndpointOptions {
   /**
    * Access control for the endpoints. When set, requests without valid
    * credentials receive a `401 Unauthorized` response. Credentials are
-   * compared in constant time to prevent timing attacks.
+   * compared in constant time to prevent timing attacks. Missing or empty
+   * values throw when the server is created.
    *
    * Omit to leave the endpoints open (equivalent to `healthEndpoint: true`).
    */
@@ -1192,6 +1205,18 @@ export interface BroadcastResult {
 
 // ─── Event Adapter Interface ─────────────────────────────────────
 
+/** A value that survives a JSON round-trip unchanged. */
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+/** Session data as an adapter stores it — must be JSON-serializable. */
+export type PersistedSession = { [key: string]: JsonValue };
+
 export interface EventAdapterInterface {
   publish(channel: string, data: unknown): Promise<void>;
   publishBatch?(messages: { channel: string; data: unknown }[]): Promise<void>;
@@ -1244,33 +1269,26 @@ export interface EventAdapterInterface {
 
   // ── Session Persistence (Optional) ──────────────────────────────
   //
-  // When implemented, sessions survive cross-node reconnection: the
-  // server's in-memory LRU cache becomes a read-through / write-through
-  // layer backed by the adapter's store.  Adapters that omit these
-  // methods leave sessions purely local (the LRU is the only store).
+  // Implement both to let sessions survive a charger reconnecting to another
+  // node. Without them the server's in-memory LRU is the only store.
 
   /**
-   * Persist session data for `identity` with the given `ttl` (seconds).
-   * Called on every session-data change and periodically for activity
-   * bookkeeping.
+   * Store the session for `identity`, expiring after `ttl` seconds. Called
+   * when a charger connects, when it disconnects, and on its messages at
+   * most once every 30 seconds.
    */
   setSession?(
     identity: string,
-    data: Record<string, unknown>,
+    data: PersistedSession,
     ttl: number,
   ): Promise<void>;
 
   /**
-   * Retrieve persisted session data. Returns `null` when no session
-   * exists for the identity. Called on LRU cache miss (e.g. a charger
-   * reconnecting to a different node).
+   * Return the stored session, or `null` when there is none. Called when a
+   * charger connects (unless it is still connected to this node); a copy
+   * found here takes precedence over the node's in-memory one.
    */
-  getSession?(identity: string): Promise<Record<string, unknown> | null>;
-
-  /**
-   * Remove persisted session data for `identity`.
-   */
-  removeSession?(identity: string): Promise<void>;
+  getSession?(identity: string): Promise<PersistedSession | null>;
 
   // Observability Pipeline (Optional)
   metrics?(): Promise<Record<string, unknown>>;

@@ -1,7 +1,10 @@
 /// <reference lib="dom" />
 
 import { type MiddlewareFunction, MiddlewareStack } from "../middleware.js";
-import type { MiddlewareContext } from "../types.js";
+import {
+  type MiddlewareContext,
+  OCPP21_UNANSWERED_MESSAGE_TYPES,
+} from "../types.js";
 import { EventEmitter } from "./emitter.js";
 import {
   type RPCError,
@@ -633,6 +636,20 @@ export class BrowserOCPPClient<
 
     const messageType = message[0];
 
+    // Valid on a 2.1 connection but not handled yet, and never answered.
+    /* 
+      TODO: Consider emitting a warning or logging this, but do not treat it as a bad message since it's valid in OCPP 2.1 and may be handled in the future.
+    */
+    if (
+      this._protocol === "ocpp2.1" &&
+      OCPP21_UNANSWERED_MESSAGE_TYPES.has(messageType)
+    ) {
+      this._logger?.debug?.("Dropping unhandled OCPP 2.1 message", {
+        messageType,
+      });
+      return;
+    }
+
     switch (messageType) {
       case MessageType.CALL:
         this._handleIncomingCall(message as OCPPCall);
@@ -961,7 +978,10 @@ export class BrowserOCPPClient<
       attempt: this._reconnectAttempt,
       delayMs: Math.round(delayMs),
     });
-    this.emit("reconnect", { attempt: this._reconnectAttempt, delay: delayMs });
+    this.emit("reconnect", {
+      attempt: this._reconnectAttempt,
+      delay: delayMs,
+    });
 
     this._reconnectTimer = setTimeout(async () => {
       this._reconnectTimer = null;
