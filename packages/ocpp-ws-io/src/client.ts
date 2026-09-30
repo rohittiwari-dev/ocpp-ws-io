@@ -132,6 +132,7 @@ export class OCPPClient<
   private static readonly _MAX_HANDLER_WAITERS = 100;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _badMessageCount = 0;
+  private _badMessageWindowStart = 0;
   private _lastActivity = 0;
   private _outboundBuffer: string[] = [];
   /**
@@ -175,7 +176,7 @@ export class OCPPClient<
       pingIntervalMs: 30000,
       deferPingsOnActivity: false,
       callConcurrency: 1,
-      maxBadMessages: Infinity,
+      maxBadMessages: 50,
       respondWithDetailedErrors: false,
       securityProfile: SecurityProfile.NONE,
       ...options,
@@ -373,6 +374,7 @@ export class OCPPClient<
         this._state = OPEN;
         this._protocol = ws.protocol;
         this._badMessageCount = 0;
+        this._badMessageWindowStart = 0;
 
         // Narrow protocols to negotiated protocol for future reconnects (prevents flip-flopping)
         if (ws.protocol && this._reconnectAttempt === 0) {
@@ -1737,7 +1739,21 @@ export class OCPPClient<
   // ─── Internal: Bad message handling ──────────────────────────
 
   private _onBadMessage(rawMessage: string, error: Error): void {
+    const now = Date.now();
+    const windowMs = this._options.badMessageWindowMs;
+
+    if (windowMs && windowMs > 0 && this._badMessageWindowStart > 0) {
+      if (now - this._badMessageWindowStart >= windowMs) {
+        this._badMessageCount = 0;
+        this._badMessageWindowStart = 0;
+      }
+    }
+
     this._badMessageCount++;
+    if (this._badMessageWindowStart === 0) {
+      this._badMessageWindowStart = now;
+    }
+
     this._logger?.warn?.("Bad message", {
       error: error.message,
       count: this._badMessageCount,

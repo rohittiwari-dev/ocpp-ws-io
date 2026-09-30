@@ -82,8 +82,16 @@ export interface BrowserClientOptions {
   callTimeoutMs?: number;
   /** Maximum concurrent outbound calls (default: 1) */
   callConcurrency?: number;
-  /** Max number of bad messages before closing (default: Infinity) */
+  /**
+   * Max bad messages before closing (default: 50).
+   * @see Node `ClientOptions.maxBadMessages` for full documentation.
+   */
   maxBadMessages?: number;
+  /**
+   * Sliding time window in ms for bad-message counting (default: undefined = lifetime).
+   * @see Node `ClientOptions.badMessageWindowMs` for full documentation.
+   */
+  badMessageWindowMs?: number;
   /** Include error details in responses (default: false) */
   respondWithDetailedErrors?: boolean;
   /**

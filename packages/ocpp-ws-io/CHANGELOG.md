@@ -1,5 +1,16 @@
 # ocpp-ws-io
 
+## Unreleased
+
+### Breaking changes
+
+- **`maxBadMessages` default changed from `Infinity` to `50`.** Connections now auto-close after 50 malformed messages by default. Set `maxBadMessages: Infinity` explicitly to restore the previous behaviour (a startup warning is logged when this value is used).
+
+### Added
+
+- `ClientOptions.badMessageWindowMs` / `ServerOptions.badMessageWindowMs` — sliding time window for bad-message counting. When set, the counter resets after the window elapses since the first bad message, so transient bursts do not accumulate across the entire connection lifetime. Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` allows up to 10 bad messages per minute.
+- A startup warning is logged when `maxBadMessages` is set to `Infinity`, alerting operators to the unlimited malformed-message risk.
+
 ## v2.3.2 - Leap Towards Stability (2026-09-08)
 
 A full review of the package, worked subsystem by subsystem. One authentication bypass, a class of defects that were silent rather than wrong, and the API surface corrected where it described behaviour the code did not have. Several of the findings came from driving real messages and reading what arrived rather than from reading the source, which is how the protocol-conformance and plugin defects below surfaced at all. Every fix carries a regression test confirmed to fail without it; the suite went from 840 to 1076.

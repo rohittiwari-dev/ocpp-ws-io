@@ -165,6 +165,8 @@ const server = new OCPPServer(options?: ServerOptions);
 | `rateLimit`          | `RateLimitOptions`              | —         | Token bucket socket & method limiter                                                                                                           |
 | `healthEndpoint`     | `boolean`                       | `false`   | Expose HTTP `/health` and `/metrics`                                                                                                           |
 | `maxPayloadBytes`    | `number`                        | `65536`   | Max WebSocket frame size in bytes. Rejects oversized messages at the transport layer before any parsing. Prevents OOM from malicious payloads. |
+| `maxBadMessages`     | `number`                        | `50`      | Close a connection after N malformed messages. Set `0` for zero tolerance, `Infinity` for no limit (logs a warning). |
+| `badMessageWindowMs` | `number`                        | —         | Sliding time window (ms) for bad-message counting. When set, the counter resets after the window elapses. Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` = 10 per minute. |
 | `workerThreads`      | `boolean \| object`             | `false`   | Enable worker thread pool for JSON parsing. `true` = auto pool size, `{ poolSize, maxQueueSize }` for fine-tuning.                             |
 | `compression`        | `boolean \| CompressionOptions` | `false`   | Enable WebSocket `permessage-deflate` compression. `true` = sensible defaults (threshold: 1024, level: 6).                                     |
 
@@ -392,7 +394,8 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 | `backoffMax`                | `number`                 | `30000`    | Maximum reconnect delay (ms)          |
 | `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)         |
 | `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls         |
-| `maxBadMessages`            | `number`                 | `Infinity` | Close after N bad messages            |
+| `maxBadMessages`            | `number`                 | `50`       | Close after N bad messages. `0` = zero tolerance, `Infinity` = no limit (logs warning). |
+| `badMessageWindowMs`        | `number`                 | —          | Sliding window (ms) for bad-message counting. Counter resets after window elapses. |
 | `respondWithDetailedErrors` | `boolean`                | `false`    | Include error details in responses    |
 | `logging`                   | `LoggingConfig`          | `{}`       | Configuration for structured logging. |
 | Option                      | Type                     | Default    | Description                           |
@@ -407,7 +410,8 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 | `backoffMax`                | `number`                 | `30000`    | Maximum reconnect delay (ms)          |
 | `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)         |
 | `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls         |
-| `maxBadMessages`            | `number`                 | `Infinity` | Close after N bad messages            |
+| `maxBadMessages`            | `number`                 | `50`       | Close after N bad messages. `0` = zero tolerance, `Infinity` = no limit (logs warning). |
+| `badMessageWindowMs`        | `number`                 | —          | Sliding window (ms) for bad-message counting. Counter resets after window elapses. |
 | `respondWithDetailedErrors` | `boolean`                | `false`    | Include error details in responses    |
 | `logging`                   | `LoggingConfig`          | `{}`       | Configuration for structured logging. |
 

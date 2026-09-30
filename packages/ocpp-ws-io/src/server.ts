@@ -183,7 +183,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       pingIntervalMs: 30000,
       deferPingsOnActivity: false,
       callConcurrency: 1,
-      maxBadMessages: Infinity,
+      maxBadMessages: 50,
       respondWithDetailedErrors: false,
       handshakeTimeoutMs: 30000,
       sessionTtlMs: 2 * 60 * 60 * 1000,
@@ -207,6 +207,12 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     this._logger = initLogger(this._options.logging, {
       component: "OCPPServer",
     });
+
+    if (this._options.maxBadMessages === Infinity) {
+      this._logger?.warn?.(
+        "maxBadMessages is Infinity — every connection can send unlimited malformed messages without disconnection. Set a finite value for production use.",
+      );
+    }
 
     // Building a protocol's validator costs ~27 ms, against 0.9 µs to run one.
     // Left to the first message that needs it, that lands on a charger's first
@@ -1743,6 +1749,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         callConcurrency:
           matchedRouterConfig?.callConcurrency ?? this._options.callConcurrency,
         maxBadMessages: this._options.maxBadMessages,
+        badMessageWindowMs: this._options.badMessageWindowMs,
         respondWithDetailedErrors: this._options.respondWithDetailedErrors,
         strictMode: matchedRouterConfig?.strictMode ?? this._options.strictMode,
         strictModeMethods:

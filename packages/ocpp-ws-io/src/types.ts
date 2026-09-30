@@ -443,11 +443,28 @@ export interface ClientOptions {
   /** Custom validators for strict mode */
   strictModeValidators?: Validator[];
   /**
-   * Max number of bad messages before closing.
-   * Default: Infinity (never disconnects on bad messages) — set a finite
-   * value in production.
+   * Max number of bad messages before closing the connection.
+   *
+   * - `0` — zero tolerance, disconnect on the first bad message.
+   * - `50` (default) — allow up to 50 bad messages over the connection
+   *   lifetime (or per sliding window when {@link badMessageWindowMs} is set).
+   * - `Infinity` — never disconnect on bad messages (development only).
    */
   maxBadMessages?: number;
+  /**
+   * Sliding time window in milliseconds for counting bad messages.
+   *
+   * When set, the bad-message counter resets after this many milliseconds
+   * since the **first** bad message in the current window, so transient
+   * bursts do not accumulate across the entire connection lifetime.
+   *
+   * - `undefined` (default) — lifetime counting, counter resets only on
+   *   reconnect.
+   * - `60_000` — count bad messages within 1-minute windows.
+   *
+   * Has no effect when `maxBadMessages` is `Infinity`.
+   */
+  badMessageWindowMs?: number;
   /** Include error details in responses (default: false) */
   respondWithDetailedErrors?: boolean;
   /**
@@ -639,11 +656,15 @@ interface ServerOptionsBase {
   /** Rate Limiting configuration — inherited */
   rateLimit?: RateLimitOptions;
   /**
-   * Max bad messages — inherited.
-   * Default: Infinity (never disconnects on bad messages) — set a finite
-   * value in production.
+   * Max bad messages — inherited (default: 50).
+   * @see {@link ClientOptions.maxBadMessages}
    */
   maxBadMessages?: number;
+  /**
+   * Sliding time window for bad-message counting — inherited.
+   * @see {@link ClientOptions.badMessageWindowMs}
+   */
+  badMessageWindowMs?: number;
   /** Include error details in responses — inherited (default: false) */
   respondWithDetailedErrors?: boolean;
   /**

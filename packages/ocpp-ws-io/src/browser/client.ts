@@ -120,6 +120,7 @@ export class BrowserOCPPClient<
   private _reconnectAttempt = 0;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _badMessageCount = 0;
+  private _badMessageWindowStart = 0;
   private _outboundBuffer: string[] = [];
   private _logger: LoggerLike;
   private _middleware: MiddlewareStack<MiddlewareContext>;
@@ -140,7 +141,7 @@ export class BrowserOCPPClient<
       backoffMax: 30000,
       callTimeoutMs: 30000,
       callConcurrency: 1,
-      maxBadMessages: Infinity,
+      maxBadMessages: 50,
       respondWithDetailedErrors: false,
       ...options,
     };
@@ -208,6 +209,7 @@ export class BrowserOCPPClient<
         this._state = OPEN;
         this._protocol = ws.protocol || undefined;
         this._badMessageCount = 0;
+        this._badMessageWindowStart = 0;
 
         // Narrow protocols to negotiated protocol for future reconnects
         if (ws.protocol && this._reconnectAttempt === 0) {
@@ -848,7 +850,21 @@ export class BrowserOCPPClient<
   // ─── Internal: Bad message handling ──────────────────────────
 
   private _onBadMessage(rawMessage: string, error: Error): void {
+    const now = Date.now();
+    const windowMs = this._options.badMessageWindowMs;
+
+    if (windowMs && windowMs > 0 && this._badMessageWindowStart > 0) {
+      if (now - this._badMessageWindowStart >= windowMs) {
+        this._badMessageCount = 0;
+        this._badMessageWindowStart = 0;
+      }
+    }
+
     this._badMessageCount++;
+    if (this._badMessageWindowStart === 0) {
+      this._badMessageWindowStart = now;
+    }
+
     this._logger?.warn?.("Bad message", {
       error: error.message,
       count: this._badMessageCount,
