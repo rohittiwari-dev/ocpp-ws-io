@@ -63,7 +63,7 @@ cli.command("", "Interactive Menu").action(async () => {
           },
           {
             value: "studio",
-            label: "Launch Visual Web Simulator (ocpp-ws-simulator)",
+            label: "Open Visual Web Simulator (ocpp.rohittiwari.me)",
             hint: "ocpp studio",
           },
           {
@@ -104,7 +104,7 @@ cli.command("", "Interactive Menu").action(async () => {
       } else if (command === "simulate") {
         await runSimulate({});
       } else if (command === "studio") {
-        await runStudio({});
+        await runStudio();
       } else if (command === "load-test") {
         await runLoadTest({});
       } else if (command === "bench") {
@@ -259,31 +259,13 @@ cli
 cli
   .command(
     "studio",
-    "Clone & launch the OCPP visual web simulator (ocpp-ws-simulator)",
+    "Open the hosted OCPP visual web simulator (ocpp.rohittiwari.me)",
   )
-  .option(
-    "-d, --dir <path>",
-    "Directory to clone the simulator into (default: ./ocpp-ws-simulator)",
-  )
-  .option("--skip-install", "Skip running npm install after cloning")
-  .option("--skip-dev", "Clone and install only, do not start the dev server")
   .example("  ocpp studio")
-  .example("  ocpp studio --dir ./my-sim")
-  .example("  ocpp studio --dir ./my-sim --skip-dev")
-  .action(
-    async (options: {
-      dir?: string;
-      skipInstall?: boolean;
-      skipDev?: boolean;
-    }) => {
-      printBanner(pkg.version);
-      await runStudio({
-        dir: options.dir,
-        skipInstall: options.skipInstall,
-        skipDev: options.skipDev,
-      });
-    },
-  );
+  .action(async () => {
+    printBanner(pkg.version);
+    await runStudio();
+  });
 
 // ── Simulate Command ───────────────────────────────────────────
 

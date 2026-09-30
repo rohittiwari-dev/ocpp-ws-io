@@ -1,5 +1,16 @@
 # ocpp-ws-cli
 
+## 1.1.3
+
+### Patch Changes
+
+- refactor: replace local clone-and-run workflow in `ocpp studio` with hosted simulator
+
+  - `ocpp studio` now opens `https://ocpp.rohittiwari.me` in the default browser instead of cloning `ocpp-ws-simulator`, running `npm install`, and starting a local Next.js dev server
+  - Removes `--dir`, `--skip-install`, and `--skip-dev` flags (no longer applicable)
+  - Eliminates Git, Node.js storage, and memory overhead for end users
+  - Updated README to reflect the new hosted-only flow
+
 ## 1.1.1
 
 ### Patch Changes

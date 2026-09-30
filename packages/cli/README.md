@@ -55,31 +55,16 @@ Boot a fully interactive, terminal-based Virtual Charge Point directly from your
 
 ### `ocpp studio` : Visual Web Simulator
 
-Clone and launch the **[ocpp-ws-simulator](https://github.com/rohittiwari-dev/ocpp-ws-simulator)** — a full-featured browser-based charge point emulator — in one command.
+Opens the hosted **[OCPP Visual Simulator](https://ocpp.rohittiwari.me)** directly in your default browser — no local clone, install, or dev server required.
 
 ```bash
-# Interactive (recommended)
 ocpp studio
-
-# Clone to a specific directory, then start
-ocpp studio --dir ./my-simulator
-
-# Clone and install only (no dev server)
-ocpp studio --dir ./my-simulator --skip-dev
 ```
 
 What it does:
 
-1. ✅ Checks that Git is installed
-2. 📦 Clones `rohittiwari-dev/ocpp-ws-simulator` with `--depth 1` (fast, no history)
-3. 📥 Runs `npm install`
-4. 🚀 Starts the Next.js dev server — open `http://localhost:3000`
-
-| Flag               | Description                                       |
-| ------------------ | ------------------------------------------------- |
-| `-d, --dir <path>` | Target directory (default: `./ocpp-ws-simulator`) |
-| `--skip-install`   | Skip `npm install`                                |
-| `--skip-dev`       | Clone + install only, don't start the server      |
+1. 🌐 Opens **[ocpp.rohittiwari.me](https://ocpp.rohittiwari.me)** in your default browser
+2. ✅ No local setup, no storage usage — runs entirely in the cloud
 
 ### `ocpp mock` : Server-Sent Events (SSE) Mock Server
 
@@ -151,21 +136,14 @@ A protocol fuzzer that sends malformed, invalid, or unexpected payloads.
 
 ---
 
-## 🖥️ Web UI Simulator (`ocpp-ws-simulator`)
+## 🖥️ Web UI Simulator
 
-For a **visual, browser-based** charge point simulator, use the standalone [`ocpp-ws-simulator`](https://github.com/rohittiwaridev/ocpp-ws-simulator) repo — maintained separately from this monorepo for easy distribution and self-hosting.
+For a **visual, browser-based** charge point simulator, use the hosted version at **[ocpp.rohittiwari.me](https://ocpp.rohittiwari.me)** — or run `ocpp studio` to open it directly from the CLI.
 
-```bash
-git clone https://github.com/rohittiwaridev/ocpp-ws-simulator.git
-cd ocpp-ws-simulator && npm install && npm run dev
-```
-
-| Mode     | Tool                                                                       | Best For                                       |
-| -------- | -------------------------------------------------------------------------- | ---------------------------------------------- |
-| Terminal | `ocpp simulate` (this CLI)                                                 | Scripting, CI, quick charge point testing      |
-| Browser  | [`ocpp-ws-simulator`](https://github.com/rohittiwaridev/ocpp-ws-simulator) | Visual debugging, demos, multi-connector flows |
-
-Live at: **[ocpp.rohittiwari.me](https://ocpp.rohittiwari.me)**
+| Mode     | Tool                                                           | Best For                                       |
+| -------- | -------------------------------------------------------------- | ---------------------------------------------- |
+| Terminal | `ocpp simulate` (this CLI)                                     | Scripting, CI, quick charge point testing      |
+| Browser  | [`ocpp studio`](https://ocpp.rohittiwari.me) | Visual debugging, demos, multi-connector flows |
 
 ---
 
