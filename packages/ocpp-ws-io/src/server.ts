@@ -821,7 +821,14 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     this._httpServers.add(httpServer);
 
     const ownsServer = !options?.server;
-    if (ownsServer) this._ownedHttpServers.add(httpServer);
+    if (ownsServer) {
+      this._ownedHttpServers.add(httpServer);
+
+      const headersTimeout = this._options.headersTimeout ?? 30_000;
+      const requestTimeout = this._options.requestTimeout ?? 30_000;
+      if (headersTimeout > 0) httpServer.headersTimeout = headersTimeout;
+      if (requestTimeout > 0) httpServer.requestTimeout = requestTimeout;
+    }
 
     // Health/Metrics HTTP endpoint
     let requestHandler:
@@ -2337,6 +2344,23 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       } else if (!wantAdaptive && this._adaptiveLimiter) {
         this._adaptiveLimiter.stop();
         this._adaptiveLimiter = null;
+      }
+    }
+
+    // Apply HTTP timeout changes to owned servers immediately
+    if (
+      options.headersTimeout !== undefined ||
+      options.requestTimeout !== undefined
+    ) {
+      for (const srv of this._ownedHttpServers) {
+        if (options.headersTimeout !== undefined) {
+          srv.headersTimeout =
+            options.headersTimeout > 0 ? options.headersTimeout : 0;
+        }
+        if (options.requestTimeout !== undefined) {
+          srv.requestTimeout =
+            options.requestTimeout > 0 ? options.requestTimeout : 0;
+        }
       }
     }
 

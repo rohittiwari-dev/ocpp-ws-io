@@ -800,6 +800,52 @@ interface ServerOptionsBase {
    * (default: disabled)
    */
   telemetry?: TelemetryConfig;
+
+  /**
+   * Maximum time (ms) the HTTP server waits for a client to finish sending
+   * request headers before destroying the socket. Applied only to servers
+   * created by `listen()` — user-provided servers (`options.server`) are
+   * left untouched.
+   *
+   * Protects against HTTP slowloris attacks that hold connections open by
+   * drip-feeding headers. Node.js defaults to 300 000 ms (5 min), which is
+   * far too generous for an OCPP upgrade endpoint.
+   *
+   * Set `0` to disable the timeout entirely.
+   *
+   * @default 30000
+   * @example
+   * ```ts
+   * // Tight timeout for production behind a load balancer
+   * const server = new OCPPServer({ headersTimeout: 10_000 });
+   *
+   * // Generous for local development
+   * const server = new OCPPServer({ headersTimeout: 120_000 });
+   * ```
+   */
+  headersTimeout?: number;
+
+  /**
+   * Maximum time (ms) the HTTP server waits for the complete request
+   * (headers + body) before destroying the socket. Applied only to servers
+   * created by `listen()` — user-provided servers are left untouched.
+   *
+   * Works alongside {@link headersTimeout} to harden the HTTP layer
+   * against slow-request denial-of-service attacks.
+   *
+   * Set `0` to disable the timeout entirely.
+   *
+   * @default 30000
+   * @example
+   * ```ts
+   * // Match headersTimeout for symmetry
+   * const server = new OCPPServer({
+   *   headersTimeout: 15_000,
+   *   requestTimeout: 15_000,
+   * });
+   * ```
+   */
+  requestTimeout?: number;
 }
 
 /**

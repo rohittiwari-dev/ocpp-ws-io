@@ -169,6 +169,8 @@ const server = new OCPPServer(options?: ServerOptions);
 | `badMessageWindowMs` | `number`                        | —         | Sliding time window (ms) for bad-message counting. When set, the counter resets after the window elapses. Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` = 10 per minute. |
 | `workerThreads`      | `boolean \| object`             | `false`   | Enable worker thread pool for JSON parsing. `true` = auto pool size, `{ poolSize, maxQueueSize }` for fine-tuning.                             |
 | `compression`        | `boolean \| CompressionOptions` | `false`   | Enable WebSocket `permessage-deflate` compression. `true` = sensible defaults (threshold: 1024, level: 6).                                     |
+| `headersTimeout`     | `number`                        | `30000`   | Max time (ms) to receive HTTP headers on servers created by `listen()`. Prevents HTTP slowloris attacks. `0` disables. User-provided servers are unaffected. |
+| `requestTimeout`     | `number`                        | `30000`   | Max time (ms) for the complete HTTP request on servers created by `listen()`. Works with `headersTimeout` to harden the HTTP layer. `0` disables. |
 
 #### CompressionOptions
 

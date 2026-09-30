@@ -10,6 +10,9 @@
 
 - `ClientOptions.badMessageWindowMs` / `ServerOptions.badMessageWindowMs` — sliding time window for bad-message counting. When set, the counter resets after the window elapses since the first bad message, so transient bursts do not accumulate across the entire connection lifetime. Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` allows up to 10 bad messages per minute.
 - A startup warning is logged when `maxBadMessages` is set to `Infinity`, alerting operators to the unlimited malformed-message risk.
+- `ServerOptions.headersTimeout` (default: 30 000) — max time the HTTP server waits for a client to finish sending headers. Hardens servers created by `listen()` against HTTP slowloris attacks. Set `0` to disable. User-provided servers are unaffected.
+- `ServerOptions.requestTimeout` (default: 30 000) — max time for the complete HTTP request. Works alongside `headersTimeout` to protect the HTTP layer. Set `0` to disable.
+- Both timeouts are immediately reconfigurable via `server.reconfigure()` on owned HTTP servers.
 
 ## v2.3.2 - Leap Towards Stability (2026-09-08)
 
