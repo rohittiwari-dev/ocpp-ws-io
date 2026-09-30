@@ -165,8 +165,8 @@ const server = new OCPPServer(options?: ServerOptions);
 | `rateLimit`          | `RateLimitOptions`              | —         | Token bucket socket & method limiter                                                                                                           |
 | `healthEndpoint`     | `boolean \| HealthEndpointOptions` | `false` | Expose HTTP `/health` and `/metrics`. Pass `true` for open access, or `{ auth }` to require bearer token or basic auth. Missing or empty credentials throw when the server is created. |
 | `maxPayloadBytes`    | `number`                        | `65536`   | Max WebSocket frame size in bytes. Rejects oversized messages at the transport layer before any parsing. Prevents OOM from malicious payloads. |
-| `maxBadMessages`     | `number`                        | `50`      | Close a connection on its Nth malformed message. Set `0` for zero tolerance, `Infinity` for no limit (logs a warning). |
-| `badMessageWindowMs` | `number`                        | —         | Counting window (ms) for bad messages. It opens at the first bad message, and the count resets once it has elapsed. Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` closes on the 10th bad message within a minute. |
+| `maxBadMessages`     | `number`                        | `50`      | Close a connection on its Nth malformed message **in a row**. Every valid message resets the count and empty frames are ignored. Set `0` for zero tolerance, `Infinity` for no limit (logs a warning). |
+| `badMessageWindowMs` | `number`                        | —         | Also reset a run of bad messages once it is older than this many ms (a valid message always resets it). Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` closes on the 10th bad message in a row within a minute. |
 | `workerThreads`      | `boolean \| object`             | `false`   | Enable worker thread pool for JSON parsing. `true` = auto pool size, `{ poolSize, maxQueueSize }` for fine-tuning.                             |
 | `compression`        | `boolean \| CompressionOptions` | `false`   | Enable WebSocket `permessage-deflate` compression. `true` = sensible defaults (threshold: 1024, level: 6).                                     |
 | `headersTimeout`     | `number`                        | `30000`   | Max time (ms) to receive HTTP headers on servers created by `listen()`. Prevents HTTP slowloris attacks. Keep it at or below `requestTimeout`. `0` disables. User-provided servers are unaffected. |
@@ -420,8 +420,8 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 | `backoffMax`                | `number`                 | `30000`    | Maximum reconnect delay (ms)          |
 | `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)         |
 | `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls         |
-| `maxBadMessages`            | `number`                 | `50`       | Close on the Nth bad message. `0` = zero tolerance, `Infinity` = no limit (logs warning). |
-| `badMessageWindowMs`        | `number`                 | —          | Counting window (ms) for bad messages, opened by the first one. Count resets once it elapses. |
+| `maxBadMessages`            | `number`                 | `50`       | Close on the Nth bad message in a row; a valid message resets the count. `0` = zero tolerance, `Infinity` = no limit (logs warning). |
+| `badMessageWindowMs`        | `number`                 | —          | Also reset a run of bad messages once it is older than this many ms. |
 | `respondWithDetailedErrors` | `boolean`                | `false`    | Include error details in responses    |
 | `logging`                   | `LoggingConfig`          | `{}`       | Configuration for structured logging. |
 | Option                      | Type                     | Default    | Description                           |
@@ -436,8 +436,8 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 | `backoffMax`                | `number`                 | `30000`    | Maximum reconnect delay (ms)          |
 | `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)         |
 | `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls         |
-| `maxBadMessages`            | `number`                 | `50`       | Close on the Nth bad message. `0` = zero tolerance, `Infinity` = no limit (logs warning). |
-| `badMessageWindowMs`        | `number`                 | —          | Counting window (ms) for bad messages, opened by the first one. Count resets once it elapses. |
+| `maxBadMessages`            | `number`                 | `50`       | Close on the Nth bad message in a row; a valid message resets the count. `0` = zero tolerance, `Infinity` = no limit (logs warning). |
+| `badMessageWindowMs`        | `number`                 | —          | Also reset a run of bad messages once it is older than this many ms. |
 | `respondWithDetailedErrors` | `boolean`                | `false`    | Include error details in responses    |
 | `logging`                   | `LoggingConfig`          | `{}`       | Configuration for structured logging. |
 

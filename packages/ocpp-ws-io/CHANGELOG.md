@@ -4,11 +4,11 @@
 
 ### Breaking changes
 
-- **`maxBadMessages` default changed from `Infinity` to `50`.** Connections now close on their 50th malformed message by default. Set `maxBadMessages: Infinity` explicitly to restore the previous behaviour (a startup warning is logged when this value is used).
+- **`maxBadMessages` default changed from `Infinity` to `50`, and it now counts bad messages in a row.** Every valid message resets the count (as ocpp-rpc does), so a working charger that sends an occasional odd frame is never disconnected; only 50 consecutive malformed messages close the connection. Empty frames, which some charge point vendors send, are ignored rather than counted. Set `maxBadMessages: Infinity` explicitly to restore the previous behaviour (a startup warning is logged when this value is used).
 
 ### Added
 
-- `ClientOptions.badMessageWindowMs` / `ServerOptions.badMessageWindowMs` — counting window for bad messages. The window opens at the first bad message and the count resets once it has elapsed, so transient bursts do not accumulate across the whole connection lifetime. Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` closes the connection on its 10th bad message within a minute.
+- `ClientOptions.badMessageWindowMs` / `ServerOptions.badMessageWindowMs` — also forgets a run of bad messages once it is older than the window. The window opens at the first bad message of a run, and the next bad message after it has elapsed starts a new count. Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` closes the connection on its 10th bad message in a row within a minute.
 - A startup warning is logged when `maxBadMessages` is set to `Infinity`, alerting operators to the unlimited malformed-message risk.
 - `ServerOptions.headersTimeout` (default: 30 000) — max time the HTTP server waits for a client to finish sending headers. Hardens servers created by `listen()` against HTTP slowloris attacks. Set `0` to disable, at startup or through `reconfigure()`. User-provided servers are unaffected.
 - `ServerOptions.requestTimeout` (default: 30 000) — max time for the complete HTTP request. Works alongside `headersTimeout` to protect the HTTP layer. Set `0` to disable.
@@ -18,6 +18,7 @@
 
 ### Fixed
 
+- **A `null` payload is accepted as `{}`** on CALL and CALLRESULT frames, in both the Node and browser clients. Every OCPP-J version allows an absent payload to be sent as `null` (1.6J §4.2.1, 2.0.1/2.1 §4.1.5). It was answered with `FormationViolation` and counted as a bad message, so a charger using that notation was eventually disconnected.
 - **On an OCPP 2.1 connection, CALLRESULTERROR (5) and SEND (6) frames are dropped** instead of being answered with a CALLERROR and counted as bad messages. The spec forbids answering them, and counting them would disconnect a 2.1 charger streaming `NotifyPeriodicEventStream` under the new `maxBadMessages` default. Other protocols still treat them as malformed.
 
 ## v2.3.2 - Leap Towards Stability (2026-09-08)

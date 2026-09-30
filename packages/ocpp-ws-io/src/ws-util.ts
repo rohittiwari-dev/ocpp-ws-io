@@ -296,3 +296,12 @@ export function getClientIp(
   const first = raw.split(",")[0]?.trim();
   return first && first.length > 0 ? first : direct;
 }
+
+/** True for a WebSocket message with no content, in any shape `ws` delivers. */
+export function isEmptyFrame(
+  data: Buffer | ArrayBuffer | Buffer[] | string,
+): boolean {
+  if (typeof data === "string") return data.length === 0;
+  if (Array.isArray(data)) return data.every((chunk) => chunk.length === 0);
+  return data.byteLength === 0;
+}

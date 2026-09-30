@@ -625,6 +625,10 @@ export class BrowserOCPPClient<
   private _onMessage(data: unknown): void {
     const raw = typeof data === "string" ? data : String(data);
 
+    // Some charge points send empty frames. They carry nothing to answer, and
+    // counting them as bad messages would close an otherwise working link.
+    if (raw.length === 0) return;
+
     let message: OCPPMessage;
     try {
       message = JSON.parse(raw) as OCPPMessage;
@@ -647,17 +651,29 @@ export class BrowserOCPPClient<
       this._logger?.debug?.("Dropping unhandled OCPP 2.1 message", {
         messageType,
       });
+      this._resetBadMessageCount();
       return;
+    }
+
+    // Every OCPP-J version allows an absent payload to be sent as null
+    // (1.6J §4.2.1, 2.0.1/2.1 §4.1.5); it means the same as {}.
+    if (messageType === MessageType.CALL && message[3] === null) {
+      (message as OCPPCall)[3] = {};
+    } else if (messageType === MessageType.CALLRESULT && message[2] === null) {
+      (message as OCPPCallResult)[2] = {};
     }
 
     switch (messageType) {
       case MessageType.CALL:
+        this._resetBadMessageCount();
         this._handleIncomingCall(message as OCPPCall);
         break;
       case MessageType.CALLRESULT:
+        this._resetBadMessageCount();
         this._handleCallResult(message as OCPPCallResult);
         break;
       case MessageType.CALLERROR:
+        this._resetBadMessageCount();
         this._handleCallError(message as OCPPCallError);
         break;
       default:
@@ -865,6 +881,12 @@ export class BrowserOCPPClient<
   }
 
   // ─── Internal: Bad message handling ──────────────────────────
+
+  /** maxBadMessages counts bad messages in a row, so a valid frame ends the run. */
+  private _resetBadMessageCount(): void {
+    this._badMessageCount = 0;
+    this._badMessageWindowStart = 0;
+  }
 
   private _onBadMessage(rawMessage: string, error: Error): void {
     const now = Date.now();

@@ -1133,6 +1133,32 @@ describe("BrowserOCPPClient", () => {
       expect(badMessages.length).toBe(1);
     });
 
+    // 1.6J §4.2.1 and 2.x §4.1.5 allow an absent payload to be sent as null.
+    it("delivers a null CALL payload to the handler as {}", async () => {
+      let serverClient: OCPPServerClient | undefined;
+      server.on("client", (sc) => {
+        serverClient = sc;
+      });
+      client = new BrowserOCPPClient({
+        identity: "CS-NULL",
+        endpoint: `ws://localhost:${port}`,
+        protocols: ["ocpp1.6"],
+        reconnect: false,
+      });
+      const received: unknown[] = [];
+      client.handle("ClearCache", async (ctx) => {
+        received.push(ctx.params);
+        return { status: "Accepted" };
+      });
+      await client.connect();
+      await new Promise((r) => setTimeout(r, 100));
+
+      serverClient!.sendRaw(JSON.stringify([2, "n1", "ClearCache", null]));
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(received).toEqual([{}]);
+    });
+
     it("drops OCPP 2.1 SEND frames on a 2.1 connection without counting them", async () => {
       const server21 = new OCPPServer({
         protocols: ["ocpp2.1"],
@@ -1194,6 +1220,55 @@ describe("BrowserOCPPClient", () => {
 
       // After 2 bad messages, client should initiate close
       expect(client.state).toBe(BrowserOCPPClient.CLOSED);
+    });
+
+    // maxBadMessages counts bad messages in a row: a valid frame resets it.
+    it("resets the bad-message count after a valid message", async () => {
+      let serverClient: OCPPServerClient | undefined;
+      server.on("client", (sc) => {
+        serverClient = sc;
+      });
+      client = new BrowserOCPPClient({
+        identity: "CS-RESET",
+        endpoint: `ws://localhost:${port}`,
+        protocols: ["ocpp1.6"],
+        reconnect: false,
+        maxBadMessages: 2,
+      });
+      await client.connect();
+      await new Promise((r) => setTimeout(r, 100));
+
+      serverClient!.sendRaw("bad1");
+      // A CALLRESULT for an unknown ID is a valid frame (ignored, not bad).
+      serverClient!.sendRaw(JSON.stringify([3, "unknown-id", {}]));
+      serverClient!.sendRaw("bad2");
+      await new Promise((r) => setTimeout(r, 200));
+
+      expect(client.state).toBe(BrowserOCPPClient.OPEN);
+    });
+
+    it("ignores empty frames instead of counting them as bad", async () => {
+      let serverClient: OCPPServerClient | undefined;
+      server.on("client", (sc) => {
+        serverClient = sc;
+      });
+      client = new BrowserOCPPClient({
+        identity: "CS-EMPTY",
+        endpoint: `ws://localhost:${port}`,
+        protocols: ["ocpp1.6"],
+        reconnect: false,
+        maxBadMessages: 2,
+      });
+      const badMessages: unknown[] = [];
+      client.on("badMessage", (msg: unknown) => badMessages.push(msg));
+      await client.connect();
+      await new Promise((r) => setTimeout(r, 100));
+
+      for (let i = 0; i < 3; i++) serverClient!.sendRaw("");
+      await new Promise((r) => setTimeout(r, 200));
+
+      expect(badMessages).toHaveLength(0);
+      expect(client.state).toBe(BrowserOCPPClient.OPEN);
     });
   });
 

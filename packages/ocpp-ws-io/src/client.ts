@@ -53,7 +53,7 @@ import {
   NOOP_LOGGER,
 } from "./util.js";
 import type { Validator } from "./validator.js";
-import { isValidStatusCode } from "./ws-util.js";
+import { isEmptyFrame, isValidStatusCode } from "./ws-util.js";
 
 const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
 
@@ -1242,6 +1242,11 @@ export class OCPPClient<
   protected _onMessage(rawData: WebSocket.RawData, preParsed?: unknown): void {
     this._recordActivity();
 
+    // Some charge points send empty frames. They carry nothing to answer, and
+    // counting them as bad messages would disconnect an otherwise working
+    // charger.
+    if (preParsed === undefined && isEmptyFrame(rawData)) return;
+
     let message: OCPPMessage;
     try {
       if (preParsed !== undefined) {
@@ -1297,6 +1302,7 @@ export class OCPPClient<
         messageType,
         messageId,
       });
+      this._resetBadMessageCount();
       return;
     }
     if (
@@ -1328,13 +1334,20 @@ export class OCPPClient<
       return;
     }
 
-    // Payload MUST be a JSON object (not null, array, or primitive)
+    // Payload MUST be a JSON object (not array or primitive)
     const payloadIndex =
       messageType === MessageType.CALLERROR
         ? 4
         : messageType === MessageType.CALL
           ? 3
           : 2;
+    // Every OCPP-J version allows an absent payload to be sent as null
+    // (1.6J §4.2.1, 2.0.1/2.1 §4.1.5); it means the same as {}.
+    if (messageType === MessageType.CALL && message[3] === null) {
+      (message as OCPPCall)[3] = {};
+    } else if (messageType === MessageType.CALLRESULT && message[2] === null) {
+      (message as OCPPCallResult)[2] = {};
+    }
     const payload = message[payloadIndex];
     if (
       typeof payload !== "object" ||
@@ -1355,6 +1368,8 @@ export class OCPPClient<
       );
       return;
     }
+
+    this._resetBadMessageCount();
 
     switch (messageType) {
       case MessageType.CALL:
@@ -1755,6 +1770,16 @@ export class OCPPClient<
   }
 
   // ─── Internal: Bad message handling ──────────────────────────
+
+  /**
+   * maxBadMessages counts bad messages in a row, so a valid frame ends the run.
+   * Counting over the whole connection slowly disconnected working chargers
+   * that send an occasional odd frame.
+   */
+  private _resetBadMessageCount(): void {
+    this._badMessageCount = 0;
+    this._badMessageWindowStart = 0;
+  }
 
   private _onBadMessage(rawMessage: string, error: Error): void {
     const now = Date.now();

@@ -450,25 +450,25 @@ export interface ClientOptions {
   /** Custom validators for strict mode */
   strictModeValidators?: Validator[];
   /**
-   * Number of bad messages at which the connection is closed (code 1002).
+   * Number of bad messages **in a row** at which the connection is closed
+   * (code 1002). Every valid message resets the count, and empty frames are
+   * ignored, so only a broken or hostile peer reaches the limit.
    *
    * - `0` or `1` — close on the first bad message.
-   * - `50` (default) — close on the 50th bad message over the connection
-   *   lifetime (or within one window when {@link badMessageWindowMs} is set).
+   * - `50` (default) — close on the 50th consecutive bad message.
    * - `Infinity` — never disconnect on bad messages (development only).
    */
   maxBadMessages?: number;
   /**
    * Counting window in milliseconds for bad messages.
    *
-   * The window opens at the first bad message; once this many milliseconds
-   * have passed, the next bad message resets the count and opens a new
-   * window. Transient bursts then do not accumulate across the whole
-   * connection lifetime.
+   * A valid message always resets the count. The window additionally forgets
+   * a run of bad messages that is spread out in time: it opens at the first
+   * bad message, and once this many milliseconds have passed, the next bad
+   * message resets the count and opens a new window.
    *
-   * - `undefined` (default) — lifetime counting, counter resets only on
-   *   reconnect.
-   * - `60_000` — count bad messages within 1-minute windows.
+   * - `undefined` (default) — no time limit; only a valid message resets.
+   * - `60_000` — also reset a run once it is older than a minute.
    *
    * Has no effect when `maxBadMessages` is `Infinity`.
    */
