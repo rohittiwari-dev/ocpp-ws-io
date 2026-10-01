@@ -2774,6 +2774,9 @@ export class OCPPClient<
       if (tls.ca) opts.ca = tls.ca;
       if (tls.rejectUnauthorized !== undefined)
         opts.rejectUnauthorized = tls.rejectUnauthorized;
+      if (tls.minVersion) opts.minVersion = tls.minVersion;
+      if (tls.maxVersion) opts.maxVersion = tls.maxVersion;
+      if (tls.ciphers) opts.ciphers = tls.ciphers;
 
       // Profile 3: Client certificates for mTLS
       if (profile === SecurityProfile.TLS_CLIENT_CERT) {

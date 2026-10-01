@@ -177,7 +177,9 @@ describe("OCPPServer - Express-like Routing", () => {
       ws.on("open", () => resolve(new Error("Should not have opened")));
     });
 
-    expect(err.message).toMatch(/400/);
+    // The route is checked before the subprotocol, so an unknown path gets
+    // 404 even though no subprotocol was offered.
+    expect(err.message).toMatch(/404/);
     expect(authSpy).not.toHaveBeenCalled();
   });
 
@@ -296,8 +298,9 @@ describe("OCPPServer - Express-like Routing", () => {
       wsFail.on("open", () => resolve(new Error("Should not have opened")));
     });
 
-    // Protocol mismatch causes immediate connection rejection
-    expect(failError.message).toMatch(/400/);
+    // No shared subprotocol: the handshake completes without one (OCPP-J
+    // §3.2), which the ws client then fails itself.
+    expect(failError.message).toMatch(/Server sent no subprotocol/);
   });
 });
 

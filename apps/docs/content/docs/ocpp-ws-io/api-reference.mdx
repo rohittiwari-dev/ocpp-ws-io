@@ -182,6 +182,8 @@ const server = new OCPPServer(options?: ServerOptions);
 | `idGenerator`        | `() => string`                  | —         | Creates the message ID of each CALL sent to a charging station. A per-call `idempotencyKey` wins; without either, a random UUID |
 | `idValidator`        | `(id: string) => boolean`       | —         | Checks each incoming CALL / SEND message ID, in any mode, in place of the built-in check (see Message IDs) |
 | `requireBasicAuth`   | `boolean`                       | `true`    | On profile 1 or 2, answer HTTP 401 when Basic Auth credentials are missing or the username is not the identity. `false` leaves it to the auth callback |
+| `isKnownIdentity`    | `(identity, handshake) => boolean \| Promise<boolean>` | — | Unknown identity → HTTP 404 before middleware and auth (OCPP-J §3.2). A throw → 500 |
+| `duplicateConnection` | `"replace" \| "reject"` | `"replace"` | A charger that is already connected: replace the old connection, or refuse the new one with HTTP 409 |
 | `handshakeTimeoutMs` | `number`                        | `30000`   | Timeout for WebSocket handshake (ms)                                                                                                           |
 | `tls`                | `TLSOptions`                    | —         | TLS options (Profile 2 & 3)                                                                                                                    |
 | `logging`            | `LoggingConfig`                 | `{}`      | Configuration for structured logging.                                                                                                          |
@@ -205,6 +207,21 @@ const server = new OCPPServer(options?: ServerOptions);
 | `memLevel`                | `number`  | `8`     | zlib memory level (1–9).                                 |
 | `serverNoContextTakeover` | `boolean` | `true`  | Don't retain server deflate context (saves ~120KB/conn). |
 | `clientNoContextTakeover` | `boolean` | `true`  | Don't retain client deflate context.                     |
+
+#### TLSOptions
+
+Used by `ServerOptions.tls` (profiles 2 and 3) and `ClientOptions.tls`.
+
+| Option               | Type                                  | Default       | Description |
+| :------------------- | :------------------------------------ | :------------ | :---------- |
+| `cert`               | `string \| Buffer \| Array<…>`        | —             | Certificate(s), PEM. Pass an RSA and an ECDSA one to serve all four cipher suites OCPP 2.0.1 requires |
+| `key`                | `string \| Buffer \| Array<…>`        | —             | Private key(s), PEM, in the same order as `cert` |
+| `ca`                 | `string \| Buffer \| Array<…>`        | —             | CA certificate(s) for verification |
+| `passphrase`         | `string`                              | —             | Passphrase of an encrypted key |
+| `rejectUnauthorized` | `boolean`                             | `true`        | Reject peers whose certificate does not verify |
+| `minVersion`         | `"TLSv1" \| "TLSv1.1" \| "TLSv1.2" \| "TLSv1.3"` | `"TLSv1.2"` | Lowest TLS version. Lower it only for legacy OCPP 1.6 charge points |
+| `maxVersion`         | same as `minVersion`                  | `"TLSv1.3"`   | Highest TLS version |
+| `ciphers`            | `string`                              | Node's        | OpenSSL cipher list |
 
 #### Compression
 

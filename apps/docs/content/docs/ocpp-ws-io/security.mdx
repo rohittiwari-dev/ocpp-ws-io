@@ -39,13 +39,18 @@ const client = new OCPPClient({
 **Server:**
 
 ```typescript
-server.auth((ctx) => {
-  const expectedPassword = getPasswordForStation(ctx.handshake.identity);
+server.auth(async (ctx) => {
+  const station = await db.findStation(ctx.handshake.identity);
+
+  // OCPP-J §3.2: an identity the CSMS does not recognize SHOULD get 404
+  if (!station) {
+    return ctx.reject(404, "Unknown charging station");
+  }
 
   // Buffer comparison to avoid timing attacks is recommended
   if (
     !ctx.handshake.password ||
-    !ctx.handshake.password.equals(Buffer.from(expectedPassword))
+    !ctx.handshake.password.equals(Buffer.from(station.password))
   ) {
     return ctx.reject(401, "Invalid credentials");
   }
@@ -96,6 +101,27 @@ const server = new OCPPServer({
 });
 ```
 
+### Certificates, TLS versions and ciphers
+
+A CSMS has to support four cipher suites: two need an **ECDSA** certificate and two an **RSA** one, so "the CSMS will have to provide 2 different certificates" (OCPP 2.0.1 Part 2 §A). Pass both, in matching order:
+
+```typescript
+const server = new OCPPServer({
+  protocols: ["ocpp2.0.1"],
+  securityProfile: SecurityProfile.TLS_BASIC_AUTH,
+  tls: {
+    cert: [fs.readFileSync("./certs/rsa.crt"), fs.readFileSync("./certs/ecdsa.crt")],
+    key: [fs.readFileSync("./certs/rsa.key"), fs.readFileSync("./certs/ecdsa.key")],
+    // minVersion: "TLSv1",  // only for legacy OCPP 1.6 charge points (security whitepaper)
+    // ciphers: "...",       // OpenSSL cipher list, when you need to restrict it
+  },
+});
+```
+
+`minVersion` defaults to Node's `"TLSv1.2"`, which OCPP 2.0.1 requires. The 1.6 security whitepaper lets charge points that cannot do TLS 1.2 use TLS 1.0/1.1; lower `minVersion` only for those. `minVersion`, `maxVersion` and `ciphers` work on `OCPPClient` too. `server.updateTLS()` keeps them, and the CA, when you replace only the certificate.
+
+For anything else (SNI, OCSP stapling, a certificate per hostname), bring your own server: create it with any Node `https` options and pass it to `server.listen(port, host, { server })`, or attach `server.handleUpgrade` to its `upgrade` event.
+
 ## Profile 3 — Mutual TLS (Client Certificates)
 
 Uses Client Certificates for authentication. Basic Auth is skipped.
@@ -142,6 +168,21 @@ server.auth((ctx) => {
   ctx.accept();
 });
 ```
+
+## Unknown Chargers and Duplicate Connections
+
+**Unknown identity.** OCPP-J §3.2: "If the CSMS does not recognize the Charging Station identifier in the URL path, it SHOULD send an HTTP response with status 404". Only your application knows which chargers exist. Either reject with 404 in the auth callback, as in the Profile 1 example, or give the server a lookup that runs before middleware and auth:
+
+```typescript
+const server = new OCPPServer({
+  protocols: ["ocpp2.0.1"],
+  isKnownIdentity: async (identity) => (await db.findStation(identity)) !== null,
+});
+```
+
+`false` answers 404, a throw answers 500, and both emit an `AUTH_FAILED` security event. Under profile 1/2 a request without Basic Auth credentials gets 401 first, so it never reaches your database. Note that `ctx.reject()` without a code answers 401.
+
+**Duplicate connection.** OCPP does not say what to do when a charger connects while it is already connected. By default the new connection replaces the old one, which is usually a dead link the charger has not noticed yet after a network change (`onEviction` plugin hook). Set `duplicateConnection: "reject"` to keep the old connection and refuse the new one with HTTP 409 instead. Both apply to connections on this server instance.
 
 ## Payload Size Limit
 
@@ -206,7 +247,7 @@ server.on("securityEvent", (event) => {
 
 | Type                    | When it fires                                                          |
 | :---------------------- | :--------------------------------------------------------------------- |
-| `AUTH_FAILED`           | Auth callback rejected the connection (wrong password, bad cert), or a profile 1/2 connection arrived without valid Basic Auth credentials |
+| `AUTH_FAILED`           | Auth callback rejected the connection (wrong password, bad cert), a profile 1/2 connection arrived without valid Basic Auth credentials, `isKnownIdentity` refused it (404), or `duplicateConnection: "reject"` refused it (409) |
 | `CONNECTION_RATE_LIMIT` | A single IP exceeded the connection rate limit (`connectionRateLimit`) |
 | `UPGRADE_ABORTED`       | Handshake timed out or was aborted before auth completed               |
 

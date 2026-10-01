@@ -1,7 +1,7 @@
 import type { EventEmitter } from "node:events";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import type { TLSSocket } from "node:tls";
+import type { SecureVersion, TLSSocket } from "node:tls";
 import type { LogEntry } from "voltlog-io";
 import type {
   AllMethodNames,
@@ -161,16 +161,30 @@ export type OCPPMessage<T = unknown> =
 // ─── TLS Options ─────────────────────────────────────────────────
 
 export interface TLSOptions {
-  /** Server/client certificate (PEM) */
-  cert?: string | Buffer;
-  /** Private key (PEM) */
-  key?: string | Buffer;
+  /**
+   * Server/client certificate (PEM). Pass several, such as an RSA and an
+   * ECDSA one, to offer the cipher suites of each: a CSMS has to support two
+   * ECDSA and two RSA suites, so it needs both (OCPP 2.0.1 Part 2 §A).
+   */
+  cert?: string | Buffer | Array<string | Buffer>;
+  /** Private key (PEM); one per certificate, in the same order. */
+  key?: string | Buffer | Array<string | Buffer>;
   /** CA certificate(s) for verification */
   ca?: string | Buffer | Array<string | Buffer>;
   /** Reject unauthorized certs (default: true) */
   rejectUnauthorized?: boolean;
   /** Passphrase for encrypted private key */
   passphrase?: string;
+  /**
+   * Lowest TLS version allowed (default: Node's, `"TLSv1.2"`). OCPP 2.0.1
+   * requires 1.2 or above; the 1.6 security whitepaper lets legacy charge
+   * points use `"TLSv1"` / `"TLSv1.1"`.
+   */
+  minVersion?: SecureVersion;
+  /** Highest TLS version allowed (default: Node's, `"TLSv1.3"`). */
+  maxVersion?: SecureVersion;
+  /** OpenSSL cipher list (default: Node's). */
+  ciphers?: string;
 }
 
 // ─── Handler Types ───────────────────────────────────────────────
@@ -270,6 +284,15 @@ export interface CloseOptions {
 }
 
 // ─── Handshake Info ──────────────────────────────────────────────
+
+/** Whether a charging station identity is known; see `isKnownIdentity`. */
+export type IdentityLookup = (
+  identity: string,
+  handshake: HandshakeInfo,
+) => boolean | Promise<boolean>;
+
+/** See `duplicateConnection`. */
+export type DuplicateConnectionPolicy = "replace" | "reject";
 
 export interface HandshakeInfo {
   /** Charging station identity (from URL path) */
@@ -718,6 +741,24 @@ interface ServerOptionsBase {
    * job. (default: true)
    */
   requireBasicAuth?: boolean;
+  /**
+   * Tells whether a charging station identity is known. When it returns
+   * `false` the connection is answered with HTTP 404, before middleware and
+   * the auth callback run (OCPP-J §3.2: the CSMS SHOULD answer 404 to an
+   * identity it does not recognize). A throw is answered with 500. Basic Auth
+   * credentials (profile 1/2) are checked before it, so requests without them
+   * never reach the lookup. Without it, the auth callback decides; use
+   * `ctx.reject(404, "Unknown charging station")` there.
+   */
+  isKnownIdentity?: IdentityLookup;
+  /**
+   * What to do when a charging station connects while its identity is already
+   * connected to this server; OCPP does not say. `"replace"` closes the old
+   * connection, usually a dead link the charger has not noticed yet after a
+   * network change. `"reject"` refuses the new one with HTTP 409.
+   * (default: "replace")
+   */
+  duplicateConnection?: DuplicateConnectionPolicy;
   /** TLS options for HTTPS server (Profile 2 & 3) */
   tls?: TLSOptions;
   /** Call timeout in ms — inherited by server clients (default: 30000) */

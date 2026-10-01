@@ -5,9 +5,12 @@ import {
   type IncomingMessage,
   type Server,
 } from "node:http";
-import { createServer as createHttpsServer } from "node:https";
+import {
+  createServer as createHttpsServer,
+  type ServerOptions as HttpsServerOptions,
+} from "node:https";
 import type { Duplex } from "node:stream";
-import type { TLSSocket } from "node:tls";
+import type { SecureContextOptions, TLSSocket } from "node:tls";
 import { WebSocketServer } from "ws";
 import { AdaptiveLimiter } from "./adaptive-limiter.js";
 import { checkCORS } from "./cors.js";
@@ -95,7 +98,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private static readonly _NODE_LIVENESS_TTL_MS = 5000;
 
   /** Subprotocol chosen per upgrade, read back by ws's handleProtocols. */
-  private _negotiatedProtocols = new WeakMap<IncomingMessage, string>();
+  /** The protocol to answer with; `false` answers with none (OCPP-J §3.2). */
+  private _negotiatedProtocols = new WeakMap<IncomingMessage, string | false>();
   /** Routers with RegExp patterns (fallback linear scan). */
   private _regexRouters: OCPPRouter[] = [];
   private _clients = new Set<OCPPServerClient>();
@@ -488,6 +492,21 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
   }
 
+  /** The certificate and protocol settings of a TLS context, from TLSOptions. */
+  private static _secureContextOptions(
+    tlsOpts: import("./types.js").TLSOptions,
+  ): SecureContextOptions {
+    const options: SecureContextOptions = {};
+    if (tlsOpts.cert) options.cert = tlsOpts.cert;
+    if (tlsOpts.key) options.key = tlsOpts.key;
+    if (tlsOpts.ca) options.ca = tlsOpts.ca;
+    if (tlsOpts.passphrase) options.passphrase = tlsOpts.passphrase;
+    if (tlsOpts.minVersion) options.minVersion = tlsOpts.minVersion;
+    if (tlsOpts.maxVersion) options.maxVersion = tlsOpts.maxVersion;
+    if (tlsOpts.ciphers) options.ciphers = tlsOpts.ciphers;
+    return options;
+  }
+
   /** Log and emit a refused handshake, and pass it to the plugins. */
   private _reportAuthFailure(
     handshake: HandshakeInfo,
@@ -878,12 +897,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         profile === SecurityProfile.TLS_CLIENT_CERT
       ) {
         const tlsOpts = this._options.tls ?? {};
-        const httpsOptions: Record<string, unknown> = {};
-
-        if (tlsOpts.cert) httpsOptions.cert = tlsOpts.cert;
-        if (tlsOpts.key) httpsOptions.key = tlsOpts.key;
-        if (tlsOpts.ca) httpsOptions.ca = tlsOpts.ca;
-        if (tlsOpts.passphrase) httpsOptions.passphrase = tlsOpts.passphrase;
+        const httpsOptions: HttpsServerOptions =
+          OCPPServer._secureContextOptions(tlsOpts);
 
         // Profile 3: Request client certificate (mTLS)
         if (profile === SecurityProfile.TLS_CLIENT_CERT) {
@@ -1194,12 +1209,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     // Persist so future listen() calls pick up the new certs
     this._options.tls = { ...this._options.tls, ...tlsOpts };
 
-    // Build options object (Node's setSecureContext accepts SecureContextOptions)
-    const httpsOptions: Record<string, unknown> = {};
-    if (tlsOpts.cert) httpsOptions.cert = tlsOpts.cert;
-    if (tlsOpts.key) httpsOptions.key = tlsOpts.key;
-    if (tlsOpts.ca) httpsOptions.ca = tlsOpts.ca;
-    if (tlsOpts.passphrase) httpsOptions.passphrase = tlsOpts.passphrase;
+    // setSecureContext replaces the whole context, so it is built from the
+    // merged options: built from the update alone, replacing just the
+    // certificate dropped the CA, minVersion and ciphers set at startup.
+    const httpsOptions = OCPPServer._secureContextOptions(this._options.tls);
 
     let updated = 0;
     for (const srv of this._httpServers) {
@@ -1623,21 +1636,19 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
     }
 
+    // The first version in the server's list that the charger offered. With
+    // nothing in common the handshake is still completed, without a protocol,
+    // and then closed (OCPP-J §3.2), after the route, credential and auth
+    // checks below, so a charger refused for those still gets its HTTP status.
+    // A server without a list takes the charger's first offer.
     const serverProtocols =
       matchedRouterConfig?.protocols ?? this._options.protocols ?? [];
-    let selectedProtocol: string | undefined;
-
-    if (serverProtocols.length > 0) {
-      if (protocols.size === 0) {
-        abortHandshake(socket, 400, "Missing subprotocol");
-        return;
-      }
-      selectedProtocol = serverProtocols.find((p) => protocols.has(p));
-      if (!selectedProtocol) {
-        abortHandshake(socket, 400, "No matching subprotocol");
-        return;
-      }
-    }
+    let selectedProtocol: string | undefined =
+      serverProtocols.length > 0
+        ? serverProtocols.find((p) => protocols.has(p))
+        : protocols.values().next().value;
+    // Set when the auth callback picks a version the charger did not offer.
+    let protocolRefused = false;
 
     // Parse Basic Auth (modular)
     const password = parseBasicAuth(req.headers.authorization ?? "", identity);
@@ -1728,7 +1739,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     let ctx: import("./types.js").ConnectionContext | undefined;
     let acceptOptions: import("./types.js").AuthAccept | undefined;
 
-    if (matchedHandler || matchedMiddlewares.length > 0) {
+    const isKnownIdentity = this._options.isKnownIdentity;
+    if (matchedHandler || matchedMiddlewares.length > 0 || isKnownIdentity) {
       const ac = new AbortController();
 
       // Socket lifecycle → abort on premature close / error
@@ -1761,14 +1773,51 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         const chain = [...matchedMiddlewares];
         let authCalled = false;
 
+        // OCPP-J §3.2: an identity the CSMS does not recognize SHOULD get 404.
+        // First in the chain, so middleware and auth never see one, and inside
+        // it, so the handshake timeout and socket-close abort apply.
+        if (isKnownIdentity) {
+          chain.unshift(async (c) => {
+            let known: boolean;
+            try {
+              const aborted = new Promise<never>((_, reject) => {
+                ac.signal.addEventListener(
+                  "abort",
+                  () => reject(ac.signal.reason),
+                  { once: true },
+                );
+              });
+              // Settles after the lookup when the handshake ends later on.
+              aborted.catch(() => {});
+              known = await Promise.race([
+                Promise.resolve(isKnownIdentity(identity, c.handshake)),
+                aborted,
+              ]);
+            } catch (err) {
+              if (ac.signal.aborted) throw err;
+              this._logger?.error?.("isKnownIdentity failed", {
+                identity,
+                error: err instanceof Error ? err.message : String(err),
+              });
+              c.reject(500, "Internal Server Error");
+              return;
+            }
+            if (!known) {
+              c.reject(404, "Unknown charging station");
+              return;
+            }
+            await c.next();
+          });
+        }
+
         // Push the Auth check as the terminal handler of the middleware chain
         chain.push(async (c) => {
           authCalled = true;
-          if (!matchedHandler) {
-            // Default auth pass-through if no explicit auth callback was matched
-            selectedProtocol =
-              handshake.protocols.values().next().value ?? undefined;
-          } else {
+          // Without an auth callback the negotiated protocol stands. This used
+          // to take the charger's first offer, so with middleware but no auth
+          // callback a server could end up speaking a version it does not
+          // support.
+          if (matchedHandler) {
             acceptOptions = await new Promise<AuthAccept | undefined>(
               (resolve, reject) => {
                 let settled = false;
@@ -1776,7 +1825,20 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
                 const accept = (opts?: AuthAccept) => {
                   if (settled) return;
                   settled = true;
-                  if (opts?.protocol) selectedProtocol = opts.protocol;
+                  if (opts?.protocol) {
+                    // RFC 6455 §4.2.2: the server may only pick a protocol
+                    // the client offered; the client fails any other.
+                    if (protocols.has(opts.protocol)) {
+                      selectedProtocol = opts.protocol;
+                    } else {
+                      this._logger?.warn?.(
+                        "accept() chose a subprotocol the charger did not offer",
+                        { identity, protocol: opts.protocol },
+                      );
+                      selectedProtocol = undefined;
+                      protocolRefused = true;
+                    }
+                  }
                   resolve(opts);
                 };
 
@@ -1902,9 +1964,29 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     // here: its LRU entry is then the live session and newer than the store.
     const sessionIdentity =
       (acceptOptions as AuthAccept | undefined)?.identity || identity;
+
+    // OCPP does not say what happens when a connected charger connects again.
+    // "replace" (the default) evicts the old connection once this one is up;
+    // "reject" keeps the old one and refuses this one.
+    if (
+      this._options.duplicateConnection === "reject" &&
+      this._clientsByIdentity.has(sessionIdentity)
+    ) {
+      const message = "Charging station already connected";
+      this._reportAuthFailure(handshake, req, 409, message);
+      abortHandshake(socket, 409, message);
+      return;
+    }
+
+    // No version both sides speak: the connection gets no protocol and is
+    // closed once the handshake completes (OCPP-J §3.2).
+    const refuseProtocol =
+      !selectedProtocol && (serverProtocols.length > 0 || protocolRefused);
+
     let storedSession: PersistedSession | null = null;
     let storedSessionUnavailable = false;
     if (
+      !refuseProtocol &&
       this._adapter?.getSession &&
       !this._clientsByIdentity.has(sessionIdentity)
     ) {
@@ -1931,6 +2013,20 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     if (!this._wss) {
       // Reapply full transport config (maxPayload + compression) on re-init
       this._wss = this._createWss();
+    }
+
+    if (refuseProtocol) {
+      this._logger?.warn?.("No shared subprotocol", {
+        identity,
+        offered: [...protocols],
+        accepted: serverProtocols,
+      });
+      this._negotiatedProtocols.set(req, false);
+      this._wss.handleUpgrade(req, socket, head, (ws) => {
+        releaseHandshakeSlot();
+        ws.close(1002, "No shared subprotocol");
+      });
+      return;
     }
 
     // Hand ws the protocol we negotiated so the response header matches.
@@ -3657,7 +3753,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         request: IncomingMessage,
       ): string | false => {
         const chosen = this._negotiatedProtocols.get(request);
-        if (chosen) return chosen;
+        if (chosen !== undefined) return chosen;
         // No server-side protocol list configured: keep ws's default of
         // echoing the client's first offer.
         return protocols.values().next().value ?? false;
