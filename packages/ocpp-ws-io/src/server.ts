@@ -1962,6 +1962,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           matchedRouterConfig?.strictModeMethods ??
           this._options.strictModeMethods,
         strictModeValidators: this._options.strictModeValidators,
+        idGenerator: this._options.idGenerator,
+        idValidator: this._options.idValidator,
         rateLimit: matchedRouterConfig?.rateLimit ?? this._options.rateLimit,
         reconnect: false,
         logging: this._options.logging,

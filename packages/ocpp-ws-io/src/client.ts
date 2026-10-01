@@ -82,6 +82,9 @@ const UNREADABLE_ID_REPLY: BadMessageReply = {
   messageId: "-1",
 };
 
+/** OCPP-J §4.1.4: "maximum of 36 characters, to allow for UUIDs/GUIDs". */
+const MAX_MESSAGE_ID_LENGTH = 36;
+
 /** Which schema of a message is being validated. */
 type SchemaKind = "req" | "conf" | "send";
 
@@ -976,7 +979,7 @@ export class OCPPClient<
       throw new Error(`Cannot send: client is in state ${this._state}`);
     }
 
-    const messageId = createId();
+    const messageId = this._newMessageId();
     const ctx: MiddlewareContext = {
       type: "outgoing_call",
       messageId,
@@ -1085,7 +1088,7 @@ export class OCPPClient<
     params: unknown,
     options: CallOptions,
   ): Promise<unknown> {
-    const msgId = options.idempotencyKey ?? createId();
+    const msgId = options.idempotencyKey ?? this._newMessageId();
     const timeoutMs = options.timeoutMs ?? this._options.callTimeoutMs;
 
     const ctx: MiddlewareContext = {
@@ -1129,6 +1132,18 @@ export class OCPPClient<
       const messageStr = JSON.stringify(message);
 
       callResult = await new Promise<unknown>((resolve, reject) => {
+        // A second pending call under one ID would take the first one's
+        // response. Checked here, in the same tick that registers the ID, so
+        // two concurrent calls cannot both get past it.
+        if (this._pendingCalls.has(msgId)) {
+          reject(
+            new Error(
+              `Message ID "${msgId}" is already in use by a pending call`,
+            ),
+          );
+          return;
+        }
+
         let removeAbortListener: (() => void) | undefined;
 
         const timeoutHandle = setTimeout(() => {
@@ -1449,6 +1464,20 @@ export class OCPPClient<
         UNREADABLE_ID_REPLY,
       );
       return;
+    }
+
+    // A rejected request ID is answered like an unreadable one, under "-1";
+    // a SEND is never answered (2.1 Part 2 FR.07).
+    if (messageType === MessageType.CALL || messageType === MessageType.SEND) {
+      const idError = this._messageIdError(messageId);
+      if (idError) {
+        this._onBadMessage(
+          rawText(),
+          idError,
+          messageType === MessageType.CALL ? UNREADABLE_ID_REPLY : undefined,
+        );
+        return;
+      }
     }
 
     if (message.length < MIN_FRAME_LENGTH[messageType]) {
@@ -2060,6 +2089,53 @@ export class OCPPClient<
     return undefined;
   }
 
+  /** The ID of an outgoing CALL or SEND: idGenerator when set, else a UUID. */
+  private _newMessageId(): string {
+    const generate = this._options.idGenerator;
+    if (!generate) return createId();
+    const id = generate();
+    if (typeof id !== "string" || id === "") {
+      throw new TypeError("idGenerator must return a non-empty string");
+    }
+    return id;
+  }
+
+  /**
+   * Why an incoming request's message ID is rejected, if it is. idValidator
+   * decides when set, in any mode; otherwise strict mode applies the spec's
+   * limit of 36 characters (1.6J Table 3, 2.0.1 / 2.1 Table 4). 1.6 has no
+   * RpcFrameworkError (Table 7), so GenericError answers there.
+   */
+  private _messageIdError(messageId: string): RPCError | undefined {
+    const code =
+      this._protocol === "ocpp1.6" ? "GenericError" : "RpcFrameworkError";
+    const validate = this._options.idValidator;
+    if (validate) {
+      let valid: boolean;
+      try {
+        valid = validate(messageId);
+      } catch (err) {
+        return createRPCError(
+          code,
+          `idValidator failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      return valid ? undefined : createRPCError(code, "Message ID rejected");
+    }
+    const strict =
+      this._options.strictMode &&
+      (!this._strictProtocols ||
+        this._strictProtocols.includes(this._protocol ?? ""));
+    const length = Array.from(messageId).length;
+    if (strict && length > MAX_MESSAGE_ID_LENGTH) {
+      return createRPCError(
+        code,
+        `Message ID is ${length} characters; the maximum is ${MAX_MESSAGE_ID_LENGTH}`,
+      );
+    }
+    return undefined;
+  }
+
   /** ErrorDescription is string[255] on 2.0.1 and 2.1 (Table 7); 1.6 sets no limit. */
   private _fitErrorDescription(description: string): string {
     if (this._protocol !== "ocpp2.0.1" && this._protocol !== "ocpp2.1") {
@@ -2106,11 +2182,10 @@ export class OCPPClient<
       const formatCode =
         this._protocol === "ocpp1.6" ? "FormationViolation" : "FormatViolation";
       // A format violation is spelled differently per version, so it is
-      // resolved here rather than taken from the error as-is.
+      // resolved here rather than taken from the error as-is. GenericError
+      // exists in every version and passes through.
       const code =
-        !rpcCode || rpcCode === "GenericError" || rpcCode === "FormatViolation"
-          ? formatCode
-          : rpcCode;
+        !rpcCode || rpcCode === "FormatViolation" ? formatCode : rpcCode;
       const description = error.message || "Invalid message format";
       this._sendRpcError([reply.frame, reply.messageId, code, description, {}]);
     }

@@ -540,7 +540,7 @@ export class BrowserOCPPClient<
     params: unknown,
     options: CallOptions,
   ): Promise<unknown> {
-    const msgId = this._generateMessageId();
+    const msgId = options.idempotencyKey ?? this._generateMessageId();
     const timeoutMs = options.timeoutMs ?? this._options.callTimeoutMs;
 
     const ctx: MiddlewareContext = {
@@ -568,6 +568,18 @@ export class BrowserOCPPClient<
       const messageStr = JSON.stringify(message);
 
       callResult = await new Promise<unknown>((resolve, reject) => {
+        // A second pending call under one ID would take the first one's
+        // response. Checked here, in the same tick that registers the ID, so
+        // two concurrent calls cannot both get past it.
+        if (this._pendingCalls.has(msgId)) {
+          reject(
+            new Error(
+              `Message ID "${msgId}" is already in use by a pending call`,
+            ),
+          );
+          return;
+        }
+
         const timeoutHandle = setTimeout(() => {
           this._pendingCalls.get(msgId)?.removeAbortListener?.();
           this._pendingCalls.delete(msgId);
@@ -772,6 +784,20 @@ export class BrowserOCPPClient<
         UNREADABLE_ID_REPLY,
       );
       return;
+    }
+
+    // A rejected request ID is answered like an unreadable one, under "-1";
+    // a SEND is never answered (2.1 Part 2 FR.07).
+    if (messageType === MessageType.CALL || messageType === MessageType.SEND) {
+      const idError = this._messageIdError(messageId);
+      if (idError) {
+        this._onBadMessage(
+          raw,
+          idError,
+          messageType === MessageType.CALL ? UNREADABLE_ID_REPLY : undefined,
+        );
+        return;
+      }
     }
 
     // Every OCPP-J version allows an absent payload to be sent as null
@@ -1103,6 +1129,28 @@ export class BrowserOCPPClient<
     this._badMessageWindowStart = 0;
   }
 
+  /**
+   * Why an incoming request's message ID is rejected, if it is. Only
+   * idValidator decides: the browser client has no strict mode. 1.6 has no
+   * RpcFrameworkError (Table 7), so GenericError answers there.
+   */
+  private _messageIdError(messageId: string): RPCError | undefined {
+    const validate = this._options.idValidator;
+    if (!validate) return undefined;
+    const code =
+      this._protocol === "ocpp1.6" ? "GenericError" : "RpcFrameworkError";
+    let valid: boolean;
+    try {
+      valid = validate(messageId);
+    } catch (err) {
+      return createRPCError(
+        code,
+        `idValidator failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return valid ? undefined : createRPCError(code, "Message ID rejected");
+  }
+
   /** ErrorDescription is string[255] on 2.0.1 and 2.1 (Table 7); 1.6 sets no limit. */
   private _fitErrorDescription(description: string): string {
     if (this._protocol !== "ocpp2.0.1" && this._protocol !== "ocpp2.1") {
@@ -1145,10 +1193,9 @@ export class BrowserOCPPClient<
       // OCPP 1.6J spells this error "FormationViolation" (report M7)
       const formatCode =
         this._protocol === "ocpp1.6" ? "FormationViolation" : "FormatViolation";
+      // GenericError exists in every version and passes through.
       const code =
-        !rpcCode || rpcCode === "GenericError" || rpcCode === "FormatViolation"
-          ? formatCode
-          : rpcCode;
+        !rpcCode || rpcCode === "FormatViolation" ? formatCode : rpcCode;
       const frame: OCPPCallError | OCPPCallResultError = [
         reply.frame,
         reply.messageId,
@@ -1302,6 +1349,16 @@ export class BrowserOCPPClient<
   // ─── Internal: ID Generation ─────────────────────────────────
 
   private _generateMessageId(): string {
+    // 0. The application's own generator wins.
+    const generate = this._options.idGenerator;
+    if (generate) {
+      const id = generate();
+      if (typeof id !== "string" || id === "") {
+        throw new TypeError("idGenerator must return a non-empty string");
+      }
+      return id;
+    }
+
     // 1. Try native crypto.randomUUID (Fastest, secure, requires HTTPS/localhost)
     if (
       typeof crypto !== "undefined" &&

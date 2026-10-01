@@ -22,6 +22,8 @@ import type {
   LoggerLike as _LoggerLike,
   LoggerLikeNotOptional as _LoggerLikeNotOptional,
   LoggingConfig as _LoggingConfig,
+  MessageIdGenerator as _MessageIdGenerator,
+  MessageIdValidator as _MessageIdValidator,
   OCPPCall as _OCPPCall,
   OCPPCallError as _OCPPCallError,
   OCPPCallResult as _OCPPCallResult,
@@ -49,6 +51,8 @@ export type CallHandler<TParams = unknown, TResult = unknown> = _CallHandler<
 export type WildcardHandler = _WildcardHandler;
 export type CallOptions = _CallOptions;
 export type CloseOptions = _CloseOptions;
+export type MessageIdGenerator = _MessageIdGenerator;
+export type MessageIdValidator = _MessageIdValidator;
 export type LoggerLike = _LoggerLike;
 export type LoggerLikeNotOptional = _LoggerLikeNotOptional;
 export type LoggingConfig = _LoggingConfig;
@@ -100,6 +104,16 @@ export interface BrowserClientOptions {
   callTimeoutMs?: number;
   /** Maximum concurrent outbound calls (default: 1) */
   callConcurrency?: number;
+  /**
+   * Creates the message ID of each outgoing CALL and SEND. A per-call
+   * `idempotencyKey` still wins; without this, a random UUID is used.
+   */
+  idGenerator?: MessageIdGenerator;
+  /**
+   * Checks the message ID of each incoming CALL and SEND. The browser client
+   * has no strict mode, so without this any string is accepted.
+   */
+  idValidator?: MessageIdValidator;
   /**
    * Bad messages in a row before closing (default: 50). A valid message resets the count.
    * @see Node `ClientOptions.maxBadMessages` for full documentation.

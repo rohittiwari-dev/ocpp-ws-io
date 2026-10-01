@@ -107,6 +107,8 @@ export {
   type MessageDirection,
   type MessageEventContext,
   type MessageEventPayload,
+  type MessageIdGenerator,
+  type MessageIdValidator,
   MessageType,
   NOREPLY,
   type OCPPCall,

@@ -30,8 +30,10 @@ const client = new OCPPClient(options: ClientOptions);
 | `reconnect`           | `boolean`                       | `true`     | Auto-reconnect on disconnect                        |
 | `maxReconnects`       | `number`                        | `Infinity` | Max reconnection attempts                           |
 | `pingIntervalMs`      | `number`                        | `30000`    | Includes ±25% randomized jitter                     |
-| `strictMode`          | `boolean \| string[]`           | `false`    | Enable/restrict schema validation                   |
+| `strictMode`          | `boolean \| string[]`           | `false`    | Schema validation, off by default. Set `true` (or a list of protocols) for full payload validation (2.0.1 / 2.1 §4.1.7) |
 | `strictModeMethods`   | `string[]`                      | —          | Restrict validation to specific methods             |
+| `idGenerator`         | `() => string`                  | —          | Creates the message ID of each outgoing CALL and SEND. A per-call `idempotencyKey` wins; without either, a random UUID |
+| `idValidator`         | `(id: string) => boolean`       | —          | Checks each incoming CALL / SEND message ID, in any mode, in place of the built-in check (see Message IDs) |
 | `logging`             | `LoggingConfig`                 | `{}`       | Configuration for structured logging.               |
 | `offlineQueue`        | `boolean`                       | `false`    | Queue calls while disconnected, flush on reconnect. |
 | `offlineQueueMaxSize` | `number`                        | `100`      | Max offline queue size before oldest are dropped.   |
@@ -176,6 +178,9 @@ const server = new OCPPServer(options?: ServerOptions);
 | :------------------- | :------------------------------ | :-------- | :--------------------------------------------------------------------------------------------------------------------------------------------- |
 | `protocols`          | `string[]`                      | `[]`      | Accepted OCPP subprotocols                                                                                                                     |
 | `securityProfile`    | `SecurityProfile`               | `NONE`    | Security profile                                                                                                                               |
+| `strictMode`         | `boolean \| string[]`           | `false`   | Validate every message against the official OCPP JSON schemas. Off by default, so a payload with missing fields or wrong types reaches your handler. Set `true` (or a list of protocols) for the CALLERROR that 2.0.1 / 2.1 §4.1.7 requires. Needs `protocols` |
+| `idGenerator`        | `() => string`                  | —         | Creates the message ID of each CALL sent to a charging station. A per-call `idempotencyKey` wins; without either, a random UUID |
+| `idValidator`        | `(id: string) => boolean`       | —         | Checks each incoming CALL / SEND message ID, in any mode, in place of the built-in check (see Message IDs) |
 | `requireBasicAuth`   | `boolean`                       | `true`    | On profile 1 or 2, answer HTTP 401 when Basic Auth credentials are missing or the username is not the identity. `false` leaves it to the auth callback |
 | `handshakeTimeoutMs` | `number`                        | `30000`   | Timeout for WebSocket handshake (ms)                                                                                                           |
 | `tls`                | `TLSOptions`                    | —         | TLS options (Profile 2 & 3)                                                                                                                    |
@@ -425,6 +430,20 @@ An unknown message type counts as a bad message (emitting `badMessage`), and it 
 A CALL that reuses the message ID of a CALL still being handled is answered with `RpcFrameworkError` on OCPP 2.0.1 and 2.1, and with `GenericError` on OCPP 1.6, whose error-code table has no `RpcFrameworkError`.
 
 The error description of an outgoing CALLERROR or CALLRESULTERROR is cut to 255 characters on OCPP 2.0.1 and 2.1, where `ErrorDescription` is `string[255]`. OCPP 1.6 sets no limit, so descriptions are sent in full there.
+
+### Message IDs
+
+A message ID is a string of at most 36 characters, unique for the sender across reconnects (OCPP-J §4.1.4; 2.0.1 errata 2023-12).
+
+| | Behaviour |
+| --- | --- |
+| Outgoing CALL / SEND | The per-call `idempotencyKey` if given, else `idGenerator` if set, else a random UUID (36 characters). A call rejects before sending if the ID is empty or already used by a pending call. |
+| Incoming CALL / SEND, `idValidator` set | `idValidator` decides, with or without `strictMode`. Returning `false` or throwing rejects the ID. |
+| Incoming CALL / SEND, `strictMode` on | IDs over 36 characters are rejected. |
+| Incoming CALL / SEND, otherwise | Any string is accepted. |
+| ID is not a string | CALLERROR `RpcFrameworkError` under ID `"-1"` (see Message types). |
+
+A rejected CALL is answered under message ID `"-1"` with `RpcFrameworkError` on OCPP 2.0.1 and 2.1, and `GenericError` on OCPP 1.6, whose error-code table has no `RpcFrameworkError`. A rejected SEND is not answered. Both count as bad messages. The browser client has no `strictMode`, so it checks incoming IDs only through `idValidator`.
 
 ---
 

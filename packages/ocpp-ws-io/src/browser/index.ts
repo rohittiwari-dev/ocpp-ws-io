@@ -40,6 +40,8 @@ export {
   type HandlerContext,
   type LoggerLike,
   type LoggingConfig,
+  type MessageIdGenerator,
+  type MessageIdValidator,
   MessageType,
   NOREPLY,
   type OCPPCall,

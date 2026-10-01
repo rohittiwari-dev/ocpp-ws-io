@@ -212,6 +212,25 @@ export type RouterWildcardHandler = (
   context: RouterHandlerContext,
 ) => unknown | Promise<unknown>;
 
+// ─── Message IDs ─────────────────────────────────────────────────
+
+/**
+ * Creates the message ID of an outgoing CALL or SEND. The ID must differ from
+ * every ID this side has used for the same charging station, across
+ * reconnects too (OCPP-J §4.1.4, 2.0.1 errata 2023-12), and should be at most
+ * 36 characters. A call rejects when it returns an empty or non-string value,
+ * or an ID that a pending call already uses.
+ */
+export type MessageIdGenerator = () => string;
+
+/**
+ * Decides whether the message ID of an incoming CALL or SEND is acceptable.
+ * Return `false` (or throw) to reject it: a CALL is then answered under
+ * message ID `"-1"` with `RpcFrameworkError` (`GenericError` on OCPP 1.6),
+ * a SEND is not answered, and both count as bad messages.
+ */
+export type MessageIdValidator = (messageId: string) => boolean;
+
 // ─── Call Options ────────────────────────────────────────────────
 
 export interface CallOptions {
@@ -479,6 +498,18 @@ export interface ClientOptions {
   /** Custom validators for strict mode */
   strictModeValidators?: Validator[];
   /**
+   * Creates the message ID of each outgoing CALL and SEND. A per-call
+   * `idempotencyKey` still wins; without this, a random UUID is used.
+   */
+  idGenerator?: MessageIdGenerator;
+  /**
+   * Checks the message ID of each incoming CALL and SEND, with or without
+   * `strictMode`, in place of the built-in check. Without it, strict mode
+   * rejects IDs over 36 characters (OCPP-J §4.1.4) and other modes accept
+   * any string.
+   */
+  idValidator?: MessageIdValidator;
+  /**
    * Number of bad messages **in a row** at which the connection is closed
    * (code 1002). Every valid message resets the count, and empty frames are
    * ignored, so only a broken or hostile peer reaches the limit.
@@ -699,6 +730,19 @@ interface ServerOptionsBase {
   strictModeMethods?: Array<AllMethodNames<OCPPProtocol>>;
   /** Custom validators — inherited */
   strictModeValidators?: Validator[];
+  /**
+   * Creates the message ID of each CALL sent to a charging station — inherited.
+   * A per-call `idempotencyKey` still wins; without this, a random UUID is
+   * used.
+   */
+  idGenerator?: MessageIdGenerator;
+  /**
+   * Checks the message ID of each incoming CALL and SEND — inherited. Runs
+   * with or without `strictMode`, in place of the built-in check. Without it,
+   * strict mode rejects IDs over 36 characters (OCPP-J §4.1.4) and other
+   * modes accept any string.
+   */
+  idValidator?: MessageIdValidator;
   /** Rate Limiting configuration — inherited */
   rateLimit?: RateLimitOptions;
   /**

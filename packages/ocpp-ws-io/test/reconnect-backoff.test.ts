@@ -57,7 +57,7 @@ describe.each([
   "browser",
 ] as const)("reconnect back-off (%s client)", (kind) => {
   const servers: OCPPServer[] = [];
-  const closers: Array<() => Promise<unknown>> = [];
+  const closers: Array<() => Promise<void>> = [];
 
   afterEach(async () => {
     vi.restoreAllMocks();
@@ -95,12 +95,16 @@ describe.each([
       };
       if (kind === "node") {
         const client = new OCPPClient({ ...options, pingIntervalMs: 0 });
-        closers.push(() => client.close({ force: true }));
+        closers.push(async () => {
+          await client.close({ force: true });
+        });
         client.on("reconnect", onReconnect);
         void client.connect();
       } else {
         const client = new BrowserOCPPClient(options);
-        closers.push(() => client.close({ force: true }));
+        closers.push(async () => {
+          await client.close({ force: true });
+        });
         client.on("reconnect", onReconnect);
         void client.connect();
       }
