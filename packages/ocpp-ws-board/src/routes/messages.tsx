@@ -147,7 +147,7 @@ export default function MessagesPage() {
         <Select
           value={directionFilter}
           onValueChange={(val) => {
-            setDirectionFilter(val);
+            setDirectionFilter(val ?? "all");
             setPage(1);
           }}
         >
@@ -164,7 +164,7 @@ export default function MessagesPage() {
         <Select
           value={typeFilter}
           onValueChange={(val) => {
-            setTypeFilter(val);
+            setTypeFilter(val ?? "all");
             setPage(1);
           }}
         >
@@ -182,7 +182,7 @@ export default function MessagesPage() {
         <Select
           value={methodFilter}
           onValueChange={(val) => {
-            setMethodFilter(val);
+            setMethodFilter(val ?? "all");
             setPage(1);
           }}
         >

@@ -1,10 +1,11 @@
 "use client";
 
 import { motion, useMotionValueEvent, useScroll } from "framer-motion";
-import { Github, Terminal } from "lucide-react";
+import { Terminal } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { GithubIcon } from "../brand-icons";
 import { ThemeToggle } from "../layout/theme-toggle";
 
 const NAV_LINKS = [
@@ -81,7 +82,7 @@ export function LandingHeader() {
               className="hidden sm:flex h-9 w-9 items-center justify-center rounded-full border border-fd-border/50 text-fd-muted-foreground transition-colors hover:bg-white/5 hover:text-fd-foreground"
               aria-label="GitHub"
             >
-              <Github className="h-4 w-4" />
+              <GithubIcon className="h-4 w-4" />
             </Link>
 
             {/* Theme Toggle */}

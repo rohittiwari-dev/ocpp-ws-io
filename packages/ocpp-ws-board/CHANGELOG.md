@@ -1,5 +1,16 @@
 # ocpp-ws-board
 
+## Unreleased
+
+### Changes
+
+- **Smaller install.** The dashboard UI ships prebuilt in `dist/public`, so its build libraries (React, Base UI, Tailwind, Recharts and others) moved from `dependencies` to `devDependencies`. Installing the package now pulls in only `hono` at runtime.
+- **`ocpp-ws-io` peer range is now `^2.3.2`** (was `*`), so a future major release of `ocpp-ws-io` is not picked up without a matching board release.
+
+### Fixes
+
+- Message and security log filters fall back to "all" when a dropdown selection is cleared, instead of filtering on an empty value.
+
 ## 0.1.0 (2026-04-13)
 
 ### Features

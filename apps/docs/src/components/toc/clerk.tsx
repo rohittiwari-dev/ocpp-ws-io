@@ -1,6 +1,6 @@
 "use client";
+import { useTranslations } from "@fuma-translate/react";
 import * as Primitive from "fumadocs-core/toc";
-import { useI18n } from "fumadocs-ui/contexts/i18n";
 import { type ComponentProps, useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/cn";
 import { mergeRefs } from "../../lib/merge-refs";
@@ -9,7 +9,7 @@ import { TocThumb, useTOCItems } from "./index";
 export function TOCItems({ ref, className, ...props }: ComponentProps<"div">) {
   const containerRef = useRef<HTMLDivElement>(null);
   const items = useTOCItems();
-  const { text } = useI18n();
+  const t = useTranslations({ note: "table of contents" });
 
   const [svg, setSvg] = useState<{
     path: string;
@@ -66,7 +66,7 @@ export function TOCItems({ ref, className, ...props }: ComponentProps<"div">) {
   if (items.length === 0)
     return (
       <div className="rounded-lg border bg-fd-card p-3 text-xs text-fd-muted-foreground">
-        {text.tocNoHeadings}
+        {t("No Headings")}
       </div>
     );
 
@@ -74,7 +74,7 @@ export function TOCItems({ ref, className, ...props }: ComponentProps<"div">) {
     <>
       {svg && (
         <div
-          className="absolute start-0 top-0 rtl:-scale-x-100"
+          className="absolute inset-s-0 top-0 rtl:-scale-x-100"
           style={{
             width: svg.width,
             height: svg.height,
@@ -146,7 +146,7 @@ function TOCItem({
           aria-label="TocItem"
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 16 16"
-          className="absolute -top-1.5 start-0 size-4 rtl:-scale-x-100"
+          className="absolute -top-1.5 inset-s-0 size-4 rtl:-scale-x-100"
         >
           <line
             x1={upperOffset}

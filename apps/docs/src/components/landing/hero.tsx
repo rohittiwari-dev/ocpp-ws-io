@@ -1,17 +1,10 @@
 "use client";
 
 import { motion } from "framer-motion";
-import {
-  ArrowRight,
-  BookOpen,
-  Check,
-  Copy,
-  Github,
-  Shield,
-  Zap,
-} from "lucide-react";
+import { ArrowRight, BookOpen, Check, Copy, Shield, Zap } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { GithubIcon } from "../brand-icons";
 
 const BADGES = [
   { label: "Core RPC", color: "#7c3aed", delay: 0 },
@@ -174,7 +167,7 @@ export function Hero() {
                 target="_blank"
                 className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-fd-border bg-fd-card px-7 text-sm font-medium transition-all hover:bg-fd-accent hover:text-fd-accent-foreground shadow-sm"
               >
-                <Github className="h-4 w-4" />
+                <GithubIcon className="h-4 w-4" />
                 GitHub
               </Link>
               <Link

@@ -17,6 +17,13 @@
 - **With no subprotocol in common, the handshake now completes and the connection is closed (code 1002), instead of HTTP 400.** OCPP-J §3.2: the CSMS "MUST complete the WebSocket handshake with a response without a Sec-WebSocket-Protocol header and then immediately close the WebSocket connection". The same applies when the charger offers none. Route, Basic Auth, `isKnownIdentity`, middleware and auth checks now run before this decision, so an unknown path now gets 404 and a refused charger its own status, where both used to get 400.
 - **`accept({ protocol })` with a version the charger did not offer is refused** the same way. It was sent anyway, which RFC 6455 forbids; the charger then failed the connection while the server had already created a client for it.
 - **In strict mode, an OCPP 2.0.1 / 2.1 charging station identity must follow the spec**: an identifierString (`a-z A-Z 0-9 * - _ = + | @ .`) without `:`, at most 48 characters (OCPP-J §3.1.1; `:` is "SHALL NOT" in 2.1 and the 2.0.1 errata 2023-12). Other identities are answered with HTTP 400. 1.6 sets no rule and is unchanged, as is everything without `strictMode`.
+- **Fastify 4 is no longer supported; the `fastify` peer range is now `^5.12.5`.** Fastify 4 is end of life, and an authentication bypass via malformed URLs affects every 4.x release with no fix. The Fastify plugin now declares `fastify: "5.x"`.
+
+### Security
+
+- **`ws` raised to `^8.22.0`.** 8.20.0 and earlier are affected by a memory-exhaustion DoS from tiny fragments (GHSA-96hv-2xvq-fx4p, high, fixed in 8.21.0) and an uninitialized-memory disclosure (GHSA-58qx-3vcg-4xpx, fixed in 8.20.1); the old range `^8.19.0` still allowed them.
+- **`ajv` raised to `^8.20.0`**, and the lockfile now resolves its `fast-uri` to 3.1.8, past the host-confusion, SSRF and path-traversal advisories in 3.1.0.
+- **Peer dependency ranges start at releases without known advisories**: `express` `^4.21.2 || ^5.0.1`, `hono` `^4.12.34`, `fastify` `^5.12.5`. NestJS 12 (`@nestjs/common`, `@nestjs/core`) is now supported alongside 10 and 11, and `fastify-plugin` 6 alongside 5.
 
 ### Added
 

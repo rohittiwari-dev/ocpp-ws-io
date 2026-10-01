@@ -1,5 +1,10 @@
 import { defineConfig } from "tsup";
 
+// tsup's declaration build always sets `baseUrl`, which TypeScript 6
+// reports as deprecated (TS5101). Silenced for that build only; tsc itself
+// still type-checks without it.
+const dts = { compilerOptions: { ignoreDeprecations: "6.0" } };
+
 export default defineConfig([
   // Node.js entries (server, client, adapters)
   {
@@ -14,7 +19,7 @@ export default defineConfig([
       hono: "src/frameworks/hono/index.ts",
     },
     format: ["cjs", "esm"],
-    dts: true,
+    dts,
     splitting: false,
     sourcemap: false,
     clean: false,
@@ -34,7 +39,7 @@ export default defineConfig([
       browser: "src/browser/index.ts",
     },
     format: ["cjs", "esm"],
-    dts: true,
+    dts,
     splitting: false,
     sourcemap: false,
     clean: false,

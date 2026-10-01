@@ -1,8 +1,8 @@
 "use client";
 
-import { Github, Twitter } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { GithubIcon, XIcon } from "../brand-icons";
 import { ThemeToggle } from "../layout/theme-toggle";
 
 const LINKS = [
@@ -87,7 +87,7 @@ export function Footer() {
                 target="_blank"
                 className="flex h-10 w-10 items-center justify-center rounded-full border border-fd-border bg-fd-card text-fd-muted-foreground transition-colors hover:border-fd-primary hover:text-fd-primary hover:bg-fd-primary/5"
               >
-                <Github className="h-4 w-4" />
+                <GithubIcon className="h-4 w-4" />
                 <span className="sr-only">GitHub</span>
               </Link>
               <Link
@@ -95,7 +95,7 @@ export function Footer() {
                 target="_blank"
                 className="flex h-10 w-10 items-center justify-center rounded-full border border-fd-border bg-fd-card text-fd-muted-foreground transition-colors hover:border-[#1DA1F2] hover:text-[#1DA1F2] hover:bg-[#1DA1F2]/5"
               >
-                <Twitter className="h-4 w-4" />
+                <XIcon className="h-4 w-4" />
                 <span className="sr-only">Twitter</span>
               </Link>
             </div>

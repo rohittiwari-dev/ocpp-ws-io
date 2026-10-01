@@ -72,6 +72,6 @@ const ocppPlugin: FastifyPluginAsync<OcppFastifyPluginOptions> = async (
 };
 
 export const ocppFastifyPlugin = fp(ocppPlugin, {
-  fastify: "4.x || 5.x",
+  fastify: "5.x",
   name: "ocpp-fastify",
 });

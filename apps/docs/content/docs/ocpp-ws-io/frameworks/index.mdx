@@ -14,6 +14,19 @@ description: Integrate ocpp-ws-io Server and Client with Node.js frameworks.
 
 You can attach `OCPPServer` to any Node.js HTTP server to share the same port as your API.
 
+## Supported versions
+
+The framework packages are optional peer dependencies: install the one you use. The ranges start at releases without known security advisories.
+
+| Framework | Supported |
+| --- | --- |
+| Express | 4.21.2+ or 5.0.1+ |
+| Fastify | 5.12.5+ (Fastify 4 is end of life and affected by an unpatched authentication bypass), with `fastify-plugin` 5 or 6 |
+| Hono | 4.12.34+ |
+| NestJS | 10, 11 or 12, with `reflect-metadata` 0.2 |
+
+NestJS 12 is ESM-only; loading it from CommonJS needs Node.js 20.19+ or 22.12+.
+
 ## With Express
 
 `ocpp-ws-io` provides a dedicated integration for Express that seamlessly injects the OCPP context into your route handlers.

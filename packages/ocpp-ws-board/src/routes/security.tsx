@@ -200,7 +200,7 @@ export default function SecurityPage() {
         <Select
           value={categoryFilter}
           onValueChange={(val) => {
-            setCategoryFilter(val);
+            setCategoryFilter(val ?? "all");
             setPage(1);
           }}
         >
@@ -221,7 +221,7 @@ export default function SecurityPage() {
         <Select
           value={severityFilter}
           onValueChange={(val) => {
-            setSeverityFilter(val);
+            setSeverityFilter(val ?? "all");
             setPage(1);
           }}
         >

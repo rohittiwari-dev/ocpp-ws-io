@@ -33,7 +33,7 @@ export const changelogCollection = defineCollections({
   schema: z.object({
     title: z.string(),
     description: z.string(),
-    date: z.date(),
+    date: z.coerce.date(),
   }),
 });
 
@@ -43,7 +43,7 @@ export const blogCollection = defineCollections({
   schema: z.object({
     title: z.string(),
     description: z.string(),
-    date: z.date(),
+    date: z.coerce.date(),
     author: z.object({
       name: z.string(),
       avatar: z.string(),
