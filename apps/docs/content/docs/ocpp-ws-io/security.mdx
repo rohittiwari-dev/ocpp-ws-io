@@ -169,7 +169,7 @@ server.auth((ctx) => {
 });
 ```
 
-## Unknown Chargers and Duplicate Connections
+## Charging Station Identity
 
 **Unknown identity.** OCPP-J §3.2: "If the CSMS does not recognize the Charging Station identifier in the URL path, it SHOULD send an HTTP response with status 404". Only your application knows which chargers exist. Either reject with 404 in the auth callback, as in the Profile 1 example, or give the server a lookup that runs before middleware and auth:
 
@@ -181,6 +181,16 @@ const server = new OCPPServer({
 ```
 
 `false` answers 404, a throw answers 500, and both emit an `AUTH_FAILED` security event. Under profile 1/2 a request without Basic Auth credentials gets 401 first, so it never reaches your database. Note that `ctx.reject()` without a code answers 401.
+
+**Identity format.** OCPP 2.0.1 and 2.1 define the identity as an identifierString (`a-z A-Z 0-9 * - _ = + | @ .`) without `:`, because it is also the Basic Auth username, of at most 48 characters (OCPP-J §3.1.1; the `:` rule is "SHALL NOT" in 2.1 and in the 2.0.1 errata 2023-12). OCPP 1.6J sets no rule. With `strictMode`, the server applies these rules for the negotiated version. `maxIdentityLength` sets your own limit instead: it applies with or without `strictMode` and replaces the 48. A violation is answered with HTTP 400.
+
+```typescript
+const server = new OCPPServer({
+  protocols: ["ocpp2.0.1"],
+  strictMode: true,        // identifierString, no ":", at most 48 characters
+  maxIdentityLength: 32,   // optional: your own limit, enforced in any mode
+});
+```
 
 **Duplicate connection.** OCPP does not say what to do when a charger connects while it is already connected. By default the new connection replaces the old one, which is usually a dead link the charger has not noticed yet after a network change (`onEviction` plugin hook). Set `duplicateConnection: "reject"` to keep the old connection and refuse the new one with HTTP 409 instead. Both apply to connections on this server instance.
 

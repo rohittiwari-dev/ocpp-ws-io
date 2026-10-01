@@ -195,6 +195,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       }
     }
 
+    OCPPServer._assertMaxIdentityLength(options.maxIdentityLength);
+
     this._options = {
       securityProfile: SecurityProfile.NONE,
       callTimeoutMs: 30000,
@@ -490,6 +492,52 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         this._reportPluginError(pluginName, hook, err),
       );
     }
+  }
+
+  /**
+   * Charging station identity rules per version (OCPP-J §3.1.1): an
+   * identifierString (2.0.1 / 2.1 Part 2) without ":" (2.1 "SHALL NOT",
+   * 2.0.1 errata 2023-12 "SHALL not"), at most 48 characters. 1.6J has none.
+   */
+  private static readonly _IDENTITY_RULES: Readonly<
+    Record<string, { maxLength: number; pattern: RegExp }>
+  > = {
+    "ocpp2.0.1": { maxLength: 48, pattern: /^[A-Za-z0-9*\-_=+|@.]+$/ },
+    "ocpp2.1": { maxLength: 48, pattern: /^[A-Za-z0-9*\-_=+|@.]+$/ },
+  };
+
+  private static _assertMaxIdentityLength(value: number | undefined): void {
+    if (value !== undefined && !(Number.isInteger(value) && value > 0)) {
+      throw new Error(
+        `maxIdentityLength must be a positive integer, got ${value}`,
+      );
+    }
+  }
+
+  /**
+   * Why an identity is refused, if it is. `maxIdentityLength` applies in any
+   * mode and replaces the spec's length; strict mode adds the spec's rules for
+   * the negotiated version.
+   */
+  private _identityError(
+    identity: string,
+    protocol: string | undefined,
+    strictMode: boolean | readonly string[] | undefined,
+  ): string | undefined {
+    const strict =
+      protocol !== undefined &&
+      (strictMode === true ||
+        (Array.isArray(strictMode) && strictMode.includes(protocol)));
+    const rules = strict ? OCPPServer._IDENTITY_RULES[protocol] : undefined;
+    const limit = this._options.maxIdentityLength ?? rules?.maxLength;
+    const length = Array.from(identity).length;
+    if (limit !== undefined && length > limit) {
+      return `Charging station identity is ${length} characters; the maximum is ${limit}`;
+    }
+    if (rules && !rules.pattern.test(identity)) {
+      return "Charging station identity may only contain a-z A-Z 0-9 * - _ = + | @ .";
+    }
+    return undefined;
   }
 
   /** The certificate and protocol settings of a TLS context, from TLSOptions. */
@@ -1698,6 +1746,17 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return;
     }
 
+    const identityError = this._identityError(
+      identity,
+      selectedProtocol,
+      matchedRouterConfig?.strictMode ?? this._options.strictMode,
+    );
+    if (identityError) {
+      this._reportAuthFailure(handshake, req, 400, identityError);
+      abortHandshake(socket, 400, identityError);
+      return;
+    }
+
     // Profiles 1 and 2 require a username and password on every connection,
     // the username being the identity (A00.FR.203/204, A00.FR.302/303), and a
     // request without them is answered 401 (Figure 2). parseBasicAuth returns
@@ -2653,6 +2712,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   // ─── Reconfigure ─────────────────────────────────────────────
 
   reconfigure(options: Partial<ServerOptions>): void {
+    OCPPServer._assertMaxIdentityLength(options.maxIdentityLength);
     const oldOptions = { ...this._options } as ServerOptions;
     Object.assign(this._options, options);
 

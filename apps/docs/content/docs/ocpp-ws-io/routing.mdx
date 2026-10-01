@@ -280,25 +280,26 @@ This happens the moment a charging station attempts to connect via WebSocket, bu
 
 1. **Route Matching (`router.route`)**: The incoming URL is evaluated against your defined patterns. No match → HTTP **404**.
 2. **Subprotocol choice**: the first version in the route's `protocols` (or the server's) that the charger offered. The URL never picks the version (OCPP-J §3.1.2). A server without a `protocols` list takes the charger's first offer.
-3. **Basic Auth credentials** (security profile 1/2): missing, empty, or for another identity → HTTP **401** (see Security).
-4. **`isKnownIdentity`** (optional): `false` → HTTP **404**, as OCPP-J §3.2 asks for an identity the CSMS does not recognize.
-5. **Connection Middleware (`router.use`)**:
+3. **Identity format**: longer than `maxIdentityLength` (when set, in any mode), or, in strict mode, breaking the spec's rules for the version (2.0.1 / 2.1: at most 48 characters of `a-z A-Z 0-9 * - _ = + | @ .`, no `:`) → HTTP **400**.
+4. **Basic Auth credentials** (security profile 1/2): missing, empty, or for another identity → HTTP **401** (see Security).
+5. **`isKnownIdentity`** (optional): `false` → HTTP **404**, as OCPP-J §3.2 asks for an identity the CSMS does not recognize.
+6. **Connection Middleware (`router.use`)**:
    - **Execution Level**: Pre-Authentication.
    - **Purpose**: Runs horizontally (similar to Express.js). Use this to inspect HTTP headers, IP addresses (`ctx.handshake`), enforce early rate-limiting, or inject data into `ctx.state`.
-6. **Auth Callback (`router.auth`)**:
+7. **Auth Callback (`router.auth`)**:
    - **Execution Level**: Authentication & Acceptance.
    - **Purpose**: Runs _last_ in the HTTP upgrade chain. It looks at everything the middleware prepared, communicates with your database, and definitively calls `accept()` or `reject()`. `accept({ protocol })` may pick any version the charger offered; one it did not offer counts as no shared version.
-7. **Duplicate connection**: with `duplicateConnection: "reject"`, a charger that is already connected → HTTP **409**. By default the new connection replaces the old one once it opens.
-8. **No shared version**: the handshake completes without a `Sec-WebSocket-Protocol` header and the connection is closed with code **1002**, as OCPP-J §3.2 requires. Because steps 1–7 run first, a charger refused for another reason still gets that HTTP status. Otherwise the WebSocket opens.
+8. **Duplicate connection**: with `duplicateConnection: "reject"`, a charger that is already connected → HTTP **409**. By default the new connection replaces the old one once it opens.
+9. **No shared version**: the handshake completes without a `Sec-WebSocket-Protocol` header and the connection is closed with code **1002**, as OCPP-J §3.2 requires. Because steps 1–8 run first, a charger refused for another reason still gets that HTTP status. Otherwise the WebSocket opens.
 
 ### 2. The Message Phase (WebSocket Open)
 
 Once the Auth Callback fires `accept()`, the client is successfully connected. The execution context now moves to the message layer (`OCPPClient`).
 
-9. **Message Middleware (`client.use`)**:
+10. **Message Middleware (`client.use`)**:
    - **Execution Level**: Pre-Handler / Interceptor
    - **Purpose**: Runs every time a message is sent or received. It wraps the raw protocol payload. Use this to intercept outgoing calls, format logs, validate custom schemas, or drop bad messages before the business logic sees them.
-10. **Message Handlers (`client.handle`)**:
+11. **Message Handlers (`client.handle`)**:
    - **Execution Level**: Business Logic
    - **Purpose**: This is the very end of the line. It receives the parsed OCPP payload (e.g., `BootNotification`), performs your actual business logic, and returns the formal protocol response.
 

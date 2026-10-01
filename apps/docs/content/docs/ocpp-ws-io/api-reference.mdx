@@ -184,6 +184,7 @@ const server = new OCPPServer(options?: ServerOptions);
 | `requireBasicAuth`   | `boolean`                       | `true`    | On profile 1 or 2, answer HTTP 401 when Basic Auth credentials are missing or the username is not the identity. `false` leaves it to the auth callback |
 | `isKnownIdentity`    | `(identity, handshake) => boolean \| Promise<boolean>` | — | Unknown identity → HTTP 404 before middleware and auth (OCPP-J §3.2). A throw → 500 |
 | `duplicateConnection` | `"replace" \| "reject"` | `"replace"` | A charger that is already connected: replace the old connection, or refuse the new one with HTTP 409 |
+| `maxIdentityLength`  | `number`                        | —         | Longest identity accepted, in any mode; replaces the spec's 48. Without it, `strictMode` applies the spec's identity rules per version. Violation → HTTP 400 |
 | `handshakeTimeoutMs` | `number`                        | `30000`   | Timeout for WebSocket handshake (ms)                                                                                                           |
 | `tls`                | `TLSOptions`                    | —         | TLS options (Profile 2 & 3)                                                                                                                    |
 | `logging`            | `LoggingConfig`                 | `{}`      | Configuration for structured logging.                                                                                                          |

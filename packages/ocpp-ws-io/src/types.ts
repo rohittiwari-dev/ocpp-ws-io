@@ -759,6 +759,16 @@ interface ServerOptionsBase {
    * (default: "replace")
    */
   duplicateConnection?: DuplicateConnectionPolicy;
+  /**
+   * Longest charging station identity accepted, in characters. When set it
+   * applies to every connection, with or without `strictMode`, and replaces
+   * the spec's limit. Without it, `strictMode` applies the spec's rules for
+   * the negotiated version (2.0.1 / 2.1: at most 48 characters of
+   * identifierString, without ":"; 1.6 has none), and otherwise any identity
+   * is accepted. A violation is answered with HTTP 400. Must be a positive
+   * integer.
+   */
+  maxIdentityLength?: number;
   /** TLS options for HTTPS server (Profile 2 & 3) */
   tls?: TLSOptions;
   /** Call timeout in ms — inherited by server clients (default: 30000) */
