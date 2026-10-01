@@ -58,6 +58,10 @@ The `.route()` method supports exact string matching, Express-style parameters, 
 - **Wildcards**: `server.route("/public/*")`
 - **RegEx**: `server.route(/^\/legacy\/v[1-2]\/.*$/)`
 
+<Callout type="warn">
+**Prefer string patterns.** They are matched by a radix tree, one step per path segment, so a slow match is impossible. A RegExp pattern is tested against the URL path of **every** connection attempt, even when a string route already matched, and that path is whatever the client sends. A pattern that can backtrack catastrophically, such as `/^\/(a+)+$/` or nested quantifiers like `(.*)*`, lets any client stall the event loop and every charger connected to it (ReDoS). If you need a RegExp, anchor it with `^` and `$`, avoid quantifiers nested inside quantified groups, and use named groups (`(?<identity>[^/]+)`) for parameters.
+</Callout>
+
 ### Direct Message Handling (`router.handle`)
 
 Instead of manually listening for the `"client"` connection event and then attaching handlers to the client, you can bind message handlers **directly to the router**.

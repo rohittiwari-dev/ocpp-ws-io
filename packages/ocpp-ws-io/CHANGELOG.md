@@ -43,6 +43,7 @@ To be released as **3.0.0**. Upgrading from 2.x: see the [migration guide](https
 
 - `ClientOptions.badMessageWindowMs` / `ServerOptions.badMessageWindowMs` — also forgets a run of bad messages once it is older than the window. The window opens at the first bad message of a run, and the next bad message after it has elapsed starts a new count. Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` closes the connection on its 10th bad message in a row within a minute.
 - A startup warning is logged when `maxBadMessages` is set to `Infinity`, alerting operators to the unlimited malformed-message risk.
+- A warning is logged when `respondWithDetailedErrors` is on, which sends a handler error's properties to the peer in CALLERROR `details`: once per server (not per charger), and once per Node or browser client, at creation or when `reconfigure()` turns it on. Another is logged when `listen()` serves `/health` and `/metrics` without `healthEndpoint.auth`.
 - `ServerOptions.headersTimeout` (default: 30 000) — max time the HTTP server waits for a client to finish sending headers. Hardens servers created by `listen()` against HTTP slowloris attacks. Set `0` to disable, at startup or through `reconfigure()`. User-provided servers are unaffected.
 - `ServerOptions.requestTimeout` (default: 30 000) — max time for the complete HTTP request. Works alongside `headersTimeout` to protect the HTTP layer. Set `0` to disable.
 - Both timeouts are immediately reconfigurable via `server.reconfigure()` on owned HTTP servers.

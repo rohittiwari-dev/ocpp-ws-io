@@ -38,6 +38,8 @@ const client = new OCPPClient(options: ClientOptions);
 | `offlineQueue`        | `boolean`                       | `false`    | Queue calls while disconnected, flush on reconnect. |
 | `offlineQueueMaxSize` | `number`                        | `100`      | Max offline queue size before oldest are dropped.   |
 | `compression`         | `boolean \| CompressionOptions` | `false`    | Offer WebSocket `permessage-deflate` compression to the CSMS. Off by default: nothing is offered (see Compression) |
+| `callConcurrency`     | `number`                        | `1`        | Outbound CALLs in flight at once. `1` follows OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out. Above 1 only for a CSMS known to cope (see `callImmediate()`) |
+| `respondWithDetailedErrors` | `boolean`                 | `false`    | Send a handler error's properties (not its stack) to the CSMS in CALLERROR `details`. Logs a warning when on; keep it off in production |
 
 #### LoggingConfig
 
@@ -94,6 +96,18 @@ const result = await client.safeCall(
 if (result === undefined) {
 	client.logger.warn("Station failed to clear cache", { error });
 }
+```
+
+#### `callImmediate(method, params?, options?)`
+
+Sends a CALL at once, skipping the `callConcurrency` queue, so it can go out while earlier CALLs are still unanswered. That breaks OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out, on purpose: use it only with a CSMS known to handle CALLs in parallel, as with `callConcurrency` above 1. Rejects unless the client is connected; there is no offline queue. `server.sendBatch()` uses it.
+
+```typescript
+// One StatusNotification per connector after boot, without waiting in turn
+await Promise.all([
+  client.callImmediate("StatusNotification", { connectorId: 1, errorCode: "NoError", status: "Available" }),
+  client.callImmediate("StatusNotification", { connectorId: 2, errorCode: "NoError", status: "Available" }),
+]);
 ```
 
 #### `handle(protocol?, method, handler)`
@@ -190,7 +204,7 @@ const server = new OCPPServer(options?: ServerOptions);
 | `logging`            | `LoggingConfig`                 | `{}`      | Configuration for structured logging.                                                                                                          |
 | `sessionTtlMs`       | `number`                        | `7200000` | Garbage collection inactivity timeout                                                                                                          |
 | `rateLimit`          | `RateLimitOptions`              | —         | Token bucket socket & method limiter                                                                                                           |
-| `healthEndpoint`     | `boolean \| HealthEndpointOptions` | `false` | Expose HTTP `/health` and `/metrics`. Pass `true` for open access, or `{ auth }` to require bearer token or basic auth. Missing or empty credentials throw when the server is created. |
+| `healthEndpoint`     | `boolean \| HealthEndpointOptions` | `false` | Expose HTTP `/health` and `/metrics`. Pass `true` for open access, or `{ auth }` to require bearer token or basic auth. Missing or empty credentials throw when the server is created. Without `auth`, `listen()` logs a warning when it starts serving them. |
 | `maxPayloadBytes`    | `number`                        | `65536`   | Max WebSocket frame size in bytes. Rejects oversized messages at the transport layer before any parsing. Prevents OOM from malicious payloads. |
 | `maxBadMessages`     | `number`                        | `50`      | Close a connection on its Nth malformed message **in a row**. Every valid message resets the count and empty frames are ignored. Set `0` for zero tolerance, `Infinity` for no limit (logs a warning). |
 | `badMessageWindowMs` | `number`                        | —         | Also reset a run of bad messages once it is older than this many ms (a valid message always resets it). Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` closes on the 10th bad message in a row within a minute. |
@@ -198,6 +212,8 @@ const server = new OCPPServer(options?: ServerOptions);
 | `compression`        | `boolean \| CompressionOptions` | `false`   | Accept WebSocket `permessage-deflate` compression from chargers that offer it. Off by default for memory and CPU; OCPP 2.0.1 / 2.1 require a CSMS to support it (see Compression) |
 | `headersTimeout`     | `number`                        | `30000`   | Max time (ms) to receive HTTP headers on servers created by `listen()`. Prevents HTTP slowloris attacks. Keep it at or below `requestTimeout`. `0` disables. User-provided servers are unaffected. |
 | `requestTimeout`     | `number`                        | `30000`   | Max time (ms) for the complete HTTP request on servers created by `listen()`. Works with `headersTimeout` to harden the HTTP layer. `0` disables. |
+| `callConcurrency`    | `number`                        | `1`       | Outbound CALLs in flight per charger. `1` follows OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out. Above 1 only for chargers known to cope; `sendBatch()` pipelines regardless |
+| `respondWithDetailedErrors` | `boolean`                 | `false`   | Send a handler error's properties (not its stack) to chargers in CALLERROR `details`. Logs a warning when on; keep it off in production |
 
 #### CompressionOptions
 
@@ -389,6 +405,18 @@ if (result !== undefined) {
 }
 ```
 
+#### `sendBatch(identity, calls)`
+
+Sends several CALLs to one charger **without waiting for each answer**, for a faster warm-up after a reconnect. This pipelines on purpose and breaks OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out: use it only with chargers known to cope, as with `callConcurrency` above 1. Results come back in the order of `calls`; a call that failed gives `undefined`. In a cluster, a charger connected to another node gets each call through `sendToClient()` instead.
+
+```typescript
+const [config, , trigger] = await server.sendBatch("CP-101", [
+  { method: "GetConfiguration", params: { key: ["MeterValueSampleInterval"] } },
+  { method: "ChangeAvailability", params: { connectorId: 0, type: "Operative" } },
+  { method: "TriggerMessage", params: { requestedMessage: "StatusNotification" } },
+]);
+```
+
 #### `broadcastBatch(identities, method, params, options?)`
 
 Broadcast an identical RPC call to many stations concurrently. For clustered architectures, unicast commands are grouped and dispatched in pipeline batches via the adapter's streams, reducing per-message TCP round-trip overhead.
@@ -516,26 +544,10 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 | `backoffMin`                | `number`                 | `1000`     | First reconnect delay (ms), doubled after each failed attempt; every wait adds up to 25% at random |
 | `backoffMax`                | `number`                 | `30000`    | Where the doubling stops (ms); the random 25% still applies on top |
 | `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)         |
-| `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls         |
+| `callConcurrency`           | `number`                 | `1`        | Outbound CALLs in flight at once. `1` follows OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out. Above 1 only for a CSMS known to cope |
 | `maxBadMessages`            | `number`                 | `50`       | Close on the Nth bad message in a row; a valid message resets the count. `0` = zero tolerance, `Infinity` = no limit (logs warning). |
 | `badMessageWindowMs`        | `number`                 | —          | Also reset a run of bad messages once it is older than this many ms. |
-| `respondWithDetailedErrors` | `boolean`                | `false`    | Include error details in responses    |
-| `logging`                   | `LoggingConfig`          | `{}`       | Configuration for structured logging. |
-| Option                      | Type                     | Default    | Description                           |
-| :-------------------------- | :----------------------- | :--------- | :------------------------------------ |
-| `identity`                  | `string`                 | _required_ | Charging station ID                   |
-| `endpoint`                  | `string`                 | _required_ | WebSocket URL (`ws://` or `wss://`)   |
-| `protocols`                 | `string[]`               | `[]`       | OCPP subprotocols to negotiate        |
-| `query`                     | `Record<string, string>` | —          | Additional URL query parameters       |
-| `reconnect`                 | `boolean`                | `true`     | Auto-reconnect on disconnect          |
-| `maxReconnects`             | `number`                 | `Infinity` | Max reconnection attempts             |
-| `backoffMin`                | `number`                 | `1000`     | First reconnect delay (ms), doubled after each failed attempt; every wait adds up to 25% at random |
-| `backoffMax`                | `number`                 | `30000`    | Where the doubling stops (ms); the random 25% still applies on top |
-| `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)         |
-| `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls         |
-| `maxBadMessages`            | `number`                 | `50`       | Close on the Nth bad message in a row; a valid message resets the count. `0` = zero tolerance, `Infinity` = no limit (logs warning). |
-| `badMessageWindowMs`        | `number`                 | —          | Also reset a run of bad messages once it is older than this many ms. |
-| `respondWithDetailedErrors` | `boolean`                | `false`    | Include error details in responses    |
+| `respondWithDetailedErrors` | `boolean`                | `false`    | Send a handler error's properties (not its stack) in CALLERROR `details`. Logs a warning when on; keep it off in production |
 | `logging`                   | `LoggingConfig`          | `{}`       | Configuration for structured logging. |
 
 ### Methods

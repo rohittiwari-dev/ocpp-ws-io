@@ -238,6 +238,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         "maxBadMessages is Infinity — every connection can send unlimited malformed messages without disconnection. Set a finite value for production use.",
       );
     }
+    if (this._options.respondWithDetailedErrors) this._warnDetailedErrors();
 
     // Building a protocol's validator costs ~27 ms, against 0.9 µs to run one.
     // Left to the first message that needs it, that lands on a charger's first
@@ -597,6 +598,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         this._reportPluginError(plugin.name, "onAuthFailed", err);
       }
     }
+  }
+
+  /** Once for the server, not per connection (its clients stay quiet). */
+  private _warnDetailedErrors(): void {
+    this._logger?.warn?.(
+      "respondWithDetailedErrors is on: a handler error's properties are sent to chargers in CALLERROR details. Keep it off in production.",
+    );
   }
 
   /**
@@ -1077,6 +1085,11 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         typeof this._options.healthEndpoint === "object"
           ? this._options.healthEndpoint
           : undefined;
+      if (!heOpts?.auth) {
+        this._logger?.warn?.(
+          "healthEndpoint has no auth: /health and /metrics answer anyone who can reach this port. Set healthEndpoint: { auth: { bearer } } or { auth: { username, password } }.",
+        );
+      }
 
       const serveHealth = async (
         req: IncomingMessage,
@@ -2790,6 +2803,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     const oldOptions = { ...this._options } as ServerOptions;
     Object.assign(this._options, options);
 
+    if (
+      options.respondWithDetailedErrors &&
+      !oldOptions.respondWithDetailedErrors
+    ) {
+      this._warnDetailedErrors();
+    }
+
     // Transport-level settings only apply to a fresh WebSocketServer —
     // rebuild so new connections pick them up (existing sockets keep theirs).
     if (
@@ -3099,6 +3119,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * Pipeline multiple calls to a single client into a concurrent batch.
    * Useful for reconnection warm-up (e.g. GetConfiguration, ChangeAvailability, etc.)
    * where sequential calls would add unnecessary round-trip latency.
+   *
+   * The calls do not wait for each other's answers, which OCPP-J §4.1.1
+   * (Synchronicity) does not allow: use it only for chargers known to cope,
+   * as with callConcurrency above 1.
    *
    * @param identity The client identity to send calls to
    * @param calls Array of { method, params, options? } to execute concurrently

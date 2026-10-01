@@ -83,10 +83,10 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 | `backoffMin`                | `number`                 | `1000`     | First reconnect delay (ms), doubled after each failed attempt; every wait adds up to 25% at random |
 | `backoffMax`                | `number`                 | `30000`    | Where the doubling stops (ms); the random 25% still applies on top |
 | `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)                |
-| `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls                |
+| `callConcurrency`           | `number`                 | `1`        | Outbound CALLs in flight at once. `1` follows OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out. Above 1 only for a CSMS known to cope |
 | `maxBadMessages`            | `number`                 | `50`       | Close on the Nth bad message in a row; a valid message resets the count and empty frames are ignored. `0` = zero tolerance, `Infinity` = no limit. |
 | `badMessageWindowMs`        | `number`                 | —          | Also reset a run of bad messages once it is older than this many ms. |
-| `respondWithDetailedErrors` | `boolean`                | `false`    | Include error details in RPC error responses |
+| `respondWithDetailedErrors` | `boolean`                | `false`    | Send a handler error's properties (not its stack) in CALLERROR `details`. Logs a warning when on; keep it off in production |
 | `idGenerator`               | `() => string`           | —          | Creates the message ID of each outgoing CALL and SEND. A per-call `idempotencyKey` wins; without either, a random UUID |
 | `idValidator`               | `(id: string) => boolean` | —         | Checks each incoming CALL / SEND message ID; without it any string is accepted |
 

@@ -248,6 +248,8 @@ export class OCPPClient<
       this._prettify = loggingCfg.prettify ?? false;
     }
 
+    if (this._options.respondWithDetailedErrors) this._warnDetailedErrors();
+
     if (this._options.logging) {
       // Since logging is enabled, initLogger ensures _logger is set.
       this.use(
@@ -929,9 +931,13 @@ export class OCPPClient<
   }
 
   /**
-   * Execute a call immediately, bypassing the callConcurrency queue.
-   * Used by OCPPServer.sendBatch to pipeline warm-up calls without
-   * mutating the client's configured concurrency (report M9).
+   * Execute a call immediately, bypassing the callConcurrency queue, so it can
+   * go out while earlier CALLs are unanswered. That breaks OCPP-J §4.1.1
+   * (Synchronicity: a new CALL waits for the previous answer or its timeout)
+   * on purpose: use it only with a peer known to cope, as with callConcurrency
+   * above 1. Rejects unless connected. Used by OCPPServer.sendBatch to
+   * pipeline warm-up calls without mutating the client's configured
+   * concurrency (report M9).
    */
   callImmediate<TResult = unknown>(
     method: string,
@@ -1260,7 +1266,12 @@ export class OCPPClient<
   // ─── Reconfigure ─────────────────────────────────────────────
 
   reconfigure(options: Partial<ClientOptions>): void {
+    const detailedBefore = this._options.respondWithDetailedErrors;
     Object.assign(this._options, options);
+
+    if (options.respondWithDetailedErrors && !detailedBefore) {
+      this._warnDetailedErrors();
+    }
 
     if (options.callConcurrency !== undefined) {
       this._callQueue.setConcurrency(options.callConcurrency);
@@ -1279,6 +1290,17 @@ export class OCPPClient<
         this._startPing();
       }
     }
+  }
+
+  /**
+   * respondWithDetailedErrors sends a handler error's properties to the peer.
+   * Overridden by the server's per-connection clients: the server warns once
+   * for all of them instead of once per charger.
+   */
+  protected _warnDetailedErrors(): void {
+    this._logger.warn?.(
+      "respondWithDetailedErrors is on: a handler error's properties are sent to the CSMS in CALLERROR details. Keep it off in production.",
+    );
   }
 
   // ─── Internal: WebSocket attachment ──────────────────────────

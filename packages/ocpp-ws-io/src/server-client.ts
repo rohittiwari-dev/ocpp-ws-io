@@ -453,6 +453,9 @@ export class OCPPServerClient extends OCPPClient {
     );
   }
 
+  /** The server warns once about respondWithDetailedErrors, not per charger. */
+  protected override _warnDetailedErrors(): void {}
+
   /**
    * Forcibly disconnects this charging station from the server.
    * Useful for authentication revocation, administrative kicks, or clearing hung connections.

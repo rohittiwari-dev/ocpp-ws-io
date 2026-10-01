@@ -171,6 +171,8 @@ export class BrowserOCPPClient<
       identity: this._identity,
     });
     this._logger = loggerInstance || NOOP_LOGGER;
+
+    if (this._options.respondWithDetailedErrors) this._warnDetailedErrors();
   }
 
   // ─── Getters ─────────────────────────────────────────────────
@@ -700,11 +702,23 @@ export class BrowserOCPPClient<
   // ─── Reconfigure ─────────────────────────────────────────────
 
   reconfigure(options: Partial<BrowserClientOptions>): void {
+    const detailedBefore = this._options.respondWithDetailedErrors;
     Object.assign(this._options, options);
+
+    if (options.respondWithDetailedErrors && !detailedBefore) {
+      this._warnDetailedErrors();
+    }
 
     if (options.callConcurrency !== undefined) {
       this._callQueue.setConcurrency(options.callConcurrency);
     }
+  }
+
+  /** respondWithDetailedErrors sends a handler error's properties to the peer. */
+  private _warnDetailedErrors(): void {
+    this._logger.warn?.(
+      "respondWithDetailedErrors is on: a handler error's properties are sent to the CSMS in CALLERROR details. Keep it off in production.",
+    );
   }
 
   // ─── Internal: WebSocket attachment ──────────────────────────
