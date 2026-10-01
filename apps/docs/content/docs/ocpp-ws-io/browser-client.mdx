@@ -90,6 +90,8 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 | `idGenerator`               | `() => string`           | —          | Creates the message ID of each outgoing CALL and SEND. A per-call `idempotencyKey` wins; without either, a random UUID |
 | `idValidator`               | `(id: string) => boolean` | —         | Checks each incoming CALL / SEND message ID; without it any string is accepted |
 
+WebSocket compression is not an option here: the browser negotiates it itself, and all major browsers offer it. It is used only when the server accepts it (`compression` on `OCPPServer`, off by default).
+
 ---
 
 ## Middleware

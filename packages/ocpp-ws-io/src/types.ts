@@ -555,9 +555,11 @@ export interface ClientOptions {
    */
   offlineQueueMaxSize?: number;
   /**
-   * Enable WebSocket `permessage-deflate` compression.
-   * Reduces bandwidth by ~80% for JSON payloads at the cost of ~0.2ms CPU per message.
-   * - `true` → sensible defaults (threshold: 1024, level: 6)
+   * Offer WebSocket `permessage-deflate` compression (RFC 7692) to the CSMS.
+   * Off by default — nothing is offered — because it costs memory and CPU.
+   * OCPP 2.0.1 / 2.1 RECOMMEND it for a charging station on mobile data; it
+   * is used only when the CSMS agrees, otherwise frames go uncompressed.
+   * - `true` → defaults (level: 6, no context takeover)
    * - `object` → fine-tuned configuration
    * (default: false)
    */
@@ -893,9 +895,15 @@ interface ServerOptionsBase {
    */
   workerThreads?: boolean | { poolSize?: number; maxQueueSize?: number };
   /**
-   * Enable WebSocket `permessage-deflate` compression.
-   * Reduces bandwidth by ~80% for JSON payloads at the cost of ~0.2ms CPU per message.
-   * - `true` → sensible defaults (threshold: 1024, level: 6)
+   * Accept WebSocket `permessage-deflate` compression (RFC 7692) from
+   * charging stations that offer it.
+   *
+   * Off by default because it costs memory and CPU on every connection, and
+   * Node's zlib can fragment memory under high concurrency. OCPP 2.0.1 / 2.1
+   * require a CSMS to support it (§3.3 / §3.4), so set it for full 2.x
+   * compliance. It applies only to chargers that ask; the rest stay
+   * uncompressed.
+   * - `true` → defaults (threshold: 1024, level: 6, no context takeover)
    * - `object` → fine-tuned configuration
    * (default: false)
    */

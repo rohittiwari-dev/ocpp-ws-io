@@ -37,7 +37,7 @@ const client = new OCPPClient(options: ClientOptions);
 | `logging`             | `LoggingConfig`                 | `{}`       | Configuration for structured logging.               |
 | `offlineQueue`        | `boolean`                       | `false`    | Queue calls while disconnected, flush on reconnect. |
 | `offlineQueueMaxSize` | `number`                        | `100`      | Max offline queue size before oldest are dropped.   |
-| `compression`         | `boolean \| CompressionOptions` | `false`    | Enable WebSocket `permessage-deflate` compression.  |
+| `compression`         | `boolean \| CompressionOptions` | `false`    | Offer WebSocket `permessage-deflate` compression to the CSMS. Off by default: nothing is offered (see Compression) |
 
 #### LoggingConfig
 
@@ -192,7 +192,7 @@ const server = new OCPPServer(options?: ServerOptions);
 | `maxBadMessages`     | `number`                        | `50`      | Close a connection on its Nth malformed message **in a row**. Every valid message resets the count and empty frames are ignored. Set `0` for zero tolerance, `Infinity` for no limit (logs a warning). |
 | `badMessageWindowMs` | `number`                        | —         | Also reset a run of bad messages once it is older than this many ms (a valid message always resets it). Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` closes on the 10th bad message in a row within a minute. |
 | `workerThreads`      | `boolean \| object`             | `false`   | Enable worker thread pool for JSON parsing. `true` = auto pool size, `{ poolSize, maxQueueSize }` for fine-tuning.                             |
-| `compression`        | `boolean \| CompressionOptions` | `false`   | Enable WebSocket `permessage-deflate` compression. `true` = sensible defaults (threshold: 1024, level: 6).                                     |
+| `compression`        | `boolean \| CompressionOptions` | `false`   | Accept WebSocket `permessage-deflate` compression from chargers that offer it. Off by default for memory and CPU; OCPP 2.0.1 / 2.1 require a CSMS to support it (see Compression) |
 | `headersTimeout`     | `number`                        | `30000`   | Max time (ms) to receive HTTP headers on servers created by `listen()`. Prevents HTTP slowloris attacks. Keep it at or below `requestTimeout`. `0` disables. User-provided servers are unaffected. |
 | `requestTimeout`     | `number`                        | `30000`   | Max time (ms) for the complete HTTP request on servers created by `listen()`. Works with `headersTimeout` to harden the HTTP layer. `0` disables. |
 
@@ -205,6 +205,27 @@ const server = new OCPPServer(options?: ServerOptions);
 | `memLevel`                | `number`  | `8`     | zlib memory level (1–9).                                 |
 | `serverNoContextTakeover` | `boolean` | `true`  | Don't retain server deflate context (saves ~120KB/conn). |
 | `clientNoContextTakeover` | `boolean` | `true`  | Don't retain client deflate context.                     |
+
+#### Compression
+
+WebSocket compression (RFC 7692 `permessage-deflate`) compresses every message with DEFLATE. It is agreed per connection during the handshake: the client offers it, and it is used only if the server accepts. When either side does not use it, messages go uncompressed and nothing breaks.
+
+| Version | What the spec says |
+| --- | --- |
+| OCPP 1.6J §5.1 | Allowed as part of WebSocket; no other form of compression recommended |
+| OCPP 2.0.1 §3.3 / 2.1 §3.4 | A CSMS SHALL support it. A charging station may; RECOMMENDED on mobile data |
+
+It is **off by default** on the server and on `OCPPClient`, because it costs memory and CPU on every connection, and Node's zlib can fragment memory under high concurrency. Turn it on with `compression: true`, or pass `CompressionOptions` to tune it:
+
+```typescript
+// CSMS: accept compression from chargers that offer it (needed for full 2.0.1 / 2.1 compliance)
+const server = new OCPPServer({ protocols: ["ocpp2.0.1"], compression: true });
+
+// Charging station on mobile data: offer it to the CSMS
+const client = new OCPPClient({ /* … */ compression: { level: 6 } });
+```
+
+The defaults keep the cost low: messages under 1 KB (most OCPP traffic, such as `Heartbeat`) are sent uncompressed, and no compression context is kept between messages. `BrowserOCPPClient` has no such option: the browser decides on its own, and all major browsers offer compression.
 
 #### HealthEndpointOptions
 

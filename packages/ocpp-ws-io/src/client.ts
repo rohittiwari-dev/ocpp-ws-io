@@ -2783,9 +2783,14 @@ export class OCPPClient<
       }
     }
 
-    // Compression: permessage-deflate
+    // Compression: permessage-deflate, only when asked for. `ws` offers it by
+    // default, so off has to be set explicitly; leaving it unset meant a
+    // client documented as uncompressed (and one set to `false`) negotiated it
+    // with any server that supports it.
     const compression = this._options.compression;
-    if (compression) {
+    if (!compression) {
+      opts.perMessageDeflate = false;
+    } else {
       opts.perMessageDeflate =
         compression === true
           ? {
