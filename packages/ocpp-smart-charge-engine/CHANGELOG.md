@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.0] — 2026-10-02
+
+Maintenance release. The published code and its behaviour are unchanged; the
+package is now built and tested with TypeScript 6 and Vitest 5.
+
 ## [0.3.0] — 2026-06-11
 
 Fixes all findings from the 2026-06-11 deep-dive review (see `report.md`).

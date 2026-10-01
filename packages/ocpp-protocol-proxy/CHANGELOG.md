@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
+
+### Minor Changes
 
 - **`ocpp-ws-io` dependency range is now `^2.3.2`** (was `*`), so a future major release of `ocpp-ws-io` is not installed without a matching proxy release.
 

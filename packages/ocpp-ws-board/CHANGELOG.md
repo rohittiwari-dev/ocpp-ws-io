@@ -1,6 +1,6 @@
 # ocpp-ws-board
 
-## Unreleased
+## 0.2.0-alpha.0 (2026-10-02)
 
 ### Changes
 

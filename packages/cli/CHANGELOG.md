@@ -1,8 +1,8 @@
 # ocpp-ws-cli
 
-## Unreleased
+## 1.2.0
 
-### Patch Changes
+### Minor Changes
 
 - `ws` raised to `^8.22.0`, past the memory-exhaustion and uninitialized-memory advisories in 8.20.0 and earlier.
 - Removed the unused `json-schema-to-typescript` dependency (type generation uses the built-in generator), and moved `@types/ws` to `devDependencies`. Both reduce what installing the CLI downloads.

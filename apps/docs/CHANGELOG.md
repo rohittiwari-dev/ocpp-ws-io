@@ -1,5 +1,14 @@
 # docs
 
+## 2.2.0
+
+### Minor Changes
+
+- **One section per package**: the ocpp-ws-io pages moved under `/docs/ocpp-ws-io`, and new sections cover the board (`ocpp-ws-board`), the protocol proxy, the smart charge engine, the simulator and a packages overview.
+- **Framework guides**: Express, Fastify, Hono, NestJS and Bun/Deno each have their own page, with a supported-versions table.
+- **ocpp-ws-io reference**: Plugins page; middleware on outgoing responses and errors; security profiles 1–3 with Basic Auth `401`, charging station identity checks and TLS certificates, versions and ciphers; the connection phase in routing; message IDs (`idGenerator`, `idValidator`), compression (off by default) and the new server options in the API reference.
+- **Site**: Next.js 16.3, Fumadocs 16.15 with fumadocs-mdx 15, TypeScript 6. Copied layout components follow the new Fumadocs translation API, and the GitHub and X icons are inlined after lucide-react 1.0 dropped brand icons.
+
 ## 2.1.8
 
 ### Minor Changes
