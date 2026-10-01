@@ -447,9 +447,16 @@ export interface ClientOptions {
   reconnect?: boolean;
   /** Maximum reconnection attempts (default: Infinity) */
   maxReconnects?: number;
-  /** Back-off base delay in ms (default: 1000) */
+  /**
+   * Reconnect back-off before the first attempt, in ms (default: 1000). It
+   * doubles after every failed attempt, up to `backoffMax`, and every wait
+   * gets a new random addition of up to 25%, so it never drops below this.
+   */
   backoffMin?: number;
-  /** Back-off max delay in ms (default: 30000) */
+  /**
+   * Where the doubling back-off stops growing, in ms (default: 30000). The
+   * random addition of up to 25% still applies on top of it.
+   */
   backoffMax?: number;
   /** Call timeout in ms (default: 30000) */
   callTimeoutMs?: number;
@@ -669,6 +676,15 @@ export interface CORSOptions {
 interface ServerOptionsBase {
   /** OCPP Security Profile (default: NONE) */
   securityProfile?: SecurityProfile;
+  /**
+   * Under security profile 1 or 2, answer HTTP 401 to a connection that has
+   * no Basic Auth username and password, or whose username is not its
+   * identity (A00.FR.203/204, A00.FR.302/303). Set `false` to leave that
+   * check to the auth callback, which then sees `handshake.password` as
+   * `undefined`. Checking the password itself is always the auth callback's
+   * job. (default: true)
+   */
+  requireBasicAuth?: boolean;
   /** TLS options for HTTPS server (Profile 2 & 3) */
   tls?: TLSOptions;
   /** Call timeout in ms — inherited by server clients (default: 30000) */

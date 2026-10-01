@@ -105,6 +105,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   private _ownedHttpServers = new Set<Server>();
   /** Set once the proxy-header mismatch has been reported. */
   private _warnedUntrustedProxy = false;
+  private _warnedNoAuthCallback = false;
 
   /** Listeners we attached per server, for removal on close(). */
   private _attachedHttpHandlers = new Map<
@@ -484,6 +485,47 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       result.catch((err: unknown) =>
         this._reportPluginError(pluginName, hook, err),
       );
+    }
+  }
+
+  /** Log and emit a refused handshake, and pass it to the plugins. */
+  private _reportAuthFailure(
+    handshake: HandshakeInfo,
+    req: IncomingMessage,
+    code: number,
+    message: string,
+  ): void {
+    const identity = handshake.identity;
+    this._logger?.warn?.("Auth rejected", { identity, code });
+    // Emit security event for auth failures
+    const secEvtAuth = {
+      type: "AUTH_FAILED" as const,
+      identity,
+      ip: req.socket.remoteAddress,
+      timestamp: new Date().toISOString(),
+      details: { code, message },
+    };
+    this.emit("securityEvent", secEvtAuth);
+    // Plugin: onSecurityEvent + onAuthFailed
+    for (const plugin of this._plugins) {
+      try {
+        this._guardPluginHook(
+          plugin.onSecurityEvent?.(secEvtAuth),
+          plugin.name,
+          "onSecurityEvent",
+        );
+      } catch (err) {
+        this._reportPluginError(plugin.name, "onSecurityEvent", err);
+      }
+      try {
+        this._guardPluginHook(
+          plugin.onAuthFailed?.(handshake, code, message),
+          plugin.name,
+          "onAuthFailed",
+        );
+      } catch (err) {
+        this._reportPluginError(plugin.name, "onAuthFailed", err);
+      }
     }
   }
 
@@ -1645,6 +1687,43 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       return;
     }
 
+    // Profiles 1 and 2 require a username and password on every connection,
+    // the username being the identity (A00.FR.203/204, A00.FR.302/303), and a
+    // request without them is answered 401 (Figure 2). parseBasicAuth returns
+    // no password when the header is missing, malformed or for another user.
+    // `requireBasicAuth: false` hands the decision to the auth callback.
+    if (
+      (profile === SecurityProfile.BASIC_AUTH ||
+        profile === SecurityProfile.TLS_BASIC_AUTH) &&
+      this._options.requireBasicAuth !== false &&
+      !password?.length
+    ) {
+      this._reportAuthFailure(handshake, req, 401, "Unauthorized");
+      abortHandshake(socket, 401, "Unauthorized", {
+        "WWW-Authenticate": 'Basic realm="ocpp-ws-io", charset="UTF-8"',
+      });
+      return;
+    }
+
+    // Checking the password (profiles 1-2) or the certificate (profile 3)
+    // against what the CSMS holds is the auth callback's job.
+    if (
+      profile !== SecurityProfile.NONE &&
+      !matchedHandler &&
+      !this._warnedNoAuthCallback
+    ) {
+      this._warnedNoAuthCallback = true;
+      this._logger?.warn?.(
+        "Security profile is set but no auth callback checks the credentials",
+        {
+          securityProfile: profile,
+          reason:
+            "the Basic Auth password (profile 1-2) or client certificate (profile 3) is accepted without being checked",
+          fix: "register server.auth() or route().auth() and verify handshake.password or handshake.clientCertificate",
+        },
+      );
+    }
+
     // Auth callback with AbortController + timeout
     let ctx: import("./types.js").ConnectionContext | undefined;
     let acceptOptions: import("./types.js").AuthAccept | undefined;
@@ -1807,37 +1886,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         const message =
           typeof errObj?.message === "string" ? errObj.message : "Unauthorized";
 
-        this._logger?.warn?.("Auth rejected", { identity, code });
-        // Emit security event for auth failures
-        const secEvtAuth = {
-          type: "AUTH_FAILED" as const,
-          identity,
-          ip: req.socket.remoteAddress,
-          timestamp: new Date().toISOString(),
-          details: { code, message },
-        };
-        this.emit("securityEvent", secEvtAuth);
-        // Plugin: onSecurityEvent + onAuthFailed
-        for (const plugin of this._plugins) {
-          try {
-            this._guardPluginHook(
-              plugin.onSecurityEvent?.(secEvtAuth),
-              plugin.name,
-              "onSecurityEvent",
-            );
-          } catch (err) {
-            this._reportPluginError(plugin.name, "onSecurityEvent", err);
-          }
-          try {
-            this._guardPluginHook(
-              plugin.onAuthFailed?.(handshake, code, message),
-              plugin.name,
-              "onAuthFailed",
-            );
-          } catch (err) {
-            this._reportPluginError(plugin.name, "onAuthFailed", err);
-          }
-        }
+        this._reportAuthFailure(handshake, req, code, message);
         abortHandshake(socket, code, message);
         return;
       } finally {

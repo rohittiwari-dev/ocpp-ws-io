@@ -85,9 +85,16 @@ export interface BrowserClientOptions {
   reconnect?: boolean;
   /** Maximum reconnection attempts (default: Infinity) */
   maxReconnects?: number;
-  /** Back-off base delay in ms (default: 1000) */
+  /**
+   * Reconnect back-off before the first attempt, in ms (default: 1000). It
+   * doubles after every failed attempt, up to `backoffMax`, and every wait
+   * gets a new random addition of up to 25%, so it never drops below this.
+   */
   backoffMin?: number;
-  /** Back-off max delay in ms (default: 30000) */
+  /**
+   * Where the doubling back-off stops growing, in ms (default: 30000). The
+   * random addition of up to 25% still applies on top of it.
+   */
   backoffMax?: number;
   /** Call timeout in ms (default: 30000) */
   callTimeoutMs?: number;

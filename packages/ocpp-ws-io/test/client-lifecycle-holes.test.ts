@@ -125,8 +125,9 @@ describe("client lifecycle holes", () => {
       });
 
     internals._ws.terminate();
-    // Let the backoff timer fire and enter the stubbed attempt.
-    await new Promise((r) => setTimeout(r, 60));
+    // Let the backoff timer fire and enter the stubbed attempt. The first wait
+    // is the 50 ms floor plus up to 25%.
+    await new Promise((r) => setTimeout(r, 100));
     expect(held.release).not.toBeNull();
 
     await client.close();

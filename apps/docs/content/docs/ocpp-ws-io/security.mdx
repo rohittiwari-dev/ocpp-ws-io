@@ -54,6 +54,12 @@ server.auth((ctx) => {
 });
 ```
 
+Under profiles 1 and 2 the server answers **HTTP 401** with `WWW-Authenticate: Basic` on its own when a connection has no Basic Auth credentials, has an empty password, or uses a username other than its identity (OCPP 2.0.1 / 2.1 A00.FR.203/204 and A00.FR.302/303; the 1.6 security whitepaper says the same). Your auth callback is not called for those, and an `AUTH_FAILED` security event is emitted. Checking the password itself stays with your auth callback.
+
+Set `requireBasicAuth: false` to leave that check to the auth callback as well; it then sees `ctx.handshake.password` as `undefined`. The option can be changed at runtime with `server.reconfigure()`.
+
+If a profile 1, 2 or 3 server accepts a connection with no auth callback registered for it, a warning is logged once: the password or client certificate is then not being checked.
+
 ## Profile 2 — TLS + Basic Auth
 
 Uses HTTP Basic Authentication over a secure WebSocket connection (`wss://`).
@@ -200,7 +206,7 @@ server.on("securityEvent", (event) => {
 
 | Type                    | When it fires                                                          |
 | :---------------------- | :--------------------------------------------------------------------- |
-| `AUTH_FAILED`           | Auth callback rejected the connection (wrong password, bad cert)       |
+| `AUTH_FAILED`           | Auth callback rejected the connection (wrong password, bad cert), or a profile 1/2 connection arrived without valid Basic Auth credentials |
 | `CONNECTION_RATE_LIMIT` | A single IP exceeded the connection rate limit (`connectionRateLimit`) |
 | `UPGRADE_ABORTED`       | Handshake timed out or was aborted before auth completed               |
 

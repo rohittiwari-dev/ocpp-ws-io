@@ -2211,16 +2211,19 @@ export class OCPPClient<
     this._reconnectAttempt++;
     this._state = CONNECTING;
 
-    // Exponential backoff with jitter (OCPP 2.0.1 §J.1)
+    // OCPP-J 2.0.1 / 2.1 §5.3: start from the minimum, double after every
+    // failed attempt, and add a new random part to every wait. The random part
+    // only ever adds (up to 25%), so no wait drops below backoffMin, and
+    // chargers that reached backoffMax still spread out instead of
+    // reconnecting in step after a CSMS restart.
     // Floor the base delay. `backoffMin: 0` collapsed the exponential term to
     // zero, so a client that could not reach the CSMS reconnected in a tight
     // loop, saturating a CPU and hammering the server it was waiting on.
     const base = Math.max(50, this._options.backoffMin);
     const max = Math.max(base, this._options.backoffMax);
-    const delayMs = Math.min(
-      max,
-      base * 2 ** (this._reconnectAttempt - 1) * (0.5 + Math.random() * 0.5),
-    );
+    const delayMs =
+      Math.min(max, base * 2 ** (this._reconnectAttempt - 1)) *
+      (1 + Math.random() * 0.25);
 
     this._logger?.warn?.("Reconnecting", {
       attempt: this._reconnectAttempt,

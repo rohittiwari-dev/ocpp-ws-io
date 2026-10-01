@@ -176,6 +176,7 @@ const server = new OCPPServer(options?: ServerOptions);
 | :------------------- | :------------------------------ | :-------- | :--------------------------------------------------------------------------------------------------------------------------------------------- |
 | `protocols`          | `string[]`                      | `[]`      | Accepted OCPP subprotocols                                                                                                                     |
 | `securityProfile`    | `SecurityProfile`               | `NONE`    | Security profile                                                                                                                               |
+| `requireBasicAuth`   | `boolean`                       | `true`    | On profile 1 or 2, answer HTTP 401 when Basic Auth credentials are missing or the username is not the identity. `false` leaves it to the auth callback |
 | `handshakeTimeoutMs` | `number`                        | `30000`   | Timeout for WebSocket handshake (ms)                                                                                                           |
 | `tls`                | `TLSOptions`                    | —         | TLS options (Profile 2 & 3)                                                                                                                    |
 | `logging`            | `LoggingConfig`                 | `{}`      | Configuration for structured logging.                                                                                                          |
@@ -454,8 +455,8 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 | `query`                     | `Record<string, string>` | —          | Additional URL query parameters       |
 | `reconnect`                 | `boolean`                | `true`     | Auto-reconnect on disconnect          |
 | `maxReconnects`             | `number`                 | `Infinity` | Max reconnection attempts             |
-| `backoffMin`                | `number`                 | `1000`     | Initial reconnect delay (ms)          |
-| `backoffMax`                | `number`                 | `30000`    | Maximum reconnect delay (ms)          |
+| `backoffMin`                | `number`                 | `1000`     | First reconnect delay (ms), doubled after each failed attempt; every wait adds up to 25% at random |
+| `backoffMax`                | `number`                 | `30000`    | Where the doubling stops (ms); the random 25% still applies on top |
 | `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)         |
 | `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls         |
 | `maxBadMessages`            | `number`                 | `50`       | Close on the Nth bad message in a row; a valid message resets the count. `0` = zero tolerance, `Infinity` = no limit (logs warning). |
@@ -470,8 +471,8 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 | `query`                     | `Record<string, string>` | —          | Additional URL query parameters       |
 | `reconnect`                 | `boolean`                | `true`     | Auto-reconnect on disconnect          |
 | `maxReconnects`             | `number`                 | `Infinity` | Max reconnection attempts             |
-| `backoffMin`                | `number`                 | `1000`     | Initial reconnect delay (ms)          |
-| `backoffMax`                | `number`                 | `30000`    | Maximum reconnect delay (ms)          |
+| `backoffMin`                | `number`                 | `1000`     | First reconnect delay (ms), doubled after each failed attempt; every wait adds up to 25% at random |
+| `backoffMax`                | `number`                 | `30000`    | Where the doubling stops (ms); the random 25% still applies on top |
 | `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)         |
 | `callConcurrency`           | `number`                 | `1`        | Max concurrent outbound calls         |
 | `maxBadMessages`            | `number`                 | `50`       | Close on the Nth bad message in a row; a valid message resets the count. `0` = zero tolerance, `Infinity` = no limit (logs warning). |
