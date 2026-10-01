@@ -218,19 +218,32 @@ Using this architecture ensures your authentication requirements, routing bounda
 
 ---
 
-## 5. Strict RPC Adherence (No Fire-and-Forget)
+## 5. Strict RPC Adherence
 
-Unlike some other WebSocket libraries, `ocpp-ws-io` enforces **strict Request-Response tracking** for all outbound calls (`client.call()`). The library does NOT support a `noReply: true` "fire-and-forget" option for outbound messages, as this fundamentally violates the OCPP specification and leads to memory leaks or "Ghost Response" log spam when the station eventually replies.
+`ocpp-ws-io` tracks every outbound call (`client.call()`) until its answer arrives or it times out, and by default a new CALL waits for the previous one (`callConcurrency: 1`, OCPP-J §4.1.1).
 
-If you need to send a command without blocking your main execution thread, simply omit the `await` keyword and use `.catch()` or rely on `client.safeCall()`:
+To carry on without waiting for a result, do not `await` the call. It is still tracked, its answer is still handled, and CALLs keep their order:
 
 ```typescript
-// ✅ DO: Non-blocking Fire-and-Forget natively in JS
+// ✅ Non-blocking, still tracked
 client.safeCall("ocpp1.6", "Reset", { type: "Hard" }).then((res) => {
   if (res) console.log("Station accepted reset");
 });
 
 // Code continues executing instantly...
+```
+
+#### `noReply`: when the answer does not matter
+
+For parity with ocpp-rpc, `call(…, { noReply: true })` sends a normal CALL and resolves with `undefined` once it is written. The peer still answers, as OCPP-J requires: the answer is recognised by its message ID and dropped quietly while it can still arrive (`timeoutMs`, default `callTimeoutMs`), then the ID is forgotten, so nothing piles up and nothing is logged as a stray response. Unlike a call you do not await, it frees the call queue once it is sent, so the next CALL can go out before this one is answered, which OCPP-J §4.1.1 does not allow: use it only with peers known to cope. `retries` cannot be combined with it. On OCPP 2.1, a message defined as unconfirmed (such as `NotifyPeriodicEventStream`) uses `send()` instead.
+
+```typescript
+await client.call(
+  "ocpp1.6",
+  "StatusNotification",
+  { connectorId: 1, errorCode: "NoError", status: "Available" },
+  { noReply: true },
+);
 ```
 
 #### Idempotency Keys (Single Source of Truth Delivery)

@@ -24,6 +24,7 @@ import type {
   LoggingConfig as _LoggingConfig,
   MessageIdGenerator as _MessageIdGenerator,
   MessageIdValidator as _MessageIdValidator,
+  NoReplyCallOptions as _NoReplyCallOptions,
   OCPPCall as _OCPPCall,
   OCPPCallError as _OCPPCallError,
   OCPPCallResult as _OCPPCallResult,
@@ -50,6 +51,7 @@ export type CallHandler<TParams = unknown, TResult = unknown> = _CallHandler<
 >;
 export type WildcardHandler = _WildcardHandler;
 export type CallOptions = _CallOptions;
+export type NoReplyCallOptions = _NoReplyCallOptions;
 export type CloseOptions = _CloseOptions;
 export type MessageIdGenerator = _MessageIdGenerator;
 export type MessageIdValidator = _MessageIdValidator;

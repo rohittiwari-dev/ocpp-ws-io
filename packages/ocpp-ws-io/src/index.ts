@@ -113,6 +113,7 @@ export {
   type MessageIdValidator,
   MessageType,
   NOREPLY,
+  type NoReplyCallOptions,
   type OCPPCall,
   type OCPPCallError,
   type OCPPCallResult,

@@ -36,6 +36,7 @@ import {
   MessageType,
   type MiddlewareContext,
   NOREPLY,
+  type NoReplyCallOptions,
   type OCPPCall,
   type OCPPCallError,
   type OCPPCallResult,
@@ -159,6 +160,11 @@ export class OCPPClient<
   private _handlers = new Map<string, CallHandler>();
   private _wildcardHandler: WildcardHandler | null = null;
   private _pendingCalls = new Map<string, PendingCall>();
+  /**
+   * IDs of noReply calls whose answer can still arrive, each with the timer
+   * that forgets it. The answer is then dropped quietly.
+   */
+  private _noReplyCalls = new Map<string, ReturnType<typeof setTimeout>>();
   private _pendingResponses = new Set<string>();
   private _callQueue: Queue;
   private _pingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -193,7 +199,7 @@ export class OCPPClient<
   private _offlineQueue: Array<{
     method: string;
     params: unknown;
-    options: CallOptions;
+    options: CallOptions | NoReplyCallOptions;
     resolve: (value: unknown) => void;
     reject: (reason: unknown) => void;
   }> = [];
@@ -824,6 +830,33 @@ export class OCPPClient<
   // ─── Call ────────────────────────────────────────────────────
 
   /**
+   * Send a CALL without waiting for its answer — `{ noReply: true }`. Resolves
+   * with `undefined` once the frame is written; see {@link NoReplyCallOptions}.
+   */
+  async call<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+    version: V,
+    method: M,
+    params: OCPPRequestType<V, M>,
+    options: NoReplyCallOptions,
+  ): Promise<void>;
+  call<S extends string>(
+    version: S extends OCPPProtocol ? never : S,
+    method: string,
+    params: object,
+    options: NoReplyCallOptions,
+  ): Promise<void>;
+  async call<M extends AllMethodNames<P>>(
+    method: M,
+    params: OCPPRequestType<P, M>,
+    options: NoReplyCallOptions,
+  ): Promise<void>;
+  async call(
+    method: string,
+    params: object,
+    options: NoReplyCallOptions,
+  ): Promise<void>;
+
+  /**
    * Call a version-specific typed method — `call("ocpp1.6", "BootNotification", {...})`.
    * Provides full type inference for params and response based on the OCPP version.
    */
@@ -865,7 +898,7 @@ export class OCPPClient<
   async call(...args: unknown[]): Promise<unknown> {
     let method: string;
     let params: unknown;
-    let options: CallOptions;
+    let options: CallOptions | NoReplyCallOptions;
 
     if (
       args.length >= 3 &&
@@ -876,12 +909,23 @@ export class OCPPClient<
       // version is type-level only, not sent on the wire
       method = args[1] as string;
       params = args[2] ?? {};
-      options = (args[3] as CallOptions) ?? {};
+      options = (args[3] as CallOptions | NoReplyCallOptions) ?? {};
     } else {
       // call(method, params?, options?)
       method = args[0] as string;
       params = args[1] ?? {};
-      options = (args[2] as CallOptions) ?? {};
+      options = (args[2] as CallOptions | NoReplyCallOptions) ?? {};
+    }
+
+    if (
+      "noReply" in options &&
+      options.noReply &&
+      "retries" in options &&
+      options.retries
+    ) {
+      throw new TypeError(
+        "noReply cannot be combined with retries: there is no answer to retry on",
+      );
     }
 
     if (this._state !== OPEN) {
@@ -922,9 +966,11 @@ export class OCPPClient<
     }
 
     // ── Retry wrapper with Full Jitter ──
-    const maxRetries = options.retries ?? 0;
-    if (maxRetries > 0) {
-      return this._callWithRetry(method, params, options, maxRetries);
+    if ("retries" in options) {
+      const maxRetries = options.retries ?? 0;
+      if (maxRetries > 0) {
+        return this._callWithRetry(method, params, options, maxRetries);
+      }
     }
 
     return this._callQueue.push(() => this._sendCall(method, params, options));
@@ -1092,7 +1138,7 @@ export class OCPPClient<
   private async _sendCall(
     method: string,
     params: unknown,
-    options: CallOptions,
+    options: CallOptions | NoReplyCallOptions,
   ): Promise<unknown> {
     const msgId = options.idempotencyKey ?? this._newMessageId();
     const timeoutMs = options.timeoutMs ?? this._options.callTimeoutMs;
@@ -1141,12 +1187,54 @@ export class OCPPClient<
         // A second pending call under one ID would take the first one's
         // response. Checked here, in the same tick that registers the ID, so
         // two concurrent calls cannot both get past it.
-        if (this._pendingCalls.has(msgId)) {
+        if (this._pendingCalls.has(msgId) || this._noReplyCalls.has(msgId)) {
           reject(
             new Error(
               `Message ID "${msgId}" is already in use by a pending call`,
             ),
           );
+          return;
+        }
+
+        // noReply: the peer still answers (OCPP-J requires it), but nobody
+        // waits. The ID is remembered while the answer can arrive, so it is
+        // dropped quietly rather than logged as unknown, and the call resolves
+        // once the frame is handed over, which frees the concurrency queue.
+        if ("noReply" in options && options.noReply) {
+          if (options.signal?.aborted) {
+            reject(options.signal.reason ?? new Error("Aborted"));
+            return;
+          }
+          const forget = setTimeout(() => {
+            this._noReplyCalls.delete(msgId);
+          }, timeoutMs);
+          this._noReplyCalls.set(msgId, forget);
+          const fail = (err: Error) => {
+            clearTimeout(forget);
+            this._noReplyCalls.delete(msgId);
+            reject(err);
+          };
+          if (this._ws?.readyState === WebSocket.OPEN) {
+            this._safeSend(this._ws, messageStr, (err) => {
+              if (err) {
+                fail(err);
+                return;
+              }
+              this._emitMessageEvent(message, "OUT", {
+                type: "outgoing_call",
+                messageId: msgId,
+                method: ctxvals.method,
+                params: ctxvals.params,
+                options,
+              });
+              resolve(undefined);
+            });
+          } else if (this._state === CONNECTING) {
+            this._bufferOutbound(messageStr);
+            resolve(undefined);
+          } else {
+            fail(new Error(`WebSocket is not open (state: ${this._state})`));
+          }
           return;
         }
 
@@ -1955,6 +2043,7 @@ export class OCPPClient<
     const [, msgId, payload] = message;
 
     if (!this._pendingCalls.has(msgId)) {
+      if (this._takeNoReplyAnswer(msgId)) return;
       this._logger?.warn?.("Received CallResult for unknown messageId", {
         messageId: msgId,
       });
@@ -2034,6 +2123,7 @@ export class OCPPClient<
 
     const pending = this._pendingCalls.get(msgId);
     if (!pending) {
+      if (this._takeNoReplyAnswer(msgId)) return;
       this._logger?.warn?.("Received CallError for unknown messageId", {
         messageId: msgId,
       });
@@ -2251,6 +2341,21 @@ export class OCPPClient<
     }
     this._pendingCalls.clear();
     this._pendingResponses.clear();
+    // No answer can arrive on a closed socket.
+    for (const forget of this._noReplyCalls.values()) clearTimeout(forget);
+    this._noReplyCalls.clear();
+  }
+
+  /** The answer to a noReply call: dropped quietly. False if it was not one. */
+  private _takeNoReplyAnswer(msgId: string): boolean {
+    const forget = this._noReplyCalls.get(msgId);
+    if (forget === undefined) return false;
+    clearTimeout(forget);
+    this._noReplyCalls.delete(msgId);
+    this._logger?.debug?.("Dropped the answer to a noReply call", {
+      messageId: msgId,
+    });
+    return true;
   }
 
   protected _onClose(code: number, reason: Buffer): void {

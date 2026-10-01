@@ -270,6 +270,22 @@ export interface CallOptions {
   idempotencyKey?: string;
 }
 
+/**
+ * Options for `call()` with `noReply: true` (as in ocpp-rpc): the CALL is
+ * sent and the call resolves with `undefined` once the frame is written,
+ * without waiting for the answer. The peer still answers, as OCPP-J requires;
+ * that answer is dropped quietly while it can still arrive (`timeoutMs`,
+ * default `callTimeoutMs`). The call waits its turn in the `callConcurrency`
+ * queue and then frees it at once, so the next CALL can go out before this
+ * one is answered, which OCPP-J §4.1.1 does not allow: use it only with peers
+ * known to cope. No retries: there is no answer to retry on. For an OCPP 2.1
+ * message defined as unconfirmed, use `send()` instead.
+ */
+export interface NoReplyCallOptions
+  extends Omit<CallOptions, "retries" | "retryDelayMs" | "retryMaxDelayMs"> {
+  noReply: true;
+}
+
 // ─── Close Options ───────────────────────────────────────────────
 
 export interface CloseOptions {

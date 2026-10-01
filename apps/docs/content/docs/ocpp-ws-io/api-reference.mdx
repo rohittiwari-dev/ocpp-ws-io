@@ -74,11 +74,17 @@ Make an RPC call. Throws a `TimeoutError` or protocol-level Error if the request
 -   `protocol`: Optional. e.g., "ocpp1.6". If omitted, generic type inference is used.
 -   `method`: The OCPP method name (e.g., "BootNotification").
 -   `params`: The request payload.
--   `options`: `{ timeoutMs?: number, retries?: number, idempotencyKey?: string }`
+-   `options`: `{ timeoutMs?: number, retries?: number, idempotencyKey?: string, signal?: AbortSignal }`, or `{ noReply: true, … }` (see below)
 
 ```typescript
 // With manual idempotency key to prevent double execution on reconnections
 const result = await client.call("ocpp1.6", "BootNotification", { ... }, { idempotencyKey: "unique-boot-123" });
+```
+
+With `{ noReply: true }` (typed `NoReplyCallOptions`, as in ocpp-rpc), the CALL is sent and `call()` resolves with `undefined` once it is written, without waiting for the answer. The peer still answers, as OCPP-J requires: the answer is recognised by its message ID and dropped quietly while it can still arrive (`timeoutMs`, default `callTimeoutMs`), then the ID is forgotten, so nothing piles up and nothing is logged as a stray response. Unlike a call you do not await, it frees the call queue once it is sent, so the next CALL can go out before this one is answered, which OCPP-J §4.1.1 does not allow: use it only with peers known to cope. `retries` cannot be combined with it. On OCPP 2.1, a message defined as unconfirmed (such as `NotifyPeriodicEventStream`) uses `send()` instead.
+
+```typescript
+await client.call("StatusNotification", { connectorId: 1, errorCode: "NoError", status: "Available" }, { noReply: true });
 ```
 
 #### `safeCall(protocol?, method, params, options?)`

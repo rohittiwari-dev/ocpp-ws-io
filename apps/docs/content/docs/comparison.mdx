@@ -73,7 +73,7 @@ While not an OCPP library, many teams pipe raw WebSocket JSON-RPC through generi
 
 **What our ecosystem addresses differently:**
 - **Protocol Awareness**: `rpc-websockets` doesn't understand the semantic differences between a `CallError` (Type [4]) and a generic socket fault. `ocpp-ws-io` enforces the official OCPP-J messaging sequence meticulously.
-- **Mandatory Correlation**: Generic RPC libraries allow fire-and-forget logic. OCPP fundamentally requires every action to be strictly correlated with a `CallResult`. We enforce this at compile-time while explicitly supporting the rare `NOREPLY` opt-outs.
+- **Mandatory Correlation**: Generic RPC libraries allow fire-and-forget logic. OCPP fundamentally requires every action to be strictly correlated with a `CallResult`. Calls are tracked to their answer by default; `noReply` is an explicit opt-in whose answer is still recognised and dropped quietly, and a handler can skip its answer with `NOREPLY`.
 
 ---
 
