@@ -28,7 +28,8 @@
   ],
   "scripts": {
     "build": "tsup",
-    "dev": "tsup --watch"
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",
@@ -39,6 +40,9 @@
   },
   "author": "Rohit Tiwari <rohit@rohittiwari.me>",
   "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "homepage": "https://ocpp-ws-io.rohittiwari.me/docs/cli",
   "bugs": {
     "url": "https://github.com/rohittiwari-dev/ocpp-ws-io/issues"
@@ -47,7 +51,7 @@
     "dist"
   ],
   "devDependencies": {
-    "@types/node": "^20.19.35",
+    "@types/node": "^20.19.43",
     "@types/ws": "^8.18.2",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",

@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The published packages declare engines ">=20.0.0". Node 20 is past
+        # end of life but stays the floor until the next major release.
+        node: ["20", "22", "24", "26"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Reads "packageManager" from the root package.json.
+          bun-version-file: "package.json"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type check
+        run: bun run typecheck
+
+      # Every package except the docs site; the ocpp-ws-io build ends with
+      # scripts/verify-dist.js.
+      - name: Build
+        run: bun run build --filter='!docs'
+
+      - name: Test
+        run: bun run test
+
+  docs-and-coverage:
+    name: Docs build and coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: "package.json"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build docs
+        run: bun run build --filter=docs
+
+      - name: Coverage (ocpp-ws-io)
+        run: cd packages/ocpp-ws-io && bun run build && bun run test:coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ocpp-ws-io-coverage
+          path: packages/ocpp-ws-io/coverage
+          if-no-files-found: error

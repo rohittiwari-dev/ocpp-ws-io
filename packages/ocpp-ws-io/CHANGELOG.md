@@ -2,8 +2,11 @@
 
 ## Unreleased
 
+To be released as **3.0.0**. Upgrading from 2.x: see the [migration guide](https://ocpp-ws-io.rohittiwari.me/docs/ocpp-ws-io/upgrading-to-v3), which lists each breaking change, who it affects and the option that keeps the 2.x behaviour.
+
 ### Breaking changes
 
+- **Node.js 20 or later is required** (`engines` was `>=18.0.0`, and the build now targets Node 20). Node 18 reached end of life in April 2025. The test suite runs on Node 20, 22, 24 and 26.
 - **`maxBadMessages` default changed from `Infinity` to `50`, and it now counts bad messages in a row.** Every valid message resets the count, so a working charger that sends an occasional odd frame is never disconnected; only 50 consecutive malformed messages close the connection. Empty frames, which some charge point vendors send, are ignored rather than counted. Set `maxBadMessages: Infinity` explicitly to restore the previous behaviour (a startup warning is logged when this value is used).
 - **An unknown message type is answered under message ID `"-1"`.** A type number the negotiated protocol does not define (anything but 2–4, or 5–6 outside OCPP 2.1) is still a bad message answered with `MessageTypeNotSupported`, but the reply now carries message ID `"-1"` instead of echoing the frame's ID.
 - **A frame whose message ID cannot be read is answered with `RpcFrameworkError` under message ID `"-1"`** on every protocol version. This covers invalid JSON, a frame that is not an array, a message type that is not a number, and a message ID that is not a string. Such frames were previously answered only when an ID could be guessed from the raw text, and then with `FormatViolation` (`FormationViolation` on 1.6) under the guessed ID; otherwise they got no reply. 2.0.1 and 2.1 §4.2.3: "When also the MessageId cannot be read, the CALLERROR SHALL contain "-1"".

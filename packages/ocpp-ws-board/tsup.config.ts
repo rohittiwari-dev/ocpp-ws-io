@@ -15,7 +15,7 @@ export default defineConfig({
   sourcemap: false,
   clean: false,
   outDir: "dist",
-  target: "node18",
+  target: "node20",
   shims: true,
   treeshake: true,
   tsconfig: "tsconfig.external.json",

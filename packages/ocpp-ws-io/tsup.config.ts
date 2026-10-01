@@ -24,7 +24,7 @@ export default defineConfig([
     sourcemap: false,
     clean: false,
     outDir: "dist",
-    target: "node18",
+    target: "node20",
     shims: true,
     minify: true,
     treeshake: true,

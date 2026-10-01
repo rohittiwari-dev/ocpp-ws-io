@@ -92,10 +92,11 @@
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
 		"prepublishOnly": "bun run build",
-		"format": "biome format --write"
+		"format": "biome format --write",
+		"typecheck": "tsc --noEmit -p tsconfig.json"
 	},
 	"engines": {
-		"node": ">=18.0.0"
+		"node": ">=20.0.0"
 	},
 	"keywords": [
 		"ocpp",
@@ -190,7 +191,7 @@
 		"@nestjs/common": "^12.1.2",
 		"@nestjs/core": "^12.1.2",
 		"@nestjs/testing": "^12.1.2",
-		"@types/node": "^22.20.4",
+		"@types/node": "^20.19.43",
 		"@types/ws": "^8.18.2",
 		"@vitest/coverage-v8": "5.0.3",
 		"express": "^5.2.1",

@@ -56,10 +56,14 @@ export function Hero() {
         className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0"
         initial={{ opacity: 0 }}
         animate={{ scale: [1, 1.08, 1], opacity: [0.04, 0.07, 0.04] }}
-        transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+        transition={{
+          duration: 6,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
         aria-hidden
       >
-        <div className="h-[600px] w-[600px] rounded-full border border-violet-500" />
+        <div className="h-150 w-150 rounded-full border border-violet-500" />
       </motion.div>
       <motion.div
         className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0"
@@ -73,7 +77,7 @@ export function Hero() {
         }}
         aria-hidden
       >
-        <div className="h-[900px] w-[900px] rounded-full border border-blue-500" />
+        <div className="h-225 w-225 rounded-full border border-blue-500" />
       </motion.div>
 
       {/* ── Main grid ─────────────────────────────────────────────────────── */}
@@ -335,7 +339,8 @@ export function Hero() {
               {/* Connect */}
               <div>
                 <span className="text-[#ff7b72]">await</span> client.
-                <span className="text-[#d2a8ff]">connect</span>();
+                <span className="text-[#d2a8ff]">connect</span>
+                ();
               </div>
 
               <div className="h-3" />

@@ -18,6 +18,6 @@ export default defineConfig({
   shims: true,
   minify: true,
   treeshake: true,
-  target: "node18",
+  target: "node20",
   outDir: "dist",
 });

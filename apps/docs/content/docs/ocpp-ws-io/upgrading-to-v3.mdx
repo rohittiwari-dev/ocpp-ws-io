@@ -1,0 +1,59 @@
+---
+title: Upgrading to 3.0
+description: Every breaking change in ocpp-ws-io 3.0.0, who it affects, and how to keep the 2.x behaviour where that is possible.
+---
+
+3.0.0 brings `ocpp-ws-io` in line with the OCPP-J specification for 1.6, 2.0.1 and 2.1. Most changes only show up with misbehaving chargers or in tests that assert exact error replies. Read the table, apply the options you need, and run your tests.
+
+## Requirements
+
+- **Node.js 20 or later** (was 18). Node 20 is past its end of life too, so 22 or 24 is the better choice.
+- **Fastify 5.12.5 or later** if you use the Fastify plugin. Fastify 4 is end of life and has an unfixed authentication bypass.
+
+## Breaking changes
+
+| Change | Affects you if | To keep the 2.x behaviour |
+| --- | --- | --- |
+| Under security profile 1 or 2, a connection without Basic Auth credentials gets **HTTP 401** (OCPP 2.0.1 / 2.1 A00.FR.203/204, A00.FR.302/303) | Chargers on profile 1 or 2 connect without credentials, or your auth callback handled that case | `requireBasicAuth: false` |
+| `maxBadMessages` defaults to **50** (was unlimited) and counts malformed messages **in a row**; any valid message resets it | A peer sends many malformed frames and must stay connected | `maxBadMessages: Infinity` (the server logs a warning at startup) |
+| `OCPPClient` offers WebSocket compression **only when `compression` is set** | Your client relied on `permessage-deflate` being negotiated without setting it | `compression: true` |
+| With **no subprotocol in common**, the handshake completes and the connection is closed with code 1002, instead of HTTP 400 (OCPP-J §3.2); also when the charger offers none | Chargers or tests expect HTTP 400 | None: required by the spec |
+| `accept({ protocol })` with a version the charger **did not offer** is refused the same way (RFC 6455) | Your auth callback picks a protocol | Pick from `handshake.protocols` |
+| **Strict mode:** a message ID longer than **36 characters** is rejected (OCPP-J §4.1.4) | `strictMode` is on and a peer sends longer IDs | `idValidator: () => true`, or your own rule |
+| **Strict mode, OCPP 2.0.1 / 2.1:** the charging station identity must be an identifierString (`a-z A-Z 0-9 * - _ = + \| @ .`) without `:`, at most 48 characters, or the charger gets HTTP 400 (OCPP-J §3.1.1) | `strictMode` is on for 2.x and identities break that rule | Length: `maxIdentityLength`. The character rule has no separate switch; it applies wherever strict mode is on |
+| **Reconnect waits** are `min(backoffMin × 2^(attempt − 1), backoffMax) × (1 + random × 0.25)`; never below `backoffMin`, still random at `backoffMax` | You depend on exact reconnect timings | None: tune `backoffMin` / `backoffMax` |
+| A frame with an **unknown message type** or an **unreadable message ID** is answered under message ID `"-1"`; an unreadable ID gets `RpcFrameworkError` on every version | Peers or tests match the message ID or code of these errors | None: required by the spec |
+| **OCPP 1.6:** a CALL that reuses the ID of a CALL still being handled gets `GenericError` (1.6 has no `RpcFrameworkError`) | 1.6 tests expect `RpcFrameworkError` | None |
+| **OCPP 2.0.1 / 2.1:** error descriptions are cut to **255 characters** (`ErrorDescription` is `string[255]`) | Your handlers send longer error messages | None |
+| A malformed CALLRESULT or CALLERROR is **no longer answered** with a CALLERROR (OCPP-J §4.2.3); on 2.1 a malformed CALLRESULT gets a CALLRESULTERROR | Tests expect a CALLERROR reply | None |
+
+All the options above together:
+
+```ts
+import { OCPPClient, OCPPServer } from "ocpp-ws-io";
+
+const server = new OCPPServer({
+  protocols: ["ocpp1.6", "ocpp2.0.1"],
+  requireBasicAuth: false, // profile 1/2: the auth callback handles missing credentials
+  maxBadMessages: Infinity, // never close a connection for malformed frames
+  idValidator: () => true, // strict mode: accept message IDs of any length
+});
+
+const client = new OCPPClient({
+  endpoint: "wss://csms.example.com/ocpp",
+  identity: "CP001",
+  protocols: ["ocpp2.0.1"],
+  compression: true, // offer permessage-deflate as 2.x did
+});
+```
+
+## Fixes you may notice
+
+These are bug fixes, not breaking changes, but they change what you can observe:
+
+- Connection middleware without an auth callback no longer changes the negotiated subprotocol.
+- A `null` payload on a CALL or CALLRESULT is accepted as `{}` instead of being rejected.
+- A call whose message ID is already used by a pending call rejects instead of being sent. This needs a repeated `idempotencyKey` or `idGenerator` value while calls overlap.
+- The browser client uses a per-call `idempotencyKey` as the message ID.
+
+The full list, including new options such as `isKnownIdentity`, `duplicateConnection` and the TLS settings, is in the [CHANGELOG](https://github.com/rohittiwari-dev/ocpp-ws-io/blob/main/packages/ocpp-ws-io/CHANGELOG.md).

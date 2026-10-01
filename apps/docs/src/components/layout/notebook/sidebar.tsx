@@ -78,7 +78,7 @@ export function SidebarContent({
           )}
         >
           {collapsed && (
-            <div className="absolute start-0 inset-y-0 w-4" {...rest} />
+            <div className="absolute inset-s-0 inset-y-0 w-4" {...rest} />
           )}
           <aside
             id="nd-sidebar"
@@ -86,7 +86,7 @@ export function SidebarContent({
             data-collapsed={collapsed}
             data-hovered={collapsed && hovered}
             className={cn(
-              "absolute flex flex-col w-full start-0 inset-y-0 items-end text-sm duration-250 *:w-(--fd-sidebar-width)",
+              "absolute flex flex-col w-full inset-s-0 inset-y-0 items-end text-sm duration-250 *:w-(--fd-sidebar-width)",
               navMode === "auto" && "bg-fd-card border-e",
               collapsed && [
                 "inset-y-2 rounded-xl bg-fd-card transition-transform border w-(--fd-sidebar-width)",
@@ -121,7 +121,7 @@ export function SidebarDrawer({
       <Base.SidebarDrawerOverlay className="fixed z-40 inset-0 backdrop-blur-xs data-[state=open]:animate-fd-fade-in data-[state=closed]:animate-fd-fade-out" />
       <Base.SidebarDrawerContent
         className={cn(
-          "fixed text-[0.9375rem] flex flex-col shadow-lg border-s end-0 inset-y-0 w-[85%] max-w-[380px] z-40 bg-fd-background data-[state=open]:animate-fd-sidebar-in data-[state=closed]:animate-fd-sidebar-out",
+          "fixed text-[0.9375rem] flex flex-col shadow-lg border-s inset-e-0 inset-y-0 w-[85%] max-w-95 z-40 bg-fd-background data-[state=open]:animate-fd-sidebar-in data-[state=closed]:animate-fd-sidebar-out",
           className,
         )}
         {...props}
@@ -244,7 +244,7 @@ export function SidebarFolderContent({
       className={cn(
         "relative",
         depth === 1 &&
-          "before:content-[''] before:absolute before:w-px before:inset-y-1 before:bg-fd-border before:start-2.5",
+          "before:content-[''] before:absolute before:w-px before:inset-y-1 before:bg-fd-border before:inset-s-2.5",
         className,
       )}
       {...props}

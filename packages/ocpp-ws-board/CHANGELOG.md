@@ -1,5 +1,9 @@
 # ocpp-ws-board
 
+## Unreleased
+
+- **Requires Node.js 20 or later** (new `engines` field: `>=20.0.0`), the same floor as `ocpp-ws-io` 3.0.0; Node 18 reached end of life in April 2025. The build now targets Node 20.
+
 ## 0.2.0-alpha.0 (2026-10-02)
 
 ### Changes

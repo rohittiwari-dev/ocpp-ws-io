@@ -7,6 +7,7 @@ const dts = { compilerOptions: { ignoreDeprecations: "6.0" } };
 export default defineConfig({
   entry: ["src/index.ts"],
   format: ["esm"],
+  target: "node20",
   dts,
   clean: true,
   splitting: false,
