@@ -180,7 +180,7 @@ const server = new OCPPServer({
 });
 ```
 
-`false` answers 404, a throw answers 500, and both emit an `AUTH_FAILED` security event. Under profile 1/2 a request without Basic Auth credentials gets 401 first, so it never reaches your database. Note that `ctx.reject()` without a code answers 401.
+`false` answers 404 and emits an `AUTH_FAILED` security event. A throw answers 500 and emits `UPGRADE_ERROR`, with the error logged on the server and kept out of the response. Under profile 1/2 a request without Basic Auth credentials gets 401 first, so it never reaches your database. Note that `ctx.reject()` without a code answers 401.
 
 **Identity format.** OCPP 2.0.1 and 2.1 define the identity as an identifierString (`a-z A-Z 0-9 * - _ = + | @ .`) without `:`, because it is also the Basic Auth username, of at most 48 characters (OCPP-J §3.1.1; the `:` rule is "SHALL NOT" in 2.1 and in the 2.0.1 errata 2023-12). OCPP 1.6J sets no rule. With `strictMode`, the server applies these rules for the negotiated version. `maxIdentityLength` sets your own limit instead: it applies with or without `strictMode` and replaces the 48. A violation is answered with HTTP 400.
 
@@ -244,7 +244,7 @@ required.
 
 ```typescript
 server.on("securityEvent", (event) => {
-  // event.type    — "AUTH_FAILED" | "CONNECTION_RATE_LIMIT" | "UPGRADE_ABORTED"
+  // event.type    — "AUTH_FAILED" | "UPGRADE_ERROR" | "CONNECTION_RATE_LIMIT" | "UPGRADE_ABORTED" | ...
   // event.identity — station ID (if known at the time)
   // event.ip       — remote IP address
   // event.timestamp — ISO 8601 string
@@ -258,6 +258,7 @@ server.on("securityEvent", (event) => {
 | Type                    | When it fires                                                          |
 | :---------------------- | :--------------------------------------------------------------------- |
 | `AUTH_FAILED`           | Auth callback rejected the connection (wrong password, bad cert), a profile 1/2 connection arrived without valid Basic Auth credentials, `isKnownIdentity` refused it (404), or `duplicateConnection: "reject"` refused it (409) |
+| `UPGRADE_ERROR`         | Something was thrown during the handshake instead of `ctx.reject()`: an exception in an auth callback, connection middleware or `isKnownIdentity`. The charger gets a bare 500; `details.error` and the server log hold the error |
 | `CONNECTION_RATE_LIMIT` | A single IP exceeded the connection rate limit (`connectionRateLimit`) |
 | `UPGRADE_ABORTED`       | Handshake timed out or was aborted before auth completed               |
 

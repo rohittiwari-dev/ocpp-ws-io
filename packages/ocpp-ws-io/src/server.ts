@@ -14,7 +14,7 @@ import type { SecureContextOptions, TLSSocket } from "node:tls";
 import { WebSocketServer } from "ws";
 import { AdaptiveLimiter } from "./adaptive-limiter.js";
 import { checkCORS } from "./cors.js";
-import { TimeoutError } from "./errors.js";
+import { HandshakeRejection, TimeoutError } from "./errors.js";
 import { initLogger } from "./init-logger.js";
 import { LRUMap } from "./lru-map.js";
 import { RadixTrie } from "./radix-trie.js";
@@ -60,6 +60,9 @@ import {
   parseBasicAuth,
   parseSubprotocols,
 } from "./ws-util.js";
+
+/** RFC 9110 §15.5.2: every 401 carries a challenge; OCPP uses Basic Auth. */
+const BASIC_AUTH_CHALLENGE = 'Basic realm="ocpp-ws-io", charset="UTF-8"';
 
 /**
  * OCPPServer — A typed WebSocket RPC server for OCPP communication.
@@ -592,6 +595,43 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         );
       } catch (err) {
         this._reportPluginError(plugin.name, "onAuthFailed", err);
+      }
+    }
+  }
+
+  /**
+   * An unexpected error during a handshake: logged with its details, and
+   * reported as UPGRADE_ERROR so outages are not counted as auth failures.
+   */
+  private _reportUpgradeError(
+    handshake: HandshakeInfo,
+    req: IncomingMessage,
+    error: string,
+    stack: string | undefined,
+  ): void {
+    const identity = handshake.identity;
+    this._logger?.error?.("Handshake failed with an unexpected error", {
+      identity,
+      error,
+      stack,
+    });
+    const secEvt = {
+      type: "UPGRADE_ERROR" as const,
+      identity,
+      ip: req.socket.remoteAddress,
+      timestamp: new Date().toISOString(),
+      details: { error },
+    };
+    this.emit("securityEvent", secEvt);
+    for (const plugin of this._plugins) {
+      try {
+        this._guardPluginHook(
+          plugin.onSecurityEvent?.(secEvt),
+          plugin.name,
+          "onSecurityEvent",
+        );
+      } catch (err) {
+        this._reportPluginError(plugin.name, "onSecurityEvent", err);
       }
     }
   }
@@ -1770,7 +1810,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     ) {
       this._reportAuthFailure(handshake, req, 401, "Unauthorized");
       abortHandshake(socket, 401, "Unauthorized", {
-        "WWW-Authenticate": 'Basic realm="ocpp-ws-io", charset="UTF-8"',
+        "WWW-Authenticate": BASIC_AUTH_CHALLENGE,
       });
       return;
     }
@@ -1824,7 +1864,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           handshake,
           state: {},
           reject: (code = 401, message = "Unauthorized") => {
-            throw { code, message, _isMiddlewareReject: true };
+            throw new HandshakeRejection(code, message);
           },
           next: async (_payload?: Record<string, unknown>) => {}, // Bound dynamically inside executeMiddlewareChain
         };
@@ -1837,30 +1877,21 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         // it, so the handshake timeout and socket-close abort apply.
         if (isKnownIdentity) {
           chain.unshift(async (c) => {
-            let known: boolean;
-            try {
-              const aborted = new Promise<never>((_, reject) => {
-                ac.signal.addEventListener(
-                  "abort",
-                  () => reject(ac.signal.reason),
-                  { once: true },
-                );
-              });
-              // Settles after the lookup when the handshake ends later on.
-              aborted.catch(() => {});
-              known = await Promise.race([
-                Promise.resolve(isKnownIdentity(identity, c.handshake)),
-                aborted,
-              ]);
-            } catch (err) {
-              if (ac.signal.aborted) throw err;
-              this._logger?.error?.("isKnownIdentity failed", {
-                identity,
-                error: err instanceof Error ? err.message : String(err),
-              });
-              c.reject(500, "Internal Server Error");
-              return;
-            }
+            const aborted = new Promise<never>((_, reject) => {
+              ac.signal.addEventListener(
+                "abort",
+                () => reject(ac.signal.reason),
+                { once: true },
+              );
+            });
+            // Settles after the lookup when the handshake ends later on.
+            aborted.catch(() => {});
+            // A lookup that throws is an outage, not an unknown charger: it
+            // reaches the catch below, which logs it and answers 500.
+            const known = await Promise.race([
+              Promise.resolve(isKnownIdentity(identity, c.handshake)),
+              aborted,
+            ]);
             if (!known) {
               c.reject(404, "Unknown charging station");
               return;
@@ -1905,15 +1936,12 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
                   code = 401,
                   message = "Unauthorized",
                 ): never => {
+                  const rejection = new HandshakeRejection(code, message);
                   if (!settled) {
                     settled = true;
-                    reject({ code, message });
+                    reject(rejection);
                   }
-                  throw {
-                    code,
-                    message,
-                    _isMiddlewareReject: true,
-                  };
+                  throw rejection;
                 };
 
                 // Guard: already aborted before we even start
@@ -1946,7 +1974,31 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
                   accept,
                 };
 
-                matchedHandler!(authCtx);
+                // Awaited, so an async callback's failure is handled here: the
+                // promise it returns used to be dropped, so a throw, or the
+                // throw inside reject(), was an unhandled rejection that ended
+                // the process.
+                const callback = matchedHandler!;
+                const run = async () => {
+                  try {
+                    await callback(authCtx);
+                  } catch (err) {
+                    if (!settled) {
+                      settled = true;
+                      reject(err);
+                    } else if (!(err instanceof HandshakeRejection)) {
+                      this._logger?.error?.(
+                        "Auth callback threw after accepting or rejecting",
+                        {
+                          identity,
+                          error:
+                            err instanceof Error ? err.message : String(err),
+                        },
+                      );
+                    }
+                  }
+                };
+                void run();
               },
             );
           }
@@ -1956,12 +2008,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
         await executeMiddlewareChain(chain, ctx);
 
         if (!authCalled) {
-          // A middleware halted the chain without calling next() or reject()
-          throw {
-            code: 500,
-            message: "Middleware chain halted unexpectedly without rejecting",
-            _isMiddlewareReject: true,
-          };
+          throw new Error(
+            "Connection middleware ended without calling next() or reject()",
+          );
         }
       } catch (err) {
         if (ac.signal.aborted) {
@@ -2001,14 +2050,39 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
           return;
         }
 
-        // Auth explicitly rejected
-        const errObj = err as any;
-        const code = typeof errObj?.code === "number" ? errObj.code : 401;
-        const message =
-          typeof errObj?.message === "string" ? errObj.message : "Unauthorized";
+        if (err instanceof HandshakeRejection) {
+          // ctx.reject(code, message): the status and message the developer
+          // chose. Only an HTTP error status can end a handshake.
+          let code = err.code;
+          if (!Number.isInteger(code) || code < 400 || code > 599) {
+            this._logger?.warn?.(
+              "reject() needs an HTTP status from 400 to 599; answered 500",
+              { identity, code },
+            );
+            code = 500;
+          }
+          this._reportAuthFailure(handshake, req, code, err.message);
+          abortHandshake(
+            socket,
+            code,
+            err.message,
+            code === 401
+              ? { "WWW-Authenticate": BASIC_AUTH_CHALLENGE }
+              : undefined,
+          );
+          return;
+        }
 
-        this._reportAuthFailure(handshake, req, code, message);
-        abortHandshake(socket, code, message);
+        // Anything else thrown is a bug or an outage, not a verdict on the
+        // charger. Its details stay in the server log: the charger gets a bare
+        // 500, never a 401 it would record as FailedToAuthenticateAtCsms.
+        this._reportUpgradeError(
+          handshake,
+          req,
+          err instanceof Error ? err.message : String(err),
+          err instanceof Error ? err.stack : undefined,
+        );
+        abortHandshake(socket, 500);
         return;
       } finally {
         if (timer) clearTimeout(timer);

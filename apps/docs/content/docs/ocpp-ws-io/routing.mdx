@@ -98,7 +98,9 @@ const adminRouter = server
     if (ctx.handshake.identity.startsWith("SYS-")) {
       await ctx.next();
     } else {
-      throw new Error("Unauthorized identity for admin endpoint");
+      // reject() answers with your status and message. Anything thrown
+      // instead is answered 500, with the error logged on the server.
+      ctx.reject(403, "Identity not allowed on the admin endpoint");
     }
   })
   .route("/api/admin/*");

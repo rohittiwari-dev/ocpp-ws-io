@@ -1279,9 +1279,15 @@ import type { OCPPServerClient } from "./server-client.js";
  * Emitted by the server for audit-relevant actions.
  */
 export interface SecurityEvent {
-  /** Event type identifier */
+  /**
+   * Event type identifier. `AUTH_FAILED` is a rejection the server or your
+   * code chose (`ctx.reject()`, missing Basic Auth, unknown identity);
+   * `UPGRADE_ERROR` is something thrown during the handshake, answered with
+   * 500, with the error in `details.error`.
+   */
   type:
     | "AUTH_FAILED"
+    | "UPGRADE_ERROR"
     | "RATE_LIMIT_EXCEEDED"
     | "UPGRADE_ABORTED"
     | "CONNECTION_RATE_LIMIT"

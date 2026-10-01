@@ -125,7 +125,7 @@ describe("identity checks", () => {
     });
 
     it("answers 500 when the lookup fails", async () => {
-      const { port, order } = await start(() => {
+      const { port, order, events } = await start(() => {
         throw new Error("database down");
       });
 
@@ -133,6 +133,14 @@ describe("identity checks", () => {
 
       expect(outcome).toEqual({ opened: false, status: 500 });
       expect(order).toEqual([]);
+      // An outage, not an unknown charger.
+      expect(events).toEqual([
+        expect.objectContaining({
+          type: "UPGRADE_ERROR",
+          identity: "CP-1",
+          details: { error: "database down" },
+        }),
+      ]);
     });
 
     it("is not reached when Basic Auth credentials are missing", async () => {

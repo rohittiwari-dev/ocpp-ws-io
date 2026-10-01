@@ -111,7 +111,7 @@ describe("Auth and Middleware Utilities", () => {
     );
   });
 
-  it("should catch unhandled exceptions in callbacks and reject with 500 External Error", async () => {
+  it("passes an exception in a callback on to the server, which answers 500", async () => {
     const cb1 = vi.fn(async () => {
       throw new Error("Simulated Native Exception");
     });
@@ -129,15 +129,14 @@ describe("Auth and Middleware Utilities", () => {
       state: {},
     } as any;
 
-    await combined(mockCtx);
+    await expect(combined(mockCtx)).rejects.toThrow(
+      "Simulated Native Exception",
+    );
 
     expect(cb1).toHaveBeenCalledTimes(1);
     expect(cb2).not.toHaveBeenCalled();
     expect(acceptSpy).not.toHaveBeenCalled();
-    expect(rejectSpy).toHaveBeenCalledWith(
-      500,
-      expect.stringContaining("Internal Server Error"),
-    );
+    expect(rejectSpy).not.toHaveBeenCalled();
   });
 
   describe("defineAuth and defineMiddleware", () => {

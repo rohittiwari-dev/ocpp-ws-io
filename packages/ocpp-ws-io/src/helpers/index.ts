@@ -1,3 +1,4 @@
+import { HandshakeRejection } from "../errors.js";
 import type {
   AuthAccept,
   AuthCallback,
@@ -76,6 +77,8 @@ export function defineAuth<TSession = Record<string, unknown>>(
  * - If one callback `reject(err)` is called, the loop drops the connection instantly.
  * - If one callback `accept(opts)` is called, the loop terminates and grants the connection.
  * - If the loop finishes without anyone calling accept, it rejects with 401 Unauthorized.
+ * - If a callback throws, the error reaches the server, which logs it and
+ *   answers 500 without its details.
  */
 export function combineAuth(...cbs: AuthCallback[]): AuthCallback {
   return async (ctx) => {
@@ -119,13 +122,11 @@ export function combineAuth(...cbs: AuthCallback[]): AuthCallback {
           "Unauthorized (All composeAuth handlers passed without accepting)",
         );
       }
-    } catch (_err) {
-      if (!rejected) {
-        trackedReject(
-          500,
-          "Internal Server Error during auth compose execution",
-        );
-      }
+    } catch (err) {
+      // reject() throws to stop the callback; the server already has the
+      // result. Anything else is passed on, so the server logs it and
+      // answers 500 instead of it being dropped here.
+      if (!(err instanceof HandshakeRejection)) throw err;
     }
   };
 }

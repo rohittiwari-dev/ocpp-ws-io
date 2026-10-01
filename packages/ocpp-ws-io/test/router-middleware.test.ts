@@ -84,7 +84,9 @@ describe("OCPPRouter - Middleware & Multiplexing", () => {
     });
 
     client1.on("error", () => {});
-    await expect(client1.connect()).rejects.toThrow("403");
+    // Only ctx.reject() picks the status. A thrown error is answered 500 even
+    // with a numeric `code`, which may be an SDK's code, not a verdict.
+    await expect(client1.connect()).rejects.toThrow("500");
   });
 
   it("should support a global catch-all router via server.use()", async () => {

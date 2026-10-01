@@ -30,6 +30,21 @@ export class WebsocketUpgradeError extends Error {
   }
 }
 
+/**
+ * Thrown by `ctx.reject()` in connection middleware and auth callbacks to end
+ * the handshake with the status and message the developer chose. Internal:
+ * anything else thrown during a handshake is answered with a bare 500.
+ */
+export class HandshakeRejection extends Error {
+  readonly code: number;
+
+  constructor(code: number, message: string) {
+    super(message);
+    this.name = "HandshakeRejection";
+    this.code = code;
+  }
+}
+
 // ─── RPC Error Base ──────────────────────────────────────────────
 
 export interface RPCError extends Error {
