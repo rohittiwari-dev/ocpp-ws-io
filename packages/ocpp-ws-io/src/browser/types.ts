@@ -85,8 +85,12 @@ export interface BrowserClientOptions {
   endpoint: string;
   /** OCPP subprotocols to negotiate */
   protocols?: string[];
-  /** Additional query parameters */
-  query?: Record<string, string>;
+  /**
+   * Query parameters for the connection URL, as an object or a query string
+   * (`"a=1&b=2"`, a leading `?` is optional). Added after any query the
+   * endpoint already has; the identity stays the last path segment.
+   */
+  query?: Record<string, string> | string;
   /** Enable automatic reconnection (default: true) */
   reconnect?: boolean;
   /** Maximum reconnection attempts (default: Infinity) */

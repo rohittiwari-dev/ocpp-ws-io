@@ -27,7 +27,7 @@ const client = new OCPPClient(options: ClientOptions);
 | `tls`                 | `TLSOptions`                    | —          | TLS settings for a `wss://` endpoint, on every security profile (`ca` for a private CA even on profile 0); profile 3 needs `cert` and `key` |
 | `headers`             | `Record<string, string>`        | —          | Additional WebSocket headers                        |
 | `wsOpts`              | `WsClientOptions`               | —          | Raw `ws` client options: a proxy `agent`, `localAddress`, `family`, `origin`, `maxPayload`, `followRedirects`… (see wsOpts below) |
-| `query`               | `Record<string, string>`        | —          | Additional URL query parameters                     |
+| `query`               | `Record<string, string> \| string` | —          | URL query parameters, as an object or a query string (`"a=1&b=2"`, leading `?` optional); added after any query in `endpoint` |
 | `reconnect`           | `boolean`                       | `true`     | Auto-reconnect on disconnect                        |
 | `maxReconnects`       | `number`                        | `Infinity` | Max reconnection attempts                           |
 | `pingIntervalMs`      | `number`                        | `30000`    | Includes ±25% randomized jitter                     |
@@ -615,7 +615,7 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 | `identity`                  | `string`                 | _required_ | Charging station ID                   |
 | `endpoint`                  | `string`                 | _required_ | WebSocket URL (`ws://` or `wss://`)   |
 | `protocols`                 | `string[]`               | `[]`       | OCPP subprotocols to negotiate        |
-| `query`                     | `Record<string, string>` | —          | Additional URL query parameters       |
+| `query`                     | `Record<string, string> \| string` | —          | URL query parameters, as an object or a query string (`"a=1&b=2"`, leading `?` optional); added after any query in `endpoint` |
 | `reconnect`                 | `boolean`                | `true`     | Auto-reconnect on disconnect          |
 | `maxReconnects`             | `number`                 | `Infinity` | Max reconnection attempts             |
 | `backoffMin`                | `number`                 | `1000`     | First reconnect delay (ms), doubled after each failed attempt; every wait adds up to 25% at random |
