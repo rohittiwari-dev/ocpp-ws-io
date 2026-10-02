@@ -58,7 +58,7 @@ res16.status; // typed: "Accepted" | "Pending" | "Rejected"
 
 ### Only known actions, exact payloads
 
-Typed methods (`call`, `safeCall`, `handle`, `send`, `removeHandler`) take only the actions their protocols define, with exactly the params and responses the OCPP schemas define:
+Typed methods take only the actions their protocols define, with exactly the params and responses the OCPP schemas define: on clients and connections `call`, `safeCall`, `callImmediate`, `handle`, `send` and `removeHandler`; on the server `sendToClient`, `safeSendToClient`, `broadcast`, `broadcastBatch`, `sendBatch` and route `handle`.
 
 ```typescript
 const client = new OCPPClient({ identity, endpoint, protocols: ["ocpp1.6"] });
@@ -175,6 +175,8 @@ client.on("strictValidationFailure", ({ message, error }) => {
   console.error("Validation failed:", error.message);
 });
 ```
+
+Every protocol strict mode covers needs a validator: built in for OCPP 1.6, 2.0.1 and 2.1, or one of yours in `strictModeValidators`. Otherwise the constructor throws `Missing strictMode validator for subprotocol "…"`, and a route that turns strict mode on refuses a connection on such a protocol, so no connection runs in strict mode unvalidated. A protocol listed twice in `protocols` is a type error and throws as well.
 
 ### Partial Strict Mode
 

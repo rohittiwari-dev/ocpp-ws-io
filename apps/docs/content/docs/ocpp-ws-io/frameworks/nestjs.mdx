@@ -286,7 +286,7 @@ With this standard setup, a charging station can connect from the outside world 
 
 ### Method Decorators
 
-- `@OcppMessageEvent(action: string)`: Maps a method to a specific OCPP action (e.g., `BootNotification`, `Heartbeat`).
+- `@OcppMessageEvent(action, protocol?)`: Maps a method to an OCPP action (e.g., `BootNotification`, `Heartbeat`), for one protocol when given. The action must exist (in that protocol); for one the types do not know, use `@OcppMessageEvent(unchecked("VendorAction"))`.
 - `@OcppWildcardEvent()`: Catch-all handler for any unmapped OCPP action. Useful for logging or proxying.
 - `@OcppAuth()`: Marks a method as the authentication handler. It receives the `AuthContext` and must call `ctx.accept()` or `ctx.reject()`.
 - `@OcppConnectionMiddleware()`: Evaluates the HTTP upgrade request before the WebSocket is even established.

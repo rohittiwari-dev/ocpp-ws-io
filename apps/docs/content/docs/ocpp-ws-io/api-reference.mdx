@@ -533,6 +533,8 @@ const [config, , trigger] = await server.sendBatch("CP-101", [
 ]);
 ```
 
+Each call is typed by its `method`, and the results by their actions. A call to an action the types do not know takes `unchecked()`: `{ method: unchecked("VendorPing"), params: { n: 1 } }`.
+
 #### `broadcastBatch(identities, method, params, options?)`
 
 Broadcast an identical RPC call to many stations concurrently. For clustered architectures, unicast commands are grouped and dispatched in pipeline batches via the adapter's streams, reducing per-message TCP round-trip overhead.
@@ -596,7 +598,7 @@ client.handle("StatusNotification", ({ params }) => {
 
 ### `unchecked(action)`
 
-Marks an action name the types do not check, for `call`, `safeCall`, `handle`, `send` and `removeHandler`: an undeclared vendor action, a name passed through from the wire, or a test that sends an invalid payload on purpose. Returns the name unchanged.
+Marks an action name the types do not check, for every typed method (`call`, `safeCall`, `callImmediate`, `handle`, `send`, `removeHandler`, `sendToClient`, `safeSendToClient`, `broadcast`, `broadcastBatch`, and a `sendBatch` call's `method`): an undeclared vendor action, a name passed through from the wire, or a test that sends an invalid payload on purpose. Returns the name unchanged.
 
 ```typescript
 import { unchecked } from "ocpp-ws-io";

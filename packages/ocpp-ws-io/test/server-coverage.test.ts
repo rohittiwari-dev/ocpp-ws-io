@@ -1,5 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import { OCPPServer } from "../src/server";
+import { unchecked } from "../src/unchecked";
 
 describe("OCPPServer Coverage", () => {
   let server: OCPPServer;
@@ -115,7 +116,9 @@ describe("OCPPServer Coverage", () => {
 
   test("sendToClient throws if registry returns null", async () => {
     adapter.getPresence.mockResolvedValue(null);
-    await expect(server.sendToClient("missing", "Test", {})).rejects.toThrow(
+    await expect(
+      server.sendToClient("missing", unchecked("Test"), {}),
+    ).rejects.toThrow(
       "Client missing not found",
     );
   });
@@ -123,7 +126,9 @@ describe("OCPPServer Coverage", () => {
   test("sendToClient: checks overload parsing (coverage for branches)", async () => {
     // 3 args
     adapter.getPresence.mockResolvedValue(null);
-    await expect(server.sendToClient("id", "Method", {})).rejects.toThrow();
+    await expect(
+      server.sendToClient("id", unchecked("Method"), {}),
+    ).rejects.toThrow();
 
     // 4 args
     await expect(
@@ -254,7 +259,7 @@ describe("final review fixes", () => {
     };
     await srv.setAdapter(failingAdapter);
 
-    await expect(srv.sendToClient("cp-x", "Reset", {})).rejects.toThrow(
+    await expect(srv.sendToClient("cp-x", "Reset", { type: "Hard" })).rejects.toThrow(
       "redis down",
     );
     expect((srv as any)._pendingRemoteCalls.size).toBe(0);

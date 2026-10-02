@@ -17,6 +17,7 @@ import { EventEmitterBase } from "./emitter-base.js";
 import { HandshakeRejection, TimeoutError } from "./errors.js";
 import { initLogger } from "./init-logger.js";
 import { LRUMap } from "./lru-map.js";
+import { assertUniqueProtocols } from "./protocol-list.js";
 import { RadixTrie } from "./radix-trie.js";
 import {
   type AnyOCPPRouter,
@@ -24,13 +25,20 @@ import {
   OCPPRouter,
 } from "./router.js";
 import { OCPPServerClient } from "./server-client.js";
-import { getStandardValidator } from "./standard-validators.js";
+import {
+  assertStrictValidators,
+  getStandardValidator,
+} from "./standard-validators.js";
 import {
   type AllMethodNames,
   type AnyOCPPProtocol,
   type AuthAccept,
   type AuthCallback,
+  type BatchCall,
+  type BatchExactKeys,
+  type BatchResult,
   type CallOptions,
+  type CheckedAction,
   type ClientOptions,
   type CloseOptions,
   type CORSOptions,
@@ -39,19 +47,22 @@ import {
   type HandshakeInfo,
   type HealthEndpointAuth,
   type HealthEndpointOptions,
+  type JsonObject,
   type KnownProtocol,
   type ListenOptions,
   type LoggerLike,
   type LoggerLikeNotOptional,
   type ManagedWsServerOption,
   type OCPPPlugin,
-  type OCPPRequestType,
   type OCPPResponseType,
   type PersistedSession,
+  type RequestOf,
   SecurityProfile,
   type ServerEvents,
   type ServerOptions,
   type TypedEventEmitter,
+  type UncheckedAction,
+  type WithUniqueProtocols,
 } from "./types.js";
 import { unchecked } from "./unchecked.js";
 import {
@@ -103,6 +114,8 @@ const MANAGED_WSS_OPTIONS = Object.keys(
  */
 export class OCPPServer<
   P extends AnyOCPPProtocol = AnyOCPPProtocol,
+  // The protocols list as given, so a protocol listed twice is a type error.
+  const L extends readonly P[] = readonly P[],
 > extends EventEmitterBase {
   // Typed for this server's protocols; a base class expression cannot use P.
   declare on: TypedEventEmitter<ServerEvents<P>>["on"];
@@ -228,7 +241,7 @@ export class OCPPServer<
   /** Longest a connecting charger waits for the adapter's stored session. */
   private static readonly _SESSION_FETCH_TIMEOUT_MS = 1000;
 
-  constructor(options: ServerOptions<P> = {}) {
+  constructor(options: WithUniqueProtocols<ServerOptions<P>, P, L> = {}) {
     super();
     this.setMaxListeners(0);
 
@@ -241,6 +254,12 @@ export class OCPPServer<
     }
 
     OCPPServer._assertMaxIdentityLength(options.maxIdentityLength);
+    assertUniqueProtocols(options.protocols);
+    assertStrictValidators(
+      options.protocols,
+      options.strictMode,
+      options.strictModeValidators,
+    );
 
     this._options = {
       securityProfile: SecurityProfile.NONE,
@@ -2214,6 +2233,17 @@ export class OCPPServer<
       }
     }
 
+    // A route can turn strict mode on for a protocol the server has no
+    // validator for. Refuse the connection (HTTP 500, logged) before the
+    // handshake completes, rather than run it unvalidated in strict mode.
+    if (!refuseProtocol && selectedProtocol) {
+      assertStrictValidators(
+        [selectedProtocol],
+        matchedRouterConfig?.strictMode ?? this._options.strictMode,
+        this._options.strictModeValidators,
+      );
+    }
+
     // Socket readyState check before upgrade
     if ((socket as import("node:net").Socket).readyState !== "open") {
       this._logger?.debug?.("Socket closed before upgrade completion", {
@@ -2868,6 +2898,14 @@ export class OCPPServer<
 
   reconfigure(options: Partial<ServerOptions<P>>): void {
     OCPPServer._assertMaxIdentityLength(options.maxIdentityLength);
+    // Checked on the combined options before any is applied.
+    const next = { ...this._options, ...options };
+    assertUniqueProtocols(next.protocols);
+    assertStrictValidators(
+      next.protocols,
+      next.strictMode,
+      next.strictModeValidators,
+    );
     const oldOptions = { ...this._options } as ServerOptions<P>;
     Object.assign(this._options, options);
 
@@ -2975,31 +3013,57 @@ export class OCPPServer<
    * Backward compatibility: nodes running older versions deliver the call
    * but never publish a response — such calls reject with TimeoutError.
    */
-  // 1. Protocol-specific overload
-  async sendToClient<V extends KnownProtocol<P>, M extends AllMethodNames<V>>(
+  // Params are checked for keys the schema does not define on the action
+  // name, as on the clients. Order: the method-only form without options
+  // first, then the version-named form, then options, so editors suggest the
+  // right fields while a call is being written.
+  async sendToClient<
+    M extends AllMethodNames<KnownProtocol<P>>,
+    T extends RequestOf<KnownProtocol<P>, M>,
+  >(
+    identity: string,
+    method: CheckedAction<M, RequestOf<KnownProtocol<P>, M>, T>,
+    params: T,
+  ): Promise<OCPPResponseType<KnownProtocol<P>, M> | undefined>;
+
+  async sendToClient<
+    V extends KnownProtocol<P>,
+    M extends AllMethodNames<V>,
+    T extends RequestOf<V, M>,
+  >(
     identity: string,
     version: V,
-    method: M,
-    params: OCPPRequestType<V, M>,
+    method: CheckedAction<M, RequestOf<V, M>, T>,
+    params: T,
     options?: CallOptions,
   ): Promise<OCPPResponseType<V, M> | undefined>;
 
-  // 2. Global overload (infers method from any protocol)
-  async sendToClient<M extends AllMethodNames<KnownProtocol<P>>>(
+  async sendToClient<
+    M extends AllMethodNames<KnownProtocol<P>>,
+    T extends RequestOf<KnownProtocol<P>, M>,
+  >(
     identity: string,
-    method: M,
-    params: OCPPRequestType<KnownProtocol<P>, M>,
-    options?: CallOptions,
+    method: CheckedAction<M, RequestOf<KnownProtocol<P>, M>, T>,
+    params: T,
+    options: CallOptions,
   ): Promise<OCPPResponseType<KnownProtocol<P>, M> | undefined>;
 
-  // 3. Custom/Loose overload
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async sendToClient<_T = any>(
+  /** Send an action the types do not check — `sendToClient(id, unchecked("VendorPing"), params)`. */
+  async sendToClient<TResult = JsonObject>(
     identity: string,
-    method: string,
-    params: Record<string, any>,
+    method: UncheckedAction,
+    params?: object,
     options?: CallOptions,
-  ): Promise<any | undefined>;
+  ): Promise<TResult | undefined>;
+
+  /** Send an action the types do not check on one of the server's protocols. */
+  async sendToClient<TResult = JsonObject>(
+    identity: string,
+    version: P,
+    method: UncheckedAction,
+    params?: object,
+    options?: CallOptions,
+  ): Promise<TResult | undefined>;
 
   async sendToClient(...args: any[]): Promise<any> {
     let identity: string;
@@ -3034,14 +3098,16 @@ export class OCPPServer<
     if (localClient) {
       // Forward the version when provided so the call resolves against the
       // version-specific overload (and version-aware strict validation).
+      // The arguments were checked by the overloads above; here the method
+      // is a string.
       return version
         ? await localClient.call(
-            version as any,
-            method as any,
-            params as any,
+            version as P,
+            unchecked(method),
+            params as object,
             options,
           )
-        : await localClient.call(method as any, params as any, options);
+        : await localClient.call(unchecked(method), params as object, options);
     }
 
     // 2. Check Registry & Unicast (with response correlation — report H1)
@@ -3131,34 +3197,52 @@ export class OCPPServer<
 
   // ─── Safe SendToClient (Best Effort) ──────────────────────────
 
-  // 1. Protocol-specific overload
+  // Same overloads as sendToClient; see there.
+  async safeSendToClient<
+    M extends AllMethodNames<KnownProtocol<P>>,
+    T extends RequestOf<KnownProtocol<P>, M>,
+  >(
+    identity: string,
+    method: CheckedAction<M, RequestOf<KnownProtocol<P>, M>, T>,
+    params: T,
+  ): Promise<OCPPResponseType<KnownProtocol<P>, M> | undefined>;
+
   async safeSendToClient<
     V extends KnownProtocol<P>,
     M extends AllMethodNames<V>,
+    T extends RequestOf<V, M>,
   >(
     identity: string,
     version: V,
-    method: M,
-    params: OCPPRequestType<V, M>,
+    method: CheckedAction<M, RequestOf<V, M>, T>,
+    params: T,
     options?: CallOptions,
   ): Promise<OCPPResponseType<V, M> | undefined>;
 
-  // 2. Global overload
-  async safeSendToClient<M extends AllMethodNames<KnownProtocol<P>>>(
+  async safeSendToClient<
+    M extends AllMethodNames<KnownProtocol<P>>,
+    T extends RequestOf<KnownProtocol<P>, M>,
+  >(
     identity: string,
-    method: M,
-    params: OCPPRequestType<KnownProtocol<P>, M>,
-    options?: CallOptions,
+    method: CheckedAction<M, RequestOf<KnownProtocol<P>, M>, T>,
+    params: T,
+    options: CallOptions,
   ): Promise<OCPPResponseType<KnownProtocol<P>, M> | undefined>;
 
-  // 3. Custom/Loose overload
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async safeSendToClient<_T = any>(
+  async safeSendToClient<TResult = JsonObject>(
     identity: string,
-    method: string,
-    params: Record<string, any>,
+    method: UncheckedAction,
+    params?: object,
     options?: CallOptions,
-  ): Promise<any | undefined>;
+  ): Promise<TResult | undefined>;
+
+  async safeSendToClient<TResult = JsonObject>(
+    identity: string,
+    version: P,
+    method: UncheckedAction,
+    params?: object,
+    options?: CallOptions,
+  ): Promise<TResult | undefined>;
 
   async safeSendToClient(...args: any[]): Promise<any> {
     try {
@@ -3211,13 +3295,14 @@ export class OCPPServer<
    * ]);
    * ```
    */
+  async sendBatch<C extends BatchCall<KnownProtocol<P>>>(
+    identity: string & BatchExactKeys<KnownProtocol<P>, C>,
+    calls: readonly C[],
+  ): Promise<Array<BatchResult<KnownProtocol<P>, C> | undefined>>;
+
   async sendBatch(
     identity: string,
-    calls: Array<{
-      method: string;
-      params: Record<string, unknown>;
-      options?: CallOptions;
-    }>,
+    calls: readonly BatchCall<KnownProtocol<P>>[],
   ): Promise<Array<unknown | undefined>> {
     if (calls.length === 0) return [];
 
@@ -3236,7 +3321,12 @@ export class OCPPServer<
         this._logger?.debug?.("sendBatch: routing cross-node", { identity });
         const remote = await Promise.allSettled(
           calls.map((c) =>
-            this.sendToClient(identity, c.method, c.params, c.options),
+            this.sendToClient(
+              identity,
+              unchecked(c.method),
+              c.params,
+              c.options,
+            ),
           ),
         );
         return remote.map((r) => {
@@ -3259,7 +3349,7 @@ export class OCPPServer<
     // mutating the client's configured callConcurrency (report M9).
     const results = await Promise.allSettled(
       calls.map((c) =>
-        client.callImmediate(c.method, c.params, c.options ?? {}),
+        client.callImmediate(unchecked(c.method), c.params, c.options ?? {}),
       ),
     );
 
@@ -3848,16 +3938,30 @@ export class OCPPServer<
     }
   }
 
-  async broadcast<V extends AllMethodNames<KnownProtocol<P>>>(
-    method: V,
-    params: OCPPRequestType<KnownProtocol<P>, V>,
+  async broadcast<
+    M extends AllMethodNames<KnownProtocol<P>>,
+    T extends RequestOf<KnownProtocol<P>, M>,
+  >(
+    method: CheckedAction<M, RequestOf<KnownProtocol<P>, M>, T>,
+    params: T,
+  ): Promise<import("./types.js").BroadcastResult>;
+
+  /** Broadcast an action the types do not check — `broadcast(unchecked("VendorPing"), params)`. */
+  async broadcast(
+    method: UncheckedAction,
+    params?: object,
+  ): Promise<import("./types.js").BroadcastResult>;
+
+  async broadcast(
+    method: string,
+    params?: object,
   ): Promise<import("./types.js").BroadcastResult> {
     // Every local failure used to be swallowed by `.catch(() => {})` behind a
     // `Promise<void>`, so a caller could not tell a clean fan-out from one
     // where every charger rejected. The result reports what is knowable.
     const targets = Array.from(this._clients);
     const settled = await Promise.allSettled(
-      targets.map((client) => client.call(method as any, params as any)),
+      targets.map((client) => client.call(unchecked(method), params)),
     );
 
     const localFailed: Array<{ identity: string; error: string }> = [];
@@ -3898,10 +4002,28 @@ export class OCPPServer<
    * @param params The request parameters
    * @param options Call options
    */
-  async broadcastBatch<V extends AllMethodNames<KnownProtocol<P>>>(
+  async broadcastBatch<
+    M extends AllMethodNames<KnownProtocol<P>>,
+    T extends RequestOf<KnownProtocol<P>, M>,
+  >(
     identities: string[],
-    method: V,
-    params: OCPPRequestType<KnownProtocol<P>, V>,
+    method: CheckedAction<M, RequestOf<KnownProtocol<P>, M>, T>,
+    params: T,
+    options?: CallOptions,
+  ): Promise<void>;
+
+  /** broadcastBatch for an action the types do not check. */
+  async broadcastBatch(
+    identities: string[],
+    method: UncheckedAction,
+    params?: object,
+    options?: CallOptions,
+  ): Promise<void>;
+
+  async broadcastBatch(
+    identities: string[],
+    method: string,
+    params?: object,
     options?: CallOptions,
   ): Promise<void> {
     const localIdentities = new Set<string>();
@@ -3913,7 +4035,7 @@ export class OCPPServer<
       if (client) {
         localIdentities.add(identity);
         localPromises.push(
-          client.call(method as any, params as any, options).catch(() => {}),
+          client.call(unchecked(method), params, options).catch(() => {}),
         );
       }
     }

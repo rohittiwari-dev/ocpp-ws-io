@@ -8,6 +8,7 @@ import type {
   SendMethodNames,
 } from "../generated/index.js";
 import { type MiddlewareFunction, MiddlewareStack } from "../middleware.js";
+import { assertUniqueProtocols } from "../protocol-list.js";
 import type {
   CheckedAction,
   CheckedHandler,
@@ -20,6 +21,7 @@ import type {
   UncheckedAction,
   UncheckedHandler,
   WireCall,
+  WithUniqueProtocols,
 } from "../types.js";
 import { EventEmitter } from "./emitter.js";
 import {
@@ -115,6 +117,8 @@ interface PendingCall {
  */
 export class BrowserOCPPClient<
   P extends AnyOCPPProtocol = AnyOCPPProtocol,
+  // The protocols list as given, so a protocol listed twice is a type error.
+  const L extends readonly P[] = readonly P[],
 > extends EventEmitter {
   // Static connection states
   static readonly CONNECTING = CONNECTING;
@@ -165,12 +169,13 @@ export class BrowserOCPPClient<
   private _logger: LoggerLike;
   private _middleware: MiddlewareStack<MiddlewareContext>;
 
-  constructor(options: BrowserClientOptions<P>) {
+  constructor(options: WithUniqueProtocols<BrowserClientOptions<P>, P, L>) {
     super();
 
     if (!options.identity) {
       throw new Error("identity is required");
     }
+    assertUniqueProtocols(options.protocols);
 
     this._identity = options.identity;
 
@@ -895,6 +900,7 @@ export class BrowserOCPPClient<
   // ─── Reconfigure ─────────────────────────────────────────────
 
   reconfigure(options: Partial<BrowserClientOptions<P>>): void {
+    assertUniqueProtocols(options.protocols ?? this._options.protocols);
     const detailedBefore = this._options.respondWithDetailedErrors;
     Object.assign(this._options, options);
 

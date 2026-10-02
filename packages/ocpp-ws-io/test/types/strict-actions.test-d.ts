@@ -210,3 +210,27 @@ export function emptyResponses() {
   // @ts-expect-error the same, returned directly
   c16.handle("StatusNotification", () => ({ bogus: 1 }));
 }
+
+export function normalizedUnions() {
+  // TypeScript gives each object in a union the other objects' keys as
+  // `?: undefined`. Such a key is never on the wire (JSON drops undefined), so
+  // it is not an extra key; a key with a value still is.
+  const c201 = new OCPPClient({ identity: "CP1", endpoint, protocols: ["ocpp2.0.1"] });
+  const pending = Math.random() > 0.5;
+  c201.handle("BootNotification", () =>
+    pending
+      ? { currentTime: "", interval: 300, status: "Pending" as const }
+      : {
+          currentTime: "",
+          interval: 300,
+          status: "Accepted" as const,
+          statusInfo: { reasonCode: "x" },
+        },
+  );
+  // @ts-expect-error a key with a value is still extra
+  c201.handle("BootNotification", () =>
+    pending
+      ? { currentTime: "", interval: 300, status: "Pending" as const }
+      : { currentTime: "", interval: 300, status: "Accepted" as const, bogus: 1 },
+  );
+}

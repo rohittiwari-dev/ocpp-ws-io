@@ -17,8 +17,12 @@ import type {
 import { createLoggingMiddleware } from "./helpers/index.js";
 import { initLogger } from "./init-logger.js";
 import { type MiddlewareFunction, MiddlewareStack } from "./middleware";
+import { assertUniqueProtocols } from "./protocol-list.js";
 import { Queue } from "./queue.js";
-import { getStandardValidator } from "./standard-validators.js";
+import {
+  assertStrictValidators,
+  getStandardValidator,
+} from "./standard-validators.js";
 import {
   type AnyOCPPProtocol,
   type CallHandler,
@@ -60,6 +64,7 @@ import {
   type UncheckedHandler,
   type WildcardHandler,
   type WireCall,
+  type WithUniqueProtocols,
 } from "./types.js";
 import {
   createId,
@@ -181,6 +186,8 @@ interface PendingCall {
  */
 export class OCPPClient<
   P extends AnyOCPPProtocol = AnyOCPPProtocol,
+  // The protocols list as given, so a protocol listed twice is a type error.
+  const L extends readonly P[] = readonly P[],
 > extends (EventEmitter as new () => TypedEventEmitter<ClientEvents>) {
   // Static connection states
   static readonly CONNECTING = CONNECTING;
@@ -267,13 +274,19 @@ export class OCPPClient<
   protected _exchangeLog = false;
   protected _prettify = false;
 
-  constructor(options: ClientOptions<P>) {
+  constructor(options: WithUniqueProtocols<ClientOptions<P>, P, L>) {
     super();
     this.setMaxListeners(0);
 
     if (!options.identity) {
       throw new Error("identity is required");
     }
+    assertUniqueProtocols(options.protocols);
+    assertStrictValidators(
+      options.protocols,
+      options.strictMode,
+      options.strictModeValidators,
+    );
 
     this._identity = options.identity;
 
@@ -1113,9 +1126,25 @@ export class OCPPClient<
    * pipeline warm-up calls without mutating the client's configured
    * concurrency (report M9).
    */
+  callImmediate<
+    M extends AllMethodNames<KnownProtocol<P>>,
+    T extends RequestOf<KnownProtocol<P>, M>,
+  >(
+    method: CheckedAction<M, RequestOf<KnownProtocol<P>, M>, T>,
+    params: T,
+    options?: CallOptions,
+  ): Promise<OCPPResponseType<KnownProtocol<P>, M>>;
+
+  /** callImmediate for an action the types do not check — \`callImmediate(unchecked("VendorPing"), params)\`. */
+  callImmediate<TResult = JsonObject>(
+    method: UncheckedAction,
+    params?: object,
+    options?: CallOptions,
+  ): Promise<TResult>;
+
   callImmediate<TResult = unknown>(
     method: string,
-    params?: Record<string, unknown>,
+    params?: object,
     options?: CallOptions,
   ): Promise<TResult> {
     if (this._state !== OPEN) {
@@ -1529,6 +1558,14 @@ export class OCPPClient<
   // ─── Reconfigure ─────────────────────────────────────────────
 
   reconfigure(options: Partial<ClientOptions<P>>): void {
+    // Checked on the combined options before any is applied.
+    const next = { ...this._options, ...options };
+    assertUniqueProtocols(next.protocols);
+    assertStrictValidators(
+      next.protocols,
+      next.strictMode,
+      next.strictModeValidators,
+    );
     const detailedBefore = this._options.respondWithDetailedErrors;
     Object.assign(this._options, options);
 
@@ -3023,10 +3060,11 @@ export class OCPPClient<
   // ─── Internal: Validation ────────────────────────────────────
 
   private _setupValidators(): void {
-    // Custom validators are taken as given. Standard ones are left null and
-    // resolved per protocol in _findValidator once the subprotocol is actually
-    // negotiated, so a connection never builds validators for versions it does
-    // not speak — and never misses one the peer chose.
+    // Custom validators add to the built-in ones, as documented: one for a
+    // subprotocol wins over the built-in validator, which covers the rest.
+    // Built-in validators are resolved per protocol in _findValidator once the
+    // subprotocol is actually negotiated, so a connection never builds
+    // validators for versions it does not speak.
     this._validators = this._options.strictModeValidators ?? null;
 
     if (Array.isArray(this._options.strictMode)) {
@@ -3100,11 +3138,13 @@ export class OCPPClient<
       return null;
     }
 
-    if (this._validators) {
-      return (
-        this._validators.find((v) => v.subprotocol === this._protocol) ?? null
-      );
-    }
+    // A custom validator for this subprotocol wins; otherwise the built-in
+    // one. Returning null when custom validators were given, as before, left
+    // a standard protocol next to a custom one unvalidated.
+    const custom = this._validators?.find(
+      (v) => v.subprotocol === this._protocol,
+    );
+    if (custom) return custom;
 
     // Built on first use and cached process-wide, so this costs one lookup
     // per validated message after the first.

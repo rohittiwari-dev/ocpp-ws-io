@@ -43,6 +43,11 @@ const charger = new OCPPClient({ identity: "CP1", endpoint: "ws://x", protocols:
 void charger.call("BootNotification", { /*call-params*/ });
 void charger.call("ocpp1.6", "BootNotification", { /*version-call-params*/ });
 
+v16.route("/r/:id").handle("Heartbeat", () => ({ /*router-handle*/ }));
+void v16.sendToClient("CP1", "ChangeAvailability", { /*send-to-client-params*/ });
+void v16.sendToClient("CP1", "ocpp1.6", "ChangeAvailability", { /*version-send-to-client-params*/ });
+void v16.broadcast("ChangeAvailability", { /*broadcast-params*/ });
+
 const browser = new BrowserOCPPClient({ identity: "CP1", endpoint: "ws://x", protocols: ["ocpp1.6"] });
 void browser.call("BootNotification", { /*browser-call-params*/ });
 browser.handle("Heartbeat", () => ({ /*browser-handle*/ }));
@@ -110,6 +115,7 @@ describe("editor suggestions", () => {
     ["version-handle", boot16],
     ["route-connection-handle", ["currentTime"]],
     ["browser-handle", ["currentTime"]],
+    ["router-handle", ["currentTime"]],
   ])("suggests the response fields in %s", (marker, expected) => {
     expect(suggestionsAt(marker)).toEqual(expected);
   });
@@ -122,6 +128,14 @@ describe("editor suggestions", () => {
       "status",
       "statusInfo",
     ]);
+  });
+
+  it.each([
+    ["send-to-client-params"],
+    ["version-send-to-client-params"],
+    ["broadcast-params"],
+  ])("suggests the request fields in %s", (marker) => {
+    expect(suggestionsAt(marker)).toEqual(["connectorId", "type"]);
   });
 
   it.each([

@@ -65,3 +65,31 @@ export function getStandardValidators(
 export function getStandardProtocols(): string[] {
   return Object.keys(SCHEMAS);
 }
+
+/**
+ * Throws when strict mode covers a protocol that has no validator, built in or
+ * among `strictModeValidators`: its messages would go unvalidated while strict
+ * mode is on. Names the protocol and the ways out.
+ */
+export function assertStrictValidators(
+  protocols: readonly string[] | undefined,
+  strictMode: boolean | readonly string[] | undefined,
+  strictModeValidators: readonly Validator[] | undefined,
+): void {
+  if (!strictMode) return;
+  const strict = Array.isArray(strictMode) ? strictMode : (protocols ?? []);
+  const custom = new Set(
+    (strictModeValidators ?? []).map((v) => v.subprotocol),
+  );
+  const builtIn = new Set(getStandardProtocols());
+  const covered = strict.filter((p) => custom.has(p) || builtIn.has(p));
+  for (const protocol of strict) {
+    if (custom.has(protocol) || builtIn.has(protocol)) continue;
+    const limit = covered.length
+      ? `, or limit strictMode to the protocols that have one, such as strictMode: ${JSON.stringify(covered)}`
+      : "";
+    throw new TypeError(
+      `Missing strictMode validator for subprotocol "${protocol}": add one to strictModeValidators${limit}`,
+    );
+  }
+}

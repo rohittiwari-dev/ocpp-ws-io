@@ -1836,7 +1836,9 @@ type DeclaredKeys<S> = keyof {
  * The paths (`"statusInfo.nope"`) of keys in T that one member of Shape does
  * not define. A key an open object (an index signature) covers is allowed and
  * not recursed into: the signature's type, usually the recursive JsonValue,
- * is checked by plain assignability.
+ * is checked by plain assignability. A key whose value can only be undefined
+ * is not on the wire (JSON drops it); TypeScript adds such keys to the
+ * objects of a union, such as the calls of a sendBatch.
  */
 type ExtraPathsIn<Shape, T, Prefix extends string> =
   true extends IsAny<T>
@@ -1854,20 +1856,25 @@ type ExtraPathsIn<Shape, T, Prefix extends string> =
                 ? ExtraPaths<Shape[K & keyof Shape], T[K], `${Prefix}${K}.`>
                 : string extends keyof Shape
                   ? never
-                  : `${Prefix}${K}`;
+                  : T[K] extends undefined
+                    ? never
+                    : `${Prefix}${K}`;
             }[keyof T & string];
 
 declare const exactMember: unique symbol;
 /** Marks a member of Shape that T fits with no extra key. */
 type ExactMemberMark = typeof exactMember;
 
-/** For each member of Shape that T fits: its extra paths, or the mark when it has none. */
+/**
+ * For each member of Shape that one value T fits: its extra paths, or the mark
+ * when it has none.
+ */
 type ExtraPathsPerMember<
   Shape,
   T,
   Prefix extends string,
 > = Shape extends unknown
-  ? T extends Shape
+  ? [T] extends [Shape]
     ? [ExtraPathsIn<Shape, T, Prefix>] extends [never]
       ? ExactMemberMark
       : ExtraPathsIn<Shape, T, Prefix>
@@ -1875,14 +1882,22 @@ type ExtraPathsPerMember<
   : never;
 
 /**
- * Paths of keys in T that Shape does not define. None when T fits some member
- * of Shape exactly (on a client of several versions, any version), or fits
- * none, which plain assignability reports.
+ * Extra paths of one value T: none when it fits some member of Shape exactly
+ * (on a client of several versions, any version), or fits none, which plain
+ * assignability reports.
  */
-type ExtraPaths<Shape, T, Prefix extends string = ""> =
+type ExtraPathsOfOne<Shape, T, Prefix extends string> =
   ExactMemberMark extends ExtraPathsPerMember<Shape, T, Prefix>
     ? never
     : Exclude<ExtraPathsPerMember<Shape, T, Prefix>, ExactMemberMark>;
+
+/**
+ * Paths of keys in T that Shape does not define. When T is a union, such as a
+ * handler that returns one of two objects, every member must fit.
+ */
+type ExtraPaths<Shape, T, Prefix extends string = ""> = T extends unknown
+  ? ExtraPathsOfOne<Shape, T, Prefix>
+  : never;
 
 /**
  * `unknown` when T has no key Shape does not define, at any depth; otherwise a
@@ -1940,6 +1955,99 @@ export type CheckedHandler<M, Shape, R, A> = CheckedAction<
   [R] extends [PromiseLike<unknown>] ? Shape : R,
   A
 >;
+
+// ─── sendBatch ───────────────────────────────────────────────────
+
+/**
+ * One call of `sendBatch`: a typed action with its params, or an action the
+ * types do not check (`unchecked()`).
+ */
+export type BatchCall<V extends keyof OCPPMethodMap> =
+  | {
+      [M in AllMethodNames<V>]: {
+        method: M;
+        params: RequestOf<V, M>;
+        options?: CallOptions;
+      };
+    }[AllMethodNames<V>]
+  | { method: UncheckedAction; params?: object; options?: CallOptions };
+
+/**
+ * The extra keys of one batch call, as `{ action: "Reset"; keys: "bogus" }`.
+ * An object, not a template literal: a template over the recursive
+ * ExtraPaths makes the compiler check it generically and never finish.
+ */
+type BatchCallExtraKeys<V extends keyof OCPPMethodMap, C> = C extends {
+  method: infer M;
+  params: infer T;
+}
+  ? M extends UncheckedAction
+    ? never
+    : true extends IsUnion<M>
+      ? never
+      : [ExtraPaths<RequestOf<V, M>, T>] extends [never]
+        ? never
+        : { readonly action: M; readonly keys: ExtraPaths<RequestOf<V, M>, T> }
+  : never;
+
+/**
+ * `unknown` when no call of a batch has a key the schema does not define;
+ * otherwise a type naming them. `sendBatch` puts it on the identity, as typed
+ * methods put {@link ExactKeys} on the action name.
+ */
+export type BatchExactKeys<V extends keyof OCPPMethodMap, C> = [
+  BatchCallExtraKeys<V, C>,
+] extends [never]
+  ? unknown
+  : {
+      readonly "Error: keys not defined by the OCPP schema": BatchCallExtraKeys<
+        V,
+        C
+      >;
+    };
+
+/** The response of one batch call: typed by its action, or a JSON object. */
+export type BatchResult<V extends keyof OCPPMethodMap, C> = C extends {
+  method: infer M;
+}
+  ? M extends UncheckedAction
+    ? JsonObject
+    : M extends AllMethodNames<V>
+      ? OCPPResponseType<V, M>
+      : never
+  : never;
+
+// ─── Unique protocols ────────────────────────────────────────────
+
+/** The type a protocol listed twice gets in its position: the error says why. */
+type ListedTwice<H> = { readonly "Error: protocol listed more than once": H };
+
+/**
+ * A `protocols` list, checked for a protocol listed twice: the repeat gets
+ * {@link ListedTwice}, so the error is on it. Constructors take
+ * `L & UniqueProtocols<L>`, with L the list as a tuple. A list known only at
+ * runtime (`string[]`) is not a tuple and passes; the constructor throws for
+ * it instead.
+ */
+export type UniqueProtocols<
+  L extends readonly unknown[],
+  Seen = never,
+> = L extends readonly [infer H, ...infer Rest]
+  ? readonly [
+      [H] extends [Seen] ? ListedTwice<H> : H,
+      ...UniqueProtocols<Rest, Seen | H>,
+    ]
+  : L;
+
+/**
+ * Options whose `protocols` is also inferred as the tuple L, so a protocol
+ * listed twice can be reported.
+ */
+export type WithUniqueProtocols<O, P extends AnyOCPPProtocol, L> = O & {
+  protocols?: L &
+    readonly P[] &
+    (L extends readonly unknown[] ? UniqueProtocols<L> : unknown);
+};
 
 // Payload types by indexed access. While TypeScript infers a call, the action
 // is still open, and resolving the conditional OCPPRequestType and

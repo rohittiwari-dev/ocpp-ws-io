@@ -2,21 +2,29 @@ import { EventEmitterBase } from "./emitter-base.js";
 import type {
   AllMethodNames,
   OCPPRequestType,
-  OCPPResponseType,
+  OCPPSendRequestType,
+  SendMethodNames,
 } from "./generated/index.js";
+import { assertUniqueProtocols } from "./protocol-list.js";
 import type { AnyOCPPServerClient, OCPPServerClient } from "./server-client.js";
 import type {
   AnyOCPPProtocol,
   AuthCallback,
+  CheckedHandler,
   CORSOptions,
   ConnectionMiddleware,
+  JsonObject,
   KnownProtocol,
-  OCPPProtocol,
+  NOREPLY,
+  ResponseOf,
   RouterConfig,
   RouterHandlerContext,
   RouterWildcardHandler,
   ServerEvents,
   TypedEventEmitter,
+  UncheckedAction,
+  UncheckedHandler,
+  WithUniqueProtocols,
 } from "./types.js";
 
 /**
@@ -174,9 +182,12 @@ export class OCPPRouter<
    * router. Its `protocols` are a subset of the server's, and the router and
    * its connections are typed for them.
    */
-  config<Q extends P>(options: RouterConfig<Q>): OCPPRouter<Q>;
+  config<Q extends P, const L extends readonly Q[] = readonly Q[]>(
+    options: WithUniqueProtocols<RouterConfig<Q>, Q, L>,
+  ): OCPPRouter<Q>;
   // The same router; only its type narrows to the route's protocols.
   config(options: RouterConfig<P>): object {
+    assertUniqueProtocols(options.protocols);
     this._routeConfig = options;
     return this;
   }
@@ -191,54 +202,92 @@ export class OCPPRouter<
     return this;
   }
 
+  // As on the clients: the payload is checked for keys the schema does not
+  // define on the action name, and method-only overloads come first so editors
+  // suggest the right fields while a handler is being written.
+
+  /**
+   * Binds a message handler directly to all clients that match this route using the default protocol.
+   * A response with a key the schema does not define is an error.
+   *
+   * @throws {Error} AT RUNTIME when a client connects, if a handler for this method is already registered for that client.
+   */
+  handle<
+    M extends AllMethodNames<KnownProtocol<P>>,
+    R extends ResponseOf<KnownProtocol<P>, M>,
+    A extends ResponseOf<KnownProtocol<P>, M> = ResponseOf<KnownProtocol<P>, M>,
+  >(
+    method: CheckedHandler<M, ResponseOf<KnownProtocol<P>, M>, R, A>,
+    handler: (
+      context: RouterHandlerContext<OCPPRequestType<KnownProtocol<P>, M>, P>,
+    ) => R | Promise<A | ResponseOf<KnownProtocol<P>, M>> | typeof NOREPLY,
+  ): this;
+
+  /**
+   * Binds a handler for an OCPP 2.1 SEND message on the default protocol.
+   * Nothing is sent back: `ctx.unconfirmed` is true and the return value is ignored.
+   */
+  handle<M extends SendMethodNames<KnownProtocol<P>>>(
+    method: M,
+    handler: (
+      context: RouterHandlerContext<
+        OCPPSendRequestType<KnownProtocol<P>, M>,
+        P
+      >,
+    ) => void | Promise<void>,
+  ): this;
+
   /**
    * Binds a version-specific OCPP message handler directly to all clients that match this route.
    *
    * @throws {Error} AT RUNTIME when a client connects, if a handler for this version and method is already registered for that client.
    */
-  handle<V extends KnownProtocol<P>, M extends AllMethodNames<V>>(
+  handle<
+    V extends KnownProtocol<P>,
+    M extends AllMethodNames<V>,
+    R extends ResponseOf<V, M>,
+    A extends ResponseOf<V, M> = ResponseOf<V, M>,
+  >(
+    version: V,
+    method: CheckedHandler<M, ResponseOf<V, M>, R, A>,
+    handler: (
+      context: RouterHandlerContext<OCPPRequestType<V, M>, P>,
+    ) => R | Promise<A | ResponseOf<V, M>> | typeof NOREPLY,
+  ): this;
+
+  /**
+   * Binds a version-specific handler for an OCPP 2.1 SEND message. Nothing is
+   * sent back: `ctx.unconfirmed` is true and the return value is ignored.
+   */
+  handle<V extends KnownProtocol<P>, M extends SendMethodNames<V>>(
     version: V,
     method: M,
     handler: (
-      context: RouterHandlerContext<OCPPRequestType<V, M>, P>,
-    ) => OCPPResponseType<V, M> | Promise<OCPPResponseType<V, M>>,
+      context: RouterHandlerContext<OCPPSendRequestType<V, M>, P>,
+    ) => void | Promise<void>,
   ): this;
 
   /**
-   * Binds a custom/extension message handler directly to all clients that match this route.
-   *
-   * @throws {Error} AT RUNTIME when a client connects, if a handler for this protocol and method is already registered for that client.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  handle<S extends string>(
-    version: S extends OCPPProtocol ? never : S,
-    method: string,
-    handler: (context: RouterHandlerContext<Record<string, any>, P>) => any,
-  ): this;
-
-  /**
-   * Binds a message handler directly to all clients that match this route using the default protocol.
+   * Binds a handler for an action the types do not check, such as an
+   * undeclared vendor action — `handle(unchecked("VendorPing"), handler)`.
    *
    * @throws {Error} AT RUNTIME when a client connects, if a handler for this method is already registered for that client.
    */
-  handle<M extends AllMethodNames<KnownProtocol<P>>>(
-    method: M,
-    handler: (
-      context: RouterHandlerContext<OCPPRequestType<KnownProtocol<P>, M>, P>,
-    ) =>
-      | OCPPResponseType<KnownProtocol<P>, M>
-      | Promise<OCPPResponseType<KnownProtocol<P>, M>>,
-  ): this;
-
-  /**
-   * Binds a custom/extension method not in the typed map.
-   *
-   * @throws {Error} AT RUNTIME when a client connects, if a handler for this method is already registered for that client.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handle(
-    method: string,
-    handler: (context: RouterHandlerContext<Record<string, any>, P>) => any,
+    method: UncheckedAction,
+    handler: UncheckedHandler<RouterHandlerContext<JsonObject, P>>,
+  ): this;
+
+  /**
+   * Binds a version-specific handler for an action the types do not check.
+   * The version must be one of the route's protocols.
+   *
+   * @throws {Error} AT RUNTIME when a client connects, if a handler for this version and method is already registered for that client.
+   */
+  handle(
+    version: P,
+    method: UncheckedAction,
+    handler: UncheckedHandler<RouterHandlerContext<JsonObject, P>>,
   ): this;
 
   /**
