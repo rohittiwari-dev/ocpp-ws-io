@@ -9,6 +9,7 @@ import { type AnyOCPPClient, OCPPClient } from "../src/client.js";
 import { OCPPServer } from "../src/server.js";
 import type { OCPPServerClient } from "../src/server-client.js";
 import type { CallOptions, LoggerLike } from "../src/types.js";
+import { unchecked } from "../src/unchecked.js";
 
 /**
  * `call(method, params, { noReply: true })` (gap G1): a
@@ -38,7 +39,7 @@ describe("call(…, { noReply: true })", () => {
     server.on("client", (c) => {
       serverClient = c;
       for (const [method, run] of Object.entries(handlers)) {
-        c.handle(method, async () => {
+        c.handle(unchecked(method), async () => {
           log.push(`${method} received`);
           const result = await run(log);
           log.push(`${method} answered`);
@@ -89,7 +90,7 @@ describe("call(…, { noReply: true })", () => {
     const client = await connect(port, logging);
 
     const started = Date.now();
-    const result = await client.call("Ping", { n: 1 }, { noReply: true });
+    const result = await client.call(unchecked("Ping"), { n: 1 }, { noReply: true });
 
     expect(result).toBeUndefined();
     expect(Date.now() - started).toBeLessThan(150);
@@ -107,9 +108,9 @@ describe("call(…, { noReply: true })", () => {
     const { warnings, logging } = capture();
     const client = await connect(port, logging);
 
-    await client.call("Ok", {}, { noReply: true });
-    await client.call("Fails", {}, { noReply: true });
-    await client.call("Ok", {}, { noReply: true });
+    await client.call(unchecked("Ok"), {}, { noReply: true });
+    await client.call(unchecked("Fails"), {}, { noReply: true });
+    await client.call(unchecked("Ok"), {}, { noReply: true });
     await sleep(150);
 
     expect(log.filter((l) => l.endsWith("received"))).toHaveLength(3);
@@ -123,8 +124,8 @@ describe("call(…, { noReply: true })", () => {
     const { port, log } = await start({ First: slow(150), Second: slow(0) });
     const client = await connect(port, capture().logging);
 
-    const first = client.call("First", {});
-    await client.call("Second", {}, { noReply: true });
+    const first = client.call(unchecked("First"), {});
+    await client.call(unchecked("Second"), {}, { noReply: true });
     await first;
     await sleep(50); // the frame is written; let the server log it
 
@@ -137,8 +138,8 @@ describe("call(…, { noReply: true })", () => {
     const { port, log } = await start({ First: slow(200), Second: slow(0) });
     const client = await connect(port, capture().logging);
 
-    await client.call("First", {}, { noReply: true });
-    await client.call("Second", {});
+    await client.call(unchecked("First"), {}, { noReply: true });
+    await client.call(unchecked("Second"), {});
     await sleep(250); // until First, still unanswered here, is answered
 
     expect(log.indexOf("First answered")).toBeGreaterThan(-1);
@@ -151,9 +152,9 @@ describe("call(…, { noReply: true })", () => {
     const { port } = await start({ Ping: slow(200) });
     const client = await connect(port, capture().logging);
 
-    await client.call("Ping", {}, { noReply: true, idempotencyKey: "same" });
+    await client.call(unchecked("Ping"), {}, { noReply: true, idempotencyKey: "same" });
     await expect(
-      client.call("Ping", {}, { idempotencyKey: "same" }),
+      client.call(unchecked("Ping"), {}, { idempotencyKey: "same" }),
     ).rejects.toThrow('Message ID "same" is already in use');
   });
 
@@ -165,7 +166,7 @@ describe("call(…, { noReply: true })", () => {
       retries: 2,
     };
 
-    await expect(client.call("Ping", {}, options)).rejects.toThrow(
+    await expect(client.call(unchecked("Ping"), {}, options)).rejects.toThrow(
       "noReply cannot be combined with retries",
     );
   });
@@ -175,7 +176,7 @@ describe("call(…, { noReply: true })", () => {
     const { warnings, logging } = capture();
     const client = await connect(port, logging);
 
-    await client.call("Ping", {}, { noReply: true, timeoutMs: 50 });
+    await client.call(unchecked("Ping"), {}, { noReply: true, timeoutMs: 50 });
     await sleep(300);
 
     expect(
@@ -239,7 +240,7 @@ describe("call(…, { noReply: true })", () => {
       clients.push(client);
       await client.connect();
 
-      const result = await client.call("Ping", {}, { noReply: true });
+      const result = await client.call(unchecked("Ping"), {}, { noReply: true });
       await sleep(150);
 
       expect(result).toBeUndefined();

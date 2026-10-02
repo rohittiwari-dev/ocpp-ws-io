@@ -24,6 +24,7 @@ import WebSocketModule from 'ws';
 import { OCPPServer } from '../src/server.js';
 import { BrowserOCPPClient } from '../src/browser/client.js';
 import { ConnectionState } from '../src/browser/types.js';
+import { unchecked } from "../src/unchecked.js";
 
 // ─── Mock WebSocket shim ──────────────────────────────────────────
 const OriginalWebSocket = (globalThis as any).WebSocket;
@@ -399,7 +400,7 @@ describe('Browser Phase 3 — Pending Call Rejection', () => {
 
 	it('should reject pending calls on unexpected disconnect', async () => {
 		server.on('client', sc => {
-			sc.handle('SlowAction' as string, async () => {
+			sc.handle(unchecked('SlowAction'), async () => {
 				await new Promise(r => setTimeout(r, 60000));
 				return {};
 			});
@@ -415,7 +416,7 @@ describe('Browser Phase 3 — Pending Call Rejection', () => {
 
 		await client.connect();
 
-		const callPromise = client.call('SlowAction', {});
+		const callPromise = client.call(unchecked('SlowAction'), {});
 		const expectation =
 			expect(callPromise).rejects.toThrow('Connection closed');
 

@@ -25,6 +25,7 @@ import {
 import { ConnectionState, MessageType } from "../src/browser/types.js";
 import { createRPCError } from "../src/browser/util.js";
 import type { OCPPServerClient } from "../src/server-client.js";
+import { unchecked } from "../src/unchecked.js";
 
 // ─── Mock WebSocket shim ──────────────────────────────────────────
 
@@ -429,7 +430,7 @@ describe("BrowserOCPPClient", () => {
       });
 
       await client.connect();
-      await expect(client.call("UnknownMethod", {})).rejects.toMatchObject({
+      await expect(client.call(unchecked("UnknownMethod"), {})).rejects.toMatchObject({
         rpcErrorCode: "NotImplemented",
       });
     });
@@ -440,12 +441,12 @@ describe("BrowserOCPPClient", () => {
         endpoint: `ws://localhost:${port}`,
         reconnect: false,
       });
-      await expect(client.call("Test", {})).rejects.toThrow("Cannot call");
+      await expect(client.call(unchecked("Test"), {})).rejects.toThrow("Cannot call");
     });
 
     it("should timeout calls that take too long", async () => {
       server.on("client", (serverClient) => {
-        serverClient.handle("SlowMethod", async () => {
+        serverClient.handle(unchecked("SlowMethod"), async () => {
           // Never respond
           await new Promise(() => {});
         });
@@ -460,7 +461,7 @@ describe("BrowserOCPPClient", () => {
       });
 
       await client.connect();
-      await expect(client.call("SlowMethod", {})).rejects.toThrow("timed out");
+      await expect(client.call(unchecked("SlowMethod"), {})).rejects.toThrow("timed out");
     });
 
     it("should emit message event when sending a call", async () => {
@@ -533,7 +534,7 @@ describe("BrowserOCPPClient", () => {
 
     it("should abort a call with AbortSignal", async () => {
       server.on("client", (serverClient) => {
-        serverClient.handle("SlowMethod", async () => {
+        serverClient.handle(unchecked("SlowMethod"), async () => {
           await new Promise((r) => setTimeout(r, 5000));
           return {};
         });
@@ -549,7 +550,7 @@ describe("BrowserOCPPClient", () => {
       await client.connect();
       const ac = new AbortController();
 
-      const callPromise = client.call("SlowMethod", {}, { signal: ac.signal });
+      const callPromise = client.call(unchecked("SlowMethod"), {}, { signal: ac.signal });
       setTimeout(() => ac.abort(), 50);
 
       await expect(callPromise).rejects.toThrow();
@@ -557,7 +558,7 @@ describe("BrowserOCPPClient", () => {
 
     it("should immediately reject if AbortSignal is already aborted", async () => {
       server.on("client", (serverClient) => {
-        serverClient.handle("Test", async () => ({}));
+        serverClient.handle(unchecked("Test"), async () => ({}));
       });
 
       client = new BrowserOCPPClient({
@@ -572,7 +573,7 @@ describe("BrowserOCPPClient", () => {
       ac.abort();
 
       await expect(
-        client.call("Test", {}, { signal: ac.signal }),
+        client.call(unchecked("Test"), {}, { signal: ac.signal }),
       ).rejects.toThrow();
     });
   });
@@ -828,7 +829,7 @@ describe("BrowserOCPPClient", () => {
         reconnect: false,
       });
 
-      client.handle("FireAndForget", async () => NOREPLY as any);
+      client.handle(unchecked("FireAndForget"), async () => NOREPLY as any);
 
       await client.connect();
       await new Promise((r) => setTimeout(r, 100));
@@ -854,7 +855,7 @@ describe("BrowserOCPPClient", () => {
         respondWithDetailedErrors: true,
       });
 
-      client.handle("Buggy", async () => {
+      client.handle(unchecked("Buggy"), async () => {
         throw new Error("Something broke");
       });
 
@@ -877,6 +878,8 @@ describe("BrowserOCPPClient", () => {
     it("should intercept outgoing calls", async () => {
       server.on("client", (serverClient) => {
         serverClient.handle("BootNotification", async () => ({
+          currentTime: new Date().toISOString(),
+          interval: 300,
           status: "Accepted",
         }));
       });
@@ -990,7 +993,7 @@ describe("BrowserOCPPClient", () => {
 
       await client.connect();
 
-      await expect(client.call("UnknownAction", {})).rejects.toThrow();
+      await expect(client.call(unchecked("UnknownAction"), {})).rejects.toThrow();
 
       const errCtx = mwSpy.mock.calls.find(
         (c) => c[0].type === "incoming_error",
@@ -1537,7 +1540,7 @@ describe("BrowserOCPPClient", () => {
 
     it("should reject pending calls on unexpected close", async () => {
       server.on("client", (sc) => {
-        sc.handle("SlowMethod", async () => {
+        sc.handle(unchecked("SlowMethod"), async () => {
           await new Promise((r) => setTimeout(r, 5000));
           return {};
         });
@@ -1553,7 +1556,7 @@ describe("BrowserOCPPClient", () => {
 
       await client.connect();
 
-      const callPromise = client.call("SlowMethod", {});
+      const callPromise = client.call(unchecked("SlowMethod"), {});
 
       // Attach rejection handler BEFORE closing server to avoid unhandled rejection
       const expectation =
@@ -1637,7 +1640,7 @@ describe("BrowserOCPPClient", () => {
         reconnect: false,
       });
 
-      client.handle("Buggy", async () => {
+      client.handle(unchecked("Buggy"), async () => {
         throw new TypeError("unexpected error");
       });
 

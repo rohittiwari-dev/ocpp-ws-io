@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { OCPPClient } from "../src/client.js";
+import { unchecked } from "../src/unchecked.js";
 
 describe("offline queue overflow (H2)", () => {
   test("oldest queued call is rejected, not stranded", async () => {
@@ -11,8 +12,8 @@ describe("offline queue overflow (H2)", () => {
       offlineQueueMaxSize: 1,
     });
 
-    const p1 = client.call("First", {});
-    const p2 = client.call("Second", {}); // overflows, drops p1
+    const p1 = client.call(unchecked("First"), {});
+    const p2 = client.call(unchecked("Second"), {}); // overflows, drops p1
     p2.catch(() => {}); // stays pending; silence any later rejection
 
     await expect(p1).rejects.toThrow(/overflow/i);

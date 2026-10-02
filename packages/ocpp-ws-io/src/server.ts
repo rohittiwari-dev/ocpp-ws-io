@@ -53,6 +53,7 @@ import {
   type ServerOptions,
   type TypedEventEmitter,
 } from "./types.js";
+import { unchecked } from "./unchecked.js";
 import {
   createId,
   createRPCError,
@@ -3649,8 +3650,11 @@ export class OCPPServer<
 
       if (payload.source === this._nodeId) return;
 
+      // The method comes from another node, as a string: not checked by type.
       for (const client of this._clients) {
-        client.call(payload.method, payload.params as any).catch(() => {});
+        client
+          .call(unchecked(payload.method), payload.params as object)
+          .catch(() => {});
       }
     } catch (err) {
       this._logger?.error?.("Error processing broadcast message", {
@@ -3744,14 +3748,19 @@ export class OCPPServer<
       if (client) {
         // Forward the version when present so the call resolves against the
         // version-specific overload, matching local sendToClient behavior.
+        // The method comes from another node, as a string: not checked by type.
         const delivery = payload.version
           ? client.call(
-              payload.version as any,
-              payload.method as any,
-              payload.params as any,
+              payload.version as P,
+              unchecked(payload.method),
+              payload.params as object,
               payload.options,
             )
-          : client.call(payload.method, payload.params as any, payload.options);
+          : client.call(
+              unchecked(payload.method),
+              payload.params as object,
+              payload.options,
+            );
         delivery.then(
           (result) => {
             this._publishRemoteResult(payload, { ok: true, result });

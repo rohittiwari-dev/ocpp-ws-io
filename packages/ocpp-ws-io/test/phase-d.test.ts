@@ -225,7 +225,7 @@ describe("Phase D — Strict Schema Validation Integration", () => {
     await client.connect();
 
     // Heartbeat with empty body is valid per OCPP 1.6 schema
-    const result = await client.call<{ currentTime: string }>(
+    const result = await client.call(
       "Heartbeat",
       {},
       { timeoutMs: 2000 },

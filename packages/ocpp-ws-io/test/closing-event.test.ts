@@ -9,6 +9,7 @@ import { type AnyOCPPClient, OCPPClient } from "../src/client.js";
 import { OCPPServer } from "../src/server.js";
 import type { OCPPServerClient } from "../src/server-client.js";
 import type { ClientOptions } from "../src/types.js";
+import { unchecked } from "../src/unchecked.js";
 
 /**
  * The client's `closing` event (gap G5): emitted when close() starts shutting
@@ -36,7 +37,7 @@ describe("client closing event", () => {
     });
     const connected = new Promise<OCPPServerClient>((resolve) => {
       server.on("client", (c) => {
-        c.handle("Slow", async () => {
+        c.handle(unchecked("Slow"), async () => {
           await released;
           return {};
         });
@@ -76,7 +77,7 @@ describe("client closing event", () => {
     const { port, release } = await start();
     const client = await connect(port);
     const events = record(client);
-    const pending = client.call("Slow", {});
+    const pending = client.call(unchecked("Slow"), {});
 
     const closed = client.close();
     expect(events).toEqual(["closing CLOSING"]);
@@ -170,7 +171,7 @@ describe("client closing event", () => {
       const events: string[] = [];
       client.on("closing", () => events.push(`closing ${STATE[client.state]}`));
       client.on("close", () => events.push("close"));
-      const pending = client.call("Slow", {});
+      const pending = client.call(unchecked("Slow"), {});
 
       const closed = client.close();
       expect(events).toEqual(["closing CLOSING"]);

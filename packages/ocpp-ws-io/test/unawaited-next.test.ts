@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { OCPPClient } from "../src/client.js";
 import { OCPPServer } from "../src/server.js";
+import { unchecked } from "../src/unchecked.js";
 
 /**
  * A middleware that calls next() without awaiting or returning it used to
@@ -148,7 +149,7 @@ describe("next() called without await", () => {
     ): Promise<OCPPClient> {
       const server = new OCPPServer({ protocols: ["ocpp1.6"], logging: false });
       servers.push(server);
-      server.on("client", (c) => c.handle("Ping", () => ({ pong: true })));
+      server.on("client", (c) => c.handle(unchecked("Ping"), () => ({ pong: true })));
       const http = await server.listen(0);
       const client = new OCPPClient({
         identity: "CP-1",
@@ -167,14 +168,14 @@ describe("next() called without await", () => {
       const client = await connect(async (_ctx, next) => {
         next();
       });
-      expect(await client.call("Ping", {})).toEqual({ pong: true });
+      expect(await client.call(unchecked("Ping"), {})).toEqual({ pong: true });
     });
 
     it("a failing call rejects, without crashing", async () => {
       const client = await connect(async (_ctx, next) => {
         next();
       });
-      await expect(client.call("NoSuchAction", {})).rejects.toThrow(
+      await expect(client.call(unchecked("NoSuchAction"), {})).rejects.toThrow(
         "Requested method is not known",
       );
       await sleep(20);
@@ -186,7 +187,7 @@ describe("next() called without await", () => {
         next();
         await sleep(100); // the CALLERROR arrives before this returns
       });
-      await expect(client.call("NoSuchAction", {})).rejects.toThrow(
+      await expect(client.call(unchecked("NoSuchAction"), {})).rejects.toThrow(
         "Requested method is not known",
       );
       await sleep(20);

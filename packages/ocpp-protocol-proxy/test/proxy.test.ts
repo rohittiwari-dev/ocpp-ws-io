@@ -34,7 +34,7 @@ describe("OCPPProtocolProxy Integration", () => {
       }));
 
       client.handle("TransactionEvent", () => ({
-        idTagInfo: { status: "Accepted" },
+        idTokenInfo: { status: "Blocked" },
       }));
     });
 
@@ -83,7 +83,7 @@ describe("OCPPProtocolProxy Integration", () => {
 
   it("should translate Upstream BootNotification transparently", async () => {
     try {
-      const res = await mockCharger.call<any>("BootNotification", {
+      const res = await mockCharger.call("BootNotification", {
         chargePointVendor: "ACME",
         chargePointModel: "EV-123",
         firmwareVersion: "1.0",
@@ -101,7 +101,7 @@ describe("OCPPProtocolProxy Integration", () => {
 
   it("should translate Upstream StartTransaction to TransactionEvent Started transparently", async () => {
     // Fire a 1.6 start transaction
-    const res = await mockCharger.call<any>("StartTransaction", {
+    const res = await mockCharger.call("StartTransaction", {
       connectorId: 1,
       idTag: "DEADBEEF",
       meterStart: 1234,
@@ -112,7 +112,7 @@ describe("OCPPProtocolProxy Integration", () => {
     // The proxy maps it to 2.1 TransactionEvent and receives TransactionEventResponse
     // It maps that back to StartTransactionResponse
     expect(res).toHaveProperty("idTagInfo");
-    expect((res as any).idTagInfo).toHaveProperty("status", "Accepted");
+    expect(res.idTagInfo).toHaveProperty("status", "Blocked");
     expect(res).toHaveProperty("transactionId");
   });
 

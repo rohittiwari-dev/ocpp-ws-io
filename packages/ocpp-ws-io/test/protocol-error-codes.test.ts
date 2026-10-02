@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import WebSocket from "ws";
 import { afterEach, describe, expect, it } from "vitest";
 import { OCPPServer } from "../src/server.js";
+import { unchecked } from "../src/unchecked.js";
 
 /**
  * What a peer actually receives on the wire when a message is rejected.
@@ -40,16 +41,16 @@ describe("OCPP-J error codes on the wire", () => {
     } as never);
     server.auth((ctx) => ctx.accept({ protocol: subprotocol as never }));
     server.on("client", (c) => {
-      c.handle(subprotocol as never, "Heartbeat", (() => ({
+      c.handle(subprotocol, unchecked("Heartbeat"), () => ({
         currentTime: "2026-01-01T00:00:00Z",
-      })) as never);
+      }));
       // Registered so a bad payload reaches validation; without a handler the
       // unknown-action path answers NotImplemented first.
-      c.handle(subprotocol as never, "BootNotification", (() => ({
+      c.handle(subprotocol, unchecked("BootNotification"), () => ({
         currentTime: "2026-01-01T00:00:00Z",
         interval: 300,
         status: "Accepted",
-      })) as never);
+      }));
     });
     const http = await server.listen(0);
 

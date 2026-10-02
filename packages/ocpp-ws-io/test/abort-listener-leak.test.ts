@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, test } from "vitest";
 import { OCPPClient } from "../src/client.js";
 import { OCPPServer } from "../src/server.js";
+import { unchecked } from "../src/unchecked.js";
 
 describe("abort listener cleanup (H8)", () => {
   let server: OCPPServer;
@@ -15,7 +16,7 @@ describe("abort listener cleanup (H8)", () => {
 
   test("listeners are removed from a shared signal when calls resolve", async () => {
     server = new OCPPServer({});
-    server.on("client", (c) => c.handle("Echo", ({ params }) => params));
+    server.on("client", (c) => c.handle(unchecked("Echo"), ({ params }) => params));
     const http = await server.listen(0);
     const port = (http.address() as AddressInfo).port;
 
@@ -28,7 +29,7 @@ describe("abort listener cleanup (H8)", () => {
 
     const ac = new AbortController();
     for (let i = 0; i < 5; i++) {
-      await client.call("Echo", { i }, { signal: ac.signal });
+      await client.call(unchecked("Echo"), { i }, { signal: ac.signal });
     }
     expect(getEventListeners(ac.signal, "abort").length).toBe(0);
   });

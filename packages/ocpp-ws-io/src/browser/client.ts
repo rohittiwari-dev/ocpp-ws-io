@@ -8,7 +8,19 @@ import type {
   SendMethodNames,
 } from "../generated/index.js";
 import { type MiddlewareFunction, MiddlewareStack } from "../middleware.js";
-import type { JsonValue, MiddlewareContext, WireCall } from "../types.js";
+import type {
+  CheckedAction,
+  CheckedHandler,
+  JsonObject,
+  JsonValue,
+  MiddlewareContext,
+  RequestOf,
+  ResponseOf,
+  SendRequestOf,
+  UncheckedAction,
+  UncheckedHandler,
+  WireCall,
+} from "../types.js";
 import { EventEmitter } from "./emitter.js";
 import {
   type RPCError,
@@ -50,7 +62,6 @@ import {
   type OCPPCallResult,
   type OCPPCallResultError,
   type OCPPMessage,
-  type OCPPProtocol,
   type OCPPRequestType,
   type OCPPResponseType,
   type OCPPSend,
@@ -402,29 +413,51 @@ export class BrowserOCPPClient<
 
   // ─── Handlers ────────────────────────────────────────────────
 
+  // As on the Node client: the payload is checked for keys the schema does
+  // not define on the action name, and method-only overloads come first so
+  // editors suggest the right fields while a handler is being written.
+
+  /**
+   * Register a handler for the client's default protocol — `handle("BootNotification", handler)`.
+   * A response with a key the schema does not define is an error.
+   */
+  handle<
+    M extends AllMethodNames<KnownProtocol<P>>,
+    R extends ResponseOf<KnownProtocol<P>, M>,
+    A extends ResponseOf<KnownProtocol<P>, M> = ResponseOf<KnownProtocol<P>, M>,
+  >(
+    method: CheckedHandler<M, ResponseOf<KnownProtocol<P>, M>, R, A>,
+    handler: (
+      context: HandlerContext<OCPPRequestType<KnownProtocol<P>, M>>,
+    ) => R | Promise<A | ResponseOf<KnownProtocol<P>, M>> | typeof NOREPLY,
+  ): void;
+
+  /**
+   * Register a handler for an OCPP 2.1 SEND message on the default protocol.
+   * Nothing is sent back: `ctx.unconfirmed` is true and the return value is ignored.
+   */
+  handle<M extends SendMethodNames<KnownProtocol<P>>>(
+    method: M,
+    handler: (
+      context: HandlerContext<OCPPSendRequestType<KnownProtocol<P>, M>>,
+    ) => void | Promise<void>,
+  ): void;
+
   /**
    * Register a version-specific handler — `handle("ocpp1.6", "BootNotification", handler)`.
    * This handler is only invoked when the active protocol matches the given version.
    */
-  handle<V extends KnownProtocol<P>, M extends AllMethodNames<V>>(
+  handle<
+    V extends KnownProtocol<P>,
+    M extends AllMethodNames<V>,
+    R extends ResponseOf<V, M>,
+    A extends ResponseOf<V, M> = ResponseOf<V, M>,
+  >(
     version: V,
-    method: M,
+    method: CheckedHandler<M, ResponseOf<V, M>, R, A>,
     handler: (
       context: HandlerContext<OCPPRequestType<V, M>>,
-    ) => OCPPResponseType<V, M> | Promise<OCPPResponseType<V, M>>,
-  ): void;
-
-  /**
-   * Register a handler for the client's default protocol — `handle("BootNotification", handler)`.
-   * Uses the default protocol type parameter `P`.
-   */
-  handle<M extends AllMethodNames<KnownProtocol<P>>>(
-    method: M,
-    handler: (
-      context: HandlerContext<OCPPRequestType<KnownProtocol<P>, M>>,
-    ) =>
-      | OCPPResponseType<KnownProtocol<P>, M>
-      | Promise<OCPPResponseType<KnownProtocol<P>, M>>,
+    ) => R | Promise<A | ResponseOf<V, M>> | typeof NOREPLY,
   ): void;
 
   /**
@@ -440,22 +473,16 @@ export class BrowserOCPPClient<
   ): void;
 
   /**
-   * Register a handler for an OCPP 2.1 SEND message on the default protocol.
-   * Nothing is sent back: `ctx.unconfirmed` is true and the return value is ignored.
+   * Register a handler for an action the types do not check, such as an
+   * undeclared vendor action — `handle(unchecked("VendorPing"), handler)`.
    */
-  handle<M extends SendMethodNames<KnownProtocol<P>>>(
-    method: M,
-    handler: (
-      context: HandlerContext<OCPPSendRequestType<KnownProtocol<P>, M>>,
-    ) => void | Promise<void>,
-  ): void;
+  handle(method: UncheckedAction, handler: UncheckedHandler): void;
 
-  /** Register a handler for a custom/extension method not in the typed OCPP method maps. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  handle(
-    method: string,
-    handler: (context: HandlerContext<Record<string, any>>) => any,
-  ): void;
+  /**
+   * Register a version-specific handler for an action the types do not check.
+   * The version must be one of the client's protocols.
+   */
+  handle(version: P, method: UncheckedAction, handler: UncheckedHandler): void;
 
   /** Register a wildcard handler for all unhandled methods. */
   handle(handler: WildcardHandler): void;
@@ -484,8 +511,20 @@ export class BrowserOCPPClient<
     }
   }
 
-  removeHandler(method?: string): void;
-  removeHandler(version: OCPPProtocol, method: string): void;
+  /** Remove the handler of an action on the default protocol, or the wildcard handler. */
+  removeHandler(
+    method?:
+      | AllMethodNames<KnownProtocol<P>>
+      | SendMethodNames<KnownProtocol<P>>
+      | UncheckedAction,
+  ): void;
+  /** Remove a version-specific handler. */
+  removeHandler<V extends KnownProtocol<P>>(
+    version: V,
+    method: AllMethodNames<V> | SendMethodNames<V> | UncheckedAction,
+  ): void;
+  /** Remove a version-specific handler of an action the types do not check. */
+  removeHandler(version: P, method: UncheckedAction): void;
   removeHandler(versionOrMethod?: string, method?: string): void {
     if (versionOrMethod && method) {
       this._handlers.delete(`${versionOrMethod}:${method}`);
@@ -513,25 +552,26 @@ export class BrowserOCPPClient<
 
   // ─── Call ────────────────────────────────────────────────────
 
-  /**
-   * Send a CALL without waiting for its answer — `{ noReply: true }`. Resolves
-   * with `undefined` once the frame is handed to the socket; see
-   * {@link NoReplyCallOptions}.
-   */
-  async call<V extends KnownProtocol<P>, M extends AllMethodNames<V>>(
+  // Same order and checks as the Node client's call(); see there.
+
+  /** Call a known typed method using the client's default protocol. */
+  async call<
+    M extends AllMethodNames<KnownProtocol<P>>,
+    T extends RequestOf<KnownProtocol<P>, M>,
+  >(
+    method: CheckedAction<M, RequestOf<KnownProtocol<P>, M>, T>,
+    params: T,
+  ): Promise<OCPPResponseType<KnownProtocol<P>, M>>;
+
+  /** A version-specific CALL without waiting for its answer — `{ noReply: true }`. */
+  async call<
+    V extends KnownProtocol<P>,
+    M extends AllMethodNames<V>,
+    T extends RequestOf<V, M>,
+  >(
     version: V,
-    method: M,
-    params: OCPPRequestType<V, M>,
-    options: NoReplyCallOptions,
-  ): Promise<void>;
-  async call<M extends AllMethodNames<KnownProtocol<P>>>(
-    method: M,
-    params: OCPPRequestType<KnownProtocol<P>, M>,
-    options: NoReplyCallOptions,
-  ): Promise<void>;
-  async call(
-    method: string,
-    params: object,
+    method: CheckedAction<M, RequestOf<V, M>, T>,
+    params: T,
     options: NoReplyCallOptions,
   ): Promise<void>;
 
@@ -539,24 +579,71 @@ export class BrowserOCPPClient<
    * Call a version-specific typed method — `call("ocpp1.6", "BootNotification", {...})`.
    * Provides full type inference for params and response based on the OCPP version.
    */
-  async call<V extends KnownProtocol<P>, M extends AllMethodNames<V>>(
+  async call<
+    V extends KnownProtocol<P>,
+    M extends AllMethodNames<V>,
+    T extends RequestOf<V, M>,
+  >(
     version: V,
-    method: M,
-    params: OCPPRequestType<V, M>,
+    method: CheckedAction<M, RequestOf<V, M>, T>,
+    params: T,
     options?: CallOptions,
   ): Promise<OCPPResponseType<V, M>>;
 
-  /** Call a known typed method using the client's default protocol. */
-  async call<M extends AllMethodNames<KnownProtocol<P>>>(
-    method: M,
-    params: OCPPRequestType<KnownProtocol<P>, M>,
-    options?: CallOptions,
+  /**
+   * Send a CALL without waiting for its answer — `{ noReply: true }`. Resolves
+   * with `undefined` once the frame is handed to the socket; see
+   * {@link NoReplyCallOptions}.
+   */
+  async call<
+    M extends AllMethodNames<KnownProtocol<P>>,
+    T extends RequestOf<KnownProtocol<P>, M>,
+  >(
+    method: CheckedAction<M, RequestOf<KnownProtocol<P>, M>, T>,
+    params: T,
+    options: NoReplyCallOptions,
+  ): Promise<void>;
+
+  /** Call a known typed method using the client's default protocol, with options. */
+  async call<
+    M extends AllMethodNames<KnownProtocol<P>>,
+    T extends RequestOf<KnownProtocol<P>, M>,
+  >(
+    method: CheckedAction<M, RequestOf<KnownProtocol<P>, M>, T>,
+    params: T,
+    options: CallOptions,
   ): Promise<OCPPResponseType<KnownProtocol<P>, M>>;
 
-  /** Call a known typed method with explicit response type. */
-  async call<TResult = unknown>(
-    method: string,
-    params?: Record<string, unknown>,
+  /** Call an action the types do not check without waiting for its answer. */
+  async call(
+    method: UncheckedAction,
+    params: object,
+    options: NoReplyCallOptions,
+  ): Promise<void>;
+
+  /**
+   * Call an action the types do not check — `call(unchecked("VendorPing"), params)`.
+   * The response is a JSON object unless a type is given.
+   */
+  async call<TResult = JsonObject>(
+    method: UncheckedAction,
+    params?: object,
+    options?: CallOptions,
+  ): Promise<TResult>;
+
+  /** A version-specific CALL of an action the types do not check, without waiting for its answer. */
+  async call(
+    version: P,
+    method: UncheckedAction,
+    params: object,
+    options: NoReplyCallOptions,
+  ): Promise<void>;
+
+  /** Call an action the types do not check on one of the client's protocols. */
+  async call<TResult = JsonObject>(
+    version: P,
+    method: UncheckedAction,
+    params?: object,
     options?: CallOptions,
   ): Promise<TResult>;
 
@@ -737,13 +824,16 @@ export class BrowserOCPPClient<
    * resolves once the frame is handed to the socket. It does not wait behind
    * an outstanding CALL and throws on any protocol other than OCPP 2.1.
    */
-  async send<M extends SendMethodNames<KnownProtocol<P>>>(
-    method: M,
-    params: OCPPSendRequestType<KnownProtocol<P>, M>,
+  async send<
+    M extends SendMethodNames<KnownProtocol<P>>,
+    T extends SendRequestOf<KnownProtocol<P>, M>,
+  >(
+    method: CheckedAction<M, SendRequestOf<KnownProtocol<P>, M>, T>,
+    params: T,
   ): Promise<void>;
 
-  /** Send a SEND message that is not in the typed maps. */
-  async send(method: string, params?: object): Promise<void>;
+  /** Send a SEND message the types do not check — `send(unchecked("VendorEvent"), params)`. */
+  async send(method: UncheckedAction, params?: object): Promise<void>;
 
   async send(
     method: string,

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { OCPPServer } from "../src/server.js";
 import { OCPPClient } from "../src/client.js";
 import type { LoggerLike } from "../src/types.js";
+import { unchecked } from "../src/unchecked.js";
 
 let server: OCPPServer;
 let client: OCPPClient;
@@ -182,14 +183,14 @@ describe("Logger Integration - Client", () => {
       logging: { logger: mockLogger, exchangeLog: true, prettify: true },
     });
 
-    client.handle("Buggy", async () => {
+    client.handle(unchecked("Buggy"), async () => {
       throw new Error("handler crashed");
     });
 
     const serverCallPromise = new Promise<void>((resolve) => {
       server.on("client", async (sc) => {
         try {
-          await sc.call("Buggy", {});
+          await sc.call(unchecked("Buggy"), {});
         } catch {
           // expected
         }
@@ -237,7 +238,7 @@ describe("Logger Integration - Client", () => {
 
     // Call a method the server doesn't handle — produces CALLERROR
     try {
-      await client.call("NonExistent", {});
+      await client.call(unchecked("NonExistent"), {});
     } catch {
       // expected
     }

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { OCPPServer } from "../src/server.js";
 import { OCPPClient } from "../src/client.js";
 import { SecurityProfile } from "../src/types.js";
+import { unchecked } from "../src/unchecked.js";
 
 let server: OCPPServer;
 let client: OCPPClient;
@@ -124,7 +125,7 @@ describe("OCPPClient", () => {
 
     await client.connect();
 
-    const result = await client.call<{ status: string }>("BootNotification", {
+    const result = await client.call("BootNotification", {
       chargePointModel: "TestModel",
       chargePointVendor: "TestVendor",
     });
@@ -144,7 +145,7 @@ describe("OCPPClient", () => {
 
     await client.connect();
 
-    await expect(client.call("UnhandledAction", {})).rejects.toThrow(
+    await expect(client.call(unchecked("UnhandledAction"), {})).rejects.toThrow(
       /not known|NotImplemented/,
     );
   });
@@ -160,7 +161,7 @@ describe("OCPPClient", () => {
     await client.connect();
 
     const ac = new AbortController();
-    const callPromise = client.call("SlowAction", {}, { signal: ac.signal });
+    const callPromise = client.call(unchecked("SlowAction"), {}, { signal: ac.signal });
     ac.abort();
 
     await expect(callPromise).rejects.toThrow();
@@ -185,7 +186,7 @@ describe("OCPPClient", () => {
     const serverCallPromise = new Promise<void>((resolve, reject) => {
       server.on("client", async (serverClient) => {
         try {
-          const result = await serverClient.call<{ status: string }>("Reset", {
+          const result = await serverClient.call("Reset", {
             type: "Hard",
           });
           expect(result.status).toBe("Accepted");
@@ -219,7 +220,7 @@ describe("OCPPClient", () => {
     const serverCallPromise = new Promise<void>((resolve, reject) => {
       server.on("client", async (serverClient) => {
         try {
-          await serverClient.call("AnyMethod", {});
+          await serverClient.call(unchecked("AnyMethod"), {});
           resolve();
         } catch (e) {
           reject(e);
@@ -240,13 +241,13 @@ describe("OCPPClient", () => {
       reconnect: false,
     });
 
-    client.handle("Test" as string, async () => ({ result: "ok" }));
-    client.removeHandler("Test");
+    client.handle(unchecked("Test"), async () => ({ result: "ok" }));
+    client.removeHandler(unchecked("Test"));
 
     const serverCallPromise = new Promise<void>((resolve, reject) => {
       server.on("client", async (serverClient) => {
         try {
-          await serverClient.call("Test", {});
+          await serverClient.call(unchecked("Test"), {});
           reject(new Error("Should have thrown"));
         } catch {
           resolve();
@@ -325,7 +326,7 @@ describe("Version-Aware Handle", () => {
     const serverCallPromise = new Promise<void>((resolve, reject) => {
       server.on("client", async (sc) => {
         try {
-          const result = await sc.call<{ status: string }>("Reset", {
+          const result = await sc.call("Reset", {
             type: "Hard",
           });
           expect(result.status).toBe("Accepted");
@@ -492,7 +493,7 @@ describe("Version-Aware Handle", () => {
     const serverCallPromise = new Promise<void>((resolve, reject) => {
       server.on("client", async (sc) => {
         try {
-          await sc.call("UnknownMethod", {});
+          await sc.call(unchecked("UnknownMethod"), {});
           resolve();
         } catch (e) {
           reject(e);

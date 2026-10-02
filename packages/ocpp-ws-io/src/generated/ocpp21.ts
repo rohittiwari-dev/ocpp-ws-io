@@ -1,5 +1,6 @@
 // Auto-generated from ocpp2_1.json — DO NOT EDIT
 /* eslint-disable */
+import type { JsonValue } from "../types.js";
 
 // ═══ Shared Types ═══
 
@@ -11,6 +12,7 @@ export interface PeriodicEventStreamParamsType {
 
 export interface CustomDataType {
   vendorId: string;
+  [key: string]: JsonValue | undefined;
 }
 
 export type GenericStatusEnumType = "Accepted" | "Rejected";
@@ -1569,7 +1571,7 @@ export interface CustomerInformationResponse {
 
 export interface DataTransferRequest {
   messageId?: string;
-  data?: unknown;
+  data?: JsonValue;
   vendorId: string;
   customData?: CustomDataType;
 }
@@ -1577,7 +1579,7 @@ export interface DataTransferRequest {
 export interface DataTransferResponse {
   status: DataTransferStatusEnumType;
   statusInfo?: StatusInfoType;
-  data?: unknown;
+  data?: JsonValue;
   customData?: CustomDataType;
 }
 

@@ -1,5 +1,6 @@
 import { describe, test, expect, vi } from "vitest";
 import { OCPPClient } from "../src/client";
+import { unchecked } from "../src/unchecked.js";
 
 class TestClient extends OCPPClient {
   constructor() {
@@ -35,7 +36,7 @@ describe("OCPPClient safeCall", () => {
     };
 
     // We expect safeCall to catch the error from our overridden call()
-    const result = await client.safeCall("Test", {});
+    const result = await client.safeCall(unchecked("Test"), {});
     expect(result).toBeUndefined();
     expect(warnSpy).toHaveBeenCalledWith(
       "SafeCall failed",

@@ -19,6 +19,7 @@ import type {
   CallOptions as _CallOptions,
   CloseOptions as _CloseOptions,
   HandlerContext as _HandlerContext,
+  JsonObject as _JsonObject,
   KnownProtocol as _KnownProtocol,
   LoggerLike as _LoggerLike,
   LoggerLikeNotOptional as _LoggerLikeNotOptional,
@@ -33,6 +34,8 @@ import type {
   OCPPMessage as _OCPPMessage,
   OCPPProtocol as _OCPPProtocol,
   OCPPSend as _OCPPSend,
+  UncheckedAction as _UncheckedAction,
+  UncheckedHandler as _UncheckedHandler,
   WildcardHandler as _WildcardHandler,
   WireCall as _WireCall,
 } from "../types.js";
@@ -53,6 +56,10 @@ export type CallHandler<TParams = unknown, TResult = unknown> = _CallHandler<
   TResult
 >;
 export type WildcardHandler = _WildcardHandler;
+export type JsonObject = _JsonObject;
+export type UncheckedAction = _UncheckedAction;
+export type UncheckedHandler<TContext = HandlerContext<JsonObject>> =
+  _UncheckedHandler<TContext>;
 export type WireCall = _WireCall;
 export type CallOptions = _CallOptions;
 export type NoReplyCallOptions = _NoReplyCallOptions;

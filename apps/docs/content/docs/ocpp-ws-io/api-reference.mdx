@@ -594,6 +594,19 @@ client.handle("StatusNotification", ({ params }) => {
 });
 ```
 
+### `unchecked(action)`
+
+Marks an action name the types do not check, for `call`, `safeCall`, `handle`, `send` and `removeHandler`: an undeclared vendor action, a name passed through from the wire, or a test that sends an invalid payload on purpose. Returns the name unchanged.
+
+```typescript
+import { unchecked } from "ocpp-ws-io";
+
+const res = await client.call(unchecked("VendorPing"), { n: 1 }); // a JSON object
+client.handle(unchecked("VendorPing"), () => ({ pong: true }));
+```
+
+Typed methods otherwise take only the actions their protocols define, and reject keys the OCPP schema does not define; see [Type Safety](/docs/ocpp-ws-io/type-safety).
+
 ### Message types
 
 `MessageType` holds the RPC message type numbers: `CALL` (2), `CALLRESULT` (3), `CALLERROR` (4), and the OCPP 2.1 types `CALLRESULTERROR` (5) and `SEND` (6).

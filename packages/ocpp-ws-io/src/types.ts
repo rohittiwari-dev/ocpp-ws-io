@@ -300,6 +300,9 @@ export type WildcardHandler = (
   context: HandlerContext,
 ) => unknown | Promise<unknown>;
 
+/** A JSON object: OCPP params and responses on the wire. */
+export type JsonObject = { [key: string]: JsonValue };
+
 export interface RouterHandlerContext<
   T = unknown,
   P extends AnyOCPPProtocol = AnyOCPPProtocol,
@@ -1791,6 +1794,196 @@ export interface OCPPPlugin<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
 // ─── Symbols ─────────────────────────────────────────────────────
 
 export const NOREPLY: unique symbol = Symbol("NOREPLY");
+
+// ─── Unchecked actions ───────────────────────────────────────────
+
+declare const uncheckedAction: unique symbol;
+
+/**
+ * An action name the types do not check, from {@link unchecked}. Typed methods
+ * take only the actions their protocols define; this is the explicit way to
+ * use one they do not, such as an undeclared vendor action or a name passed
+ * through from the wire.
+ */
+export type UncheckedAction = string & { readonly [uncheckedAction]: true };
+
+// ─── Exact payloads ──────────────────────────────────────────────
+//
+// Typed methods reject keys a schema does not define, in params and in a
+// handler's returned object, at any depth. The check sits on the action name,
+// `method: M & ExactKeys<Shape, T>`, not in the payload's own type: the payload
+// stays the plain inferred T, so inferring it and the editor's suggestions
+// cost what they cost without a check, and the check runs once, on the
+// inferred call. Put inside the payload type instead, it was re-evaluated all
+// through inference: 5.2M type instantiations and 27.7s to check this
+// package's sources, against 181k and 1.9s this way.
+
+type ExactLeaf = string | number | boolean | bigint | symbol | null | undefined;
+
+/** True for `any`, which the check lets through. */
+type IsAny<T> = 0 extends 1 & T ? true : false;
+
+/** The keys a type declares by name, without its index signature. */
+type DeclaredKeys<S> = keyof {
+  [K in keyof S as string extends K
+    ? never
+    : number extends K
+      ? never
+      : K]: true;
+};
+
+/**
+ * The paths (`"statusInfo.nope"`) of keys in T that one member of Shape does
+ * not define. A key an open object (an index signature) covers is allowed and
+ * not recursed into: the signature's type, usually the recursive JsonValue,
+ * is checked by plain assignability.
+ */
+type ExtraPathsIn<Shape, T, Prefix extends string> =
+  true extends IsAny<T>
+    ? never
+    : unknown extends Shape
+      ? never
+      : T extends ExactLeaf
+        ? never
+        : T extends readonly (infer Item)[]
+          ? Shape extends readonly (infer ShapeItem)[]
+            ? ExtraPaths<ShapeItem, Item, `${Prefix}[]`>
+            : never
+          : {
+              [K in keyof T & string]-?: K extends DeclaredKeys<Shape>
+                ? ExtraPaths<Shape[K & keyof Shape], T[K], `${Prefix}${K}.`>
+                : string extends keyof Shape
+                  ? never
+                  : `${Prefix}${K}`;
+            }[keyof T & string];
+
+declare const exactMember: unique symbol;
+/** Marks a member of Shape that T fits with no extra key. */
+type ExactMemberMark = typeof exactMember;
+
+/** For each member of Shape that T fits: its extra paths, or the mark when it has none. */
+type ExtraPathsPerMember<
+  Shape,
+  T,
+  Prefix extends string,
+> = Shape extends unknown
+  ? T extends Shape
+    ? [ExtraPathsIn<Shape, T, Prefix>] extends [never]
+      ? ExactMemberMark
+      : ExtraPathsIn<Shape, T, Prefix>
+    : never
+  : never;
+
+/**
+ * Paths of keys in T that Shape does not define. None when T fits some member
+ * of Shape exactly (on a client of several versions, any version), or fits
+ * none, which plain assignability reports.
+ */
+type ExtraPaths<Shape, T, Prefix extends string = ""> =
+  ExactMemberMark extends ExtraPathsPerMember<Shape, T, Prefix>
+    ? never
+    : Exclude<ExtraPathsPerMember<Shape, T, Prefix>, ExactMemberMark>;
+
+/**
+ * `unknown` when T has no key Shape does not define, at any depth; otherwise a
+ * type whose one required property lists the extra keys, so the call fails
+ * with a message naming them. A key is defined when the generated type
+ * declares it, so regenerating the types for new schemas updates the check;
+ * an object the schema leaves open (OCPP 2.x's `CustomDataType`) takes any key.
+ */
+export type ExactKeys<Shape, T> = [Shape] extends [T]
+  ? [T] extends [Shape]
+    ? unknown
+    : ExactKeysOf<Shape, T>
+  : ExactKeysOf<Shape, T>;
+
+/** {@link ExactKeys} once T is known not to be Shape itself. */
+type ExactKeysOf<Shape, T> = [ExtraPaths<Shape, T>] extends [never]
+  ? unknown
+  : {
+      readonly "Error: keys not defined by the OCPP schema": ExtraPaths<
+        Shape,
+        T
+      >;
+    };
+
+/** True when T is a union of two or more members. */
+type IsUnion<T, U = T> = T extends unknown
+  ? [U] extends [T]
+    ? false
+    : true
+  : never;
+
+/**
+ * The action name a typed method takes: M, plus the {@link ExactKeys} check of
+ * the payload T (and U, a handler's awaited return) once M is a single action.
+ * M is still a union only when the name given is not an action at all; that
+ * call fails anyway, and checking every action's payload would only exceed
+ * the compiler's instantiation limit.
+ */
+export type CheckedAction<M, Shape, T, U = never> = M &
+  (true extends IsUnion<M>
+    ? unknown
+    : ExactKeys<Shape, T> &
+        ([U] extends [never] ? unknown : ExactKeys<Shape, U>));
+
+/**
+ * The action name a typed handler takes: {@link CheckedAction} for the
+ * handler's direct return R and its awaited return A. A response type with no
+ * required key, such as 1.6's empty StatusNotification response, also fits a
+ * promise, so R can be inferred as the promise an async handler returns; R is
+ * then checked as Shape itself, and the awaited value is checked as A.
+ */
+export type CheckedHandler<M, Shape, R, A> = CheckedAction<
+  M,
+  Shape,
+  [R] extends [PromiseLike<unknown>] ? Shape : R,
+  A
+>;
+
+// Payload types by indexed access. While TypeScript infers a call, the action
+// is still open, and resolving the conditional OCPPRequestType and
+// OCPPResponseType for an open action distributes over every action of every
+// version: for three versions that exceeds the compiler's instantiation limit
+// (TS2589) and loses literal types such as `status: "Accepted"`. An indexed
+// access resolves without distributing. For a given action they are the same
+// types.
+
+type MethodEntry<V extends keyof OCPPMethodMap, M> = OCPPMethodMap[V][M &
+  keyof OCPPMethodMap[V]];
+
+/** Response of action M in each of the versions V that defines it. */
+export type ResponseOf<
+  V extends keyof OCPPMethodMap,
+  M,
+> = V extends keyof OCPPMethodMap
+  ? MethodEntry<V, M>["response" & keyof MethodEntry<V, M>]
+  : never;
+
+/** Request of action M in each of the versions V that defines it. */
+export type RequestOf<
+  V extends keyof OCPPMethodMap,
+  M,
+> = V extends keyof OCPPMethodMap
+  ? MethodEntry<V, M>["request" & keyof MethodEntry<V, M>]
+  : never;
+
+type SendEntry<V extends keyof OCPPSendMethodMap, M> = OCPPSendMethodMap[V][M &
+  keyof OCPPSendMethodMap[V]];
+
+/** Payload of SEND message M in each of the versions V that defines it. */
+export type SendRequestOf<V, M> = V extends keyof OCPPSendMethodMap
+  ? SendEntry<V, M>["request" & keyof SendEntry<V, M>]
+  : never;
+
+/**
+ * Handler for an action the types do not check. A CALL is answered with the
+ * object it returns, or not at all with `NOREPLY`.
+ */
+export type UncheckedHandler<TContext = HandlerContext<JsonObject>> = (
+  context: TContext,
+) => object | typeof NOREPLY | Promise<object | typeof NOREPLY>;
+
 // ─── Middleware ──────────────────────────────────────────────────
 
 /**

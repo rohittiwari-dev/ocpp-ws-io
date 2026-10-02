@@ -3,7 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 // @ts-ignore
 import {
+  extractMethods,
   extractSendMethods,
+  generateVersionFile,
   jsonSchemaToTS,
   main,
 } from "../scripts/generate-types.js";
@@ -105,7 +107,9 @@ describe("Type Generation Script", () => {
         },
         definitions,
       ),
-    ).toBe("{ id: string; count?: number }");
+    ).toBe(
+      "{ id: string; count?: number; [key: string]: JsonValue | undefined }",
+    );
 
     // Nested Arrays
     expect(
@@ -118,14 +122,14 @@ describe("Type Generation Script", () => {
       ),
     ).toBe("((string | number))[]");
 
-    // Unknowns
+    // No type: any JSON value, as the schema allows
     expect(jsonSchemaToTS({ type: "unknownCustom" }, definitions)).toBe(
-      "unknown",
+      "JsonValue",
     );
-    expect(jsonSchemaToTS(null, definitions)).toBe("unknown");
-    expect(jsonSchemaToTS({ type: "array" }, definitions)).toBe("unknown[]");
+    expect(jsonSchemaToTS(null, definitions)).toBe("JsonValue");
+    expect(jsonSchemaToTS({ type: "array" }, definitions)).toBe("JsonValue[]");
     expect(jsonSchemaToTS({ type: "object" }, definitions)).toBe(
-      "Record<string, unknown>",
+      "{ [key: string]: JsonValue | undefined }",
     );
     expect(
       jsonSchemaToTS(
@@ -136,6 +140,91 @@ describe("Type Generation Script", () => {
         definitions,
       ),
     ).toBe("Record<string, string>");
+  });
+
+  // Typed methods reject keys a schema does not define, so an object the
+  // schema leaves open (additionalProperties absent or true, JSON Schema's
+  // default) must take any key, and a closed one none.
+  it("gives an object the schema leaves open an index signature, and a closed one none", () => {
+    const defs = {};
+    const props = { id: { type: "string" } };
+    expect(
+      jsonSchemaToTS(
+        {
+          type: "object",
+          properties: props,
+          required: ["id"],
+          additionalProperties: false,
+        },
+        defs,
+      ),
+    ).toBe("{ id: string }");
+    expect(
+      jsonSchemaToTS(
+        { type: "object", properties: props, required: ["id"] },
+        defs,
+      ),
+    ).toBe("{ id: string; [key: string]: JsonValue | undefined }");
+    expect(
+      jsonSchemaToTS(
+        {
+          type: "object",
+          properties: props,
+          required: ["id"],
+          additionalProperties: true,
+        },
+        defs,
+      ),
+    ).toBe("{ id: string; [key: string]: JsonValue | undefined }");
+    expect(
+      jsonSchemaToTS({ type: "object", additionalProperties: false }, defs),
+    ).toBe("Record<string, never>");
+    // An untyped field such as DataTransfer's data takes any JSON value.
+    expect(
+      jsonSchemaToTS({ description: "Open to implementation" }, defs),
+    ).toBe("JsonValue");
+  });
+
+  it("generates 2.0.1's CustomDataType open and every other type closed", () => {
+    const read = (file: string) =>
+      JSON.parse(
+        fs.readFileSync(path.join(__dirname, "../src/schemas", file), "utf8"),
+      );
+    const s201 = read("ocpp2_0_1.json");
+    const code = generateVersionFile(
+      {
+        key: "ocpp201",
+        file: "ocpp2_0_1.json",
+        mapName: "OCPP201Methods",
+        sendMapName: "OCPP201SendMethods",
+        protocol: "ocpp2.0.1",
+      },
+      extractMethods(s201),
+      extractSendMethods(s201),
+    );
+    expect(code).toContain(
+      "export interface CustomDataType {\n  vendorId: string;\n  [key: string]: JsonValue | undefined;\n}",
+    );
+    expect(code).toContain('import type { JsonValue } from "../types.js";');
+    // CustomDataType is the only open object in 2.0.1, on purpose.
+    expect(code.match(/\[key: string\]/g)).toHaveLength(1);
+    expect(code).toMatch(/data\?: JsonValue;/);
+    expect(code).not.toContain("unknown");
+
+    const s16 = read("ocpp1_6.json");
+    const code16 = generateVersionFile(
+      {
+        key: "ocpp16",
+        file: "ocpp1_6.json",
+        mapName: "OCPP16Methods",
+        sendMapName: "OCPP16SendMethods",
+        protocol: "ocpp1.6",
+      },
+      extractMethods(s16),
+      extractSendMethods(s16),
+    );
+    // Every 1.6 object is closed.
+    expect(code16).not.toContain("[key: string]");
   });
 
   // OCPP 2.1 SEND messages have one schema with no Request/Response suffix.

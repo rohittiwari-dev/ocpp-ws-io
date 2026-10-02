@@ -103,6 +103,7 @@ export {
   type HealthEndpointBearerAuth,
   type HealthEndpointOptions,
   type IdentityLookup,
+  type JsonObject,
   type JsonValue,
   type KnownProtocol,
   type ListenOptions,
@@ -138,12 +139,15 @@ export {
   type TelemetryConfig,
   type TLSOptions,
   type TypedEventEmitter,
+  type UncheckedAction,
+  type UncheckedHandler,
   type WildcardHandler,
   type WireCall,
   type WsClientOptions,
   type WsServerOptions,
 } from "./types.js";
 // ─── Utilities ───────────────────────────────────────────────────
+export { unchecked } from "./unchecked.js";
 export {
   createRPCError,
   getErrorPlainObject,

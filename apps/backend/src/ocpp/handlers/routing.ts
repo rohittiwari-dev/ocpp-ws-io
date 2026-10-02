@@ -158,6 +158,7 @@ export const catchAllFallbacks = async () => {
       client.handle("BootNotification", () => ({
         status: "Accepted",
         currentTime: new Date().toISOString(),
+        interval: 300,
       }));
     });
 

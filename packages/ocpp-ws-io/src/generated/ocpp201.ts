@@ -1,10 +1,12 @@
 // Auto-generated from ocpp2_0_1.json — DO NOT EDIT
 /* eslint-disable */
+import type { JsonValue } from "../types.js";
 
 // ═══ Shared Types ═══
 
 export interface CustomDataType {
   vendorId: string;
+  [key: string]: JsonValue | undefined;
 }
 
 export type HashAlgorithmEnumType = "SHA256" | "SHA384" | "SHA512";
@@ -785,7 +787,7 @@ export interface CustomerInformationResponse {
 export interface DataTransferRequest {
   customData?: CustomDataType;
   messageId?: string;
-  data?: unknown;
+  data?: JsonValue;
   vendorId: string;
 }
 
@@ -793,7 +795,7 @@ export interface DataTransferResponse {
   customData?: CustomDataType;
   status: DataTransferStatusEnumType;
   statusInfo?: StatusInfoType;
-  data?: unknown;
+  data?: JsonValue;
 }
 
 export interface DeleteCertificateRequest {

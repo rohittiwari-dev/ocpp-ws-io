@@ -6,6 +6,7 @@ export {
   defineRpcMiddleware,
 } from "../helpers/index.js";
 export * from "../middleware.js";
+export { unchecked } from "../unchecked.js";
 export type { Validator, ValidatorSchema } from "../validator.js";
 export { type AnyBrowserOCPPClient, BrowserOCPPClient } from "./client.js";
 // ─── Errors ──────────────────────────────────────────────────────
@@ -38,6 +39,7 @@ export {
   type CloseOptions,
   ConnectionState,
   type HandlerContext,
+  type JsonObject,
   type KnownProtocol,
   type LoggerLike,
   type LoggingConfig,
@@ -57,6 +59,8 @@ export {
   type OCPPSend,
   type OCPPSendRequestType,
   type SendMethodNames,
+  type UncheckedAction,
+  type UncheckedHandler,
   type WildcardHandler,
   type WireCall,
 } from "./types.js";

@@ -204,7 +204,16 @@ function generateVersionFile(version, methods, sendMethods = new Map()) {
     lines.push("}", "");
   }
 
-  return lines.join("\n");
+  // Open objects and untyped fields use JsonValue from the library's types.
+  const body = lines.join("\n");
+  if (!/\bJsonValue\b/.test(body)) return body;
+  const [first, second, ...rest] = lines;
+  return [
+    first,
+    second,
+    'import type { JsonValue } from "../types.js";',
+    ...rest,
+  ].join("\n");
 }
 
 // ── Generate a Named Type (type alias or interface) ──────────────
@@ -240,15 +249,30 @@ function generateInterface(name, schema, definitions) {
       lines.push(`  ${safeName}${opt}: ${tsType};`);
     }
   }
+  if (isOpen(schema)) lines.push(`  [key: string]: ${OPEN_VALUE};`);
 
   lines.push("}");
   return lines;
 }
 
+// ── Open objects ─────────────────────────────────────────────────
+
+// JSON Schema allows keys an object does not list unless
+// `additionalProperties` is false. Typed methods reject keys the generated
+// types do not define, so an open object gets an index signature. OCPP 2.0.1
+// and 2.1 leave only CustomDataType open, on purpose, for vendor data.
+// `undefined` keeps optional properties compatible with the signature.
+const OPEN_VALUE = "JsonValue | undefined";
+
+function isOpen(schema) {
+  return schema.additionalProperties !== false;
+}
+
 // ── JSON Schema → TypeScript Type ────────────────────────────────
 
 function jsonSchemaToTS(schema, definitions) {
-  if (!schema) return "unknown";
+  // No schema, or no type: any JSON value.
+  if (!schema) return "JsonValue";
 
   // $ref
   if (schema["$ref"]) {
@@ -298,7 +322,7 @@ function jsonSchemaToTS(schema, definitions) {
       const needsParens = itemType.includes("|") || itemType.includes("{");
       return needsParens ? `(${itemType})[]` : `${itemType}[]`;
     }
-    return "unknown[]";
+    return "JsonValue[]";
   }
 
   if (type === "object") {
@@ -308,6 +332,7 @@ function jsonSchemaToTS(schema, definitions) {
         const opt = required.has(name) ? "" : "?";
         return `${name}${opt}: ${jsonSchemaToTS(ps, definitions)}`;
       });
+      if (isOpen(schema)) props.push(`[key: string]: ${OPEN_VALUE}`);
       return `{ ${props.join("; ")} }`;
     }
     if (
@@ -316,10 +341,11 @@ function jsonSchemaToTS(schema, definitions) {
     ) {
       return `Record<string, ${jsonSchemaToTS(schema.additionalProperties, definitions)}>`;
     }
-    return "Record<string, unknown>";
+    if (schema.additionalProperties === false) return "Record<string, never>";
+    return `{ [key: string]: ${OPEN_VALUE} }`;
   }
 
-  return "unknown";
+  return "JsonValue";
 }
 
 // ── Generate Index ───────────────────────────────────────────────

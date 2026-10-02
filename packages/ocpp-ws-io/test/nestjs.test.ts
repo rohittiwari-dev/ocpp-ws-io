@@ -25,6 +25,7 @@ import {
   Session,
 } from "../src/frameworks/nestjs/index.js";
 import type { AuthContext } from "../src/index.js";
+import { unchecked } from "../src/unchecked.js";
 
 const getPort = (server: HttpServer): number => {
   const address = server.address();
@@ -170,7 +171,7 @@ describe("NestJS OCPP Integration", () => {
       reconnect: false,
       logging: false,
     });
-    client.handle("Reset", ({ params }) => ({
+    client.handle(unchecked("Reset"), ({ params }) => ({
       status: "Accepted",
       received: params,
     }));
@@ -202,7 +203,7 @@ describe("NestJS OCPP Integration", () => {
 
     await client.connect();
 
-    await expect(client.call("CustomAction", {})).resolves.toEqual({
+    await expect(client.call(unchecked("CustomAction"), {})).resolves.toEqual({
       wildcardIdentity: "CP-WILD",
       wildcardMethod: "CustomAction",
     });

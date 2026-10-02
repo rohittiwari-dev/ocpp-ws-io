@@ -12,6 +12,7 @@ import {
   signedMessagesPlugin,
 } from "../src/plugins/index.js";
 import { OCPPServer } from "../src/server.js";
+import { unchecked } from "../src/unchecked.js";
 import type { JsonValue, LoggerLike, OCPPPlugin } from "../src/types.js";
 
 /**
@@ -61,7 +62,7 @@ const unb64 = (part: string): JsonValue =>
   JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
 
 const boot = {
-  reason: "PowerUp",
+  reason: "PowerUp" as const,
   chargingStation: { model: "M1", vendorName: "V1" },
 };
 
@@ -217,7 +218,7 @@ describe("signed messages plugin", () => {
     const client = await connect(port, { ...rsa, sign: true });
 
     // BootNotification needs reason and chargingStation.
-    await expect(client.call("BootNotification", {})).rejects.toThrow(
+    await expect(client.call(unchecked("BootNotification"), {})).rejects.toThrow(
       /required property/,
     );
     expect(wire.in).toEqual([]);

@@ -8,6 +8,7 @@ import WebSocket, {
 import { OCPPClient } from "../src/client.js";
 import { OCPPServer } from "../src/server.js";
 import type { LoggerLike } from "../src/types.js";
+import { unchecked } from "../src/unchecked.js";
 
 /**
  * `wssOptions` (gap G3): raw `ws` server options, passed through to
@@ -54,7 +55,7 @@ describe("ServerOptions.wssOptions", () => {
       ...options,
     });
     servers.push(server);
-    server.on("client", (c) => c.handle("Echo", ({ params }) => params));
+    server.on("client", (c) => c.handle(unchecked("Echo"), ({ params }) => params));
     const http = await server.listen(0);
     return { server, port: (http.address() as AddressInfo).port };
   }

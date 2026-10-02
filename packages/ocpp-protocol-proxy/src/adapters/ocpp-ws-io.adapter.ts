@@ -1,4 +1,4 @@
-import type { OCPPClient, OCPPServer } from "ocpp-ws-io";
+import { type OCPPClient, type OCPPServer, unchecked } from "ocpp-ws-io";
 import {
   type IConnection,
   type ITransportAdapter,
@@ -52,7 +52,11 @@ export class OcppWsIoConnection implements IConnection {
 
   public async send(message: OCPPMessage): Promise<OCPPMessage | undefined> {
     if (message.type === MessageType.CALL) {
-      const rawResult = await this.client.call(message.action, message.payload);
+      // Passed through from the other side: the action is not checked by type.
+      const rawResult = await this.client.call(
+        unchecked(message.action),
+        message.payload,
+      );
       return {
         type: MessageType.CALLRESULT,
         messageId: message.messageId,

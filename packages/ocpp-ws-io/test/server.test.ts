@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { OCPPServer } from "../src/server.js";
 import { OCPPClient } from "../src/client.js";
 import type { OCPPServerClient } from "../src/server-client.js";
+import { unchecked } from "../src/unchecked.js";
 
 let server: OCPPServer;
 let port: number;
@@ -874,9 +875,9 @@ describe("OCPPServer Rate Limiter", () => {
     await client.connect();
 
     // Send 3 requests immediately
-    client.call("BootNotification", {}).catch(() => {});
-    client.call("BootNotification", {}).catch(() => {});
-    client.call("BootNotification", {}).catch(() => {});
+    client.call(unchecked("BootNotification"), {}).catch(() => {});
+    client.call(unchecked("BootNotification"), {}).catch(() => {});
+    client.call(unchecked("BootNotification"), {}).catch(() => {});
 
     await new Promise((r) => setTimeout(r, 100));
 
@@ -910,9 +911,9 @@ describe("OCPPServer Rate Limiter", () => {
     const disconnectSpy = vi.fn();
     client.on("close", disconnectSpy);
 
-    client.call("BootNotification", {}).catch(() => {});
-    client.call("BootNotification", {}).catch(() => {});
-    client.call("BootNotification", {}).catch(() => {}); // This triggers disconnect
+    client.call(unchecked("BootNotification"), {}).catch(() => {});
+    client.call(unchecked("BootNotification"), {}).catch(() => {});
+    client.call(unchecked("BootNotification"), {}).catch(() => {}); // This triggers disconnect
 
     await new Promise((r) => setTimeout(r, 100));
 

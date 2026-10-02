@@ -20,6 +20,7 @@ import {
 import { OCPPServer } from "../src/server.js";
 import type { OCPPServerClient } from "../src/server-client.js";
 import type { JsonValue, LoggerLike, OCPPPlugin } from "../src/types.js";
+import { unchecked } from "../src/unchecked.js";
 
 /**
  * Strict mode checks an outgoing call after the middleware, as it goes on the
@@ -213,7 +214,7 @@ describe("strict mode, middleware and wrap on outgoing messages", () => {
       const { wrapped } = wrapping(client);
 
       // BootNotification needs reason and chargingStation.
-      await expect(client.call("BootNotification", {})).rejects.toThrow();
+      await expect(client.call(unchecked("BootNotification"), {})).rejects.toThrow();
 
       expect(failures).toHaveLength(1);
       expect(wrapped).toEqual([]);
@@ -232,7 +233,7 @@ describe("strict mode, middleware and wrap on outgoing messages", () => {
       };
 
       await expect(
-        client.send("NotifyPeriodicEventStream", {}),
+        client.send(unchecked("NotifyPeriodicEventStream"), {}),
       ).rejects.toThrow();
       await client.send("NotifyPeriodicEventStream", stream);
       await expect.poll(() => received.length).toBe(1);

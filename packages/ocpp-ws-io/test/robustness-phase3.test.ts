@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { OCPPServer } from "../src/server.js";
 import { OCPPClient } from "../src/client.js";
 import { ConnectionState } from "../src/types.js";
+import { unchecked } from "../src/unchecked.js";
 
 /**
  * Phase 3 Robustness Tests
@@ -385,7 +386,7 @@ describe("Phase 3 — Pending Call Rejection", () => {
   it("should reject pending calls on unexpected disconnect", async () => {
     // Server never responds — call stays pending
     server.on("client", (sc) => {
-      sc.handle("SlowAction" as string, async () => {
+      sc.handle(unchecked("SlowAction"), async () => {
         await new Promise((r) => setTimeout(r, 60000));
         return {};
       });
@@ -401,7 +402,7 @@ describe("Phase 3 — Pending Call Rejection", () => {
 
     await client.connect();
 
-    const callPromise = client.call("SlowAction", {});
+    const callPromise = client.call(unchecked("SlowAction"), {});
 
     // Catch immediately to avoid unhandled rejection if test timing is off
     const resultPromise = callPromise.catch((e) => e);

@@ -56,6 +56,54 @@ const res16 = await client.call("ocpp1.6", "BootNotification", {
 res16.status; // typed: "Accepted" | "Pending" | "Rejected"
 ```
 
+### Only known actions, exact payloads
+
+Typed methods (`call`, `safeCall`, `handle`, `send`, `removeHandler`) take only the actions their protocols define, with exactly the params and responses the OCPP schemas define:
+
+```typescript
+const client = new OCPPClient({ identity, endpoint, protocols: ["ocpp1.6"] });
+
+await client.call("BootNotifcation", { ... }); // ❌ no such action
+await client.call("TransactionEvent", { ... }); // ❌ 2.0.1, not 1.6
+await client.call("Heartbeat", { bogus: 1 }); // ❌ Heartbeat takes no params
+client.handle("BootNotification", () => ({
+  currentTime: new Date().toISOString(),
+  interval: 300,
+  status: "Accepted",
+  statusInfo: { reasonCode: "x" }, // ❌ statusInfo is 2.0.1, not 1.6
+}));
+```
+
+A key the schema does not define is an error at any depth, also when it comes from a variable or an async handler. The message names the keys, on the action name: `"BootNotification" & { "Error: keys not defined by the OCPP schema": "statusInfo" }`. Objects the schema leaves open take any JSON: in OCPP 2.0.1 and 2.1 that is `customData`, for vendor data, and `DataTransfer`'s `data`. On a client of several versions, a key is accepted if the version it fits defines it. Regenerating the types for new schemas updates the check.
+
+### Actions the types do not know: `unchecked()`
+
+Wrap the name in `unchecked()` to use an action the types do not know: an undeclared vendor action, a name passed through from the wire, or a test that sends invalid data on purpose. It returns the name unchanged; nothing differs at runtime.
+
+```typescript
+import { unchecked } from "ocpp-ws-io";
+
+const pong = await client.call(unchecked("VendorPing"), { n: 1 }); // a JSON object
+const typed = await client.call<{ pong: boolean }>(unchecked("VendorPing"), {});
+client.handle(unchecked("VendorPing"), () => ({ pong: true }));
+
+// On a named version, it must be one of the client's protocols.
+const vendor = new OCPPClient({ identity, endpoint, protocols: ["ocpp1.6", "vendor-proto"] });
+await vendor.call("vendor-proto", unchecked("Ping"), {});
+```
+
+To type a vendor action instead, declare it once on its version's method map; it is then checked like any other action:
+
+```typescript
+declare module "ocpp-ws-io" {
+  interface OCPP16Methods {
+    VendorPing: { request: { n: number }; response: { pong: boolean } };
+  }
+}
+
+const res = await client.call("VendorPing", { n: 1 }); // { pong: boolean }
+```
+
 ### Type Utilities
 
 You can import generated types directly for use in your application:

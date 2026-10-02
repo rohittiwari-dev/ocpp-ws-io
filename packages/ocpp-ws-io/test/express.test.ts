@@ -10,6 +10,7 @@ import {
   ocppMiddleware,
   type OcppExpressBinding,
 } from "../src/frameworks/express/index.js";
+import { unchecked } from "../src/unchecked.js";
 
 const getPort = (server: HttpServer): number => {
   const address = server.address();
@@ -144,7 +145,7 @@ describe("Express OCPP Integration", () => {
       reconnect: false,
       logging: false,
     });
-    client.handle("Reset", ({ params }) => ({
+    client.handle(unchecked("Reset"), ({ params }) => ({
       status: "Accepted",
       received: params,
     }));
