@@ -166,7 +166,7 @@ describe("Express OCPP Integration", () => {
   });
 
   it("does not consume non-OCPP upgrade requests when a prefix is configured", async () => {
-    const app = createApp();
+    createApp();
     const otherWss = new WebSocketServer({ noServer: true });
     let otherUpgradeHandled = false;
 

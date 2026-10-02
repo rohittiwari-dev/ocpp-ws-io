@@ -367,7 +367,7 @@ describe("BrowserOCPPClient", () => {
       });
 
       await client.connect();
-      const result = await client.close({ force: true });
+      await client.close({ force: true });
       expect(client.state).toBe(BrowserOCPPClient.CLOSED);
     });
 
@@ -380,7 +380,7 @@ describe("BrowserOCPPClient", () => {
       });
 
       await client.connect();
-      const result = await client.close({ code: 1001, reason: "going away" });
+      await client.close({ code: 1001, reason: "going away" });
       expect(client.state).toBe(BrowserOCPPClient.CLOSED);
     });
   });
@@ -414,7 +414,7 @@ describe("BrowserOCPPClient", () => {
     });
 
     it("should receive call error from server", async () => {
-      server.on("client", (serverClient) => {
+      server.on("client", () => {
         // No handler registered → server responds with NotImplemented
       });
 
@@ -591,7 +591,7 @@ describe("BrowserOCPPClient", () => {
         reconnect: false,
       });
 
-      client.handle("Reset", async (ctx) => {
+      client.handle("Reset", async () => {
         return { status: "Accepted" };
       });
 
@@ -617,7 +617,7 @@ describe("BrowserOCPPClient", () => {
       });
 
       const methods: string[] = [];
-      client.handle((method, ctx) => {
+      client.handle((method) => {
         methods.push(method);
         return { status: "Accepted" };
       });
@@ -758,7 +758,7 @@ describe("BrowserOCPPClient", () => {
       });
 
       client.handle("Reset", async () => ({ status: "Accepted" }));
-      client.handle((method, ctx) => ({ status: "Wildcard" }));
+      client.handle(() => ({ status: "Wildcard" }));
       client.removeAllHandlers();
 
       await client.connect();
@@ -921,7 +921,7 @@ describe("BrowserOCPPClient", () => {
       });
       client.handle("TriggerMessage", async () => ({ status: "Accepted" }));
 
-      const mwSpy = vi.fn(async (ctx, next) => await next());
+      const mwSpy = vi.fn(async (_ctx, next) => await next());
       client.use(mwSpy);
 
       await client.connect();
@@ -971,7 +971,7 @@ describe("BrowserOCPPClient", () => {
     });
 
     it("should intercept incoming errors", async () => {
-      server.on("client", (sc) => {
+      server.on("client", () => {
         // No handler -> returns NotImplemented CallError
       });
 
@@ -982,7 +982,7 @@ describe("BrowserOCPPClient", () => {
         reconnect: false,
       });
 
-      const mwSpy = vi.fn(async (ctx, next) => await next());
+      const mwSpy = vi.fn(async (_ctx, next) => await next());
       client.use(mwSpy);
 
       await client.connect();

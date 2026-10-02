@@ -1,7 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import { initLogger } from "../src/init-logger";
 import { createLoggingMiddleware } from "../src/helpers/index.js";
-import { NOOP_LOGGER } from "../src/util";
 
 // Mock voltlog-io
 vi.mock("voltlog-io", () => ({
@@ -54,7 +53,7 @@ describe("initLogger", () => {
   });
 
   test("returns child logger if defaultContext provided", () => {
-    const logger: any = initLogger({}, { identity: "test" });
+    initLogger({}, { identity: "test" });
     // Since we mocked createLogger to return obj with child mock
     // We can't easily check strict equality unless we access the mock return
     // But we verified logic flow.

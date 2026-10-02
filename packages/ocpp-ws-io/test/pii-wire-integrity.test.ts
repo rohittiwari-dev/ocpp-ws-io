@@ -40,14 +40,14 @@ describe("what the charge point receives", () => {
     server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
     const http = await server.listen(0);
 
-    let received: Record<string, unknown> | undefined;
+    let received: { idTag: string } | undefined;
     client = new OCPPClient({
       identity: "CP-WIRE",
       endpoint: `ws://127.0.0.1:${getPort(http)}`,
       protocols: ["ocpp1.6"],
     });
     client.handle("ocpp1.6", "RemoteStartTransaction", ({ params }) => {
-      received = params as Record<string, unknown>;
+      received = params;
       return { status: "Accepted" };
     });
     await client.connect();
@@ -79,10 +79,10 @@ describe("what the charge point receives", () => {
     server.plugin(piiRedactorPlugin({ sensitiveKeys: ["idTag"] }));
     server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
 
-    let seenByHandler: Record<string, unknown> | undefined;
+    let seenByHandler: { idTag: string } | undefined;
     server.on("client", (c) =>
       c.handle("ocpp1.6", "Authorize", ({ params }) => {
-        seenByHandler = params as Record<string, unknown>;
+        seenByHandler = params;
         return { idTagInfo: { status: "Accepted" } };
       }),
     );

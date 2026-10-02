@@ -200,7 +200,7 @@ Transforms OCPP message payloads between protocol versions using user-provided r
 | `sourceVersion` | `string` | _required_ | Client-side OCPP version (e.g., `"ocpp1.6"`). |
 | `targetVersion` | `string` | _required_ | Handler-side OCPP version (e.g., `"ocpp2.0.1"`). |
 | `rules` | `TransformRule[]` | _required_ | Array of per-method transformation rules. |
-| `unmatchedBehavior` | `"passthrough" \| "reject"` | `"passthrough"` | What to do with methods without rules. |
+| `unmatchedBehavior` | `"passthrough" \| "reject"` | `"passthrough"` | What to do with methods without rules. `"reject"` refuses them: a received CALL is answered with `InternalError`, and a call or reply of yours fails with the error. |
 | `applyWhen` | `string` | — | Only apply when client protocol matches this value. |
 
 ```typescript
@@ -274,7 +274,8 @@ Signed messages from OCPP 2.0.1 and 2.1 Part 4, chapter 7: a message signed by t
 The protected header holds `alg`, `OCPPAction`, the message type and, with a certificate, `x5t#S256` (the SHA-256 hash of the DER certificate) to identify the key.
 
 - **Received:** `<Action>-Signed` calls, SENDs and replies are unwrapped before validation and routing, so handlers and strict mode see the plain message (§7.2 requires the unwrapping). With `verify`, the signature is checked first: an algorithm other than ES256, RS256 or RS384, a header for another action or message type, a `crit` header or a bad signature is refused with `SecurityError`.
-- **Sent:** `sign` picks the calls and SENDs to sign. A reply to a signed request is signed whenever there is a key (§7.2). A CALLERROR is never signed: the format has no action for it.
+- **Sent:** `sign` picks the calls and SENDs to sign. A reply to a signed request is signed whenever there is a key (§7.2). A CALLERROR is never signed: the format has no action for it. Signing happens after every middleware, through `wrap`, so strict mode checks the call unsigned, and changes other middleware makes are signed too.
+- **Order:** register it before other middleware plugins (`schemaVersioningPlugin`, `piiRedactorPlugin`), so they see received messages unwrapped.
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |

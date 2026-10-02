@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 
 import { type MiddlewareFunction, MiddlewareStack } from "../middleware.js";
-import type { JsonValue, MiddlewareContext } from "../types.js";
+import type { JsonValue, MiddlewareContext, WireCall } from "../types.js";
 import { EventEmitter } from "./emitter.js";
 import {
   type RPCError,
@@ -601,11 +601,13 @@ export class BrowserOCPPClient<
         { type: "outgoing_call" }
       >;
 
+      const wrapped = this._wrapOutgoing(ctxvals);
+      const wire = wrapped instanceof Promise ? await wrapped : wrapped;
       const message: OCPPCall = [
         MessageType.CALL,
         msgId,
-        ctxvals.method,
-        ctxvals.params,
+        wire.method,
+        wire.params,
       ];
       const messageStr = JSON.stringify(message);
 
@@ -748,14 +750,32 @@ export class BrowserOCPPClient<
         MiddlewareContext,
         { type: "outgoing_call" }
       >;
+      const wrapped = this._wrapOutgoing(ctxvals);
+      const wire = wrapped instanceof Promise ? await wrapped : wrapped;
       const frame: OCPPSend = [
         MessageType.SEND,
         messageId,
-        ctxvals.method,
-        ctxvals.params,
+        wire.method,
+        wire.params,
       ];
       this._ws?.send(JSON.stringify(frame));
     });
+  }
+
+  /**
+   * The call as it goes on the wire: what the middleware left, or what its
+   * `wrap` (an envelope such as a signature) makes of that.
+   */
+  private _wrapOutgoing(
+    ctx: Extract<MiddlewareContext, { type: "outgoing_call" }>,
+  ): WireCall | Promise<WireCall> {
+    // Sent as JSON, so it is JSON whatever the middleware typed it as.
+    const call: WireCall = {
+      method: ctx.method,
+      params: ctx.params as JsonValue,
+    };
+    // Without a wrap, nothing is awaited, so the send is not delayed.
+    return ctx.wrap ? ctx.wrap(call) : call;
   }
 
   // ─── Reconfigure ─────────────────────────────────────────────
@@ -1010,7 +1030,11 @@ export class BrowserOCPPClient<
       protocol: this._protocol,
     };
 
-    await this._middleware.execute(ctx, async (c) => {
+    // Whether the chain reached the handler step, which answers the CALL
+    // itself, with a CALLRESULT or a CALLERROR.
+    let reachedHandler = false;
+    const chain = this._middleware.execute(ctx, async (c) => {
+      reachedHandler = true;
       const ctxvals = c as Extract<
         MiddlewareContext,
         { type: "incoming_call" }
@@ -1107,6 +1131,61 @@ export class BrowserOCPPClient<
         this.emit("callError", errorResponse);
       }
     });
+
+    try {
+      await chain;
+    } catch (err) {
+      // Nothing awaits this method (_onMessage calls it and moves on), so an
+      // error leaving it would be an unhandled rejection.
+      this._logger.error?.("Middleware failed on incoming call", {
+        messageId: msgId,
+        method,
+        error: (err as Error)?.message ?? String(err),
+      });
+      // Past the handler step, the CALL was already answered.
+      if (reachedHandler || this._state !== OPEN) return;
+
+      // A middleware threw before the handler step (rejecting the call, or
+      // failing). Nothing answered the CALL, and OCPP-J requires an answer:
+      // without one the peer only learns of it from its own timeout.
+      const rpcErr =
+        err instanceof RPCGenericError || (err as RPCError).rpcErrorCode
+          ? (err as RPCError)
+          : createRPCError("InternalError", (err as Error).message);
+      const errorResponse: OCPPCallError = [
+        MessageType.CALLERROR,
+        msgId,
+        rpcErr.rpcErrorCode,
+        this._fitErrorDescription(
+          rpcErr.rpcErrorMessage || (err as Error).message || "",
+        ),
+        this._options.respondWithDetailedErrors
+          ? getErrorPlainObject(err as Error, false)
+          : {},
+      ];
+      this._ws?.send(JSON.stringify(errorResponse));
+      this.emit("callError", errorResponse);
+    }
+  }
+
+  /**
+   * A middleware rejected a reply (CALLRESULT or CALLERROR), or failed on it.
+   * The caller is waiting on this call, and without this it only saw its
+   * timeout. Once the call is settled, the error is only logged.
+   */
+  private _failPendingCall(msgId: string, err: Error): void {
+    const pending = this._pendingCalls.get(msgId);
+    if (!pending) {
+      this._logger.error?.("Middleware failed on a reply", {
+        messageId: msgId,
+        error: err?.message ?? String(err),
+      });
+      return;
+    }
+    clearTimeout(pending.timeoutHandle);
+    pending.removeAbortListener?.();
+    this._pendingCalls.delete(msgId);
+    pending.reject(err);
   }
 
   private async _handleCallResult(message: OCPPCallResult): Promise<void> {
@@ -1129,7 +1208,7 @@ export class BrowserOCPPClient<
       payload: result,
     };
 
-    await this._middleware.execute(ctx, async (c) => {
+    const chain = this._middleware.execute(ctx, async (c) => {
       const ctxvals = c as Extract<
         MiddlewareContext,
         { type: "incoming_result" }
@@ -1147,6 +1226,11 @@ export class BrowserOCPPClient<
       this._pendingCalls.delete(msgId);
       pending.resolve(ctxvals.payload);
     });
+    try {
+      await chain;
+    } catch (err) {
+      this._failPendingCall(msgId, err as Error);
+    }
   }
 
   private async _handleCallError(message: OCPPCallError): Promise<void> {
@@ -1171,7 +1255,7 @@ export class BrowserOCPPClient<
       error: error as unknown as OCPPCallError, // Map to types.ts expected `error` shape which takes OCPPCallError specifically here, though we pass it via RPCError
     };
 
-    await this._middleware.execute(ctx, async (c) => {
+    const chain = this._middleware.execute(ctx, async (c) => {
       const ctxvals = c as Extract<
         MiddlewareContext,
         { type: "incoming_error" }
@@ -1194,6 +1278,11 @@ export class BrowserOCPPClient<
       this._pendingCalls.delete(msgId);
       pending.reject(resolvedRpcErr);
     });
+    try {
+      await chain;
+    } catch (err) {
+      this._failPendingCall(msgId, err as Error);
+    }
   }
 
   // ─── Internal: Bad message handling ──────────────────────────

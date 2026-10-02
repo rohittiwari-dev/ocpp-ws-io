@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { OCPPServer } from "../src/server.js";
 import { OCPPClient } from "../src/client.js";
 import { ConnectionState } from "../src/types.js";
@@ -16,7 +16,7 @@ import { ConnectionState } from "../src/types.js";
  *   7. _rejectPendingCalls extraction
  */
 
-const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
+const { CONNECTING, OPEN } = ConnectionState;
 
 const getPort = (srv: import("node:http").Server): number => {
   const addr = srv.address();

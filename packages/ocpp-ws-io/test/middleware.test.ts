@@ -1,20 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MiddlewareStack } from "../src/middleware";
 import { createLoggingMiddleware } from "../src/helpers/index.js";
-import type { LoggerLike, MiddlewareContext } from "../src/types";
+import type { MiddlewareContext } from "../src/types";
 
 describe("MiddlewareStack", () => {
   it("should execute middleware in order", async () => {
     const stack = new MiddlewareStack<any>();
     const order: number[] = [];
 
-    stack.use(async (ctx, next) => {
+    stack.use(async (_ctx, next) => {
       order.push(1);
       await next();
       order.push(4);
     });
 
-    stack.use(async (ctx, next) => {
+    stack.use(async (_ctx, next) => {
       order.push(2);
       await next();
       order.push(3);
@@ -36,7 +36,7 @@ describe("MiddlewareStack", () => {
 
   it("should throw if next() is called multiple times", async () => {
     const stack = new MiddlewareStack<any>();
-    stack.use(async (ctx, next) => {
+    stack.use(async (_ctx, next) => {
       await next();
       await next();
     });

@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import { OCPPServerClient } from "../src/server-client.js";
+import { SecurityProfile } from "../src/types.js";
 
 /**
  * onBeforeSend and onBeforeReceive fail open, which is right — a broken plugin
@@ -43,6 +44,7 @@ function makeClient(plugins: unknown[], errors: string[]) {
         headers: {},
         protocols: new Set(["ocpp1.6"]),
         pathname: "/CP001",
+        securityProfile: SecurityProfile.NONE,
         params: {},
         query: new URLSearchParams(),
         request: {} as never,

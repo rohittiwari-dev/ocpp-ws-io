@@ -1,7 +1,6 @@
 import { describe, expect, test, vi, type Mock } from "vitest";
 import { InMemoryAdapter } from "../src/adapters/adapter";
 import { OCPPServer } from "../src/server";
-import { OCPPServerClient } from "../src/server-client";
 import { WebSocket } from "ws";
 
 describe("Unicast Routing (Phase 1)", () => {
@@ -44,7 +43,6 @@ describe("Unicast Routing (Phase 1)", () => {
     expect(presenceNodeId).toBe(serverA["_nodeId"]);
 
     // 5. Mock Client Call on Node A
-    let clientHandlerSpy = vi.fn();
     // We need to grab the server-side client instance on Node A
     const clientA = Array.from(serverA.clients).find(
       (c) => c.identity === clientIdentity,

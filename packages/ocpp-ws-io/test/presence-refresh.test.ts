@@ -5,7 +5,9 @@ import { OCPPClient } from "../src/client.js";
 import { OCPPServer } from "../src/server.js";
 
 class SpyAdapter extends InMemoryAdapter {
-  setPresenceBatch = vi.fn(async () => {});
+  setPresenceBatch = vi.fn<InMemoryAdapter["setPresenceBatch"]>(
+    async () => {},
+  );
 }
 
 describe("presence heartbeat (C3)", () => {
@@ -34,10 +36,7 @@ describe("presence heartbeat (C3)", () => {
     await new Promise((r) => setTimeout(r, 1300));
 
     expect(adapter.setPresenceBatch.mock.calls.length).toBeGreaterThanOrEqual(2);
-    const lastCall = adapter.setPresenceBatch.mock.calls.at(-1)![0] as Array<{
-      identity: string;
-      ttl?: number;
-    }>;
+    const lastCall = adapter.setPresenceBatch.mock.calls.at(-1)![0];
     expect(lastCall[0].identity).toBe("CP-PRESENCE");
     expect(lastCall[0].ttl).toBe(1);
   });

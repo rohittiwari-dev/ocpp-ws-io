@@ -44,7 +44,8 @@ export interface SchemaVersioningOptions {
   /**
    * How to handle methods without a transform rule:
    * - "passthrough": Forward as-is
-   * - "reject": Drop the message
+   * - "reject": Refuse it. A received CALL is answered with InternalError;
+   *   a call this side makes, or the reply to one, fails with the error.
    * @default "passthrough"
    */
   unmatchedBehavior?: "passthrough" | "reject";

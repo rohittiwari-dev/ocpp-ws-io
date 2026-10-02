@@ -52,9 +52,9 @@ two error phases. Every phase carries `messageId`, `method` and the fields below
 | `ctx.type`         | Carries                          | Runs when                                              |
 | :----------------- | :------------------------------- | :----------------------------------------------------- |
 | `incoming_call`    | `params`, `protocol?`            | A CALL arrives, before your handler sees it             |
-| `outgoing_call`    | `params`, `options`              | You send a CALL, before it is written                   |
+| `outgoing_call`    | `params`, `options`, `wrap?`     | You send a CALL, before it is written                   |
 | `incoming_result`  | `payload`                        | A CALLRESULT answers a call you made                    |
-| `outgoing_result`  | `payload`                        | Your handler returned, before the CALLRESULT is written |
+| `outgoing_result`  | `payload`, `wrap?`               | Your handler returned, before the CALLRESULT is written |
 | `incoming_error`   | `error` (`OCPPCallError`)        | A CALLERROR answers a call you made                     |
 | `outgoing_error`   | `errorCode`, `errorDescription`  | Your handler threw, before the CALLERROR is written     |
 
@@ -87,12 +87,37 @@ leave a charge point waiting for a CALLRESULT that never arrives.
 A middleware that throws on an `incoming_call` before calling `next()` rejects the call:
 the peer is answered with a CALLERROR carrying the error's RPC code
 (`createRPCError("SecurityError")`, for example), or `InternalError` for any other
-error, and the handler does not run. One that throws on an `incoming_result` rejects
-the waiting `call()` with that error.
+error, and the handler does not run. One that throws on an `incoming_result` or an
+`incoming_error` rejects the waiting `call()` with that error. This holds for the
+server, the Node client and the browser client.
 
-Strict mode checks an outgoing call as your application made it, before any
-middleware rewrites it, and checks the reply against the same action; outgoing
-results are checked before middleware too.
+Strict mode checks an outgoing call after the middleware, as it goes on the wire, so a
+call your middleware converted is checked as converted, and one it made invalid is not
+sent. A handler's result is checked before the middleware.
+
+#### Envelopes: `wrap`
+
+Some middleware does not change a message but puts it in an envelope, such as a
+signature. Set `ctx.wrap` on an `outgoing_call` or `outgoing_result` for that: it runs
+once every middleware has run (and strict mode has checked the plain call), wherever
+your middleware sits in the chain, and what it returns goes on the wire instead. On a
+call, the reply is still matched to the plain action.
+
+```typescript
+client.use(async (ctx, next) => {
+  if (ctx.type === "outgoing_call") {
+    const inner = ctx.wrap; // an envelope set earlier, if any
+    ctx.wrap = async (call) => {
+      const plain = inner ? await inner(call) : call;
+      return { method: `${plain.method}-Signed`, params: await sign(plain) };
+    };
+  }
+  return next();
+});
+```
+
+If an `outgoing_result` wrap throws, the reply is sent without it and the failure is
+logged, as for any middleware on a response.
 
 ```typescript
 import { defineRpcMiddleware } from "ocpp-ws-io/browser"; // Or "ocpp-ws-io" for Server/NodeClient

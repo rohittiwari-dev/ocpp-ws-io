@@ -57,6 +57,7 @@ export {
   type OCPPSendRequestType,
   type SendMethodNames,
   type WildcardHandler,
+  type WireCall,
 } from "./types.js";
 // ─── Utilities ───────────────────────────────────────────────────
 export { createRPCError, getErrorPlainObject } from "./util.js";

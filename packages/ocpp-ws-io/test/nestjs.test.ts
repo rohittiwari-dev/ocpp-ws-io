@@ -14,6 +14,7 @@ import {
   OcppGateway,
   OcppMessageEvent,
   OcppModule,
+  type OcppModuleOptions,
   type OcppOptionsFactory,
   OcppService,
   OcppWildcardEvent,
@@ -79,7 +80,7 @@ class TestGateway {
 }
 
 class TestOptionsFactory implements OcppOptionsFactory {
-  createOcppOptions() {
+  createOcppOptions(): OcppModuleOptions {
     return {
       protocols: ["ocpp1.6"],
       logging: false,

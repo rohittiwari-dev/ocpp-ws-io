@@ -187,16 +187,7 @@ describe("Phase K9 — Plugin System", () => {
 
   it("should handle onInit errors gracefully without crashing", () => {
     server = new OCPPServer();
-    const plugin: OCPPPlugin = {
-      name: "error-plugin",
-      onInit: () => {
-        throw new Error("init failed");
-      },
-    };
-
-    // Should not throw — error is caught internally
-    // Actually the sync throw will propagate since we don't wrap it
-    // Let's test the async error path instead
+    // A plugin whose onInit rejects: plugin() must not throw for it.
     const asyncPlugin: OCPPPlugin = {
       name: "async-error-plugin",
       onInit: async () => {

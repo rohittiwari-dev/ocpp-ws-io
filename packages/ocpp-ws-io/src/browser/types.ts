@@ -33,6 +33,7 @@ import type {
   OCPPProtocol as _OCPPProtocol,
   OCPPSend as _OCPPSend,
   WildcardHandler as _WildcardHandler,
+  WireCall as _WireCall,
 } from "../types.js";
 
 // Re-export shared types
@@ -50,6 +51,7 @@ export type CallHandler<TParams = unknown, TResult = unknown> = _CallHandler<
   TResult
 >;
 export type WildcardHandler = _WildcardHandler;
+export type WireCall = _WireCall;
 export type CallOptions = _CallOptions;
 export type NoReplyCallOptions = _NoReplyCallOptions;
 export type CloseOptions = _CloseOptions;

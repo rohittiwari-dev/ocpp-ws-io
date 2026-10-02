@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import type { MiddlewareFunction } from "../src/middleware.js";
 import { circuitBreakerPlugin } from "../src/plugins/circuit-breaker.js";
+import type { MiddlewareContext } from "../src/types.js";
 
 /**
  * The circuit was looked up once in onConnection and captured by the
@@ -12,20 +14,28 @@ import { circuitBreakerPlugin } from "../src/plugins/circuit-breaker.js";
 
 /** A client stub that records the middleware the plugin installs. */
 function fakeClient(identity: string) {
-  let middleware: ((ctx: unknown, next: () => unknown) => unknown) | undefined;
+  let middleware: MiddlewareFunction<MiddlewareContext> | undefined;
   const client = {
     identity,
     protocol: "ocpp1.6",
     handshake: { remoteAddress: "127.0.0.1" },
-    use: (mw: (ctx: unknown, next: () => unknown) => unknown) => {
+    use: (mw: MiddlewareFunction<MiddlewareContext>) => {
       middleware = mw;
     },
   };
   return {
     client: client as never,
-    call: (fail: boolean) =>
-      middleware?.({ type: "outgoing_call", method: "Heartbeat" }, () =>
-        fail ? Promise.reject(new Error("boom")) : Promise.resolve("ok"),
+    call: async (fail: boolean) =>
+      middleware?.(
+        {
+          type: "outgoing_call",
+          messageId: "m1",
+          method: "Heartbeat",
+          params: {},
+          options: {},
+        },
+        () =>
+          fail ? Promise.reject(new Error("boom")) : Promise.resolve("ok"),
       ),
   };
 }

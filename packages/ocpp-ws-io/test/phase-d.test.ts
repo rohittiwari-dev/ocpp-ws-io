@@ -178,8 +178,7 @@ describe("Phase D — Health & Metrics Endpoint", () => {
 
   it("should not serve /health when healthEndpoint is not enabled", async () => {
     server = new OCPPServer(); // No healthEndpoint
-    const httpServer = await server.listen(0);
-    const port = getPort(httpServer);
+    await server.listen(0);
 
     // Without healthEndpoint, nginx/reverse proxy is expected to handle HTTP
     // The server won't respond to plain HTTP — the connection just hangs.

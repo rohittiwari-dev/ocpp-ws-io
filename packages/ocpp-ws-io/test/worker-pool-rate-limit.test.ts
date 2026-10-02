@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import { OCPPServerClient } from "../src/server-client.js";
+import { SecurityProfile } from "../src/types.js";
 import type { WorkerPool } from "../src/worker-pool.js";
 
 /**
@@ -38,6 +39,7 @@ function makeClient(
         headers: {},
         protocols: new Set(["ocpp1.6"]),
         pathname: "/CP001",
+        securityProfile: SecurityProfile.NONE,
         params: {},
         query: new URLSearchParams(),
         request: {} as never,

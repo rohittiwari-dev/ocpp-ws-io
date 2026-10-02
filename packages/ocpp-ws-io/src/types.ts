@@ -1813,6 +1813,14 @@ export type MiddlewareContext =
       options: CallOptions;
       /** True for an OCPP 2.1 SEND, which expects no answer. */
       unconfirmed?: boolean;
+      /**
+       * Set by a middleware that puts the call in an envelope, such as a
+       * signature (`signedMessagesPlugin`). It is called once every
+       * middleware has run and strict mode has checked `method` and
+       * `params`, and what it returns goes on the wire instead. To add an
+       * envelope around one already set, call the previous `wrap` first.
+       */
+      wrap?: (call: WireCall) => WireCall | Promise<WireCall>;
     }
   | {
       type: "incoming_result";
@@ -1831,6 +1839,14 @@ export type MiddlewareContext =
       messageId: string;
       method: string;
       payload: unknown;
+      /**
+       * Set by a middleware that puts the reply in an envelope, such as a
+       * signature (`signedMessagesPlugin`). It is called once every
+       * middleware has run, with `payload` as it stands, and what it returns
+       * goes on the wire instead. To add an envelope around one already set,
+       * call the previous `wrap` first.
+       */
+      wrap?: (payload: JsonValue) => JsonValue | Promise<JsonValue>;
     }
   | {
       type: "outgoing_error";
@@ -1839,6 +1855,12 @@ export type MiddlewareContext =
       errorCode: string;
       errorDescription: string;
     };
+
+/** An outgoing call's action and params, as `wrap` takes and returns them. */
+export interface WireCall {
+  method: string;
+  params: JsonValue;
+}
 
 export type { MiddlewareFunction, MiddlewareNext } from "./middleware.js";
 

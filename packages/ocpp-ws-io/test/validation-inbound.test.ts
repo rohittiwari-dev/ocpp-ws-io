@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { OCPPServer } from "../src/server.js";
 import { OCPPClient } from "../src/client.js";
-import { MessageType } from "../src/types.js";
 
 const getPort = (srv: import("node:http").Server): number => {
   const addr = srv.address();
@@ -74,10 +73,8 @@ describe("Inbound Validation (Strict Mode)", () => {
     const handler = vi.fn().mockResolvedValue({});
     client.handle("RemoteStartTransaction", handler);
 
-    let serverClient: any;
     const responsePromise = new Promise<any>((resolve) => {
       server.on("client", (sc) => {
-        serverClient = sc;
         sc.call("RemoteStartTransaction", { connectorId: 1 })
           .then(() => resolve("success"))
           .catch((err) => resolve(err));

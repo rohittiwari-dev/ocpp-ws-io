@@ -38,6 +38,25 @@ const verify: SignedMessagesOptions["verify"] = (header) =>
 
 const b64 = (value: JsonValue) =>
   Buffer.from(JSON.stringify(value)).toString("base64url");
+/** The signed params of a frame, as a copy; throws if they are not a JWS. */
+function asJws(params: JsonValue): FlattenedJws {
+  if (
+    typeof params !== "object" ||
+    params === null ||
+    Array.isArray(params) ||
+    typeof params.protected !== "string" ||
+    typeof params.payload !== "string" ||
+    typeof params.signature !== "string"
+  ) {
+    throw new Error(`Not a Flattened JWS: ${JSON.stringify(params)}`);
+  }
+  return {
+    protected: params.protected,
+    payload: params.payload,
+    signature: params.signature,
+  };
+}
+
 const unb64 = (part: string): JsonValue =>
   JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
 
@@ -193,6 +212,47 @@ describe("signed messages plugin", () => {
     expect(Object.keys(wire.out[0][2] as object)).toEqual(["currentTime"]);
   });
 
+  it("lets strict mode check the call unsigned, and sends nothing when it fails", async () => {
+    const { port, wire } = await start({ ...ec, verify });
+    const client = await connect(port, { ...rsa, sign: true });
+
+    // BootNotification needs reason and chargingStation.
+    await expect(client.call("BootNotification", {})).rejects.toThrow(
+      /required property/,
+    );
+    expect(wire.in).toEqual([]);
+  });
+
+  it("signs what middleware registered after it made of the call and the reply", async () => {
+    const { port, wire } = await start({ ...ec, verify });
+    // On the CSMS, the "client" event comes after the plugins' onConnection,
+    // so this middleware is registered after the plugin's.
+    servers[servers.length - 1].on("client", (c) =>
+      c.use(async (ctx, next) => {
+        if (ctx.type === "outgoing_result") {
+          ctx.payload = { ...(ctx.payload as object), interval: 60 };
+        }
+        return next();
+      }),
+    );
+    const client = await connect(port, { ...rsa, sign: true, verify });
+    client.use(async (ctx, next) => {
+      if (ctx.type === "outgoing_call") {
+        ctx.params = { ...boot, reason: "Triggered" };
+      }
+      return next();
+    });
+
+    const response = await client.call("BootNotification", boot);
+
+    expect(opened(wire.in[0][3]).payload).toMatchObject({
+      reason: "Triggered",
+    });
+    expect(opened(wire.out[0][2]).payload).toMatchObject({ interval: 60 });
+    // The charger verified the signed reply and got the changed payload.
+    expect(response).toMatchObject({ interval: 60 });
+  });
+
   it("signs a SEND with message type 6 (OCPP 2.1)", async () => {
     const { port, wire, handled } = await start({ verify }, "ocpp2.1");
     const client = await connect(
@@ -276,11 +336,16 @@ describe("signed messages plugin", () => {
     ])("%s", async (_name, tamper, logged) => {
       const { port, handled, errors } = await start({ verify });
       const client = await connect(port, { ...ec, sign: true });
-      // Registered after signing, so it sees the signed frame.
+      // A hop in between: changes the signed frame after it was signed.
       client.use(async (ctx, next) => {
         if (ctx.type === "outgoing_call") {
-          const method = tamper(ctx.params as JsonValue & FlattenedJws);
-          if (method) ctx.method = method;
+          const signed = ctx.wrap;
+          ctx.wrap = async (call) => {
+            const wire = signed ? await signed(call) : call;
+            const jws = asJws(wire.params);
+            const method = tamper(jws);
+            return { method: method ?? wire.method, params: { ...jws } };
+          };
         }
         return next();
       });

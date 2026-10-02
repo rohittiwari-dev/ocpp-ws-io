@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { OCPPServer } from "../src/server.js";
 import { OCPPClient } from "../src/client.js";
 import { SecurityProfile } from "../src/types.js";
-import type { OCPPServerClient } from "../src/server-client.js";
 
 let server: OCPPServer;
 let client: OCPPClient;
@@ -914,7 +913,7 @@ describe("OCPPClient - Version-Aware Call", () => {
     const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
     srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
 
-    const callResult = new Promise<unknown>((resolve, reject) => {
+    const callResult = new Promise<unknown>((resolve) => {
       srv.on("client", async (sc) => {
         try {
           const result = await sc.call("ocpp1.6", "GetConfiguration", {

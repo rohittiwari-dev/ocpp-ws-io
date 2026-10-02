@@ -151,7 +151,7 @@ describe("Auth and Middleware Utilities", () => {
     });
 
     it("should natively passthrough RPC middleware functions for IDE typings", () => {
-      const rw = defineRpcMiddleware(async (ctx, next) => next());
+      const rw = defineRpcMiddleware(async (_ctx, next) => next());
       expect(typeof rw).toBe("function");
     });
   });

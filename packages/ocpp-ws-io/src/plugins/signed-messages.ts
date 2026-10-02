@@ -419,14 +419,24 @@ function createMiddleware(
         break;
       }
       case "outgoing_result": {
-        if (signedRequests.delete(ctx.messageId) && config.signer) {
-          ctx.payload = await seal(
-            config,
-            config.signer,
-            ctx.payload as JsonValue,
-            ctx.method,
-            MessageType.CALLRESULT,
-          );
+        const signer = config.signer;
+        if (signedRequests.delete(ctx.messageId) && signer) {
+          // Signed around the reply every middleware has finished with, so
+          // the order plugins are registered in does not matter here.
+          const inner = ctx.wrap;
+          const reply = ctx;
+          ctx.wrap = async (payload) => {
+            const plain = inner ? await inner(payload) : payload;
+            return {
+              ...(await seal(
+                config,
+                signer,
+                plain,
+                reply.method,
+                MessageType.CALLRESULT,
+              )),
+            };
+          };
         }
         break;
       }
@@ -434,17 +444,27 @@ function createMiddleware(
         signedRequests.delete(ctx.messageId);
         break;
       case "outgoing_call": {
-        if (config.signer && config.shouldSign(ctx.method)) {
-          ctx.params = await seal(
-            config,
-            config.signer,
-            ctx.params as JsonValue,
-            ctx.method,
-            ctx.unconfirmed ? MessageType.SEND : MessageType.CALL,
-          );
-          ctx.method = `${ctx.method}${SIGNED_SUFFIX}`;
-          if (!ctx.unconfirmed) remember(signedCalls, ctx.messageId);
-        }
+        const signer = config.signer;
+        if (!signer) break;
+        // Signed once every middleware has run and strict mode has checked
+        // the plain call, which the signed form cannot be checked as.
+        const inner = ctx.wrap;
+        const { messageId, unconfirmed } = ctx;
+        ctx.wrap = async (call) => {
+          const plain = inner ? await inner(call) : call;
+          if (!config.shouldSign(plain.method)) return plain;
+          const params = {
+            ...(await seal(
+              config,
+              signer,
+              plain.params,
+              plain.method,
+              unconfirmed ? MessageType.SEND : MessageType.CALL,
+            )),
+          };
+          if (!unconfirmed) remember(signedCalls, messageId);
+          return { method: `${plain.method}${SIGNED_SUFFIX}`, params };
+        };
         break;
       }
       case "incoming_result": {
@@ -476,6 +496,10 @@ function createMiddleware(
  * validation and routing (§7.2) and, with `verify`, checked first; `sign`
  * picks the calls to send signed, and replies to signed requests are signed
  * (§7.2). Applies to ocpp2.0.1 and ocpp2.1 connections; others pass through.
+ *
+ * Register it before other middleware plugins, so they see received messages
+ * unwrapped. Outgoing calls and replies are signed after every middleware
+ * (through `wrap`), and strict mode checks them unsigned.
  *
  * Node only: it uses `node:crypto`.
  *

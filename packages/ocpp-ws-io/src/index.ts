@@ -137,6 +137,7 @@ export {
   type TLSOptions,
   type TypedEventEmitter,
   type WildcardHandler,
+  type WireCall,
   type WsClientOptions,
   type WsServerOptions,
 } from "./types.js";

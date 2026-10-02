@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { initLogger } from "../src/init-logger";
 import { type LogEntry, type LogMiddleware } from "voltlog-io";
 

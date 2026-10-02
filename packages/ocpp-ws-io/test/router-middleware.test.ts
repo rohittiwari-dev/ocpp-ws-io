@@ -101,7 +101,7 @@ describe("OCPPRouter - Middleware & Multiplexing", () => {
         await ctx.next();
       })
       .on("client", (client) => {
-        client.handle("BootNotification", async ({ params }) => {
+        client.handle("BootNotification", async () => {
           return {
             currentTime: new Date().toISOString(),
             interval: 60,
@@ -176,7 +176,7 @@ describe("OCPPRouter - Middleware & Multiplexing", () => {
 
     server
       .route("/direct/:id/:identity")
-      .handle("BootNotification", async (ctx) => {
+      .handle("BootNotification", async () => {
         return {
           currentTime: new Date().toISOString(),
           interval: 300,

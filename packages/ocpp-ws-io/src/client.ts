@@ -50,6 +50,7 @@ import {
   type SendMethodNames,
   type TypedEventEmitter,
   type WildcardHandler,
+  type WireCall,
 } from "./types.js";
 import {
   createId,
@@ -1078,13 +1079,6 @@ export class OCPPClient<
       throw new Error(`Cannot send: client is in state ${this._state}`);
     }
 
-    // Strict mode checks the SEND as the application made it, before any
-    // middleware rewrites it: a renamed action (signing appends "-Signed")
-    // has no schema, so checking afterwards checked nothing.
-    if (this._options.strictMode && this._protocol) {
-      this._validateOutbound(method, params, "send");
-    }
-
     const messageId = this._newMessageId();
     const ctx: MiddlewareContext = {
       type: "outgoing_call",
@@ -1100,12 +1094,17 @@ export class OCPPClient<
         MiddlewareContext,
         { type: "outgoing_call" }
       >;
+      if (this._options.strictMode && this._protocol) {
+        this._validateOutbound(ctxvals.method, ctxvals.params, "send");
+      }
 
+      const wrapped = this._wrapOutgoing(ctxvals);
+      const wire = wrapped instanceof Promise ? await wrapped : wrapped;
       const frame: OCPPSend = [
         MessageType.SEND,
         messageId,
-        ctxvals.method,
-        ctxvals.params,
+        wire.method,
+        wire.params,
       ];
       const allowSend = this._invokeBeforeSend(frame);
       const allowed =
@@ -1119,6 +1118,23 @@ export class OCPPClient<
       });
       this._emitMessageEvent(frame, "OUT", ctxvals);
     });
+  }
+
+  /**
+   * The call as it goes on the wire: what the middleware left, or what its
+   * `wrap` (an envelope such as a signature) makes of that. Called after
+   * strict-mode validation, which checks the call itself, not the envelope.
+   */
+  private _wrapOutgoing(
+    ctx: Extract<MiddlewareContext, { type: "outgoing_call" }>,
+  ): WireCall | Promise<WireCall> {
+    // Sent as JSON, so it is JSON whatever the middleware typed it as.
+    const call: WireCall = {
+      method: ctx.method,
+      params: ctx.params as JsonValue,
+    };
+    // Without a wrap, nothing is awaited, so the send is not delayed.
+    return ctx.wrap ? ctx.wrap(call) : call;
   }
 
   // ─── Safe Call (Best Effort) ─────────────────────────────────
@@ -1204,14 +1220,6 @@ export class OCPPClient<
 
     let callResult: unknown;
 
-    // Strict mode checks the call as the application made it, before any
-    // middleware rewrites it, as outgoing results already are: a renamed
-    // action (signing appends "-Signed") has no schema, so checking afterwards
-    // checked nothing.
-    if (this._options.strictMode && this._protocol) {
-      this._validateOutbound(method, params, "req");
-    }
-
     await this._middleware.execute(ctx, async (c) => {
       // Cast ctx back to access specific fields safely if needed,
       // but strictly we should use 'c' which is TContext.
@@ -1221,11 +1229,18 @@ export class OCPPClient<
         { type: "outgoing_call" }
       >;
 
+      // Strict mode: validate outbound call
+      if (this._options.strictMode && this._protocol) {
+        this._validateOutbound(ctxvals.method, ctxvals.params, "req");
+      }
+
+      const wrapped = this._wrapOutgoing(ctxvals);
+      const wire = wrapped instanceof Promise ? await wrapped : wrapped;
       const message: OCPPCall = [
         MessageType.CALL,
         msgId,
-        ctxvals.method,
-        ctxvals.params,
+        wire.method,
+        wire.params,
       ];
 
       const allowSend = this._invokeBeforeSend(message);
@@ -1335,9 +1350,7 @@ export class OCPPClient<
           reject,
           timeoutHandle,
           removeAbortListener,
-          // The application's action, not a middleware's rewrite of it: the
-          // reply is checked against this action's schema.
-          method,
+          method: ctxvals.method,
           sentAt: Date.now(),
         });
 
@@ -1988,11 +2001,22 @@ export class OCPPClient<
               method: ctxvals.method,
               payload: result,
             };
+            let wrap: Extract<
+              MiddlewareContext,
+              { type: "outgoing_result" }
+            >["wrap"];
             await this._middleware.execute(outCtx, async (c) => {
-              payload = (
-                c as Extract<MiddlewareContext, { type: "outgoing_result" }>
-              ).payload;
+              const out = c as Extract<
+                MiddlewareContext,
+                { type: "outgoing_result" }
+              >;
+              payload = out.payload;
+              wrap = out.wrap;
             });
+            // An envelope (a signature) goes around the reply every
+            // middleware has finished with. If it fails, the reply goes
+            // without it, like a failed middleware's.
+            if (wrap) payload = await wrap(payload as JsonValue);
           } catch (err) {
             // Fail open with what the handler produced. A middleware that
             // throws must not cost the charge point its response — it would
@@ -2166,15 +2190,28 @@ export class OCPPClient<
     try {
       await this._runIncomingResult(ctx);
     } catch (err) {
-      // A middleware rejected the reply, or failed on it. The caller is
-      // waiting on this call, and without this it only saw its timeout.
-      const pendingCtx = this._pendingCalls.get(msgId);
-      if (!pendingCtx) return;
-      clearTimeout(pendingCtx.timeoutHandle);
-      pendingCtx.removeAbortListener?.();
-      this._pendingCalls.delete(msgId);
-      pendingCtx.reject(err);
+      this._failPendingCall(msgId, err as Error);
     }
+  }
+
+  /**
+   * A middleware rejected a reply (CALLRESULT or CALLERROR), or failed on it.
+   * The caller is waiting on this call, and without this it only saw its
+   * timeout. Once the call is settled, the error is only logged.
+   */
+  private _failPendingCall(msgId: string, err: Error | RPCError): void {
+    const pendingCtx = this._pendingCalls.get(msgId);
+    if (!pendingCtx) {
+      this._logger?.error?.("Middleware failed on a reply", {
+        messageId: msgId,
+        error: err.message,
+      });
+      return;
+    }
+    clearTimeout(pendingCtx.timeoutHandle);
+    pendingCtx.removeAbortListener?.();
+    this._pendingCalls.delete(msgId);
+    pendingCtx.reject(err);
   }
 
   private async _runIncomingResult(ctx: MiddlewareContext): Promise<void> {
@@ -2256,7 +2293,7 @@ export class OCPPClient<
       method: pending.method,
     };
 
-    await this._middleware.execute(ctx, async (c) => {
+    const chain = this._middleware.execute(ctx, async (c) => {
       const ctxvals = c as Extract<
         MiddlewareContext,
         { type: "incoming_error" }
@@ -2284,6 +2321,11 @@ export class OCPPClient<
       const err = createRPCError(code, msg, details);
       pendingCtx.reject(err);
     });
+    try {
+      await chain;
+    } catch (err) {
+      this._failPendingCall(msgId, err as Error);
+    }
   }
 
   // ─── Internal: Bad message handling ──────────────────────────

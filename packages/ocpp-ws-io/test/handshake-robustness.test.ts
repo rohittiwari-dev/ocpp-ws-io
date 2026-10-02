@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import WebSocket from "ws";
 import { OCPPServer } from "../src/server";
 import { SecurityProfile } from "../src/types";

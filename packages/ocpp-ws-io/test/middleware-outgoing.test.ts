@@ -78,10 +78,11 @@ describe("middleware on the outgoing response path", () => {
     });
 
     const c = await connect([plugin]);
-    const res = (await c.call("ocpp1.6", "Heartbeat", {})) as Record<
-      string,
-      unknown
-    >;
+    const res: { currentTime: string; adaptedFor?: string } = await c.call(
+      "ocpp1.6",
+      "Heartbeat",
+      {},
+    );
 
     // The charge point receives the transformed response.
     expect(res.adaptedFor).toBe("1.5");
@@ -146,10 +147,7 @@ describe("middleware on the outgoing response path", () => {
     const c = await connect([plugin]);
     // Fails open with what the handler produced — a broken middleware must not
     // leave a charger waiting for a CALLRESULT that never arrives.
-    const res = (await c.call("ocpp1.6", "Heartbeat", {})) as Record<
-      string,
-      unknown
-    >;
+    const res = await c.call("ocpp1.6", "Heartbeat", {});
     expect(res.currentTime).toBe("2026-01-01T00:00:00Z");
   }, 20000);
 
@@ -243,10 +241,7 @@ describe("middleware on the outgoing response path", () => {
     };
 
     const c = await connect([plugin]);
-    const res = (await c.call("ocpp1.6", "Heartbeat", {})) as Record<
-      string,
-      unknown
-    >;
+    const res = await c.call("ocpp1.6", "Heartbeat", {});
     expect(res).toEqual({ currentTime: "2026-01-01T00:00:00Z" });
   }, 20000);
 

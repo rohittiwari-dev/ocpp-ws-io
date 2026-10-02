@@ -274,11 +274,9 @@ describe("ClusterDriver types", () => {
         nodes: [{ host: "localhost", port: 6379 }],
         natMap: { "172.17.0.2:6379": { host: "localhost", port: 6379 } },
         redisOptions: { password: "secret" },
-        prefix: "myapp:",
       };
     expect(opts.nodes).toHaveLength(1);
     expect(opts.natMap).toBeDefined();
     expect(opts.redisOptions).toEqual({ password: "secret" });
-    expect(opts.prefix).toBe("myapp:");
   });
 });
