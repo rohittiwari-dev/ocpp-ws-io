@@ -7,7 +7,7 @@ export {
 } from "../helpers/index.js";
 export * from "../middleware.js";
 export type { Validator, ValidatorSchema } from "../validator.js";
-export { BrowserOCPPClient } from "./client.js";
+export { type AnyBrowserOCPPClient, BrowserOCPPClient } from "./client.js";
 // ─── Errors ──────────────────────────────────────────────────────
 export {
   type RPCError,

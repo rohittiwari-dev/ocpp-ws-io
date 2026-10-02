@@ -14,7 +14,7 @@ export type {
 } from "./adaptive-limiter.js";
 // ─── Adaptive Rate Limiting ──────────────────────────────────────
 export { AdaptiveLimiter } from "./adaptive-limiter.js";
-export { OCPPClient } from "./client.js";
+export { type AnyOCPPClient, OCPPClient } from "./client.js";
 // ─── Errors ──────────────────────────────────────────────────────
 export {
   type RPCError,

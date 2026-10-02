@@ -5,6 +5,7 @@ import {
   ConnectionState,
   type HandshakeInfo,
   type OCPPPlugin,
+  type OCPPProtocol,
 } from "./types.js";
 import type { WorkerPool } from "./worker-pool.js";
 
@@ -35,7 +36,9 @@ export class OCPPServerClient extends OCPPClient {
       plugins?: OCPPPlugin[];
     },
   ) {
-    super(options);
+    // Typed for every known protocol until OCPPServerClient carries the
+    // server's protocols (T2b of the typing plan).
+    super(options as ClientOptions<OCPPProtocol>);
 
     this._serverSession = context.session;
     this._serverHandshake = context.handshake;

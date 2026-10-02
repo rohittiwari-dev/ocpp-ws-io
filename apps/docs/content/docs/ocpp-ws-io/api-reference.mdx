@@ -15,6 +15,10 @@ import { OCPPClient } from "ocpp-ws-io";
 const client = new OCPPClient(options: ClientOptions);
 ```
 
+The client is typed for its `protocols`: `new OCPPClient({ protocols: ["ocpp1.6"] })` is an `OCPPClient<"ocpp1.6">`, so calls, handlers and responses use the 1.6 types, and a version named in a call must be one of its protocols. Without `protocols`, or with a list only known at runtime, it is typed for every version. Custom protocols declared in `OCPPMethodMap` count as protocols.
+
+To keep clients configured for different protocols in one list (for example to close them all), use `AnyOCPPClient`: every client fits it, and it has everything except the calls typed by protocol.
+
 #### ClientOptions
 
 | Option                | Type                            | Default    | Description                                         |
@@ -96,6 +100,21 @@ Connect to the OCPP server.
 
 ```typescript
 await client.connect();
+```
+
+#### `forProtocol(protocol)`
+
+The same client, typed for one of its protocols, or `undefined` while it speaks another or is not connected. A client configured for several versions is typed for all of them until narrowed this way.
+
+```typescript
+const client = new OCPPClient({ identity, endpoint, protocols: ["ocpp1.6", "ocpp2.0.1"] });
+await client.connect();
+
+const v16 = client.forProtocol("ocpp1.6");
+if (v16) {
+  const auth = await v16.call("Authorize", { idTag: "ABC" });
+  auth.idTagInfo.status; // the 1.6 response
+}
 ```
 
 #### `call(protocol?, method, params, options?)`

@@ -50,7 +50,7 @@ const getPort = (srv: import('node:http').Server): number => {
 
 describe('Browser Phase 3 — Reconnect State', () => {
 	let server: OCPPServer;
-	let client: BrowserOCPPClient;
+	let client: BrowserOCPPClient<'ocpp1.6'>;
 	let port: number;
 
 	beforeEach(async () => {
@@ -151,7 +151,7 @@ describe('Browser Phase 3 — Reconnect State', () => {
 
 describe('Browser Phase 3 — disconnect vs close Events', () => {
 	let server: OCPPServer;
-	let client: BrowserOCPPClient;
+	let client: BrowserOCPPClient<'ocpp1.6'>;
 	let port: number;
 
 	beforeEach(async () => {
@@ -280,7 +280,7 @@ describe('Browser Phase 3 — Close Code Validation', () => {
 
 describe('Browser Phase 3 — Outbound Buffering', () => {
 	let server: OCPPServer;
-	let client: BrowserOCPPClient;
+	let client: BrowserOCPPClient<'ocpp1.6'>;
 	let port: number;
 
 	beforeEach(async () => {
@@ -382,7 +382,7 @@ describe('Browser Phase 3 — Outbound Buffering', () => {
 
 describe('Browser Phase 3 — Pending Call Rejection', () => {
 	let server: OCPPServer;
-	let client: BrowserOCPPClient;
+	let client: BrowserOCPPClient<'ocpp1.6'>;
 	let port: number;
 
 	beforeEach(async () => {

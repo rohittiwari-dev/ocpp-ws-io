@@ -48,6 +48,16 @@ const client = new OCPPClient({
 });
 ```
 
+## Type changes
+
+These change only what compiles; nothing differs at runtime.
+
+| Change | Affects you if | What to write |
+| --- | --- | --- |
+| A client is typed for the `protocols` it is configured with: `new OCPPClient({ protocols: ["ocpp1.6"] })` is an `OCPPClient<"ocpp1.6">`, so only 1.6 actions, params and responses type-check, and a version named in a call must be one of its protocols | You keep such a client in a variable or list typed as plain `OCPPClient` or `BrowserOCPPClient` | Type the variable for its protocols (`OCPPClient<"ocpp1.6">`), or use `AnyOCPPClient` / `AnyBrowserOCPPClient` for a list that only connects, closes and listens |
+
+A client created without `protocols`, from options typed as plain `ClientOptions`, or with a list only known at runtime (`string[]`) keeps the plain type, typed for every version as before. A client configured for several versions is typed for all of them; `client.forProtocol("ocpp1.6")` returns it typed for the version it negotiated, or `undefined`.
+
 ## Fixes you may notice
 
 These are bug fixes, not breaking changes, but they change what you can observe:

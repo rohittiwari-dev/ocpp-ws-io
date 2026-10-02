@@ -1,8 +1,11 @@
 import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import WebSocketModule from "ws";
-import { BrowserOCPPClient } from "../src/browser/client.js";
-import { OCPPClient } from "../src/client.js";
+import {
+  type AnyBrowserOCPPClient,
+  BrowserOCPPClient,
+} from "../src/browser/client.js";
+import { type AnyOCPPClient, OCPPClient } from "../src/client.js";
 import { OCPPServer } from "../src/server.js";
 
 /**
@@ -13,7 +16,7 @@ import { OCPPServer } from "../src/server.js";
  */
 describe("ClientOptions.query as a string", () => {
   const servers: OCPPServer[] = [];
-  const clients: Array<OCPPClient | BrowserOCPPClient> = [];
+  const clients: Array<AnyOCPPClient | AnyBrowserOCPPClient> = [];
 
   afterEach(async () => {
     for (const c of clients.splice(0)) await c.close({ force: true });

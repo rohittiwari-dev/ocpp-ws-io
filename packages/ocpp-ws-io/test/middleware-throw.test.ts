@@ -8,8 +8,11 @@ import {
   it,
 } from "vitest";
 import WebSocketModule from "ws";
-import { BrowserOCPPClient } from "../src/browser/client.js";
-import { OCPPClient } from "../src/client.js";
+import {
+  type AnyBrowserOCPPClient,
+  BrowserOCPPClient,
+} from "../src/browser/client.js";
+import { type AnyOCPPClient, OCPPClient } from "../src/client.js";
 import { RPCInternalError, RPCSecurityError } from "../src/errors.js";
 import { OCPPServer } from "../src/server.js";
 import type { OCPPServerClient } from "../src/server-client.js";
@@ -25,7 +28,7 @@ import { createRPCError } from "../src/util.js";
  */
 describe("a middleware that throws before next()", () => {
   const servers: OCPPServer[] = [];
-  const clients: OCPPClient[] = [];
+  const clients: AnyOCPPClient[] = [];
 
   afterEach(async () => {
     for (const c of clients.splice(0)) await c.close({ force: true });
@@ -124,7 +127,7 @@ describe("a middleware that throws before next()", () => {
   describe("browser client", () => {
     // The browser client uses the global WebSocket; `ws` stands in for it.
     const original = Object.getOwnPropertyDescriptor(globalThis, "WebSocket");
-    const browsers: BrowserOCPPClient[] = [];
+    const browsers: AnyBrowserOCPPClient[] = [];
     beforeAll(() => {
       Object.defineProperty(globalThis, "WebSocket", {
         value: WebSocketModule,

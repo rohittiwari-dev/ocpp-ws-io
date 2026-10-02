@@ -8,8 +8,11 @@ import {
   it,
 } from "vitest";
 import WebSocketModule from "ws";
-import { BrowserOCPPClient } from "../src/browser/client.js";
-import { OCPPClient } from "../src/client.js";
+import {
+  type AnyBrowserOCPPClient,
+  BrowserOCPPClient,
+} from "../src/browser/client.js";
+import { type AnyOCPPClient, OCPPClient } from "../src/client.js";
 import {
   piiRedactorPlugin,
   schemaVersioningPlugin,
@@ -28,7 +31,7 @@ import type { JsonValue, LoggerLike, OCPPPlugin } from "../src/types.js";
  */
 describe("strict mode, middleware and wrap on outgoing messages", () => {
   const servers: OCPPServer[] = [];
-  const clients: Array<OCPPClient | BrowserOCPPClient> = [];
+  const clients: Array<AnyOCPPClient | AnyBrowserOCPPClient> = [];
 
   afterEach(async () => {
     for (const c of clients.splice(0)) await c.close({ force: true });
@@ -167,7 +170,7 @@ describe("strict mode, middleware and wrap on outgoing messages", () => {
 
   describe("wrap on an outgoing call", () => {
     /** Wraps every call as "<action>-Wrapped" with the params inside. */
-    function wrapping(client: OCPPClient | BrowserOCPPClient) {
+    function wrapping(client: AnyOCPPClient | AnyBrowserOCPPClient) {
       const wrapped: string[] = [];
       const resultMethods: string[] = [];
       client.use(async (ctx, next) => {

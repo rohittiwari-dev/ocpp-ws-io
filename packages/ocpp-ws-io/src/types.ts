@@ -89,6 +89,15 @@ export type TypedEventEmitter<
 export type OCPPProtocol = OCPPProtocolKey;
 export type AnyOCPPProtocol = OCPPProtocol | (string & {});
 
+/**
+ * The protocols among P that have types: the OCPP versions and any custom
+ * protocol declared in `OCPPMethodMap`. A plain `string`, a protocol list only
+ * known at runtime, stands for every one of them.
+ */
+export type KnownProtocol<P extends AnyOCPPProtocol> = string extends P
+  ? OCPPProtocol
+  : Extract<P, OCPPProtocol>;
+
 // ─── Connection State ────────────────────────────────────────────
 
 export const ConnectionState = {
@@ -503,7 +512,11 @@ export interface LoggingConfig {
 
 // ─── Client Options ──────────────────────────────────────────────
 
-export interface ClientOptions {
+/**
+ * Client options. P is the protocols the client may negotiate, inferred from
+ * `protocols`; the bare type takes any protocol name, as before.
+ */
+export interface ClientOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
   /**
    * How long (ms) an inbound CALL waits for its handler during startup.
    *
@@ -564,7 +577,7 @@ export interface ClientOptions {
    */
   tls?: TLSOptions;
   /** OCPP subprotocols to negotiate */
-  protocols?: AnyOCPPProtocol[];
+  protocols?: readonly P[];
   /** Additional WebSocket headers */
   headers?: Record<string, string>;
   /**

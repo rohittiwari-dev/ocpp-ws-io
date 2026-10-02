@@ -1,5 +1,12 @@
 /// <reference lib="dom" />
 
+// Type-only. Through the re-exports in ./types.js the compiler rejects the
+// typed send() overload against its implementation once a custom protocol is
+// declared (TS2394); the generated types themselves are accepted.
+import type {
+  OCPPSendRequestType,
+  SendMethodNames,
+} from "../generated/index.js";
 import { type MiddlewareFunction, MiddlewareStack } from "../middleware.js";
 import type { JsonValue, MiddlewareContext, WireCall } from "../types.js";
 import { EventEmitter } from "./emitter.js";
@@ -25,12 +32,14 @@ import { initLogger } from "./init-logger.js";
 import { Queue } from "./queue.js";
 import {
   type AllMethodNames,
+  type AnyOCPPProtocol,
   type BrowserClientOptions,
   type CallHandler,
   type CallOptions,
   type CloseOptions,
   ConnectionState,
   type HandlerContext,
+  type KnownProtocol,
   type LoggerLike,
   type LoggerLikeNotOptional,
   MessageType,
@@ -45,8 +54,6 @@ import {
   type OCPPRequestType,
   type OCPPResponseType,
   type OCPPSend,
-  type OCPPSendRequestType,
-  type SendMethodNames,
   type WildcardHandler,
 } from "./types.js";
 import { createRPCError, getErrorPlainObject, NOOP_LOGGER } from "./util.js";
@@ -96,7 +103,7 @@ interface PendingCall {
  * ```
  */
 export class BrowserOCPPClient<
-  P extends OCPPProtocol = OCPPProtocol,
+  P extends AnyOCPPProtocol = AnyOCPPProtocol,
 > extends EventEmitter {
   // Static connection states
   static readonly CONNECTING = CONNECTING;
@@ -106,7 +113,7 @@ export class BrowserOCPPClient<
 
   private _options: Required<
     Pick<
-      BrowserClientOptions,
+      BrowserClientOptions<P>,
       | "identity"
       | "endpoint"
       | "callTimeoutMs"
@@ -119,7 +126,7 @@ export class BrowserOCPPClient<
       | "backoffMax"
     >
   > &
-    BrowserClientOptions;
+    BrowserClientOptions<P>;
 
   private _state: (typeof ConnectionState)[keyof typeof ConnectionState] =
     CLOSED;
@@ -147,7 +154,7 @@ export class BrowserOCPPClient<
   private _logger: LoggerLike;
   private _middleware: MiddlewareStack<MiddlewareContext>;
 
-  constructor(options: BrowserClientOptions) {
+  constructor(options: BrowserClientOptions<P>) {
     super();
 
     if (!options.identity) {
@@ -189,8 +196,20 @@ export class BrowserOCPPClient<
   get identity(): string {
     return this._identity;
   }
-  get protocol(): string | undefined {
-    return this._protocol;
+  get protocol(): P | undefined {
+    // Negotiated from this client's own protocols.
+    return this._protocol as P | undefined;
+  }
+
+  /**
+   * This client typed for one of its protocols, or undefined while it speaks
+   * another (or is not connected). A client configured for several versions
+   * is typed for all of them until narrowed this way.
+   */
+  forProtocol<V extends P>(version: V): BrowserOCPPClient<V> | undefined;
+  // The same object; only its type narrows.
+  forProtocol(version: AnyOCPPProtocol): object | undefined {
+    return this._protocol === version ? this : undefined;
   }
   get state(): (typeof ConnectionState)[keyof typeof ConnectionState] {
     return this._state;
@@ -219,7 +238,7 @@ export class BrowserOCPPClient<
       let ws: WebSocket;
       try {
         ws = this._options.protocols?.length
-          ? new WebSocket(endpoint, this._options.protocols)
+          ? new WebSocket(endpoint, [...this._options.protocols])
           : new WebSocket(endpoint);
       } catch (err) {
         this._state = CLOSED;
@@ -237,7 +256,8 @@ export class BrowserOCPPClient<
 
         // Narrow protocols to negotiated protocol for future reconnects
         if (ws.protocol && this._reconnectAttempt === 0) {
-          this._options.protocols = [ws.protocol];
+          // The browser only accepts a protocol this client offered.
+          this._options.protocols = [ws.protocol as P];
         }
 
         // Reset the reconnect counter on a successful (re)connection so that
@@ -386,7 +406,7 @@ export class BrowserOCPPClient<
    * Register a version-specific handler — `handle("ocpp1.6", "BootNotification", handler)`.
    * This handler is only invoked when the active protocol matches the given version.
    */
-  handle<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+  handle<V extends KnownProtocol<P>, M extends AllMethodNames<V>>(
     version: V,
     method: M,
     handler: (
@@ -398,18 +418,20 @@ export class BrowserOCPPClient<
    * Register a handler for the client's default protocol — `handle("BootNotification", handler)`.
    * Uses the default protocol type parameter `P`.
    */
-  handle<M extends AllMethodNames<P>>(
+  handle<M extends AllMethodNames<KnownProtocol<P>>>(
     method: M,
     handler: (
-      context: HandlerContext<OCPPRequestType<P, M>>,
-    ) => OCPPResponseType<P, M> | Promise<OCPPResponseType<P, M>>,
+      context: HandlerContext<OCPPRequestType<KnownProtocol<P>, M>>,
+    ) =>
+      | OCPPResponseType<KnownProtocol<P>, M>
+      | Promise<OCPPResponseType<KnownProtocol<P>, M>>,
   ): void;
 
   /**
    * Register a version-specific handler for an OCPP 2.1 SEND message. Nothing
    * is sent back: `ctx.unconfirmed` is true and the return value is ignored.
    */
-  handle<V extends OCPPProtocol, M extends SendMethodNames<V>>(
+  handle<V extends KnownProtocol<P>, M extends SendMethodNames<V>>(
     version: V,
     method: M,
     handler: (
@@ -421,10 +443,10 @@ export class BrowserOCPPClient<
    * Register a handler for an OCPP 2.1 SEND message on the default protocol.
    * Nothing is sent back: `ctx.unconfirmed` is true and the return value is ignored.
    */
-  handle<M extends SendMethodNames<P>>(
+  handle<M extends SendMethodNames<KnownProtocol<P>>>(
     method: M,
     handler: (
-      context: HandlerContext<OCPPSendRequestType<P, M>>,
+      context: HandlerContext<OCPPSendRequestType<KnownProtocol<P>, M>>,
     ) => void | Promise<void>,
   ): void;
 
@@ -496,15 +518,15 @@ export class BrowserOCPPClient<
    * with `undefined` once the frame is handed to the socket; see
    * {@link NoReplyCallOptions}.
    */
-  async call<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+  async call<V extends KnownProtocol<P>, M extends AllMethodNames<V>>(
     version: V,
     method: M,
     params: OCPPRequestType<V, M>,
     options: NoReplyCallOptions,
   ): Promise<void>;
-  async call<M extends AllMethodNames<P>>(
+  async call<M extends AllMethodNames<KnownProtocol<P>>>(
     method: M,
-    params: OCPPRequestType<P, M>,
+    params: OCPPRequestType<KnownProtocol<P>, M>,
     options: NoReplyCallOptions,
   ): Promise<void>;
   async call(
@@ -517,7 +539,7 @@ export class BrowserOCPPClient<
    * Call a version-specific typed method — `call("ocpp1.6", "BootNotification", {...})`.
    * Provides full type inference for params and response based on the OCPP version.
    */
-  async call<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+  async call<V extends KnownProtocol<P>, M extends AllMethodNames<V>>(
     version: V,
     method: M,
     params: OCPPRequestType<V, M>,
@@ -525,11 +547,11 @@ export class BrowserOCPPClient<
   ): Promise<OCPPResponseType<V, M>>;
 
   /** Call a known typed method using the client's default protocol. */
-  async call<M extends AllMethodNames<P>>(
+  async call<M extends AllMethodNames<KnownProtocol<P>>>(
     method: M,
-    params: OCPPRequestType<P, M>,
+    params: OCPPRequestType<KnownProtocol<P>, M>,
     options?: CallOptions,
-  ): Promise<OCPPResponseType<P, M>>;
+  ): Promise<OCPPResponseType<KnownProtocol<P>, M>>;
 
   /** Call a known typed method with explicit response type. */
   async call<TResult = unknown>(
@@ -715,9 +737,9 @@ export class BrowserOCPPClient<
    * resolves once the frame is handed to the socket. It does not wait behind
    * an outstanding CALL and throws on any protocol other than OCPP 2.1.
    */
-  async send<M extends SendMethodNames<P>>(
+  async send<M extends SendMethodNames<KnownProtocol<P>>>(
     method: M,
-    params: OCPPSendRequestType<P, M>,
+    params: OCPPSendRequestType<KnownProtocol<P>, M>,
   ): Promise<void>;
 
   /** Send a SEND message that is not in the typed maps. */
@@ -725,7 +747,9 @@ export class BrowserOCPPClient<
 
   async send(
     method: string,
-    params: OCPPSendRequestType<P, SendMethodNames<P>> | object = {},
+    params:
+      | OCPPSendRequestType<KnownProtocol<P>, SendMethodNames<KnownProtocol<P>>>
+      | object = {},
   ): Promise<void> {
     if (this._protocol !== "ocpp2.1") {
       throw new Error(
@@ -780,7 +804,7 @@ export class BrowserOCPPClient<
 
   // ─── Reconfigure ─────────────────────────────────────────────
 
-  reconfigure(options: Partial<BrowserClientOptions>): void {
+  reconfigure(options: Partial<BrowserClientOptions<P>>): void {
     const detailedBefore = this._options.respondWithDetailedErrors;
     Object.assign(this._options, options);
 
@@ -1553,4 +1577,41 @@ export class BrowserOCPPClient<
       return v.toString(16);
     });
   }
+}
+
+/** The members of BrowserOCPPClient whose types follow its protocols. */
+type ProtocolTypedMember =
+  | "call"
+  | "safeCall"
+  | "handle"
+  | "send"
+  | "forProtocol";
+
+type EmitterListener = Parameters<EventEmitter["on"]>[1];
+/** Emitter methods that return `this`, the client of one protocol set. */
+type ChainingMember =
+  | "on"
+  | "once"
+  | "off"
+  | "addListener"
+  | "removeListener"
+  | "removeAllListeners";
+
+/**
+ * Any BrowserOCPPClient, whatever protocols it is configured for: every
+ * member except the calls typed by protocol. A client typed for its protocols does not fit
+ * a variable of another protocol set, so code holding differently configured
+ * clients, such as a list to close, uses this type.
+ */
+export interface AnyBrowserOCPPClient
+  extends Omit<BrowserOCPPClient, ProtocolTypedMember | ChainingMember> {
+  on(event: string, listener: EmitterListener): AnyBrowserOCPPClient;
+  once(event: string, listener: EmitterListener): AnyBrowserOCPPClient;
+  off(event: string, listener: EmitterListener): AnyBrowserOCPPClient;
+  addListener(event: string, listener: EmitterListener): AnyBrowserOCPPClient;
+  removeListener(
+    event: string,
+    listener: EmitterListener,
+  ): AnyBrowserOCPPClient;
+  removeAllListeners(event?: string): AnyBrowserOCPPClient;
 }

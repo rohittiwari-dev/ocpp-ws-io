@@ -19,6 +19,7 @@ import type {
   CallOptions as _CallOptions,
   CloseOptions as _CloseOptions,
   HandlerContext as _HandlerContext,
+  KnownProtocol as _KnownProtocol,
   LoggerLike as _LoggerLike,
   LoggerLikeNotOptional as _LoggerLikeNotOptional,
   LoggingConfig as _LoggingConfig,
@@ -39,6 +40,7 @@ import type {
 // Re-export shared types
 export type OCPPProtocol = _OCPPProtocol;
 export type AnyOCPPProtocol = _AnyOCPPProtocol;
+export type KnownProtocol<P extends AnyOCPPProtocol> = _KnownProtocol<P>;
 export type OCPPCall<T = unknown> = _OCPPCall<T>;
 export type OCPPCallResult<T = unknown> = _OCPPCallResult<T>;
 export type OCPPCallError = _OCPPCallError;
@@ -69,9 +71,11 @@ export type OCPPResponseType<
   V extends OCPPProtocol,
   M extends AllMethodNames<V>,
 > = _OCPPResponseType<V, M>;
-export type SendMethodNames<V extends OCPPProtocol> = _SendMethodNames<V>;
+// Any protocol name, as in the generated types: a custom protocol without
+// SEND messages has none.
+export type SendMethodNames<V extends string> = _SendMethodNames<V>;
 export type OCPPSendRequestType<
-  V extends OCPPProtocol,
+  V extends string,
   M extends string,
 > = _OCPPSendRequestType<V, M>;
 
@@ -80,13 +84,19 @@ export { ConnectionState, MessageType, NOREPLY } from "../types.js";
 
 // ─── Browser Client Options ─────────────────────────────────────
 
-export interface BrowserClientOptions {
+/**
+ * Browser client options. P is the protocols the client may negotiate,
+ * inferred from `protocols`; the bare type takes any protocol name.
+ */
+export interface BrowserClientOptions<
+  P extends AnyOCPPProtocol = AnyOCPPProtocol,
+> {
   /** Unique identity for this client (charging station ID) */
   identity: string;
   /** WebSocket endpoint URL (ws:// or wss://) */
   endpoint: string;
   /** OCPP subprotocols to negotiate */
-  protocols?: string[];
+  protocols?: readonly P[];
   /**
    * Query parameters for the connection URL, as an object or a query string
    * (`"a=1&b=2"`, a leading `?` is optional). Added after any query the

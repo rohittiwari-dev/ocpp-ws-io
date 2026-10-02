@@ -20,6 +20,7 @@ import { type MiddlewareFunction, MiddlewareStack } from "./middleware";
 import { Queue } from "./queue.js";
 import { getStandardValidator } from "./standard-validators.js";
 import {
+  type AnyOCPPProtocol,
   type CallHandler,
   type CallOptions,
   type ClientEvents,
@@ -28,6 +29,7 @@ import {
   ConnectionState,
   type HandlerContext,
   type JsonValue,
+  type KnownProtocol,
   type LoggerLike,
   type LoggerLikeNotOptional,
   type ManagedWsClientOption,
@@ -171,7 +173,7 @@ interface PendingCall {
  * - Profile 3: Mutual TLS (client certificates)
  */
 export class OCPPClient<
-  P extends OCPPProtocol = OCPPProtocol,
+  P extends AnyOCPPProtocol = AnyOCPPProtocol,
 > extends (EventEmitter as new () => TypedEventEmitter<ClientEvents>) {
   // Static connection states
   static readonly CONNECTING = CONNECTING;
@@ -181,7 +183,7 @@ export class OCPPClient<
 
   protected _options: Required<
     Pick<
-      ClientOptions,
+      ClientOptions<P>,
       | "identity"
       | "endpoint"
       | "callTimeoutMs"
@@ -196,7 +198,7 @@ export class OCPPClient<
       | "backoffMax"
     >
   > &
-    ClientOptions;
+    ClientOptions<P>;
 
   protected _state: ConnectionState = CLOSED;
   protected _ws: WebSocket | null = null;
@@ -258,7 +260,7 @@ export class OCPPClient<
   protected _exchangeLog = false;
   protected _prettify = false;
 
-  constructor(options: ClientOptions) {
+  constructor(options: ClientOptions<P>) {
     super();
     this.setMaxListeners(0);
 
@@ -389,15 +391,27 @@ export class OCPPClient<
   /**
    * The current configuration options for this client.
    */
-  public get options(): Readonly<ClientOptions> {
+  public get options(): Readonly<ClientOptions<P>> {
     return this._options;
   }
 
   /**
    * The negotiated OCPP protocol version, available after connection.
    */
-  get protocol(): string | undefined {
-    return this._protocol;
+  get protocol(): P | undefined {
+    // Negotiated from this client's own protocols.
+    return this._protocol as P | undefined;
+  }
+
+  /**
+   * This client typed for one of its protocols, or undefined while it speaks
+   * another (or is not connected). A client configured for several versions
+   * is typed for all of them until narrowed this way.
+   */
+  forProtocol<V extends P>(version: V): OCPPClient<V> | undefined;
+  // The same object; only its type narrows.
+  forProtocol(version: AnyOCPPProtocol): object | undefined {
+    return this._protocol === version ? this : undefined;
   }
 
   /**
@@ -468,7 +482,8 @@ export class OCPPClient<
 
       const ws = new WebSocket(
         endpoint,
-        this._options.protocols ?? [],
+        // ws takes a mutable list.
+        [...(this._options.protocols ?? [])],
         wsOptions,
       );
       this._ws = ws;
@@ -482,7 +497,8 @@ export class OCPPClient<
 
         // Narrow protocols to negotiated protocol for future reconnects (prevents flip-flopping)
         if (ws.protocol && this._reconnectAttempt === 0) {
-          this._options.protocols = [ws.protocol];
+          // ws only accepts a protocol this client offered.
+          this._options.protocols = [ws.protocol as P];
         }
 
         // Reset the reconnect counter on a successful (re)connection so that
@@ -691,7 +707,7 @@ export class OCPPClient<
    *
    * @throws {Error} If a handler for this version and method is already registered on this client instance.
    */
-  handle<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+  handle<V extends KnownProtocol<P>, M extends AllMethodNames<V>>(
     version: V,
     method: M,
     handler: (
@@ -707,7 +723,7 @@ export class OCPPClient<
    * `handle("ocpp2.1", "NotifyPeriodicEventStream", handler)`. Nothing is sent
    * back for a SEND: `ctx.unconfirmed` is true and the return value is ignored.
    */
-  handle<V extends OCPPProtocol, M extends SendMethodNames<V>>(
+  handle<V extends KnownProtocol<P>, M extends SendMethodNames<V>>(
     version: V,
     method: M,
     handler: (
@@ -736,13 +752,13 @@ export class OCPPClient<
    *
    * @throws {Error} If a handler for this method is already registered on this client instance.
    */
-  handle<M extends AllMethodNames<P>>(
+  handle<M extends AllMethodNames<KnownProtocol<P>>>(
     method: M,
     handler: (
-      context: HandlerContext<OCPPRequestType<P, M>>,
+      context: HandlerContext<OCPPRequestType<KnownProtocol<P>, M>>,
     ) =>
-      | OCPPResponseType<P, M>
-      | Promise<OCPPResponseType<P, M>>
+      | OCPPResponseType<KnownProtocol<P>, M>
+      | Promise<OCPPResponseType<KnownProtocol<P>, M>>
       | typeof NOREPLY,
   ): void;
 
@@ -751,10 +767,10 @@ export class OCPPClient<
    * protocol — `handle("NotifyPeriodicEventStream", handler)`. Nothing is sent
    * back for a SEND: `ctx.unconfirmed` is true and the return value is ignored.
    */
-  handle<M extends SendMethodNames<P>>(
+  handle<M extends SendMethodNames<KnownProtocol<P>>>(
     method: M,
     handler: (
-      context: HandlerContext<OCPPSendRequestType<P, M>>,
+      context: HandlerContext<OCPPSendRequestType<KnownProtocol<P>, M>>,
     ) => void | Promise<void>,
   ): void;
 
@@ -881,7 +897,7 @@ export class OCPPClient<
    * Send a CALL without waiting for its answer — `{ noReply: true }`. Resolves
    * with `undefined` once the frame is written; see {@link NoReplyCallOptions}.
    */
-  async call<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+  async call<V extends KnownProtocol<P>, M extends AllMethodNames<V>>(
     version: V,
     method: M,
     params: OCPPRequestType<V, M>,
@@ -893,9 +909,9 @@ export class OCPPClient<
     params: object,
     options: NoReplyCallOptions,
   ): Promise<void>;
-  async call<M extends AllMethodNames<P>>(
+  async call<M extends AllMethodNames<KnownProtocol<P>>>(
     method: M,
-    params: OCPPRequestType<P, M>,
+    params: OCPPRequestType<KnownProtocol<P>, M>,
     options: NoReplyCallOptions,
   ): Promise<void>;
   async call(
@@ -908,7 +924,7 @@ export class OCPPClient<
    * Call a version-specific typed method — `call("ocpp1.6", "BootNotification", {...})`.
    * Provides full type inference for params and response based on the OCPP version.
    */
-  async call<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+  async call<V extends KnownProtocol<P>, M extends AllMethodNames<V>>(
     version: V,
     method: M,
     params: OCPPRequestType<V, M>,
@@ -930,11 +946,11 @@ export class OCPPClient<
   ): Promise<TResult>;
 
   /** Call a known typed method using the client's default protocol. */
-  async call<M extends AllMethodNames<P>>(
+  async call<M extends AllMethodNames<KnownProtocol<P>>>(
     method: M,
-    params: OCPPRequestType<P, M>,
+    params: OCPPRequestType<KnownProtocol<P>, M>,
     options?: CallOptions,
-  ): Promise<OCPPResponseType<P, M>>;
+  ): Promise<OCPPResponseType<KnownProtocol<P>, M>>;
 
   /** Call a known typed method with explicit response type. */
   async call<TResult = unknown>(
@@ -1058,9 +1074,9 @@ export class OCPPClient<
    * resolves once the frame is written. It does not wait behind an outstanding
    * CALL (Part 4 §4.2.4) and throws on any protocol other than OCPP 2.1.
    */
-  async send<M extends SendMethodNames<P>>(
+  async send<M extends SendMethodNames<KnownProtocol<P>>>(
     method: M,
-    params: OCPPSendRequestType<P, M>,
+    params: OCPPSendRequestType<KnownProtocol<P>, M>,
   ): Promise<void>;
 
   /** Send a SEND message that is not in the typed maps. */
@@ -1068,7 +1084,9 @@ export class OCPPClient<
 
   async send(
     method: string,
-    params: OCPPSendRequestType<P, SendMethodNames<P>> | object = {},
+    params:
+      | OCPPSendRequestType<KnownProtocol<P>, SendMethodNames<KnownProtocol<P>>>
+      | object = {},
   ): Promise<void> {
     if (this._protocol !== "ocpp2.1") {
       throw new Error(
@@ -1142,7 +1160,7 @@ export class OCPPClient<
   /**
    * Version-specific safe call. Returns `undefined` on error instead of throwing.
    */
-  async safeCall<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+  async safeCall<V extends KnownProtocol<P>, M extends AllMethodNames<V>>(
     version: V,
     method: M,
     params: OCPPRequestType<V, M>,
@@ -1161,11 +1179,11 @@ export class OCPPClient<
   ): Promise<TResult | undefined>;
 
   /** Default protocol safe call. */
-  async safeCall<M extends AllMethodNames<P>>(
+  async safeCall<M extends AllMethodNames<KnownProtocol<P>>>(
     method: M,
-    params: OCPPRequestType<P, M>,
+    params: OCPPRequestType<KnownProtocol<P>, M>,
     options?: CallOptions,
-  ): Promise<OCPPResponseType<P, M> | undefined>;
+  ): Promise<OCPPResponseType<KnownProtocol<P>, M> | undefined>;
 
   /** Explicit result safe call. */
   async safeCall<TResult = unknown>(
@@ -1422,7 +1440,7 @@ export class OCPPClient<
 
   // ─── Reconfigure ─────────────────────────────────────────────
 
-  reconfigure(options: Partial<ClientOptions>): void {
+  reconfigure(options: Partial<ClientOptions<P>>): void {
     const detailedBefore = this._options.respondWithDetailedErrors;
     Object.assign(this._options, options);
 
@@ -3158,3 +3176,19 @@ export class OCPPClient<
     this._ws = null;
   }
 }
+
+/** The members of OCPPClient whose types follow its protocols. */
+type ProtocolTypedMember =
+  | "call"
+  | "safeCall"
+  | "handle"
+  | "send"
+  | "forProtocol";
+
+/**
+ * Any OCPPClient, whatever protocols it is configured for: every member except
+ * the calls typed by protocol. A client typed for its protocols does not fit
+ * a variable of another protocol set, so code holding differently configured
+ * clients, such as a list to close, uses this type.
+ */
+export type AnyOCPPClient = Omit<OCPPClient, ProtocolTypedMember>;

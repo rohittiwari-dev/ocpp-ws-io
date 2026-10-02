@@ -42,3 +42,34 @@ export async function vendorProtocol() {
   // @ts-expect-error priority is a number
   await client.call("vendor-proto", "VendorAction", { data: "x", priority: "1" });
 }
+
+/** T2: custom protocols follow the configuration like the OCPP versions. */
+export async function mixedWithCustom() {
+  const client = new OCPPClient({
+    endpoint: "ws://localhost:3000",
+    identity: "CP001",
+    protocols: ["ocpp2.0.1", "vendor-proto"],
+  });
+  expectTypeOf(client).toEqualTypeOf<OCPPClient<"ocpp2.0.1" | "vendor-proto">>();
+
+  // The short form offers the custom actions too.
+  const res = await client.call("VendorAction", { data: "x", priority: 1 });
+  expectTypeOf(res).toEqualTypeOf<{ status: "Accepted" | "Rejected" }>();
+
+  const vendor = client.forProtocol("vendor-proto");
+  expectTypeOf(vendor).toEqualTypeOf<OCPPClient<"vendor-proto"> | undefined>();
+  vendor?.handle("VendorAction", ({ params }) => {
+    expectTypeOf(params.priority).toEqualTypeOf<number>();
+    return { status: "Accepted" as const };
+  });
+  // (A 2.0.1 action on the vendor protocol is still accepted by the untyped
+  // fallback until T3 removes it.)
+
+  // A custom protocol without declared types still compiles in the list.
+  const undeclared = new OCPPClient({
+    endpoint: "ws://localhost:3000",
+    identity: "CP002",
+    protocols: ["ocpp1.6", "not-declared"],
+  });
+  await undeclared.call("ocpp1.6", "Heartbeat", {});
+}

@@ -1,8 +1,11 @@
 import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import WebSocketModule from "ws";
-import { BrowserOCPPClient } from "../src/browser/client.js";
-import { OCPPClient } from "../src/client.js";
+import {
+  type AnyBrowserOCPPClient,
+  BrowserOCPPClient,
+} from "../src/browser/client.js";
+import { type AnyOCPPClient, OCPPClient } from "../src/client.js";
 import { OCPPServer } from "../src/server.js";
 import type { OCPPServerClient } from "../src/server-client.js";
 import type { CallOptions, LoggerLike } from "../src/types.js";
@@ -16,7 +19,7 @@ import type { CallOptions, LoggerLike } from "../src/types.js";
  */
 describe("call(…, { noReply: true })", () => {
   const servers: OCPPServer[] = [];
-  const clients: Array<OCPPClient | BrowserOCPPClient> = [];
+  const clients: Array<AnyOCPPClient | AnyBrowserOCPPClient> = [];
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
   afterEach(async () => {

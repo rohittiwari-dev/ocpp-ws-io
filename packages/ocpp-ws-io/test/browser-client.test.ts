@@ -18,7 +18,10 @@ import {
 } from "vitest";
 import WebSocketModule from "ws";
 import { OCPPServer } from "../src/server.js";
-import { BrowserOCPPClient } from "../src/browser/client.js";
+import {
+  type AnyBrowserOCPPClient,
+  BrowserOCPPClient,
+} from "../src/browser/client.js";
 import { ConnectionState, MessageType } from "../src/browser/types.js";
 import { createRPCError } from "../src/browser/util.js";
 import type { OCPPServerClient } from "../src/server-client.js";
@@ -47,7 +50,7 @@ afterAll(() => {
 // ─── Test Setup ────────────────────────────────────────────────────
 
 let server: OCPPServer;
-let client: BrowserOCPPClient;
+let client: BrowserOCPPClient<"ocpp1.6">;
 let port: number;
 
 const getPort = (srv: import("node:http").Server): number => {
@@ -1171,19 +1174,20 @@ describe("BrowserOCPPClient", () => {
         serverClient = sc;
       });
       const port21 = getPort(await server21.listen(0));
+      let c21: BrowserOCPPClient<"ocpp2.1"> | undefined;
       try {
-        client = new BrowserOCPPClient({
+        c21 = new BrowserOCPPClient({
           identity: "CS21",
           endpoint: `ws://localhost:${port21}`,
           protocols: ["ocpp2.1"],
           reconnect: false,
           maxBadMessages: 2,
         });
-        await client.connect();
+        await c21.connect();
         await new Promise((r) => setTimeout(r, 100));
 
         const badMessages: unknown[] = [];
-        client.on("badMessage", (msg: unknown) => badMessages.push(msg));
+        c21.on("badMessage", (msg: unknown) => badMessages.push(msg));
         for (let i = 0; i < 5; i++) {
           serverClient!.sendRaw(
             JSON.stringify([6, `s${i}`, "NotifyPeriodicEventStream", {}]),
@@ -1192,9 +1196,9 @@ describe("BrowserOCPPClient", () => {
         await new Promise((r) => setTimeout(r, 100));
 
         expect(badMessages).toHaveLength(0);
-        expect(client.state).toBe(ConnectionState.OPEN);
+        expect(c21.state).toBe(ConnectionState.OPEN);
       } finally {
-        await client.close({ force: true }).catch(() => {});
+        await c21?.close({ force: true }).catch(() => {});
         await server21.close({ force: true });
       }
     });
@@ -1216,22 +1220,23 @@ describe("BrowserOCPPClient", () => {
         serverClient = sc;
       });
       const port21 = getPort(await server21.listen(0));
+      let c21: BrowserOCPPClient<"ocpp2.1"> | undefined;
       try {
-        client = new BrowserOCPPClient({
+        c21 = new BrowserOCPPClient({
           identity: "CS21-SEND",
           endpoint: `ws://localhost:${port21}`,
           protocols: ["ocpp2.1"],
           reconnect: false,
         });
         const seen: Array<{ unconfirmed?: boolean; params: unknown }> = [];
-        client.handle("NotifyPeriodicEventStream", (ctx) => {
+        c21.handle("NotifyPeriodicEventStream", (ctx) => {
           seen.push({ unconfirmed: ctx.unconfirmed, params: ctx.params });
         });
-        await client.connect();
+        await c21.connect();
         await new Promise((r) => setTimeout(r, 100));
 
         const outgoing: string[] = [];
-        const ws = (client as never as { _ws: { send(d: string): void } })._ws;
+        const ws = (c21 as never as { _ws: { send(d: string): void } })._ws;
         const send = ws.send.bind(ws);
         ws.send = (d: string) => {
           outgoing.push(d);
@@ -1246,7 +1251,7 @@ describe("BrowserOCPPClient", () => {
         expect(seen).toEqual([{ unconfirmed: true, params: stream21 }]);
         expect(outgoing).toEqual([]);
       } finally {
-        await client.close({ force: true }).catch(() => {});
+        await c21?.close({ force: true }).catch(() => {});
         await server21.close({ force: true });
       }
     });
@@ -1263,22 +1268,23 @@ describe("BrowserOCPPClient", () => {
         }),
       );
       const port21 = getPort(await server21.listen(0));
+      let c21: BrowserOCPPClient<"ocpp2.1"> | undefined;
       try {
-        client = new BrowserOCPPClient({
+        c21 = new BrowserOCPPClient({
           identity: "CS21-OUT",
           endpoint: `ws://localhost:${port21}`,
           protocols: ["ocpp2.1"],
           reconnect: false,
         });
-        await client.connect();
+        await c21.connect();
         await new Promise((r) => setTimeout(r, 100));
 
-        await client.send("NotifyPeriodicEventStream", stream21);
+        await c21.send("NotifyPeriodicEventStream", stream21);
         await new Promise((r) => setTimeout(r, 100));
 
         expect(seen).toEqual([stream21]);
       } finally {
-        await client.close({ force: true }).catch(() => {});
+        await c21?.close({ force: true }).catch(() => {});
         await server21.close({ force: true });
       }
     });
@@ -1358,7 +1364,7 @@ describe("BrowserOCPPClient", () => {
     });
 
     /** Record every frame the browser client writes to its socket. */
-    const captureOutgoing = (c: BrowserOCPPClient) => {
+    const captureOutgoing = (c: AnyBrowserOCPPClient) => {
       const out: unknown[][] = [];
       const ws = (c as never as { _ws: { send(d: string): void } })._ws;
       const send = ws.send.bind(ws);
@@ -1438,19 +1444,20 @@ describe("BrowserOCPPClient", () => {
         serverClient = sc;
       });
       const port201 = getPort(await server201.listen(0));
+      let c201: BrowserOCPPClient<"ocpp2.0.1"> | undefined;
       try {
-        client = new BrowserOCPPClient({
+        c201 = new BrowserOCPPClient({
           identity: "CS-LONG",
           endpoint: `ws://localhost:${port201}`,
           protocols: ["ocpp2.0.1"],
           reconnect: false,
         });
-        client.handle("Reset", () => {
+        c201.handle("Reset", () => {
           throw createRPCError("GenericError", "x".repeat(400));
         });
-        await client.connect();
+        await c201.connect();
         await new Promise((r) => setTimeout(r, 100));
-        const outgoing = captureOutgoing(client);
+        const outgoing = captureOutgoing(c201);
 
         serverClient!.sendRaw(
           JSON.stringify([2, "r1", "Reset", { type: "Immediate" }]),
@@ -1460,7 +1467,7 @@ describe("BrowserOCPPClient", () => {
         expect(outgoing[0]?.[0]).toBe(4);
         expect(String(outgoing[0]?.[3])).toHaveLength(255);
       } finally {
-        await client.close({ force: true }).catch(() => {});
+        await c201?.close({ force: true }).catch(() => {});
         await server201.close({ force: true });
       }
     });

@@ -178,8 +178,11 @@ const result201 = await client.call("ocpp2.0.1", "BootNotification", {
 	reason: "PowerUp",
 });
 
-// Default protocol call (uses the client's type parameter P)
+// Short form: typed for the client's `protocols`
 const res = await client.call("Heartbeat", {});
+
+// A client configured for several versions: narrow to the negotiated one
+const v201 = client.forProtocol("ocpp2.0.1"); // BrowserOCPPClient<"ocpp2.0.1"> | undefined
 
 // Explicit response type (for custom/vendor methods)
 const custom = await client.call<{ result: string }>("VendorAction", {
