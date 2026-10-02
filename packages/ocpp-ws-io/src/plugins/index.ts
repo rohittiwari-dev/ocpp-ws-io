@@ -79,5 +79,16 @@ export {
   type TransformRule,
 } from "./schema-versioning.js";
 export { type SessionLogOptions, sessionLogPlugin } from "./session-log.js";
+export {
+  type FlattenedJws,
+  type SignedMessageActions,
+  type SignedMessageAlgorithm,
+  type SignedMessageHeader,
+  type SignedMessageSigner,
+  type SignedMessagesOptions,
+  type SignedMessageVerifyKey,
+  signedMessagesMiddleware,
+  signedMessagesPlugin,
+} from "./signed-messages.js";
 // ─── Event Delivery ─────────────────────────────────────────────
 export { type WebhookPluginOptions, webhookPlugin } from "./webhook.js";

@@ -263,6 +263,68 @@ Station (1.6) ←── [Transform DOWN] ←── Application Handler (2.0.1)
 
 ---
 
+### `signedMessagesPlugin(options)`
+
+Signed messages from OCPP 2.0.1 and 2.1 Part 4, chapter 7: a message signed by the other end, so a Local Controller or any other hop in between cannot alter it unnoticed. A signed message keeps its type and ID, appends `-Signed` to the action and carries the payload as a Flattened JWS (RFC 7515):
+
+```json
+[2, "19223201", "BootNotification-Signed", { "protected": "…", "payload": "…", "signature": "…" }]
+```
+
+The protected header holds `alg`, `OCPPAction`, the message type and, with a certificate, `x5t#S256` (the SHA-256 hash of the DER certificate) to identify the key.
+
+- **Received:** `<Action>-Signed` calls, SENDs and replies are unwrapped before validation and routing, so handlers and strict mode see the plain message (§7.2 requires the unwrapping). With `verify`, the signature is checked first: an algorithm other than ES256, RS256 or RS384, a header for another action or message type, a `crit` header or a bad signature is refused with `SecurityError`.
+- **Sent:** `sign` picks the calls and SENDs to sign. A reply to a signed request is signed whenever there is a key (§7.2). A CALLERROR is never signed: the format has no action for it.
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `privateKey` | `string \| KeyObject` | — | Signing key. A P-256 EC key signs ES256, an RSA key RS256. |
+| `algorithm` | `"ES256" \| "RS256" \| "RS384"` | from the key | Set `"RS384"` for an RSA key that should sign RS384. |
+| `certificate` | `string \| X509Certificate` | — | The key's certificate; its thumbprint is sent as `x5t#S256`. Must match `privateKey`. |
+| `signer` | `SignedMessageSigner` | — | Instead of `privateKey`: `{ algorithm, thumbprint?, sign(input) }` for a key in an HSM or a measuring chip (§7.4). ES256 returns the 64-byte R ‖ S form. |
+| `sign` | `boolean \| string[] \| (action) => boolean` | none | Outgoing calls and SENDs to sign. |
+| `verify` | `(header) => key \| undefined` | — | Returns the key (PEM key or certificate, `KeyObject` or `X509Certificate`) for a received header, usually by `x5t#S256`. Without it, signed messages are only unwrapped. |
+| `requireSignature` | `boolean \| string[] \| (action) => boolean` | none | Actions refused with `SecurityError` when they arrive unsigned, and replies to signed calls that come back unsigned. Needs `verify`. |
+| `messageTypeHeader` | `"OCPPMessageTypedId" \| "OCPPMessageTypeId"` | `"OCPPMessageTypedId"` | Spelling written in the header. Received headers may use either. |
+
+```typescript
+import { signedMessagesMiddleware, signedMessagesPlugin } from "ocpp-ws-io/plugins";
+
+// CSMS: verify chargers' signatures, sign smart-charging commands.
+server.plugin(signedMessagesPlugin({
+  privateKey: csmsKeyPem,
+  certificate: csmsCertPem,
+  sign: ["SetChargingProfile"],
+  verify: (header) => chargerCertsByThumbprint.get(header["x5t#S256"] ?? ""),
+  requireSignature: ["TransactionEvent"],
+}));
+
+// Charging station (Node client).
+client.use(signedMessagesMiddleware(client, {
+  privateKey: stationKeyPem,
+  certificate: stationCertPem,
+  sign: ["TransactionEvent", "MeterValues"],
+  verify: (header) => csmsCertsByThumbprint.get(header["x5t#S256"] ?? ""),
+}));
+```
+
+<Callout type="warn">
+  **Without `requireSignature`, a signature can be stripped.** A signature only proves
+  something when it is present: a hop that removes it and sends the plain action
+  passes unless that action is required to be signed. Checking the signature is
+  optional in the specification, as the connection itself is protected by TLS.
+</Callout>
+
+<Callout>
+  Applies to `ocpp2.0.1` and `ocpp2.1` connections; on others it does nothing, and
+  without the plugin a `-Signed` action is answered `NotImplemented`. Node only, as
+  it uses `node:crypto`. The header field is spelled `OCPPMessageTypedId` in the
+  OCPP 2.0.1 text, and some implementations write `OCPPMessageTypeId`; set
+  `messageTypeHeader` to match a peer that only reads the second spelling.
+</Callout>
+
+---
+
 ## Level 3: Interceptor Plugins
 
 ### `messageDedupPlugin(options)`

@@ -84,6 +84,16 @@ If a middleware throws while a response is being built, the library **fails open
 sends what the handler produced and logs the failure. A broken middleware must never
 leave a charge point waiting for a CALLRESULT that never arrives.
 
+A middleware that throws on an `incoming_call` before calling `next()` rejects the call:
+the peer is answered with a CALLERROR carrying the error's RPC code
+(`createRPCError("SecurityError")`, for example), or `InternalError` for any other
+error, and the handler does not run. One that throws on an `incoming_result` rejects
+the waiting `call()` with that error.
+
+Strict mode checks an outgoing call as your application made it, before any
+middleware rewrites it, and checks the reply against the same action; outgoing
+results are checked before middleware too.
+
 ```typescript
 import { defineRpcMiddleware } from "ocpp-ws-io/browser"; // Or "ocpp-ws-io" for Server/NodeClient
 

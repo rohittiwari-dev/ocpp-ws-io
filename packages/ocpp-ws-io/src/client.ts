@@ -1078,6 +1078,13 @@ export class OCPPClient<
       throw new Error(`Cannot send: client is in state ${this._state}`);
     }
 
+    // Strict mode checks the SEND as the application made it, before any
+    // middleware rewrites it: a renamed action (signing appends "-Signed")
+    // has no schema, so checking afterwards checked nothing.
+    if (this._options.strictMode && this._protocol) {
+      this._validateOutbound(method, params, "send");
+    }
+
     const messageId = this._newMessageId();
     const ctx: MiddlewareContext = {
       type: "outgoing_call",
@@ -1093,9 +1100,6 @@ export class OCPPClient<
         MiddlewareContext,
         { type: "outgoing_call" }
       >;
-      if (this._options.strictMode && this._protocol) {
-        this._validateOutbound(ctxvals.method, ctxvals.params, "send");
-      }
 
       const frame: OCPPSend = [
         MessageType.SEND,
@@ -1200,6 +1204,14 @@ export class OCPPClient<
 
     let callResult: unknown;
 
+    // Strict mode checks the call as the application made it, before any
+    // middleware rewrites it, as outgoing results already are: a renamed
+    // action (signing appends "-Signed") has no schema, so checking afterwards
+    // checked nothing.
+    if (this._options.strictMode && this._protocol) {
+      this._validateOutbound(method, params, "req");
+    }
+
     await this._middleware.execute(ctx, async (c) => {
       // Cast ctx back to access specific fields safely if needed,
       // but strictly we should use 'c' which is TContext.
@@ -1208,11 +1220,6 @@ export class OCPPClient<
         MiddlewareContext,
         { type: "outgoing_call" }
       >;
-
-      // Strict mode: validate outbound call
-      if (this._options.strictMode && this._protocol) {
-        this._validateOutbound(ctxvals.method, ctxvals.params, "req");
-      }
 
       const message: OCPPCall = [
         MessageType.CALL,
@@ -1328,7 +1335,9 @@ export class OCPPClient<
           reject,
           timeoutHandle,
           removeAbortListener,
-          method: ctxvals.method,
+          // The application's action, not a middleware's rewrite of it: the
+          // reply is checked against this action's schema.
+          method,
           sentAt: Date.now(),
         });
 
@@ -1868,8 +1877,12 @@ export class OCPPClient<
       protocol: this._protocol,
     };
 
+    // Whether the chain reached the handler step, which answers the CALL
+    // itself, with a CALLRESULT or a CALLERROR.
+    let reachedHandler = false;
     try {
       await this._middleware.execute(ctx, async (c) => {
+        reachedHandler = true;
         const ctxvals = c as Extract<
           MiddlewareContext,
           { type: "incoming_call" }
@@ -2099,11 +2112,34 @@ export class OCPPClient<
           throw err;
         }
       });
-    } catch {
-      // Ignored: The error was already sent as a CALLERROR to the peer,
-      // and logged explicitly by the createLoggingMiddleware.
-      // We swallow it here to prevent an UnhandledPromiseRejection
-      // since _handleIncomingCall is executed synchronously by _onMessage.
+    } catch (err) {
+      // Past the handler step, the error was already sent as a CALLERROR to
+      // the peer, and logged explicitly by the createLoggingMiddleware. It is
+      // swallowed here to prevent an UnhandledPromiseRejection, since
+      // _handleIncomingCall is executed synchronously by _onMessage.
+      if (reachedHandler) return;
+
+      // A middleware threw before the handler step (rejecting the call, or
+      // failing). Nothing answered the CALL, and OCPP-J requires an answer:
+      // without one the peer only learns of it from its own timeout.
+      this._logger?.error?.("Middleware failed on incoming call", {
+        method,
+        error: (err as Error)?.message ?? String(err),
+      });
+      if (this._state !== OPEN) return;
+      const rpcErr =
+        err instanceof RPCGenericError || (err as RPCError).rpcErrorCode
+          ? (err as RPCError)
+          : createRPCError("InternalError", (err as Error).message);
+      this._sendRpcError([
+        MessageType.CALLERROR,
+        msgId,
+        rpcErr.rpcErrorCode,
+        rpcErr.rpcErrorMessage || (err as Error).message || "",
+        this._options.respondWithDetailedErrors
+          ? getErrorPlainObject(err as Error, false)
+          : {},
+      ]);
     }
   }
 
@@ -2127,6 +2163,21 @@ export class OCPPClient<
       method: pending.method,
     };
 
+    try {
+      await this._runIncomingResult(ctx);
+    } catch (err) {
+      // A middleware rejected the reply, or failed on it. The caller is
+      // waiting on this call, and without this it only saw its timeout.
+      const pendingCtx = this._pendingCalls.get(msgId);
+      if (!pendingCtx) return;
+      clearTimeout(pendingCtx.timeoutHandle);
+      pendingCtx.removeAbortListener?.();
+      this._pendingCalls.delete(msgId);
+      pendingCtx.reject(err);
+    }
+  }
+
+  private async _runIncomingResult(ctx: MiddlewareContext): Promise<void> {
     await this._middleware.execute(ctx, async (c) => {
       const ctxvals = c as Extract<
         MiddlewareContext,
