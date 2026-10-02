@@ -69,8 +69,9 @@ Its type, `WsClientOptions`, leaves out the options the client sets itself, so t
 | `perMessageDeflate` | `compression` |
 | `headers` | `headers` (names compared without case, as HTTP does; with `password`, its `Authorization` header wins) |
 | `ca`, `cert`, `key`, `passphrase`, `rejectUnauthorized`, `minVersion`, `maxVersion`, `ciphers` | `tls`, which applies on every security profile |
+| `autoPong` | Nothing: pings are always answered (RFC 6455 §5.5.2), since a CSMS disconnects a charger that stops answering them |
 
-From plain JavaScript, where the type does not apply, these are dropped and a warning names the option to use instead.
+From plain JavaScript, where the type does not apply, these are dropped and a warning names the option to use instead. `closeTimeout` (how long a closing connection waits for the CSMS's close frame; `ws` default 30 s) is accepted although `ws`'s own type definitions do not list it yet.
 
 #### LoggingConfig
 
@@ -243,6 +244,7 @@ const server = new OCPPServer(options?: ServerOptions);
 | `rateLimit`          | `RateLimitOptions`              | —         | Token bucket socket & method limiter                                                                                                           |
 | `healthEndpoint`     | `boolean \| HealthEndpointOptions` | `false` | Expose HTTP `/health` and `/metrics`. Pass `true` for open access, or `{ auth }` to require bearer token or basic auth. Missing or empty credentials throw when the server is created. Without `auth`, `listen()` logs a warning when it starts serving them. |
 | `maxPayloadBytes`    | `number`                        | `65536`   | Max WebSocket frame size in bytes. Rejects oversized messages at the transport layer before any parsing. Prevents OOM from malicious payloads. |
+| `wssOptions`         | `WsServerOptions`               | —         | Raw `ws` server options: `maxFragments`, `maxBufferedChunks`, `allowSynchronousEvents`, `skipUTF8Validation`, a `WebSocket` subclass, `closeTimeout` (see wssOptions below) |
 | `maxBadMessages`     | `number`                        | `50`      | Close a connection on its Nth malformed message **in a row**. Every valid message resets the count and empty frames are ignored. Set `0` for zero tolerance, `Infinity` for no limit (logs a warning). |
 | `badMessageWindowMs` | `number`                        | —         | Also reset a run of bad messages once it is older than this many ms (a valid message always resets it). Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` closes on the 10th bad message in a row within a minute. |
 | `workerThreads`      | `boolean \| object`             | `false`   | Enable worker thread pool for JSON parsing. `true` = auto pool size, `{ poolSize, maxQueueSize }` for fine-tuning.                             |
@@ -251,6 +253,44 @@ const server = new OCPPServer(options?: ServerOptions);
 | `requestTimeout`     | `number`                        | `30000`   | Max time (ms) for the complete HTTP request on servers created by `listen()`. Works with `headersTimeout` to harden the HTTP layer. `0` disables. |
 | `callConcurrency`    | `number`                        | `1`       | Outbound CALLs in flight per charger. `1` follows OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out. Above 1 only for chargers known to cope; `sendBatch()` pipelines regardless |
 | `respondWithDetailedErrors` | `boolean`                 | `false`   | Send a handler error's properties (not its stack) to chargers in CALLERROR `details`. Logs a warning when on; keep it off in production |
+
+#### wssOptions
+
+Passed to `new WebSocketServer()` from the [`ws`](https://github.com/websockets/ws/blob/master/doc/ws.md#new-websocketserveroptions-callback) package, for what the server options do not cover. Changes through `reconfigure()` apply to new connections.
+
+```typescript
+const server = new OCPPServer({
+  protocols: ["ocpp2.0.1"],
+  wssOptions: {
+    maxFragments: 64, // close (1008) on a message split into more fragments
+    maxBufferedChunks: 4096, // the same for buffered chunks of one message
+    closeTimeout: 5_000, // destroy a closing socket after 5 s without the charger's close frame
+  },
+});
+```
+
+| Option | `ws` default | Use |
+| :-- | :-- | :-- |
+| `maxFragments`, `maxBufferedChunks` | 16384, 262144 | Lower them on a server exposed to the internet: limits against fragment floods |
+| `allowSynchronousEvents` | `true` | `false` spreads a burst of messages from one charger over several event-loop turns |
+| `skipUTF8Validation` | `false` | Faster parsing, but invalid UTF-8 then reaches the parser instead of closing the connection with 1007 as RFC 6455 requires |
+| `WebSocket` | `ws`'s `WebSocket` | A subclass, e.g. for instrumentation |
+| `closeTimeout` | 30000 | How long a closing connection waits for the charger's close frame; accepted although `ws`'s type definitions do not list it yet |
+
+Its type, `WsServerOptions`, leaves out the options the server sets itself:
+
+| Not in `wssOptions` | Use instead |
+| :-- | :-- |
+| `port`, `host`, `server`, `noServer`, `backlog` | `listen(port, host, { server })` or `handleUpgrade`; `backlog` on your own HTTP server |
+| `path` | `route()` |
+| `handleProtocols` | `protocols` |
+| `verifyClient` | `auth()`, middleware or `isKnownIdentity` |
+| `maxPayload` | `maxPayloadBytes` |
+| `perMessageDeflate` | `compression` |
+| `clientTracking` | Nothing: always on, `stats()` needs it |
+| `autoPong` | Nothing: charger pings are always answered (RFC 6455 §5.5.2) |
+
+From plain JavaScript, where the type does not apply, these are dropped and a warning names what to use instead.
 
 #### CompressionOptions
 

@@ -117,24 +117,25 @@ function mergeHeaders(
 }
 
 /**
- * The client option that sets each `ws` option `wsOpts` does not take. Typed
+ * What to use instead of each `ws` option `wsOpts` does not take. Typed
  * against ManagedWsClientOption, so the list cannot drift from the type.
  */
-const WS_OPTION_REPLACEMENT: Record<ManagedWsClientOption, string> = {
-  handshakeTimeout: "connectTimeoutMs",
-  perMessageDeflate: "compression",
-  headers: "headers",
-  ca: "tls",
-  cert: "tls",
-  key: "tls",
-  passphrase: "tls",
-  rejectUnauthorized: "tls",
-  minVersion: "tls",
-  maxVersion: "tls",
-  ciphers: "tls",
+const WS_OPTION_HINT: Record<ManagedWsClientOption, string> = {
+  handshakeTimeout: "use connectTimeoutMs",
+  perMessageDeflate: "use compression",
+  headers: "use headers",
+  autoPong: "always on: pings are answered, RFC 6455 §5.5.2",
+  ca: "use tls",
+  cert: "use tls",
+  key: "use tls",
+  passphrase: "use tls",
+  rejectUnauthorized: "use tls",
+  minVersion: "use tls",
+  maxVersion: "use tls",
+  ciphers: "use tls",
 };
 const MANAGED_WS_OPTIONS = Object.keys(
-  WS_OPTION_REPLACEMENT,
+  WS_OPTION_HINT,
 ) as ManagedWsClientOption[];
 
 function schemaIdFor(method: string, kind: SchemaKind): string {
@@ -1447,7 +1448,7 @@ export class OCPPClient<
     const given: WebSocket.ClientOptions = { ...this._options.wsOpts };
     const ignored = MANAGED_WS_OPTIONS.filter(
       (key) => given[key] !== undefined,
-    ).map((key) => `${key} (use ${WS_OPTION_REPLACEMENT[key]})`);
+    ).map((key) => `${key} (${WS_OPTION_HINT[key]})`);
 
     if (ignored.length > 0) {
       this._logger.warn?.(
@@ -2937,6 +2938,9 @@ export class OCPPClient<
       headers: mergeHeaders(this._options.headers, {
         "User-Agent": getPackageIdent(),
       }),
+      // A CSMS disconnects a charger that stops answering its pings; set
+      // explicitly rather than relying on the `ws` default.
+      autoPong: true,
     };
 
     // Bound the upgrade. `ws` aborts the handshake and emits an error when this

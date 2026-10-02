@@ -11,7 +11,7 @@ import {
 } from "node:https";
 import type { Duplex } from "node:stream";
 import type { SecureContextOptions, TLSSocket } from "node:tls";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, type ServerOptions as WsLibServerOptions } from "ws";
 import { AdaptiveLimiter } from "./adaptive-limiter.js";
 import { checkCORS } from "./cors.js";
 import { HandshakeRejection, TimeoutError } from "./errors.js";
@@ -37,6 +37,7 @@ import {
   type ListenOptions,
   type LoggerLike,
   type LoggerLikeNotOptional,
+  type ManagedWsServerOption,
   type OCPPPlugin,
   type OCPPProtocol,
   type OCPPRequestType,
@@ -63,6 +64,28 @@ import {
 
 /** RFC 9110 §15.5.2: every 401 carries a challenge; OCPP uses Basic Auth. */
 const BASIC_AUTH_CHALLENGE = 'Basic realm="ocpp-ws-io", charset="UTF-8"';
+
+/**
+ * What to use instead of each `ws` option `wssOptions` does not take. Typed
+ * against ManagedWsServerOption, so the list cannot drift from the type.
+ */
+const WSS_OPTION_HINT: Record<ManagedWsServerOption, string> = {
+  port: "use listen(port)",
+  host: "use listen(port, host)",
+  backlog: "set it on your own HTTP server",
+  path: "use route()",
+  noServer: "always on: use listen() or handleUpgrade",
+  server: "use listen(port, host, { server })",
+  verifyClient: "use auth(), middleware or isKnownIdentity",
+  handleProtocols: "use protocols",
+  maxPayload: "use maxPayloadBytes",
+  perMessageDeflate: "use compression",
+  clientTracking: "always on: stats() needs it",
+  autoPong: "always on: pings are answered, RFC 6455 §5.5.2",
+};
+const MANAGED_WSS_OPTIONS = Object.keys(
+  WSS_OPTION_HINT,
+) as ManagedWsServerOption[];
 
 /**
  * OCPPServer — A typed WebSocket RPC server for OCPP communication.
@@ -239,6 +262,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       );
     }
     if (this._options.respondWithDetailedErrors) this._warnDetailedErrors();
+    this._warnIgnoredWssOptions();
 
     // Building a protocol's validator costs ~27 ms, against 0.9 µs to run one.
     // Left to the first message that needs it, that lands on a charger's first
@@ -601,6 +625,26 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   }
 
   /** Once for the server, not per connection (its clients stay quiet). */
+  /**
+   * wssOptions does not offer the options the server sets itself; its type
+   * leaves them out. Plain JavaScript can still pass them: they are dropped,
+   * and this names each with what to use instead, so the setting does not
+   * fail silently.
+   */
+  private _warnIgnoredWssOptions(): void {
+    const given: WsLibServerOptions = { ...this._options.wssOptions };
+    const ignored = MANAGED_WSS_OPTIONS.filter(
+      (key) => given[key] !== undefined,
+    ).map((key) => `${key} (${WSS_OPTION_HINT[key]})`);
+
+    if (ignored.length > 0) {
+      this._logger?.warn?.(
+        "wssOptions does not take these options; set them through the server options",
+        { ignored },
+      );
+    }
+  }
+
   private _warnDetailedErrors(): void {
     this._logger?.warn?.(
       "respondWithDetailedErrors is on: a handler error's properties are sent to chargers in CALLERROR details. Keep it off in production.",
@@ -2809,12 +2853,14 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     ) {
       this._warnDetailedErrors();
     }
+    if (options.wssOptions !== undefined) this._warnIgnoredWssOptions();
 
     // Transport-level settings only apply to a fresh WebSocketServer —
     // rebuild so new connections pick them up (existing sockets keep theirs).
     if (
       options.maxPayloadBytes !== undefined ||
-      options.compression !== undefined
+      options.compression !== undefined ||
+      options.wssOptions !== undefined
     ) {
       this._wss?.close();
       this._wss = this._createWss();
@@ -3898,7 +3944,16 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * stays consistent.
    */
   private _createWss(): WebSocketServer {
+    // wssOptions first. Its type leaves out the options set below; any that
+    // still arrive, from JavaScript, are dropped (and were warned about).
+    const extra: WsLibServerOptions = { ...this._options.wssOptions };
+    for (const key of MANAGED_WSS_OPTIONS) delete extra[key];
     return new WebSocketServer({
+      ...extra,
+      // stats() reads wss.clients, and chargers disconnect without pongs;
+      // set explicitly rather than relying on the `ws` defaults.
+      clientTracking: true,
+      autoPong: true,
       noServer: true,
       // Without this, ws picks the FIRST protocol the client offered, while
       // _handleUpgrade separately selected the first one the *server* supports.

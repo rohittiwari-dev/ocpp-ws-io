@@ -190,19 +190,65 @@ export interface TLSOptions {
 /**
  * `ws` client options the client sets itself, so `wsOpts` does not offer
  * them: `handshakeTimeout` (use `connectTimeoutMs`), `perMessageDeflate` (use
- * `compression`), `headers` (use `headers`) and the TLS settings (use `tls`).
+ * `compression`), `headers` (use `headers`), the TLS settings (use `tls`) and
+ * `autoPong`: pings are always answered (RFC 6455 §5.5.2), since a CSMS
+ * disconnects a charger that stops answering them.
  */
 export type ManagedWsClientOption =
   | "handshakeTimeout"
   | "perMessageDeflate"
   | "headers"
+  | "autoPong"
   | keyof TLSOptions;
 
 /** Raw `ws` client options accepted by `ClientOptions.wsOpts`. */
 export type WsClientOptions = Omit<
   import("ws").ClientOptions,
   ManagedWsClientOption
->;
+> & {
+  /**
+   * How long a closing connection waits for the peer's close frame before
+   * the socket is destroyed, in ms (`ws` default: 30000). Supported by `ws`
+   * 8.22 and declared here because its type definitions do not have it yet.
+   */
+  closeTimeout?: number;
+};
+
+/**
+ * `ws` server options the server sets itself, so `wssOptions` does not offer
+ * them: binding (`noServer`, `server`, `port`, `host`, `backlog`, `path`: use
+ * `listen()`, `handleUpgrade` or your own server, and `route()`),
+ * `handleProtocols` (use `protocols`), `verifyClient` (use `auth()`,
+ * middleware or `isKnownIdentity`), `maxPayload` (use `maxPayloadBytes`),
+ * `perMessageDeflate` (use `compression`), `clientTracking` (`stats()` needs
+ * it) and `autoPong`: charger pings are always answered (RFC 6455 §5.5.2).
+ */
+export type ManagedWsServerOption =
+  | "noServer"
+  | "server"
+  | "port"
+  | "host"
+  | "backlog"
+  | "path"
+  | "handleProtocols"
+  | "verifyClient"
+  | "maxPayload"
+  | "perMessageDeflate"
+  | "clientTracking"
+  | "autoPong";
+
+/** Raw `ws` server options accepted by `ServerOptions.wssOptions`. */
+export type WsServerOptions = Omit<
+  import("ws").ServerOptions,
+  ManagedWsServerOption
+> & {
+  /**
+   * How long a closing connection waits for the charger's close frame before
+   * the socket is destroyed, in ms (`ws` default: 30000). Supported by `ws`
+   * 8.22 and declared here because its type definitions do not have it yet.
+   */
+  closeTimeout?: number;
+};
 
 // ─── Handler Types ───────────────────────────────────────────────
 
@@ -983,6 +1029,17 @@ interface ServerOptionsBase {
    * (default: 65536 / 64KB — sufficient for any standard OCPP message)
    */
   maxPayloadBytes?: number;
+  /**
+   * Raw `ws` server options, passed to `new WebSocketServer()`: for example
+   * `maxFragments` and `maxBufferedChunks` (limits against fragment floods),
+   * `allowSynchronousEvents`, `skipUTF8Validation` (faster, but invalid UTF-8
+   * then reaches the parser instead of closing the connection with 1007 as
+   * RFC 6455 requires), a `WebSocket` subclass, or `closeTimeout`. Options
+   * the server sets itself are not offered here (see
+   * {@link ManagedWsServerOption}). Changes through `reconfigure()` apply to
+   * new connections.
+   */
+  wssOptions?: WsServerOptions;
   /**
    * Enable worker thread pool for JSON parsing (+ optional AJV validation).
    * Offloads CPU-heavy work to worker threads, keeping the main event loop free.
