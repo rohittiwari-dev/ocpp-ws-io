@@ -614,6 +614,7 @@ export class OCPPClient<
   ): Promise<{ code: number; reason: string }> {
     this._state = CLOSING;
     this._stopPing();
+    this.emit("closing");
 
     // Calls still waiting behind the concurrency limit have not been sent, so
     // there is nothing to await — but nothing settled them either, and once the

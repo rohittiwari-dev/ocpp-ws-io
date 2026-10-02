@@ -282,6 +282,10 @@ client.on("close", ({ code, reason }) => {
 	/* WebSocket disconnected */
 });
 
+client.on("closing", () => {
+	/* close() started: no reconnect follows; close fires once the socket has closed */
+});
+
 client.on("error", (error) => {
 	/* Connection or WebSocket error */
 });

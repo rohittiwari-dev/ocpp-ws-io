@@ -142,6 +142,12 @@ export interface BrowserClientOptions {
 export interface BrowserClientEvents {
   open: [Event];
   close: [{ code: number; reason: string }];
+  /**
+   * `close()` has started, before it waits for pending calls: no reconnect
+   * follows, and `close` fires once the socket has closed. A close the peer
+   * starts gives `disconnect` instead.
+   */
+  closing: [];
   disconnect: [{ code: number; reason: string }];
   error: [Event | Error];
   connecting: [{ url: string }];

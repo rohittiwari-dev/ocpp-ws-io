@@ -324,6 +324,7 @@ export class BrowserOCPPClient<
     force: boolean,
   ): Promise<{ code: number; reason: string }> {
     this._state = CLOSING;
+    this.emit("closing");
 
     if (!force && awaitPending) {
       const pendingPromises = Array.from(this._pendingCalls.values()).map(
