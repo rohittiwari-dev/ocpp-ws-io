@@ -701,3 +701,22 @@ const myPlugin = createPlugin({
 
 server.plugin(myPlugin);
 ```
+
+A plugin is typed for every protocol, so it fits any server, and its hooks see each connection typed for every version, as in 2.x. Written inline in `server.plugin({ ... })`, the hooks get that server's connections. To type your app's own plugin for its server's protocols, pass them to `createPlugin`; only a server with those protocols accepts it:
+
+```typescript
+const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+const bootLog = createPlugin<"ocpp1.6">({
+  name: "boot-log",
+  onConnection(client) {
+    // client is an OCPPServerClient<"ocpp1.6">: 1.6 actions and fields
+    client.handle("BootNotification", ({ params }) => {
+      console.log(client.identity, params.chargePointVendor);
+      return { currentTime: new Date().toISOString(), interval: 300, status: "Accepted" };
+    });
+  },
+});
+
+server.plugin(bootLog);
+```

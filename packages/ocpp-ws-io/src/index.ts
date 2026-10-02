@@ -71,7 +71,7 @@ export { LRUMap } from "./lru-map.js";
 export * from "./middleware.js";
 export { createRouter, OCPPRouter } from "./router.js";
 export { OCPPServer } from "./server.js";
-export { OCPPServerClient } from "./server-client.js";
+export { type AnyOCPPServerClient, OCPPServerClient } from "./server-client.js";
 export {
   getStandardProtocols,
   getStandardValidator,
@@ -92,6 +92,7 @@ export {
   type CompressionOptions,
   type ConnectionContext,
   type ConnectionMiddleware,
+  type ConnectionOf,
   ConnectionState,
   type DuplicateConnectionPolicy,
   type EventAdapterInterface,
@@ -103,6 +104,7 @@ export {
   type HealthEndpointOptions,
   type IdentityLookup,
   type JsonValue,
+  type KnownProtocol,
   type ListenOptions,
   type LoggerLike,
   type LoggingConfig,

@@ -1,5 +1,4 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { EventEmitter } from "node:events";
 import {
   createServer as createHttpServer,
   type IncomingMessage,
@@ -14,15 +13,21 @@ import type { SecureContextOptions, TLSSocket } from "node:tls";
 import { WebSocketServer, type ServerOptions as WsLibServerOptions } from "ws";
 import { AdaptiveLimiter } from "./adaptive-limiter.js";
 import { checkCORS } from "./cors.js";
+import { EventEmitterBase } from "./emitter-base.js";
 import { HandshakeRejection, TimeoutError } from "./errors.js";
 import { initLogger } from "./init-logger.js";
 import { LRUMap } from "./lru-map.js";
 import { RadixTrie } from "./radix-trie.js";
-import { executeMiddlewareChain, OCPPRouter } from "./router.js";
+import {
+  type AnyOCPPRouter,
+  executeMiddlewareChain,
+  OCPPRouter,
+} from "./router.js";
 import { OCPPServerClient } from "./server-client.js";
 import { getStandardValidator } from "./standard-validators.js";
 import {
   type AllMethodNames,
+  type AnyOCPPProtocol,
   type AuthAccept,
   type AuthCallback,
   type CallOptions,
@@ -34,12 +39,12 @@ import {
   type HandshakeInfo,
   type HealthEndpointAuth,
   type HealthEndpointOptions,
+  type KnownProtocol,
   type ListenOptions,
   type LoggerLike,
   type LoggerLikeNotOptional,
   type ManagedWsServerOption,
   type OCPPPlugin,
-  type OCPPProtocol,
   type OCPPRequestType,
   type OCPPResponseType,
   type PersistedSession,
@@ -95,15 +100,28 @@ const MANAGED_WSS_OPTIONS = Object.keys(
  * - Profile 2: TLS + Basic Auth (HTTPS server)
  * - Profile 3: Mutual TLS (HTTPS server with requestCert)
  */
-export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<ServerEvents>) {
-  private _options: ServerOptions;
+export class OCPPServer<
+  P extends AnyOCPPProtocol = AnyOCPPProtocol,
+> extends EventEmitterBase {
+  // Typed for this server's protocols; a base class expression cannot use P.
+  declare on: TypedEventEmitter<ServerEvents<P>>["on"];
+  declare once: TypedEventEmitter<ServerEvents<P>>["once"];
+  declare off: TypedEventEmitter<ServerEvents<P>>["off"];
+  declare emit: TypedEventEmitter<ServerEvents<P>>["emit"];
+  declare addListener: TypedEventEmitter<ServerEvents<P>>["addListener"];
+  declare removeListener: TypedEventEmitter<ServerEvents<P>>["removeListener"];
+  declare removeAllListeners: TypedEventEmitter<
+    ServerEvents<P>
+  >["removeAllListeners"];
+
+  private _options: ServerOptions<P>;
   /** Radix trie for O(k) route matching (string patterns). */
   private _trie = new RadixTrie();
   /** Global middleware routers (server.use() with no patterns — catch-all). */
-  private _globalMiddlewareRouters: OCPPRouter[] = [];
+  private _globalMiddlewareRouters: AnyOCPPRouter[] = [];
 
   /** Every router registered on this server, for post-registration validation. */
-  private _allRouters: OCPPRouter[] = [];
+  private _allRouters: AnyOCPPRouter[] = [];
 
   /** True once close() detached an adapter, so listen() can warn about it. */
   private _adapterDetachedByClose = false;
@@ -127,9 +145,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   /** The protocol to answer with; `false` answers with none (OCPP-J §3.2). */
   private _negotiatedProtocols = new WeakMap<IncomingMessage, string | false>();
   /** Routers with RegExp patterns (fallback linear scan). */
-  private _regexRouters: OCPPRouter[] = [];
-  private _clients = new Set<OCPPServerClient>();
-  private _clientsByIdentity = new Map<string, OCPPServerClient>();
+  private _regexRouters: AnyOCPPRouter[] = [];
+  private _clients = new Set<OCPPServerClient<P>>();
+  private _clientsByIdentity = new Map<string, OCPPServerClient<P>>();
   private _httpServers = new Set<Server>();
   /** HTTP servers created by listen() — we own their lifecycle. */
   private _ownedHttpServers = new Set<Server>();
@@ -163,7 +181,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     { tokens: number; lastRefill: number }
   >();
   private _adaptiveLimiter: AdaptiveLimiter | null = null;
-  private _plugins: OCPPPlugin[] = [];
+  private _plugins: OCPPPlugin<P>[] = [];
   private _workerPool: WorkerPool | null = null;
   private _telemetryInterval: ReturnType<typeof setInterval> | null = null;
   private _presenceInterval: ReturnType<typeof setTimeout> | null = null;
@@ -209,7 +227,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   /** Longest a connecting charger waits for the adapter's stored session. */
   private static readonly _SESSION_FETCH_TIMEOUT_MS = 1000;
 
-  constructor(options: ServerOptions = {}) {
+  constructor(options: ServerOptions<P> = {}) {
     super();
     this.setMaxListeners(0);
 
@@ -324,7 +342,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * and a later `close()` sent it a second `onClose` it had never been
    * re-initialised for.
    */
-  private _initPlugin(plugin: OCPPPlugin): void {
+  private _initPlugin(plugin: OCPPPlugin<P>): void {
     if (!plugin.onInit) return;
     try {
       this._guardPluginHook(plugin.onInit(this), plugin.name, "onInit");
@@ -695,7 +713,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   /**
    * Returns a readonly set of all currently connected OCPPServerClient instances.
    */
-  get clients(): ReadonlySet<OCPPServerClient> {
+  get clients(): ReadonlySet<OCPPServerClient<P>> {
     return this._clients;
   }
 
@@ -756,7 +774,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    *
    * @param identity The client identity (username/station ID)
    */
-  getLocalClient(identity: string): OCPPServerClient | undefined {
+  getLocalClient(identity: string): OCPPServerClient<P> | undefined {
     return this._clientsByIdentity.get(identity);
   }
 
@@ -807,8 +825,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * Registers a new routing dispatcher for multiplexing connections.
    * `server.route("/api/:tenant").use(middleware).auth(cb).on("client", ...)`
    */
-  route(...patterns: Array<string | RegExp>): OCPPRouter {
-    const router = new OCPPRouter();
+  route(...patterns: Array<string | RegExp>): OCPPRouter<P> {
+    const router = new OCPPRouter<P>();
     router.route(...patterns);
     this._registerRouter(router);
     return router;
@@ -818,7 +836,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * Attaches one or more standalone modular routers created via `createRouter()`.
    * This is useful for separating route definitions across different files.
    */
-  attachRouters(...routers: OCPPRouter[]): this {
+  attachRouters(...routers: AnyOCPPRouter[]): this {
     for (const router of routers) {
       this._registerRouter(router);
     }
@@ -838,8 +856,13 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * ```ts
    * server.plugin(metricsPlugin, loggingPlugin, otelPlugin);
    * ```
+   *
+   * Written inline, a plugin's hooks get this server's connections typed for
+   * its protocols. A plugin typed for every protocol (`OCPPPlugin`) fits any
+   * server; one from `createPlugin<"ocpp1.6">()` only a server with those
+   * protocols.
    */
-  plugin(...plugins: OCPPPlugin[]): this {
+  plugin(...plugins: OCPPPlugin<P>[]): this {
     for (const plugin of plugins) {
       // Registering the same plugin object twice only ever doubles its hooks —
       // double-counted metrics, duplicate webhooks. Two distinct instances that
@@ -917,8 +940,8 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * server.use(myMiddleware).route("/api").on("client", ...);
    * ```
    */
-  use(...middlewares: ConnectionMiddleware[]): OCPPRouter {
-    const router = new OCPPRouter();
+  use(...middlewares: ConnectionMiddleware[]): OCPPRouter<P> {
+    const router = new OCPPRouter<P>();
     router.use(...middlewares);
     this._registerRouter(router);
     return router;
@@ -928,9 +951,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * Registers a top-level auth handler, returning a router to attach `.on()` or `.use()`.
    */
   auth<TSession = Record<string, unknown>>(
-    callback: AuthCallback<TSession>,
-  ): OCPPRouter {
-    const router = new OCPPRouter();
+    callback: AuthCallback<TSession, P>,
+  ): OCPPRouter<P> {
+    const router = new OCPPRouter<P>();
     router.auth(callback);
     this._registerRouter(router);
     return router;
@@ -969,7 +992,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
   }
 
-  private _registerRouter(router: OCPPRouter): void {
+  private _registerRouter(router: AnyOCPPRouter): void {
     this._allRouters.push(router);
     const stringPatterns = router.patterns.filter(
       (p): p is string => typeof p === "string",
@@ -1641,7 +1664,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
     let matchedHandler: AuthCallback | undefined;
     const matchedMiddlewares: ConnectionMiddleware[] = [];
-    const matchedRouters: OCPPRouter[] = [];
+    const matchedRouters: AnyOCPPRouter[] = [];
     const params: Record<string, string> = {};
     const pathname = url.pathname;
 
@@ -2228,7 +2251,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     this._wss.handleUpgrade(req, socket, head, (ws) => {
       // The handshake is done; from here the connection is counted as a client.
       releaseHandshakeSlot();
-      const clientOptions: ClientOptions = {
+      const clientOptions: ClientOptions<P> = {
         identity,
         endpoint: "",
         callTimeoutMs:
@@ -2530,7 +2553,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
       // Dispatch route-specific "client" events
       this.emit("client", client);
       for (const router of matchedRouters) {
-        router.emit("client", client);
+        router._emitClient(client);
       }
 
       client.on("message", () => {
@@ -2842,9 +2865,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   // ─── Reconfigure ─────────────────────────────────────────────
 
-  reconfigure(options: Partial<ServerOptions>): void {
+  reconfigure(options: Partial<ServerOptions<P>>): void {
     OCPPServer._assertMaxIdentityLength(options.maxIdentityLength);
-    const oldOptions = { ...this._options } as ServerOptions;
+    const oldOptions = { ...this._options } as ServerOptions<P>;
     Object.assign(this._options, options);
 
     if (
@@ -2952,7 +2975,7 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * but never publish a response — such calls reject with TimeoutError.
    */
   // 1. Protocol-specific overload
-  async sendToClient<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+  async sendToClient<V extends KnownProtocol<P>, M extends AllMethodNames<V>>(
     identity: string,
     version: V,
     method: M,
@@ -2961,12 +2984,12 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   ): Promise<OCPPResponseType<V, M> | undefined>;
 
   // 2. Global overload (infers method from any protocol)
-  async sendToClient<M extends AllMethodNames<any>>(
+  async sendToClient<M extends AllMethodNames<KnownProtocol<P>>>(
     identity: string,
     method: M,
-    params: OCPPRequestType<any, M>,
+    params: OCPPRequestType<KnownProtocol<P>, M>,
     options?: CallOptions,
-  ): Promise<OCPPResponseType<any, M> | undefined>;
+  ): Promise<OCPPResponseType<KnownProtocol<P>, M> | undefined>;
 
   // 3. Custom/Loose overload
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3108,7 +3131,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   // ─── Safe SendToClient (Best Effort) ──────────────────────────
 
   // 1. Protocol-specific overload
-  async safeSendToClient<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+  async safeSendToClient<
+    V extends KnownProtocol<P>,
+    M extends AllMethodNames<V>,
+  >(
     identity: string,
     version: V,
     method: M,
@@ -3117,12 +3143,12 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
   ): Promise<OCPPResponseType<V, M> | undefined>;
 
   // 2. Global overload
-  async safeSendToClient<M extends AllMethodNames<any>>(
+  async safeSendToClient<M extends AllMethodNames<KnownProtocol<P>>>(
     identity: string,
     method: M,
-    params: OCPPRequestType<any, M>,
+    params: OCPPRequestType<KnownProtocol<P>, M>,
     options?: CallOptions,
-  ): Promise<OCPPResponseType<any, M> | undefined>;
+  ): Promise<OCPPResponseType<KnownProtocol<P>, M> | undefined>;
 
   // 3. Custom/Loose overload
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -3813,9 +3839,9 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
     }
   }
 
-  async broadcast<V extends AllMethodNames<any>>(
+  async broadcast<V extends AllMethodNames<KnownProtocol<P>>>(
     method: V,
-    params: OCPPRequestType<any, V>,
+    params: OCPPRequestType<KnownProtocol<P>, V>,
   ): Promise<import("./types.js").BroadcastResult> {
     // Every local failure used to be swallowed by `.catch(() => {})` behind a
     // `Promise<void>`, so a caller could not tell a clean fan-out from one
@@ -3863,10 +3889,10 @@ export class OCPPServer extends (EventEmitter as new () => TypedEventEmitter<Ser
    * @param params The request parameters
    * @param options Call options
    */
-  async broadcastBatch<V extends AllMethodNames<any>>(
+  async broadcastBatch<V extends AllMethodNames<KnownProtocol<P>>>(
     identities: string[],
     method: V,
-    params: OCPPRequestType<any, V>,
+    params: OCPPRequestType<KnownProtocol<P>, V>,
     options?: CallOptions,
   ): Promise<void> {
     const localIdentities = new Set<string>();

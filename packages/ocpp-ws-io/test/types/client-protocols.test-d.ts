@@ -110,3 +110,14 @@ export function anyClientHoldsEveryConfiguration() {
   const browsers: AnyBrowserOCPPClient[] = [b16];
   void browsers;
 }
+
+export function typedClientFitsThePlainType() {
+  // 2.x code that keeps clients as plain OCPPClient still compiles.
+  const c16 = new OCPPClient({ identity: "CP1", endpoint, protocols: ["ocpp1.6"] });
+  const held: OCPPClient[] = [c16];
+  // Not yet the browser client: keep it typed, or use AnyBrowserOCPPClient.
+  const b16 = new BrowserOCPPClient({ identity: "CP1", endpoint, protocols: ["ocpp1.6"] });
+  // @ts-expect-error a typed browser client does not fit the plain type
+  const browsers: BrowserOCPPClient[] = [b16];
+  return [held, browsers];
+}

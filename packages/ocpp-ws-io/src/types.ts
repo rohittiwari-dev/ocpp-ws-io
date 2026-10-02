@@ -98,6 +98,18 @@ export type KnownProtocol<P extends AnyOCPPProtocol> = string extends P
   ? OCPPProtocol
   : Extract<P, OCPPProtocol>;
 
+/**
+ * The connection type of a server or route, for storing its connections:
+ * `new Map<string, ConnectionOf<typeof server>>()`.
+ */
+export type ConnectionOf<S> = S extends import("./server.js").OCPPServer<
+  infer P extends AnyOCPPProtocol
+>
+  ? import("./server-client.js").OCPPServerClient<P>
+  : S extends import("./router.js").OCPPRouter<infer P extends AnyOCPPProtocol>
+    ? import("./server-client.js").OCPPServerClient<P>
+    : never;
+
 // ─── Connection State ────────────────────────────────────────────
 
 export const ConnectionState = {
@@ -288,9 +300,12 @@ export type WildcardHandler = (
   context: HandlerContext,
 ) => unknown | Promise<unknown>;
 
-export interface RouterHandlerContext<T = unknown> extends HandlerContext<T> {
+export interface RouterHandlerContext<
+  T = unknown,
+  P extends AnyOCPPProtocol = AnyOCPPProtocol,
+> extends HandlerContext<T> {
   /** The specific server client that issued the message. */
-  client: import("./server-client.js").OCPPServerClient;
+  client: import("./server-client.js").OCPPServerClient<P>;
 }
 
 export type RouterWildcardHandler = (
@@ -775,9 +790,9 @@ export interface RateLimitOptions {
 
 // ─── Router Options ──────────────────────────────────────────────
 
-export interface RouterConfig {
+export interface RouterConfig<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
   /** Accepted OCPP subprotocols (e.g. ["ocpp1.6"]) */
-  protocols?: AnyOCPPProtocol[];
+  protocols?: readonly P[];
   /** Call timeout in ms — overrides server default */
   callTimeoutMs?: number;
   /** Ping interval in ms — overrides server default */
@@ -1150,7 +1165,8 @@ interface ServerOptionsBase {
  * prepare — the compiler enforces it here and the constructor throws as a
  * backstop for JavaScript callers.
  */
-interface StrictServerOptions extends ServerOptionsBase {
+interface StrictServerOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol>
+  extends ServerOptionsBase {
   /**
    * Validate every message against the official OCPP JSON schemas.
    *
@@ -1179,7 +1195,7 @@ interface StrictServerOptions extends ServerOptionsBase {
    * A route may narrow this with its own `protocols`; the connection uses the
    * route's list when it has one and this list otherwise.
    */
-  protocols: AnyOCPPProtocol[];
+  protocols: readonly P[];
 }
 
 /**
@@ -1188,7 +1204,8 @@ interface StrictServerOptions extends ServerOptionsBase {
  * Nothing checks message shape, so a malformed payload reaches your handler
  * as-is. Set `strictMode` to switch to {@link StrictServerOptions}.
  */
-interface RelaxedServerOptions extends ServerOptionsBase {
+interface RelaxedServerOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol>
+  extends ServerOptionsBase {
   /**
    * Schema validation. **Off by default** — omit it, or set `false`, and no
    * message is validated in either direction.
@@ -1206,7 +1223,7 @@ interface RelaxedServerOptions extends ServerOptionsBase {
    * constraining it — fine for a plain WebSocket service, but a CSMS normally
    * names the versions it speaks.
    */
-  protocols?: AnyOCPPProtocol[];
+  protocols?: readonly P[];
 }
 
 /**
@@ -1217,7 +1234,9 @@ interface RelaxedServerOptions extends ServerOptionsBase {
  * selects {@link RelaxedServerOptions}, where validation is off and
  * `protocols` is optional.
  */
-export type ServerOptions = StrictServerOptions | RelaxedServerOptions;
+export type ServerOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol> =
+  | StrictServerOptions<P>
+  | RelaxedServerOptions<P>;
 
 // ─── Telemetry Config ────────────────────────────────────────────
 
@@ -1300,9 +1319,12 @@ export interface ListenOptions {
 
 // ─── Auth Callback ───────────────────────────────────────────────
 
-export interface AuthAccept<TSession = Record<string, unknown>> {
+export interface AuthAccept<
+  TSession = Record<string, unknown>,
+  P extends AnyOCPPProtocol = AnyOCPPProtocol,
+> {
   /** Subprotocol to use for this client */
-  protocol?: string;
+  protocol?: P;
   /** Session data attached to the client */
   session?: TSession;
   /**
@@ -1328,9 +1350,10 @@ export interface AuthAccept<TSession = Record<string, unknown>> {
   identity?: string;
 }
 
-export type AuthCallback<TSession = Record<string, unknown>> = (
-  ctx: AuthContext<TSession>,
-) => void | Promise<void>;
+export type AuthCallback<
+  TSession = Record<string, unknown>,
+  P extends AnyOCPPProtocol = AnyOCPPProtocol,
+> = (ctx: AuthContext<TSession, P>) => void | Promise<void>;
 
 export type RoutePattern = string | RegExp;
 
@@ -1434,8 +1457,8 @@ export interface SecurityEvent {
   details?: Record<string, unknown>;
 }
 
-export interface ServerEvents {
-  client: [OCPPServerClient];
+export interface ServerEvents<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
+  client: [OCPPServerClient<P>];
   error: [Error];
   upgradeError: [{ error: Error; socket: Duplex }];
   upgradeAborted: [
@@ -1592,8 +1615,12 @@ export interface EventAdapterInterface {
  * };
  * server.plugin(myPlugin);
  * ```
+ *
+ * A plugin is typed for every protocol, so it can be added to any server and
+ * its hooks see each connection typed for every version, as in 2.x. Type an
+ * app's own plugin for its server's protocols with `createPlugin<"ocpp1.6">()`.
  */
-export interface OCPPPlugin {
+export interface OCPPPlugin<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
   /**
    * Plugin name, used for logging and diagnostics.
    *
@@ -1615,7 +1642,7 @@ export interface OCPPPlugin {
    * Treat it as "set up now", and expect it to be paired with an `onClose`
    * that may itself be followed by another `onInit`.
    */
-  onInit?(server: import("./server.js").OCPPServer): void | Promise<void>;
+  onInit?(server: import("./server.js").OCPPServer<P>): void | Promise<void>;
   /**
    * Called for each new client connection after auth succeeds.
    *
@@ -1629,11 +1656,11 @@ export interface OCPPPlugin {
    * socket's late disconnect will delete the replacement's entry.
    */
   onConnection?(
-    client: import("./server-client.js").OCPPServerClient,
+    client: import("./server-client.js").OCPPServerClient<P>,
   ): void | Promise<void>;
   /** Called when a client disconnects */
   onDisconnect?(
-    client: import("./server-client.js").OCPPServerClient,
+    client: import("./server-client.js").OCPPServerClient<P>,
     code: number,
     reason: string,
   ): void;
@@ -1653,7 +1680,7 @@ export interface OCPPPlugin {
    * queued frames, which costs more than the trailing observations are worth.
    */
   onMessage?(
-    client: import("./server-client.js").OCPPServerClient,
+    client: import("./server-client.js").OCPPServerClient<P>,
     payload: MessageEventPayload,
   ): void | Promise<void>;
 
@@ -1664,7 +1691,7 @@ export interface OCPPPlugin {
    * Return `false` to silently drop the message.
    */
   onBeforeReceive?(
-    client: import("./server-client.js").OCPPServerClient,
+    client: import("./server-client.js").OCPPServerClient<P>,
     rawData: unknown,
   ): undefined | boolean | Promise<undefined | boolean>;
   /**
@@ -1672,7 +1699,7 @@ export interface OCPPPlugin {
    * Return `false` to suppress the send.
    */
   onBeforeSend?(
-    client: import("./server-client.js").OCPPServerClient,
+    client: import("./server-client.js").OCPPServerClient<P>,
     message: OCPPMessage,
   ): undefined | boolean | Promise<undefined | boolean>;
 
@@ -1680,29 +1707,29 @@ export interface OCPPPlugin {
 
   /** WebSocket-level or protocol-level error */
   onError?(
-    client: import("./server-client.js").OCPPServerClient,
+    client: import("./server-client.js").OCPPServerClient<P>,
     error: Error,
   ): void | Promise<void>;
   /** Malformed / unparseable message received */
   onBadMessage?(
-    client: import("./server-client.js").OCPPServerClient,
+    client: import("./server-client.js").OCPPServerClient<P>,
     rawMessage: string,
     error: Error,
   ): void | Promise<void>;
   /** Schema validation failure (strictMode) */
   onValidationFailure?(
-    client: import("./server-client.js").OCPPServerClient,
+    client: import("./server-client.js").OCPPServerClient<P>,
     message: unknown,
     error: Error,
   ): void | Promise<void>;
   /** Message dropped or client disconnected due to rate limiting */
   onRateLimitExceeded?(
-    client: import("./server-client.js").OCPPServerClient,
+    client: import("./server-client.js").OCPPServerClient<P>,
     rawData: unknown,
   ): void | Promise<void>;
   /** User handler threw an error during CALL processing */
   onHandlerError?(
-    client: import("./server-client.js").OCPPServerClient,
+    client: import("./server-client.js").OCPPServerClient<P>,
     method: string,
     error: Error,
   ): void | Promise<void>;
@@ -1722,17 +1749,17 @@ export interface OCPPPlugin {
 
   /** Existing client with same identity was evicted by a new connection */
   onEviction?(
-    evictedClient: import("./server-client.js").OCPPServerClient,
-    newClient: import("./server-client.js").OCPPServerClient,
+    evictedClient: import("./server-client.js").OCPPServerClient<P>,
+    newClient: import("./server-client.js").OCPPServerClient<P>,
   ): void | Promise<void>;
   /** Send buffer exceeded backpressure threshold (512KB — slow client) */
   onBackpressure?(
-    client: import("./server-client.js").OCPPServerClient,
+    client: import("./server-client.js").OCPPServerClient<P>,
     bufferedAmount: number,
   ): void | Promise<void>;
   /** Pong not received within timeout — dead peer detected */
   onPongTimeout?(
-    client: import("./server-client.js").OCPPServerClient,
+    client: import("./server-client.js").OCPPServerClient<P>,
   ): void | Promise<void>;
 
   // ─── Telemetry & Metrics ───────────────────────────────────────
@@ -1893,12 +1920,21 @@ export interface ConnectionContext extends BaseConnectionContext {
   next: (payload?: Record<string, unknown>) => Promise<void>;
 }
 
-export interface AuthContext<TSession = Record<string, unknown>>
-  extends BaseConnectionContext {
+export interface AuthContext<
+  TSession = Record<string, unknown>,
+  P extends AnyOCPPProtocol = AnyOCPPProtocol,
+> extends BaseConnectionContext {
   /** The AbortSignal representing if the client abruptly closed the underlying socket */
   signal: AbortSignal;
-  /** Grants the connection and optionally sets the negotiated protocol or session metadata */
-  accept: (options?: AuthAccept<TSession>) => void;
+  /**
+   * Grants the connection and optionally sets the negotiated protocol or session metadata.
+   *
+   * A method, not a property: an `AuthCallback` written for every protocol
+   * (from `defineAuth`, `combineAuth`, or typed `AuthCallback`) then still
+   * fits a server or route typed for fewer. A protocol the charger did not
+   * offer is refused at runtime.
+   */
+  accept(options?: AuthAccept<TSession, P>): void;
 }
 
 export type ConnectionMiddleware = (

@@ -38,6 +38,7 @@ export {
   type CloseOptions,
   ConnectionState,
   type HandlerContext,
+  type KnownProtocol,
   type LoggerLike,
   type LoggingConfig,
   type MessageIdGenerator,

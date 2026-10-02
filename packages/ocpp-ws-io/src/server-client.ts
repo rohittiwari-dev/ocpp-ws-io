@@ -1,11 +1,11 @@
 import type { RawData, WebSocket } from "ws";
 import { OCPPClient } from "./client.js";
 import {
+  type AnyOCPPProtocol,
   type ClientOptions,
   ConnectionState,
   type HandshakeInfo,
   type OCPPPlugin,
-  type OCPPProtocol,
 } from "./types.js";
 import type { WorkerPool } from "./worker-pool.js";
 
@@ -13,16 +13,19 @@ import type { WorkerPool } from "./worker-pool.js";
  * OCPPServerClient — A server-side client representation.
  *
  * Created by OCPPServer when a charging station connects.
- * Extends OCPPClient but is pre-connected (cannot call connect()).
+ * Extends OCPPClient but is pre-connected (cannot call connect()). P is the
+ * protocols of the server or route it connected through.
  */
-export class OCPPServerClient extends OCPPClient {
+export class OCPPServerClient<
+  P extends AnyOCPPProtocol = AnyOCPPProtocol,
+> extends OCPPClient<P> {
   private _serverSession: Record<string, any>;
   private _serverHandshake: HandshakeInfo;
   /** Plugins passed from OCPPServer for hook execution */
-  private _serverPlugins: OCPPPlugin[];
+  private _serverPlugins: OCPPPlugin<P>[];
 
   constructor(
-    options: ClientOptions,
+    options: ClientOptions<P>,
     context: {
       ws: WebSocket;
       handshake: HandshakeInfo;
@@ -33,12 +36,10 @@ export class OCPPServerClient extends OCPPClient {
       /** Optional worker pool for off-thread JSON parsing */
       workerPool?: WorkerPool;
       /** Plugins from the server for hook execution */
-      plugins?: OCPPPlugin[];
+      plugins?: OCPPPlugin<P>[];
     },
   ) {
-    // Typed for every known protocol until OCPPServerClient carries the
-    // server's protocols (T2b of the typing plan).
-    super(options as ClientOptions<OCPPProtocol>);
+    super(options);
 
     this._serverSession = context.session;
     this._serverHandshake = context.handshake;
@@ -410,7 +411,8 @@ export class OCPPServerClient extends OCPPClient {
       this._ws?.terminate();
     } else if (typeof action === "function") {
       try {
-        const res = action(this, rawData);
+        // The callback is typed for every version, as in 2.x.
+        const res = action(this as OCPPServerClient, rawData);
         if (res instanceof Promise) {
           res.catch((err) => {
             this._logger?.error?.("Error in custom onLimitExceeded handler", {
@@ -447,6 +449,19 @@ export class OCPPServerClient extends OCPPClient {
   }
 
   /**
+   * This connection typed for one of its protocols, or undefined when the
+   * charger negotiated another. A server or route with several versions types
+   * its connections for all of them until narrowed this way.
+   */
+  override forProtocol<V extends P>(
+    version: V,
+  ): OCPPServerClient<V> | undefined;
+  // The same object; only its type narrows.
+  override forProtocol(version: AnyOCPPProtocol): object | undefined {
+    return this._protocol === version ? this : undefined;
+  }
+
+  /**
    * Server clients cannot initiate connections.
    * @throws Always throws — use OCPPClient for outbound connections.
    */
@@ -473,3 +488,18 @@ export class OCPPServerClient extends OCPPClient {
     return super.close(options);
   }
 }
+
+/** The members of OCPPServerClient whose types follow its protocols. */
+type ProtocolTypedMember =
+  | "call"
+  | "safeCall"
+  | "handle"
+  | "send"
+  | "forProtocol";
+
+/**
+ * Any server connection, whatever protocols its server or route offers: every
+ * member except the calls typed by protocol. For code that keeps connections
+ * from differently configured servers or routes in one list.
+ */
+export type AnyOCPPServerClient = Omit<OCPPServerClient, ProtocolTypedMember>;

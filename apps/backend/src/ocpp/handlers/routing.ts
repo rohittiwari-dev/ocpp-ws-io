@@ -3,7 +3,7 @@ import { createRouter, OCPPServer } from "ocpp-ws-io";
 /// handler route
 
 export const handlerRouteServer = async () => {
-  const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+  const server = new OCPPServer({ protocols: ["ocpp1.6", "ocpp2.0.1"] });
 
   const v2Router = server.route("/api/v2/chargers/*");
   // Directly handle BootNotifications for ANY station connecting to /api/v2
@@ -43,7 +43,7 @@ export const RouterLevelMiddleware = async () => {
 };
 
 export const PathSpecificAuthentication = async () => {
-  const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+  const server = new OCPPServer({ protocols: ["ocpp1.6", "ocpp2.0.1"] });
   // Allow Basic Auth for legacy route
   const legacyRouter = server
     .auth(async (ctx) => {

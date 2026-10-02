@@ -1,4 +1,4 @@
-import type { OCPPRouter } from "./router.js";
+import type { AnyOCPPRouter } from "./router.js";
 import { safeDecodeURIComponent } from "./util.js";
 
 /**
@@ -6,7 +6,7 @@ import { safeDecodeURIComponent } from "./util.js";
  */
 export interface TrieMatchResult {
   /** All routers whose patterns matched the incoming path. */
-  routers: OCPPRouter[];
+  routers: AnyOCPPRouter[];
   /** Extracted named parameters from the path (e.g. { identity: "CP-001" }). */
   params: Record<string, string>;
 }
@@ -25,7 +25,7 @@ class TrieNode {
   /** Wildcard child (`*` catch-all). Lowest priority. */
   wildcardChild: TrieNode | null = null;
   /** Routers registered at this exact node (leaf). */
-  routers: OCPPRouter[] = [];
+  routers: AnyOCPPRouter[] = [];
 }
 
 /**
@@ -73,7 +73,7 @@ export class RadixTrie {
    * @param router  - The OCPPRouter instance to associate with this pattern
    * @throws If a conflicting param name exists at the same trie position
    */
-  insert(pattern: string, router: OCPPRouter): void {
+  insert(pattern: string, router: AnyOCPPRouter): void {
     if (this._frozen) {
       this._frozen = false; // unfreeze on mutation
     }
@@ -136,7 +136,7 @@ export class RadixTrie {
   match(pathname: string): TrieMatchResult | null {
     const segments = normalizePath(pathname);
     const matches: Array<{
-      routers: OCPPRouter[];
+      routers: AnyOCPPRouter[];
       params: Record<string, string>;
     }> = [];
 
@@ -147,7 +147,7 @@ export class RadixTrie {
     // Matches are collected in priority order (static > param > wildcard).
     // Use params from the most specific (first) match, collect all routers.
     const params = matches[0].params;
-    const allRouters: OCPPRouter[] = [];
+    const allRouters: AnyOCPPRouter[] = [];
     for (const m of matches) {
       allRouters.push(...m.routers);
     }
@@ -164,7 +164,10 @@ export class RadixTrie {
     segments: string[],
     depth: number,
     params: Record<string, string>,
-    results: Array<{ routers: OCPPRouter[]; params: Record<string, string> }>,
+    results: Array<{
+      routers: AnyOCPPRouter[];
+      params: Record<string, string>;
+    }>,
   ): void {
     // Reached end of path — collect routers at this node
     if (depth === segments.length) {

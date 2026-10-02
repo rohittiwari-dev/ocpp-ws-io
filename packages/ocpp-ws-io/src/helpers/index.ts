@@ -1,7 +1,9 @@
 import { HandshakeRejection } from "../errors.js";
 import type {
+  AnyOCPPProtocol,
   AuthAccept,
   AuthCallback,
+  AuthContext,
   ConnectionMiddleware,
   LoggerLike,
   LoggingConfig,
@@ -42,8 +44,14 @@ export function defineMiddleware(
  *
  * server.plugin(metricsPlugin);
  * ```
+ *
+ * `createPlugin<"ocpp1.6">({ ... })` types an app's own plugin for its
+ * server's protocols: its hooks get 1.6 connections, and only a server with
+ * those protocols accepts it. Without a type argument it fits any server.
  */
-export function createPlugin(plugin: OCPPPlugin): OCPPPlugin {
+export function createPlugin<P extends AnyOCPPProtocol = AnyOCPPProtocol>(
+  plugin: OCPPPlugin<P>,
+): OCPPPlugin<P> {
   return plugin;
 }
 
@@ -63,10 +71,14 @@ export function defineRpcMiddleware<TContext = MiddlewareContext>(
 /**
  * Utility to define and strongly-type an AuthCallback function.
  * This provides immediate IDE autocomplete for the handshake and arguments.
+ *
+ * Written inline in `server.auth(...)`, `ctx.accept({ protocol })` takes
+ * that server's protocols; on its own, the callback fits any server.
  */
-export function defineAuth<TSession = Record<string, unknown>>(
-  cb: AuthCallback<TSession>,
-): AuthCallback<TSession> {
+export function defineAuth<
+  TSession = Record<string, unknown>,
+  P extends AnyOCPPProtocol = AnyOCPPProtocol,
+>(cb: AuthCallback<TSession, P>): AuthCallback<TSession, P> {
   return cb;
 }
 
@@ -80,13 +92,15 @@ export function defineAuth<TSession = Record<string, unknown>>(
  * - If a callback throws, the error reaches the server, which logs it and
  *   answers 500 without its details.
  */
-export function combineAuth(...cbs: AuthCallback[]): AuthCallback {
+export function combineAuth<P extends AnyOCPPProtocol = AnyOCPPProtocol>(
+  ...cbs: AuthCallback<Record<string, unknown>, P>[]
+): AuthCallback<Record<string, unknown>, P> {
   return async (ctx) => {
     let accepted = false;
     let rejected = false;
 
     // Wrap the underlying accept/reject purely to detect when they fire
-    const trackedAccept = (opts?: AuthAccept<any>) => {
+    const trackedAccept = (opts?: AuthAccept<Record<string, unknown>, P>) => {
       accepted = true;
       ctx.accept(opts);
     };
@@ -96,7 +110,7 @@ export function combineAuth(...cbs: AuthCallback[]): AuthCallback {
       return ctx.reject(code, message);
     };
 
-    const trackedCtx: import("../types.js").AuthContext = {
+    const trackedCtx: AuthContext<Record<string, unknown>, P> = {
       ...ctx,
       accept: trackedAccept,
       reject: trackedReject,

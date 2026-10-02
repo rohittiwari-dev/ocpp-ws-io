@@ -1,14 +1,16 @@
-import { EventEmitter } from "node:events";
+import { EventEmitterBase } from "./emitter-base.js";
 import type {
   AllMethodNames,
   OCPPRequestType,
   OCPPResponseType,
 } from "./generated/index.js";
-import type { OCPPServerClient } from "./server-client.js";
+import type { AnyOCPPServerClient, OCPPServerClient } from "./server-client.js";
 import type {
+  AnyOCPPProtocol,
   AuthCallback,
   CORSOptions,
   ConnectionMiddleware,
+  KnownProtocol,
   OCPPProtocol,
   RouterConfig,
   RouterHandlerContext,
@@ -83,17 +85,30 @@ export interface CompiledRegexPattern {
  * String patterns are matched via radix trie (O(k) lookup, managed by OCPPServer).
  * RegExp patterns fall back to linear matching.
  */
-export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<ServerEvents>) {
+export class OCPPRouter<
+  P extends AnyOCPPProtocol = AnyOCPPProtocol,
+> extends EventEmitterBase {
+  // Typed for this router's protocols; a base class expression cannot use P.
+  declare on: TypedEventEmitter<ServerEvents<P>>["on"];
+  declare once: TypedEventEmitter<ServerEvents<P>>["once"];
+  declare off: TypedEventEmitter<ServerEvents<P>>["off"];
+  declare emit: TypedEventEmitter<ServerEvents<P>>["emit"];
+  declare addListener: TypedEventEmitter<ServerEvents<P>>["addListener"];
+  declare removeListener: TypedEventEmitter<ServerEvents<P>>["removeListener"];
+  declare removeAllListeners: TypedEventEmitter<
+    ServerEvents<P>
+  >["removeAllListeners"];
+
   /** Raw registered patterns (strings and/or RegExp) for reference. */
   public patterns: Array<string | RegExp>;
   /** Connection middlewares attached to this router. */
   public middlewares: ConnectionMiddleware[];
   /** Auth callback for this route endpoint. */
-  public authCallback: AuthCallback<unknown> | null = null;
+  public authCallback: AuthCallback<unknown, P> | null = null;
   /** Route-level CORS options. */
   public _routeCORS?: CORSOptions;
   /** Route-level config overrides. */
-  public _routeConfig?: RouterConfig;
+  public _routeConfig?: RouterConfig<P>;
 
   /**
    * Compiled RegExp patterns for fallback linear matching.
@@ -155,9 +170,13 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
   }
 
   /**
-   * Overrides global connection settings (e.g. timeouts, protocols) for this router.
+   * Overrides global connection settings (e.g. timeouts, protocols) for this
+   * router. Its `protocols` are a subset of the server's, and the router and
+   * its connections are typed for them.
    */
-  config(options: RouterConfig): this {
+  config<Q extends P>(options: RouterConfig<Q>): OCPPRouter<Q>;
+  // The same router; only its type narrows to the route's protocols.
+  config(options: RouterConfig<P>): object {
     this._routeConfig = options;
     return this;
   }
@@ -166,9 +185,9 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
    * Registers an authentication and protocol-negotiation callback for this route endpoint.
    */
   auth<TSession = Record<string, unknown>>(
-    callback: AuthCallback<TSession>,
+    callback: AuthCallback<TSession, P>,
   ): this {
-    this.authCallback = callback as AuthCallback<unknown>;
+    this.authCallback = callback as AuthCallback<unknown, P>;
     return this;
   }
 
@@ -177,11 +196,11 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
    *
    * @throws {Error} AT RUNTIME when a client connects, if a handler for this version and method is already registered for that client.
    */
-  handle<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+  handle<V extends KnownProtocol<P>, M extends AllMethodNames<V>>(
     version: V,
     method: M,
     handler: (
-      context: RouterHandlerContext<OCPPRequestType<V, M>>,
+      context: RouterHandlerContext<OCPPRequestType<V, M>, P>,
     ) => OCPPResponseType<V, M> | Promise<OCPPResponseType<V, M>>,
   ): this;
 
@@ -194,7 +213,7 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
   handle<S extends string>(
     version: S extends OCPPProtocol ? never : S,
     method: string,
-    handler: (context: RouterHandlerContext<Record<string, any>>) => any,
+    handler: (context: RouterHandlerContext<Record<string, any>, P>) => any,
   ): this;
 
   /**
@@ -202,13 +221,13 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
    *
    * @throws {Error} AT RUNTIME when a client connects, if a handler for this method is already registered for that client.
    */
-  handle<M extends AllMethodNames<OCPPProtocol>>(
+  handle<M extends AllMethodNames<KnownProtocol<P>>>(
     method: M,
     handler: (
-      context: RouterHandlerContext<OCPPRequestType<OCPPProtocol, M>>,
+      context: RouterHandlerContext<OCPPRequestType<KnownProtocol<P>, M>, P>,
     ) =>
-      | OCPPResponseType<OCPPProtocol, M>
-      | Promise<OCPPResponseType<OCPPProtocol, M>>,
+      | OCPPResponseType<KnownProtocol<P>, M>
+      | Promise<OCPPResponseType<KnownProtocol<P>, M>>,
   ): this;
 
   /**
@@ -219,7 +238,7 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handle(
     method: string,
-    handler: (context: RouterHandlerContext<Record<string, any>>) => any,
+    handler: (context: RouterHandlerContext<Record<string, any>, P>) => any,
   ): this;
 
   /**
@@ -231,7 +250,7 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handle(...args: any[]): this {
-    this.on("client", (client: OCPPServerClient) => {
+    this.on("client", (client) => {
       const originalHandler = args[args.length - 1];
       const wrappedArgs = [...args];
 
@@ -257,7 +276,38 @@ export class OCPPRouter extends (EventEmitter as new () => TypedEventEmitter<Ser
     });
     return this;
   }
+
+  /**
+   * @internal Hands this router a connection the server accepted on it. The
+   * server holds routers of every protocol set, so it cannot call the typed
+   * emit itself; the connection speaks one of this router's protocols.
+   */
+  _emitClient(client: AnyOCPPServerClient): void {
+    this.emit("client", client as OCPPServerClient<P>);
+  }
 }
+
+/** The members of OCPPRouter whose types follow its protocols. */
+type ProtocolTypedMember =
+  | "handle"
+  | "auth"
+  | "config"
+  | "route"
+  | "use"
+  | "cors"
+  | "on"
+  | "once"
+  | "off"
+  | "emit"
+  | "addListener"
+  | "removeListener"
+  | "removeAllListeners";
+
+/**
+ * Any router, whatever its protocols: what OCPPServer keeps, and what
+ * `attachRouters()` takes.
+ */
+export type AnyOCPPRouter = Omit<OCPPRouter, ProtocolTypedMember>;
 
 /**
  * Creates a standalone, modular `OCPPRouter` instance that can be attached

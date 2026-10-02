@@ -17,7 +17,7 @@ const client = new OCPPClient(options: ClientOptions);
 
 The client is typed for its `protocols`: `new OCPPClient({ protocols: ["ocpp1.6"] })` is an `OCPPClient<"ocpp1.6">`, so calls, handlers and responses use the 1.6 types, and a version named in a call must be one of its protocols. Without `protocols`, or with a list only known at runtime, it is typed for every version. Custom protocols declared in `OCPPMethodMap` count as protocols.
 
-To keep clients configured for different protocols in one list (for example to close them all), use `AnyOCPPClient`: every client fits it, and it has everything except the calls typed by protocol.
+A typed client still fits a variable or list typed as plain `OCPPClient`, which is typed for every version, as in 2.x. For a list of clients configured for different protocols that should not make calls typed for the wrong version (for example to close them all), use `AnyOCPPClient`: every client fits it, and it has everything except the calls typed by protocol.
 
 #### ClientOptions
 
@@ -243,6 +243,24 @@ import { OCPPServer } from "ocpp-ws-io";
 const server = new OCPPServer(options?: ServerOptions);
 ```
 
+The server is typed for its `protocols`, like the client: `new OCPPServer({ protocols: ["ocpp1.6"] })` is an `OCPPServer<"ocpp1.6">`. Its connections (the `client` event, `getLocalClient()`, `clients`) are `OCPPServerClient<"ocpp1.6">`, and its routes and their handlers, `ctx.accept({ protocol })`, `sendToClient()`, `broadcast()` and inline plugins take only its versions. A route's `config({ protocols })` must be a subset of the server's. Without `protocols`, or with a list only known at runtime, the server is typed for every version.
+
+A typed server, route or connection still fits a variable or list typed as plain `OCPPServer`, `OCPPRouter` or `OCPPServerClient`, typed for every version as in 2.x. To keep the exact type, use `ConnectionOf<typeof server>`; for connections of differently configured servers that should not make calls typed for the wrong version, `AnyOCPPServerClient`. On a server with several versions, `client.forProtocol("ocpp1.6")` returns the connection typed for the version it negotiated, or `undefined`:
+
+```typescript
+import { type ConnectionOf, OCPPServer } from "ocpp-ws-io";
+
+const server = new OCPPServer({ protocols: ["ocpp1.6", "ocpp2.0.1"] });
+const connections = new Map<string, ConnectionOf<typeof server>>();
+
+server.on("client", (client) => {
+  connections.set(client.identity, client);
+  client.forProtocol("ocpp1.6")?.handle("Authorize", () => ({
+    idTagInfo: { status: "Accepted" }, // the 1.6 response
+  }));
+});
+```
+
 #### ServerOptions
 
 | Option               | Type                            | Default   | Description                                                                                                                                    |
@@ -416,6 +434,8 @@ server.auth((ctx) => {
   ctx.accept({ session: { ... } }); // Attach session data to client
 });
 ```
+
+On a typed server, `ctx.accept({ protocol })` takes only its protocols. Callbacks from `defineAuth()` or `combineAuth()`, or typed `AuthCallback`, fit any server; written inline in `auth()`, they take that server's protocols.
 
 #### `cors(options)`
 

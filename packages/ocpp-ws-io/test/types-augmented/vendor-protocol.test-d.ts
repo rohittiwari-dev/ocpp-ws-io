@@ -1,5 +1,5 @@
 import { expectTypeOf } from "vitest";
-import { OCPPClient } from "ocpp-ws-io";
+import { OCPPClient, OCPPServer, OCPPServerClient } from "ocpp-ws-io";
 
 /**
  * A custom protocol declared the way the docs and `ocpp generate` do it, by
@@ -72,4 +72,34 @@ export async function mixedWithCustom() {
     protocols: ["ocpp1.6", "not-declared"],
   });
   await undeclared.call("ocpp1.6", "Heartbeat", {});
+}
+
+/** T2b: a server mixing an OCPP version and a custom protocol. */
+export async function serverWithCustom() {
+  const csms = new OCPPServer({ protocols: ["ocpp2.0.1", "vendor-proto"] });
+  csms.on("client", (c) => {
+    expectTypeOf(c).toEqualTypeOf<
+      OCPPServerClient<"ocpp2.0.1" | "vendor-proto">
+    >();
+    c.forProtocol("vendor-proto")?.handle("VendorAction", ({ params }) => {
+      expectTypeOf(params.data).toEqualTypeOf<string>();
+      return { status: "Accepted" as const };
+    });
+  });
+
+  // A route for the custom protocol only.
+  csms
+    .route("/vendor/:id")
+    .config({ protocols: ["vendor-proto"] })
+    .on("client", (c) => {
+      expectTypeOf(c).toEqualTypeOf<OCPPServerClient<"vendor-proto">>();
+    });
+
+  const res = await csms.sendToClient("CP1", "vendor-proto", "VendorAction", {
+    data: "x",
+    priority: 1,
+  });
+  expectTypeOf(res).toEqualTypeOf<
+    { status: "Accepted" | "Rejected" } | undefined
+  >();
 }

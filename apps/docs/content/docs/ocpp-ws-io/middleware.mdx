@@ -229,6 +229,8 @@ server.auth(
 );
 ```
 
+Callbacks from `defineAuth` and `combineAuth` fit any server or route. Written inline in `server.auth(...)`, as above, `ctx.accept({ protocol })` takes only that server's protocols.
+
 ---
 
 ## Execution Flow
