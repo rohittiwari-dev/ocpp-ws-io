@@ -53,13 +53,17 @@ export interface OCPPSendMethodMap {
   "ocpp2.1": OCPP21SendMethods;
 }
 
-/** SEND message names for a protocol; distributes over union protocols. */
-export type SendMethodNames<P extends keyof OCPPSendMethodMap> =
+/**
+ * SEND message names for a protocol; distributes over union protocols. A
+ * protocol with no entry in OCPPSendMethodMap has none, so a custom protocol
+ * declared in OCPPMethodMap alone needs no SEND entry.
+ */
+export type SendMethodNames<P extends string> =
   P extends keyof OCPPSendMethodMap ? keyof OCPPSendMethodMap[P] & string : never;
 
 /** Payload type of a SEND message for a given protocol + message name. */
 export type OCPPSendRequestType<
-  P extends keyof OCPPSendMethodMap,
+  P extends string,
   M extends string,
 > = P extends keyof OCPPSendMethodMap
   ? M extends keyof OCPPSendMethodMap[P] ? OCPPSendMethodMap[P][M] extends { request: infer R } ? R : never : never

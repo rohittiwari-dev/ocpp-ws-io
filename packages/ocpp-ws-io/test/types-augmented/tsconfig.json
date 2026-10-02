@@ -1,0 +1,10 @@
+{
+	"extends": "../../tsconfig.test.json",
+	"compilerOptions": {
+		"paths": {
+			"ocpp-ws-io": ["../../src/index.ts"]
+		}
+	},
+	"include": ["../../src", "."],
+	"exclude": []
+}

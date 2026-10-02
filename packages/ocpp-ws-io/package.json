@@ -93,7 +93,7 @@
 		"test:coverage": "vitest run --coverage",
 		"prepublishOnly": "bun run build",
 		"format": "biome format --write",
-		"typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json"
+		"typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json && tsc -p test/types-augmented/tsconfig.json"
 	},
 	"engines": {
 		"node": ">=20.0.0"
