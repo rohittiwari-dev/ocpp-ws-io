@@ -106,6 +106,7 @@ export {
   type ListenOptions,
   type LoggerLike,
   type LoggingConfig,
+  type ManagedWsClientOption,
   type MessageDirection,
   type MessageEventContext,
   type MessageEventPayload,
@@ -135,6 +136,7 @@ export {
   type TLSOptions,
   type TypedEventEmitter,
   type WildcardHandler,
+  type WsClientOptions,
 } from "./types.js";
 // ─── Utilities ───────────────────────────────────────────────────
 export {

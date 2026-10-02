@@ -16,8 +16,7 @@ import type { LoggerLike, SecurityEvent } from "../src/types.js";
  * or an outage, not a verdict on the charger: it is answered with a bare 500,
  * its details are logged on the server only, and it never takes the process
  * down. A 401 here makes chargers record FailedToAuthenticateAtCsms, so an
- * outage must not be reported as one. This matches ocpp-rpc, CitrineOS and
- * the Python websockets library.
+ * outage must not be reported as one.
  */
 describe("handshake errors in auth callbacks and connection middleware", () => {
   const httpServers: Server[] = [];

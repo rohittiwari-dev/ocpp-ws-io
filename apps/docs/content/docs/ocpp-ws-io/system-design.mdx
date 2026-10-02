@@ -235,7 +235,7 @@ client.safeCall("ocpp1.6", "Reset", { type: "Hard" }).then((res) => {
 
 #### `noReply`: when the answer does not matter
 
-For parity with ocpp-rpc, `call(…, { noReply: true })` sends a normal CALL and resolves with `undefined` once it is written. The peer still answers, as OCPP-J requires: the answer is recognised by its message ID and dropped quietly while it can still arrive (`timeoutMs`, default `callTimeoutMs`), then the ID is forgotten, so nothing piles up and nothing is logged as a stray response. Unlike a call you do not await, it frees the call queue once it is sent, so the next CALL can go out before this one is answered, which OCPP-J §4.1.1 does not allow: use it only with peers known to cope. `retries` cannot be combined with it. On OCPP 2.1, a message defined as unconfirmed (such as `NotifyPeriodicEventStream`) uses `send()` instead.
+`call(…, { noReply: true })` sends a normal CALL and resolves with `undefined` once it is written. The peer still answers, as OCPP-J requires: the answer is recognised by its message ID and dropped quietly while it can still arrive (`timeoutMs`, default `callTimeoutMs`), then the ID is forgotten, so nothing piles up and nothing is logged as a stray response. Unlike a call you do not await, it frees the call queue once it is sent, so the next CALL can go out before this one is answered, which OCPP-J §4.1.1 does not allow: use it only with peers known to cope. `retries` cannot be combined with it. On OCPP 2.1, a message defined as unconfirmed (such as `NotifyPeriodicEventStream`) uses `send()` instead.
 
 ```typescript
 await client.call(

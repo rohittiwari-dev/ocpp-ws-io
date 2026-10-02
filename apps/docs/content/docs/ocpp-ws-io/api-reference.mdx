@@ -24,8 +24,9 @@ const client = new OCPPClient(options: ClientOptions);
 | `protocols`           | `string[]`                      | `[]`       | OCPP subprotocols to negotiate                      |
 | `securityProfile`     | `SecurityProfile`               | `NONE`     | Security profile (0–3)                              |
 | `password`            | `string \| Buffer`              | —          | Password for Basic Auth (Profile 1 & 2)             |
-| `tls`                 | `TLSOptions`                    | —          | TLS/SSL options (Profile 2 & 3)                     |
+| `tls`                 | `TLSOptions`                    | —          | TLS settings for a `wss://` endpoint, on every security profile (`ca` for a private CA even on profile 0); profile 3 needs `cert` and `key` |
 | `headers`             | `Record<string, string>`        | —          | Additional WebSocket headers                        |
+| `wsOpts`              | `WsClientOptions`               | —          | Raw `ws` client options: a proxy `agent`, `localAddress`, `family`, `origin`, `maxPayload`, `followRedirects`… (see wsOpts below) |
 | `query`               | `Record<string, string>`        | —          | Additional URL query parameters                     |
 | `reconnect`           | `boolean`                       | `true`     | Auto-reconnect on disconnect                        |
 | `maxReconnects`       | `number`                        | `Infinity` | Max reconnection attempts                           |
@@ -40,6 +41,36 @@ const client = new OCPPClient(options: ClientOptions);
 | `compression`         | `boolean \| CompressionOptions` | `false`    | Offer WebSocket `permessage-deflate` compression to the CSMS. Off by default: nothing is offered (see Compression) |
 | `callConcurrency`     | `number`                        | `1`        | Outbound CALLs in flight at once. `1` follows OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out. Above 1 only for a CSMS known to cope (see `callImmediate()`) |
 | `respondWithDetailedErrors` | `boolean`                 | `false`    | Send a handler error's properties (not its stack) to the CSMS in CALLERROR `details`. Logs a warning when on; keep it off in production |
+
+#### wsOpts
+
+Passed to `new WebSocket()` from the [`ws`](https://github.com/websockets/ws/blob/master/doc/ws.md#new-websocketaddress-protocols-options) package, for what the client options do not cover. Node client only: a browser's `WebSocket` takes no such options.
+
+```typescript
+import { HttpsProxyAgent } from "https-proxy-agent";
+
+const client = new OCPPClient({
+  identity: "CP-001",
+  endpoint: "wss://csms.example.com/ocpp",
+  protocols: ["ocpp1.6"],
+  wsOpts: {
+    agent: new HttpsProxyAgent("http://proxy.corp.local:3128"), // through a proxy
+    localAddress: "192.168.8.20", // leave by this network interface
+    maxPayload: 64 * 1024, // refuse messages over 64 KB (the ws default is 100 MiB)
+  },
+});
+```
+
+Its type, `WsClientOptions`, leaves out the options the client sets itself, so they cannot be set in two places:
+
+| Not in `wsOpts` | Use instead |
+| :-- | :-- |
+| `handshakeTimeout` | `connectTimeoutMs` |
+| `perMessageDeflate` | `compression` |
+| `headers` | `headers` (names compared without case, as HTTP does; with `password`, its `Authorization` header wins) |
+| `ca`, `cert`, `key`, `passphrase`, `rejectUnauthorized`, `minVersion`, `maxVersion`, `ciphers` | `tls`, which applies on every security profile |
+
+From plain JavaScript, where the type does not apply, these are dropped and a warning names the option to use instead.
 
 #### LoggingConfig
 
@@ -81,7 +112,7 @@ Make an RPC call. Throws a `TimeoutError` or protocol-level Error if the request
 const result = await client.call("ocpp1.6", "BootNotification", { ... }, { idempotencyKey: "unique-boot-123" });
 ```
 
-With `{ noReply: true }` (typed `NoReplyCallOptions`, as in ocpp-rpc), the CALL is sent and `call()` resolves with `undefined` once it is written, without waiting for the answer. The peer still answers, as OCPP-J requires: the answer is recognised by its message ID and dropped quietly while it can still arrive (`timeoutMs`, default `callTimeoutMs`), then the ID is forgotten, so nothing piles up and nothing is logged as a stray response. Unlike a call you do not await, it frees the call queue once it is sent, so the next CALL can go out before this one is answered, which OCPP-J §4.1.1 does not allow: use it only with peers known to cope. `retries` cannot be combined with it. On OCPP 2.1, a message defined as unconfirmed (such as `NotifyPeriodicEventStream`) uses `send()` instead.
+With `{ noReply: true }` (typed `NoReplyCallOptions`), the CALL is sent and `call()` resolves with `undefined` once it is written, without waiting for the answer. The peer still answers, as OCPP-J requires: the answer is recognised by its message ID and dropped quietly while it can still arrive (`timeoutMs`, default `callTimeoutMs`), then the ID is forgotten, so nothing piles up and nothing is logged as a stray response. Unlike a call you do not await, it frees the call queue once it is sent, so the next CALL can go out before this one is answered, which OCPP-J §4.1.1 does not allow: use it only with peers known to cope. `retries` cannot be combined with it. On OCPP 2.1, a message defined as unconfirmed (such as `NotifyPeriodicEventStream`) uses `send()` instead.
 
 ```typescript
 await client.call("StatusNotification", { connectorId: 1, errorCode: "NoError", status: "Available" }, { noReply: true });

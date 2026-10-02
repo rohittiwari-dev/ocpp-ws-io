@@ -52,7 +52,20 @@ export class MiddlewareStack<TContext> {
         return undefined as unknown as TReturn;
       }
 
-      return fn(context, () => dispatch(i + 1));
+      // next()'s promise is kept, so a middleware that calls it without
+      // awaiting or returning it still has the rest of the chain awaited
+      // here: the call settles with its real outcome, and a failure further
+      // down is raised instead of escaping as an unhandled rejection.
+      let downstream: Promise<TReturn> | undefined;
+      const result = await fn(context, () => {
+        downstream = dispatch(i + 1);
+        // Handled from the start, in case it fails while the middleware is
+        // still running; the await below still raises the error.
+        downstream.catch(() => {});
+        return downstream;
+      });
+      if (downstream) await downstream;
+      return result;
     };
 
     return dispatch(0);

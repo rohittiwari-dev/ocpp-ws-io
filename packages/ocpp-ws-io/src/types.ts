@@ -187,6 +187,23 @@ export interface TLSOptions {
   ciphers?: string;
 }
 
+/**
+ * `ws` client options the client sets itself, so `wsOpts` does not offer
+ * them: `handshakeTimeout` (use `connectTimeoutMs`), `perMessageDeflate` (use
+ * `compression`), `headers` (use `headers`) and the TLS settings (use `tls`).
+ */
+export type ManagedWsClientOption =
+  | "handshakeTimeout"
+  | "perMessageDeflate"
+  | "headers"
+  | keyof TLSOptions;
+
+/** Raw `ws` client options accepted by `ClientOptions.wsOpts`. */
+export type WsClientOptions = Omit<
+  import("ws").ClientOptions,
+  ManagedWsClientOption
+>;
+
 // ─── Handler Types ───────────────────────────────────────────────
 
 export interface HandlerContext<T = unknown> {
@@ -271,7 +288,7 @@ export interface CallOptions {
 }
 
 /**
- * Options for `call()` with `noReply: true` (as in ocpp-rpc): the CALL is
+ * Options for `call()` with `noReply: true`: the CALL is
  * sent and the call resolves with `undefined` once the frame is written,
  * without waiting for the answer. The peer still answers, as OCPP-J requires;
  * that answer is dropped quietly while it can still arrive (`timeoutMs`,
@@ -493,12 +510,26 @@ export interface ClientOptions {
   securityProfile?: SecurityProfile;
   /** Password for Basic Auth (Profile 1 & 2) */
   password?: string | Buffer;
-  /** TLS options (Profile 2 & 3) */
+  /**
+   * TLS settings for a `wss://` endpoint, used on every security profile:
+   * `ca` to trust a CSMS on a private CA, for example, even on profile 0.
+   * Profile 3 needs `cert` and `key`, the certificate that identifies the
+   * charging station.
+   */
   tls?: TLSOptions;
   /** OCPP subprotocols to negotiate */
   protocols?: AnyOCPPProtocol[];
   /** Additional WebSocket headers */
   headers?: Record<string, string>;
+  /**
+   * Raw `ws` client options, passed to `new WebSocket()`
+   * `wsOpts` are: for example `agent` (an HTTP proxy), `localAddress`,
+   * `family`, `origin`, `maxPayload` or `followRedirects`. Options the client
+   * sets itself are not offered here (see {@link ManagedWsClientOption}):
+   * use `connectTimeoutMs`, `compression`, `headers` and `tls` for those.
+   * Node client only.
+   */
+  wsOpts?: WsClientOptions;
   /** Additional query parameters */
   query?: Record<string, string>;
   /** Enable automatic reconnection (default: true) */

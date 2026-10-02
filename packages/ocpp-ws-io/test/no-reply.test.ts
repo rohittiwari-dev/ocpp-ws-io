@@ -8,7 +8,7 @@ import type { OCPPServerClient } from "../src/server-client.js";
 import type { CallOptions, LoggerLike } from "../src/types.js";
 
 /**
- * `call(method, params, { noReply: true })` (ocpp-rpc parity, gap G1): a
+ * `call(method, params, { noReply: true })` (gap G1): a
  * normal CALL that the caller does not wait for. It waits its turn in the
  * callConcurrency queue like any call, resolves with undefined once written,
  * and frees the queue at once. The peer still answers, as OCPP-J requires; that
@@ -110,8 +110,8 @@ describe("call(…, { noReply: true })", () => {
     await sleep(150);
 
     expect(log.filter((l) => l.endsWith("received"))).toHaveLength(3);
-    // ocpp-rpc counts these answers as bad messages; here, with
-    // maxBadMessages: 1, they must neither warn nor close the connection.
+    // With maxBadMessages: 1, an answer counted as a bad message would close
+    // the connection; these must neither warn nor close it.
     expect(warnings.filter((w) => w.includes("unknown messageId"))).toEqual([]);
     expect(client.state).toBe(OCPPClient.OPEN);
   });
@@ -207,14 +207,20 @@ describe("call(…, { noReply: true })", () => {
   });
 
   describe("browser client", () => {
-    const g = globalThis as { WebSocket?: typeof WebSocketModule };
-    const original = g.WebSocket;
+    // The browser client uses the global WebSocket; `ws` stands in for it.
+    // Swapped through the property descriptor, so no cast between the two
+    // WebSocket types is needed.
+    const original = Object.getOwnPropertyDescriptor(globalThis, "WebSocket");
     beforeAll(() => {
-      g.WebSocket = WebSocketModule;
+      Object.defineProperty(globalThis, "WebSocket", {
+        value: WebSocketModule,
+        configurable: true,
+        writable: true,
+      });
     });
     afterAll(() => {
-      if (original) g.WebSocket = original;
-      else delete g.WebSocket;
+      if (original) Object.defineProperty(globalThis, "WebSocket", original);
+      else Reflect.deleteProperty(globalThis, "WebSocket");
     });
 
     it("sends, resolves with undefined, and drops the answer quietly", async () => {

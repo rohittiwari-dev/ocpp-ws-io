@@ -45,11 +45,23 @@ export async function executeMiddlewareChain(
     }
     if (!fn) return; // Should not happen
 
-    // Attach next to the context
-    ctx.next = dispatch.bind(null, i + 1);
+    // Attach next to the context. Its promise is kept, so a middleware that
+    // calls next() without awaiting or returning it still has the rest of the
+    // chain awaited below: a rejection further down reaches the handshake's
+    // error handling instead of escaping as an unhandled rejection, which
+    // ended the process.
+    let downstream: Promise<void> | undefined;
+    ctx.next = (nextPayload?: Record<string, unknown>) => {
+      downstream = dispatch(i + 1, nextPayload);
+      // Handled from the start, in case it rejects while the middleware is
+      // still running; the await below still raises the error.
+      downstream.catch(() => {});
+      return downstream;
+    };
 
     // Call the middleware
     await fn(ctx);
+    if (downstream) await downstream;
   };
   await dispatch(0);
 }

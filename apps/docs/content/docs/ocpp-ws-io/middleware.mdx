@@ -203,4 +203,4 @@ Because `ocpp-ws-io` uses an onion model (`await next()`), execution happens in 
 1. **Downstream (Request Phase)**: Code *before* `await next()` executes in the order middleware was registered (`use(a)` then `use(b)`).
 2. **Upstream (Response Phase)**: Code *after* `await next()` executes in reverse order (from `b` back to `a`).
 
-If a middleware does not call `await next()`, the chain is short-circuited entirely.
+If a middleware never calls `next()`, the chain stops there. If it calls `next()` without `await` (or `return`), the rest of the chain still runs and the library still waits for it, so a rejection or error further down is handled as usual and never escapes as an unhandled rejection; only that middleware's own code after `next()` runs straight away instead of on the way back out.

@@ -30,6 +30,7 @@ import {
   type JsonValue,
   type LoggerLike,
   type LoggerLikeNotOptional,
+  type ManagedWsClientOption,
   type MessageDirection,
   type MessageEventContext,
   type MessageEventPayload,
@@ -93,6 +94,49 @@ type SchemaKind = "req" | "conf" | "send";
  * Schema id for a message. A SEND has a single schema with no request/response
  * suffix (`urn:NotifyPeriodicEventStream`).
  */
+/**
+ * Merges header sets left to right. Names are compared without case, as HTTP
+ * does, so a later source always replaces an earlier one's header, whatever
+ * the case of either name and whatever order the keys were added in.
+ */
+function mergeHeaders(
+  ...sources: Array<Record<string, string> | undefined>
+): Record<string, string> {
+  const merged: Record<string, string> = {};
+  const nameOf = new Map<string, string>();
+  for (const source of sources) {
+    for (const [name, value] of Object.entries(source ?? {})) {
+      const lower = name.toLowerCase();
+      const previous = nameOf.get(lower);
+      if (previous !== undefined) delete merged[previous];
+      merged[name] = value;
+      nameOf.set(lower, name);
+    }
+  }
+  return merged;
+}
+
+/**
+ * The client option that sets each `ws` option `wsOpts` does not take. Typed
+ * against ManagedWsClientOption, so the list cannot drift from the type.
+ */
+const WS_OPTION_REPLACEMENT: Record<ManagedWsClientOption, string> = {
+  handshakeTimeout: "connectTimeoutMs",
+  perMessageDeflate: "compression",
+  headers: "headers",
+  ca: "tls",
+  cert: "tls",
+  key: "tls",
+  passphrase: "tls",
+  rejectUnauthorized: "tls",
+  minVersion: "tls",
+  maxVersion: "tls",
+  ciphers: "tls",
+};
+const MANAGED_WS_OPTIONS = Object.keys(
+  WS_OPTION_REPLACEMENT,
+) as ManagedWsClientOption[];
+
 function schemaIdFor(method: string, kind: SchemaKind): string {
   return kind === "send" ? `urn:${method}` : `urn:${method}.${kind}`;
 }
@@ -255,6 +299,7 @@ export class OCPPClient<
     }
 
     if (this._options.respondWithDetailedErrors) this._warnDetailedErrors();
+    this._warnIgnoredWsOpts();
 
     if (this._options.logging) {
       // Since logging is enabled, initLogger ensures _logger is set.
@@ -1360,6 +1405,7 @@ export class OCPPClient<
     if (options.respondWithDetailedErrors && !detailedBefore) {
       this._warnDetailedErrors();
     }
+    if (options.wsOpts !== undefined) this._warnIgnoredWsOpts();
 
     if (options.callConcurrency !== undefined) {
       this._callQueue.setConcurrency(options.callConcurrency);
@@ -1389,6 +1435,26 @@ export class OCPPClient<
     this._logger.warn?.(
       "respondWithDetailedErrors is on: a handler error's properties are sent to the CSMS in CALLERROR details. Keep it off in production.",
     );
+  }
+
+  /**
+   * wsOpts does not offer the options the client sets itself; its type leaves
+   * them out. Plain JavaScript can still pass them: they are dropped, and this
+   * names each with the option to use instead, so the setting does not fail
+   * silently.
+   */
+  private _warnIgnoredWsOpts(): void {
+    const given: WebSocket.ClientOptions = { ...this._options.wsOpts };
+    const ignored = MANAGED_WS_OPTIONS.filter(
+      (key) => given[key] !== undefined,
+    ).map((key) => `${key} (use ${WS_OPTION_REPLACEMENT[key]})`);
+
+    if (ignored.length > 0) {
+      this._logger.warn?.(
+        "wsOpts does not take these options; set them through the client options",
+        { ignored },
+      );
+    }
   }
 
   // ─── Internal: WebSocket attachment ──────────────────────────
@@ -2862,21 +2928,24 @@ export class OCPPClient<
   }
 
   private _buildWsOptions(): WebSocket.ClientOptions {
+    // wsOpts first. Its type leaves out the options set below; any that still
+    // arrive, from JavaScript, are dropped (and were warned about).
+    const extra: WebSocket.ClientOptions = { ...this._options.wsOpts };
+    for (const key of MANAGED_WS_OPTIONS) delete extra[key];
     const opts: WebSocket.ClientOptions = {
-      headers: {
-        ...this._options.headers,
+      ...extra,
+      headers: mergeHeaders(this._options.headers, {
         "User-Agent": getPackageIdent(),
-      },
+      }),
     };
 
     // Bound the upgrade. `ws` aborts the handshake and emits an error when this
     // elapses, which is what turns a black-holed peer into a failed attempt the
-    // reconnect logic can act on, instead of an indefinite CONNECTING.
+    // reconnect logic can act on, instead of an indefinite CONNECTING. Set or
+    // cleared here either way, so wsOpts cannot change it.
     const connectTimeoutMs =
       (this._options as ClientOptions).connectTimeoutMs ?? 30_000;
-    if (connectTimeoutMs > 0) {
-      opts.handshakeTimeout = connectTimeoutMs;
-    }
+    opts.handshakeTimeout = connectTimeoutMs > 0 ? connectTimeoutMs : undefined;
 
     const profile = this._options.securityProfile ?? SecurityProfile.NONE;
 
@@ -2889,28 +2958,28 @@ export class OCPPClient<
       const credentials = Buffer.from(
         `${this._identity}:${this._options.password.toString()}`,
       ).toString("base64");
-      if (opts?.headers) opts.headers.Authorization = `Basic ${credentials}`;
+      // Merged rather than assigned, so it replaces an `authorization` header
+      // from `headers` whatever its case.
+      opts.headers = mergeHeaders(opts.headers, {
+        Authorization: `Basic ${credentials}`,
+      });
     }
 
-    // Profile 2 & 3: TLS options
-    if (
-      profile === SecurityProfile.TLS_BASIC_AUTH ||
-      profile === SecurityProfile.TLS_CLIENT_CERT
-    ) {
-      const tls = this._options.tls ?? {};
+    // TLS settings on every profile: a wss:// endpoint needs them whatever the
+    // OCPP profile (`ca` for a CSMS on a private CA, even on profile 0). They
+    // used to apply on profiles 2 and 3 only, and were silently ignored
+    // otherwise. On profile 3, `cert` and `key` identify the charger.
+    const tls = this._options.tls;
+    if (tls) {
       if (tls.ca) opts.ca = tls.ca;
       if (tls.rejectUnauthorized !== undefined)
         opts.rejectUnauthorized = tls.rejectUnauthorized;
       if (tls.minVersion) opts.minVersion = tls.minVersion;
       if (tls.maxVersion) opts.maxVersion = tls.maxVersion;
       if (tls.ciphers) opts.ciphers = tls.ciphers;
-
-      // Profile 3: Client certificates for mTLS
-      if (profile === SecurityProfile.TLS_CLIENT_CERT) {
-        if (tls.cert) opts.cert = tls.cert;
-        if (tls.key) opts.key = tls.key;
-        if (tls.passphrase) opts.passphrase = tls.passphrase;
-      }
+      if (tls.cert) opts.cert = tls.cert;
+      if (tls.key) opts.key = tls.key;
+      if (tls.passphrase) opts.passphrase = tls.passphrase;
     }
 
     // Compression: permessage-deflate, only when asked for. `ws` offers it by
