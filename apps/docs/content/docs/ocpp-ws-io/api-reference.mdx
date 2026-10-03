@@ -189,11 +189,11 @@ client.handle((method, { params }) => { ... });
 client.handle("NotifyPeriodicEventStream", ({ params, unconfirmed }) => { ... });
 ```
 
-A handler for an OCPP 2.1 SEND message (such as `NotifyPeriodicEventStream`) is registered the same way. Nothing is sent back for a SEND: the return value is ignored, and a thrown error is logged and emitted as `handlerError`, never sent to the peer.
+A handler for a SEND message, of OCPP 2.1 (such as `NotifyPeriodicEventStream`) or of a custom protocol, is registered the same way. Nothing is sent back for a SEND: the return value is ignored, and a thrown error is logged and emitted as `handlerError`, never sent to the peer.
 
 #### `send(method, params)`
 
-Send an OCPP 2.1 unconfirmed message (RPC type SEND, message type 6). It resolves once the frame is written, because no response exists. It does not wait behind an outstanding `call()`, as the spec allows a SEND at any time. It throws on any protocol other than `ocpp2.1`. Under `strictMode` the payload is validated against the message's schema.
+Send an OCPP 2.1 unconfirmed message (RPC type SEND, message type 6). It resolves once the frame is written, because no response exists. It does not wait behind an outstanding `call()`, as the spec allows a SEND at any time. It works on `ocpp2.1` and on a custom protocol, whose SEND messages you declare in `OCPPSendMethodMap` (`ocpp generate` does), and throws on OCPP 1.6 and 2.0.1, whose RPC framework has no SEND: a peer answers one with `MessageTypeNotSupported`. Under `strictMode` the payload is validated against the message's schema, `$id` `urn:<Message>`.
 
 ```typescript
 await client.send("NotifyPeriodicEventStream", {

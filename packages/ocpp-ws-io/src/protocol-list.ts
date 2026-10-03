@@ -15,3 +15,18 @@ export function assertUniqueProtocols(
     seen.add(protocol);
   }
 }
+
+/**
+ * OCPP versions before 2.1: their RPC framework has message types 2 to 4
+ * only (OCPP-J 1.6 §4.1.3, OCPP 2.0.1 Part 4 §4.1.3).
+ */
+const BEFORE_OCPP_21 = /^ocpp(1\.\d|2\.0(\.\d)?)$/;
+
+/**
+ * Whether a connection may send and receive SEND (6) messages: on OCPP 2.1,
+ * which defines them, and on a custom protocol, whose two ends are both its
+ * user's. OCPP versions before 2.1 answer one with MessageTypeNotSupported.
+ */
+export function supportsSend(protocol: string | undefined): boolean {
+  return protocol !== undefined && !BEFORE_OCPP_21.test(protocol);
+}

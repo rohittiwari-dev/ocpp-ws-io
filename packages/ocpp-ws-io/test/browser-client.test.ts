@@ -22,7 +22,11 @@ import {
   type AnyBrowserOCPPClient,
   BrowserOCPPClient,
 } from "../src/browser/client.js";
-import { ConnectionState, MessageType } from "../src/browser/types.js";
+import {
+  ConnectionState,
+  MessageType,
+  NOREPLY,
+} from "../src/browser/types.js";
 import { createRPCError } from "../src/browser/util.js";
 import type { OCPPServerClient } from "../src/server-client.js";
 import { unchecked } from "../src/unchecked.js";
@@ -1289,6 +1293,41 @@ describe("BrowserOCPPClient", () => {
       } finally {
         await c21?.close({ force: true }).catch(() => {});
         await server21.close({ force: true });
+      }
+    });
+
+    // B17: a custom protocol may use SEND like OCPP 2.1.
+    it("sends a SEND on a custom protocol with send()", async () => {
+      const serverVendor = new OCPPServer({
+        protocols: ["vendor-proto"],
+        logging: false,
+      });
+      const seen: unknown[] = [];
+      serverVendor.on("client", (sc) =>
+        sc.handle(unchecked("VendorNotify"), (ctx) => {
+          seen.push(ctx.params);
+          return NOREPLY;
+        }),
+      );
+      const portVendor = getPort(await serverVendor.listen(0));
+      let cv: BrowserOCPPClient<"vendor-proto"> | undefined;
+      try {
+        cv = new BrowserOCPPClient({
+          identity: "CS-VENDOR-OUT",
+          endpoint: `ws://localhost:${portVendor}`,
+          protocols: ["vendor-proto"],
+          reconnect: false,
+        });
+        await cv.connect();
+        await new Promise((r) => setTimeout(r, 100));
+
+        await cv.send(unchecked("VendorNotify"), { at: "now" });
+        await new Promise((r) => setTimeout(r, 100));
+
+        expect(seen).toEqual([{ at: "now" }]);
+      } finally {
+        await cv?.close({ force: true }).catch(() => {});
+        await serverVendor.close({ force: true });
       }
     });
 

@@ -4,8 +4,12 @@ import WebSocket from "ws";
 import { OCPPClient } from "../src/client.js";
 import { OCPPServer } from "../src/server.js";
 import type { OCPPServerClient } from "../src/server-client.js";
+import { NOREPLY } from "../src/types.js";
+import { unchecked } from "../src/unchecked.js";
+import { createValidator } from "../src/validator.js";
 
-type Protocol = "ocpp1.6" | "ocpp2.0.1" | "ocpp2.1";
+// "vendor-proto": a custom protocol, which may use SEND like OCPP 2.1 (B17).
+type Protocol = "ocpp1.6" | "ocpp2.0.1" | "ocpp2.1" | "vendor-proto";
 
 const stream = {
   id: 1,
@@ -139,6 +143,26 @@ describe("OCPP message types", () => {
     });
   });
 
+  describe("SEND (6) on a custom protocol", () => {
+    it("reaches the handler, is never answered and is not a bad message", async () => {
+      const { ws, client, replies } = await rawCharger("vendor-proto");
+      const bad: string[] = [];
+      client.on("badMessage", ({ error }) => bad.push(error.message));
+      const seen: Array<{ unconfirmed?: boolean; params: unknown }> = [];
+      client.handle(unchecked("VendorNotify"), (ctx) => {
+        seen.push({ unconfirmed: ctx.unconfirmed, params: ctx.params });
+        return NOREPLY;
+      });
+
+      ws.send(JSON.stringify([6, "s1", "VendorNotify", { at: "now" }]));
+      await settle();
+
+      expect(seen).toEqual([{ unconfirmed: true, params: { at: "now" } }]);
+      expect(replies).toEqual([]);
+      expect(bad).toEqual([]);
+    });
+  });
+
   it("surfaces a CALLRESULTERROR on 2.1 as an event without answering", async () => {
     const { ws, client, replies } = await rawCharger("ocpp2.1");
     const events: unknown[] = [];
@@ -161,6 +185,10 @@ describe("OCPP message types", () => {
       ["ocpp2.1", 9],
       ["ocpp1.6", 6],
       ["ocpp2.0.1", 5],
+      // SEND came with OCPP 2.1: before it, the RPC framework has 2 to 4 only.
+      ["ocpp2.0.1", 6],
+      // A custom protocol may use SEND, not CALLRESULTERROR.
+      ["vendor-proto", 5],
     ];
     for (const [protocol, type] of cases) {
       it(`answers type ${type} on ${protocol} with MessageTypeNotSupported under ID "-1"`, async () => {
@@ -280,6 +308,50 @@ describe("OCPP message types", () => {
       await expect(
         client.send("NotifyPeriodicEventStream", stream),
       ).rejects.toThrow(/OCPP 2\.1/);
+    });
+
+    it("sends an unconfirmed message on a custom protocol", async () => {
+      const { client, serverClient } = await connectClient("vendor-proto");
+      const seen: unknown[] = [];
+      serverClient.handle(unchecked("VendorNotify"), (ctx) => {
+        seen.push(ctx.params);
+        return NOREPLY;
+      });
+
+      await client.send(unchecked("VendorNotify"), { at: "now" });
+      await settle();
+
+      expect(seen).toEqual([{ at: "now" }]);
+    });
+
+    it("validates a custom protocol's SEND in strict mode", async () => {
+      const srv = await startServer("vendor-proto");
+      const client = new OCPPClient({
+        identity: "CP-SEND-STRICT",
+        endpoint: `ws://localhost:${srv.port}`,
+        protocols: ["vendor-proto"],
+        strictMode: true,
+        strictModeValidators: [
+          createValidator("vendor-proto", [
+            {
+              $id: "urn:VendorNotify",
+              type: "object",
+              properties: { at: { type: "string" } },
+              required: ["at"],
+              additionalProperties: false,
+            },
+          ]),
+        ],
+        reconnect: false,
+        logging: false,
+      });
+      clients.push(client);
+      await client.connect();
+
+      await expect(
+        client.send(unchecked("VendorNotify"), { at: 1 }),
+      ).rejects.toThrow(/at/);
+      await client.send(unchecked("VendorNotify"), { at: "now" });
     });
 
     it("does not wait behind an outstanding CALL", async () => {

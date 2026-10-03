@@ -17,7 +17,7 @@ import type {
 import { createLoggingMiddleware } from "./helpers/index.js";
 import { initLogger } from "./init-logger.js";
 import { type MiddlewareFunction, MiddlewareStack } from "./middleware";
-import { assertUniqueProtocols } from "./protocol-list.js";
+import { assertUniqueProtocols, supportsSend } from "./protocol-list.js";
 import { Queue } from "./queue.js";
 import {
   assertStrictValidators,
@@ -1191,9 +1191,9 @@ export class OCPPClient<
       | OCPPSendRequestType<KnownProtocol<P>, SendMethodNames<KnownProtocol<P>>>
       | object = {},
   ): Promise<void> {
-    if (this._protocol !== "ocpp2.1") {
+    if (!supportsSend(this._protocol)) {
       throw new Error(
-        `SEND messages exist only in OCPP 2.1; this connection uses ${this._protocol ?? "no subprotocol"}`,
+        `SEND messages exist only in OCPP 2.1 and custom protocols; this connection uses ${this._protocol ?? "no subprotocol"}`,
       );
     }
     if (this._state !== OPEN || !this._ws) {
@@ -1906,7 +1906,10 @@ export class OCPPClient<
     }
   }
 
-  /** CALLRESULTERROR and SEND exist only in OCPP 2.1. */
+  /**
+   * CALLRESULTERROR exists only in OCPP 2.1; SEND in OCPP 2.1 and custom
+   * protocols ({@link supportsSend}).
+   */
   private _isKnownMessageType(type: number): boolean {
     if (
       type === MessageType.CALL ||
@@ -1915,10 +1918,8 @@ export class OCPPClient<
     ) {
       return true;
     }
-    return (
-      this._protocol === "ocpp2.1" &&
-      (type === MessageType.CALLRESULTERROR || type === MessageType.SEND)
-    );
+    if (type === MessageType.SEND) return supportsSend(this._protocol);
+    return this._protocol === "ocpp2.1" && type === MessageType.CALLRESULTERROR;
   }
 
   private _findHandler(method: string): CallHandler | undefined {
