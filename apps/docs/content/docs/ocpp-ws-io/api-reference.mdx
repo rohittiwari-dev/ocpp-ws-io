@@ -151,7 +151,7 @@ const result = await client.safeCall(
 );
 
 if (result === undefined) {
-	client.logger.warn("Station failed to clear cache", { error });
+	client.log.warn("Station failed to clear cache");
 }
 ```
 
@@ -223,12 +223,12 @@ await client.close({ awaitPending: false });
 
 ### Properties
 
-#### `logger`
+#### `log`
 
-A fully initialized `voltlog-io` instance localized to this client. Automatically includes the client `identity` and `component: "OCPPClient"` in the context of every log message.
+The client's logger: the one `logging` configures, which adds the client's `identity` and `component: "OCPPClient"` to every message, or a no-op logger when logging is off.
 
 ```typescript
-client.logger.info("Initializing updates", { pendingFiles: 4 });
+client.log.info("Initializing updates", { pendingFiles: 4 });
 ```
 
 ## OCPPServer
@@ -370,7 +370,11 @@ It is **off by default** on the server and on `OCPPClient`, because it costs mem
 const server = new OCPPServer({ protocols: ["ocpp2.0.1"], compression: true });
 
 // Charging station on mobile data: offer it to the CSMS
-const client = new OCPPClient({ /* … */ compression: { level: 6 } });
+const client = new OCPPClient({
+  identity: "CP001",
+  endpoint: "wss://csms.example.com/ocpp",
+  compression: { level: 6 },
+});
 ```
 
 The defaults keep the cost low: messages under 1 KB (most OCPP traffic, such as `Heartbeat`) are sent uncompressed, and no compression context is kept between messages. `BrowserOCPPClient` has no such option: the browser decides on its own, and all major browsers offer compression.
@@ -512,7 +516,7 @@ const result = await server.safeSendToClient(
 	"CP-001",
 	"ocpp1.6",
 	"UpdateFirmware",
-	{ location: "..." },
+	{ location: "https://firmware.example.com/v2.bin", retrieveDate: new Date().toISOString() },
 	{ timeoutMs: 30000 },
 );
 
@@ -564,21 +568,21 @@ console.log(`PID: ${telemetry.pid}`);
 
 #### `adapterMetrics()`
 
-Fetches deep backend observability from the underlying clustering adapter. When using the `RedisAdapter`, this returns the `consumerLag` (pending unread stream messages) specific to this node, enabling DevOps to perform accurate horizontal capacity auto-scaling.
+Fetches the clustering adapter's metrics, or `null` without an adapter (or when it fails). The `RedisAdapter` returns `pendingMessages`, the entries in this node's streams (an upper bound of the backlog: consumed entries count until they are trimmed), with `activeStreams`, `streamDetails` (entries per stream) and `pollErrors` (non-zero while delivery into this node is failing).
 
 ```typescript
 const metrics = await server.adapterMetrics();
-console.log("Redis Backlog:", metrics?.redisConsumerLag?.pendingMessages);
+console.log("Redis backlog:", metrics?.pendingMessages);
 ```
 
 ### Properties
 
-#### `logger`
+#### `log`
 
-An initialized `voltlog-io` logger isolated to the Server context (via `component: "OCPPServer"`). Automatically utilized by the internal router and exchange logs.
+The server's logger: the one `logging` configures, with `component: "OCPPServer"` in every message, or a no-op logger when logging is off. The router and the exchange logs use it too.
 
 ```typescript
-server.logger.warn("Unrecognized protocol attempted", { requested: "ocpp1.5" });
+server.log.warn("Unrecognized protocol attempted", { requested: "ocpp1.5" });
 ```
 
 ## Protocol Constants
@@ -699,8 +703,7 @@ await client.connect();
 
 // Version-aware typed call
 const result = await client.call("ocpp1.6", "BootNotification", { ... });
-const { success } = await client.safeCall("ocpp1.6", "Heartbeat", {});
-const { success } = await client.safeCall("ocpp1.6", "Heartbeat", {});
+const heartbeat = await client.safeCall("ocpp1.6", "Heartbeat", {}); // the response, or undefined if it failed
 
 // Register handlers (version-specific, generic, wildcard)
 client.handle("ocpp1.6", "Reset", ({ params }) => { ... });
@@ -726,22 +729,14 @@ client.sendRaw(JSON.stringify([2, "uuid", "Heartbeat", {}]));
 
 ### Properties
 
-#### `logger`
-
-A fully initialized `logger` specific to the browser console. Works with browser contexts.
-
-```typescript
-client.logger.info("Retrying connection...");
-```
-
 ### Properties
 
-#### `logger`
+#### `log`
 
-A fully initialized `logger` specific to the browser console. Works with browser contexts.
+The browser client's logger, writing to the browser console, or a no-op logger when logging is off.
 
 ```typescript
-client.logger.info("Retrying connection...");
+client.log.info("Retrying connection...");
 ```
 
 ### Events
@@ -810,6 +805,8 @@ import {
 	RPCOccurrenceConstraintViolationError,
 	RPCOccurenceConstraintViolationError, // 1.6 spelling, one `r`
 	RPCTypeConstraintViolationError,
-	RPCGenericTransportError,
+	RPCFormatViolationError, // 2.0.1 and 2.1 spelling
+	RPCFrameworkError,
+	RPCMessageTypeNotSupportedError,
 } from "ocpp-ws-io";
 ```

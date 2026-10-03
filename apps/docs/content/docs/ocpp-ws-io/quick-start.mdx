@@ -35,9 +35,11 @@ const response = await client.call("ocpp1.6", "BootNotification", {
 
 console.log("Status:", response.status); // typed: "Accepted" | "Pending" | "Rejected"
 
-// Send a fire-and-forget message safely (won't throw if station disconnects)
-const { success } = await client.safeCall("ocpp1.6", "Heartbeat", {});
-if (success) client.logger.info("Heartbeat sent successfully!");
+// safeCall never throws: it gives the response, or undefined if the call failed
+const heartbeat = await client.safeCall("Heartbeat", {});
+if (heartbeat) {
+  client.log.info("Heartbeat answered", { currentTime: heartbeat.currentTime });
+}
 ```
 
 ## Server (Central System)
@@ -53,7 +55,7 @@ const server = new OCPPServer({
 server.auth((ctx) => {
   // Access connection info
   const { query, headers } = ctx.handshake;
-  const token = query.token;
+  const token = query.get("token"); // query is a URLSearchParams
 
   if (token === "valid-secret") {
     // Determine which OCPP protocol to use

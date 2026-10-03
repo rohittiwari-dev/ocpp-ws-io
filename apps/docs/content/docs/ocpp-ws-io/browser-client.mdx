@@ -101,20 +101,21 @@ The `BrowserOCPPClient` supports the exact same `MiddlewareStack` execution patt
 ```typescript
 import { BrowserOCPPClient, defineRpcMiddleware, createLoggingMiddleware } from "ocpp-ws-io/browser";
 
-const client = new BrowserOCPPClient({ ... });
+const client = new BrowserOCPPClient({
+  identity: "CS001",
+  endpoint: "wss://csms.example.com/ocpp",
+  protocols: ["ocpp1.6"],
+});
 
 // 1. Attach the built-in structured logger (outputs to browser console)
 client.use(createLoggingMiddleware(console, client.identity));
 
-// 2. Attach your custom type-safe middleware
+// 2. Attach your own middleware: here, how long each message takes.
+// Leave the payload as it is: a key its schema does not define fails strict mode.
 const browserInterceptor = defineRpcMiddleware(async (ctx, next) => {
-  console.log(`[Browser] Intercepting ${ctx.method}`);
-
-  if (ctx.type === "outgoing_call") {
-    ctx.params.timestamp = new Date().toISOString(); // Auto-inject timestamps
-  }
-
+  const started = performance.now();
   await next();
+  console.log(`[Browser] ${ctx.method}: ${Math.round(performance.now() - started)} ms`);
 });
 
 client.use(browserInterceptor);
@@ -184,8 +185,10 @@ const res = await client.call("Heartbeat", {});
 // A client configured for several versions: narrow to the negotiated one
 const v201 = client.forProtocol("ocpp2.0.1"); // BrowserOCPPClient<"ocpp2.0.1"> | undefined
 
-// Explicit response type (for custom/vendor methods)
-const custom = await client.call<{ result: string }>("VendorAction", {
+// An action the types do not know: unchecked(), with the response type you expect
+import { unchecked } from "ocpp-ws-io/browser";
+
+const custom = await client.call<{ result: string }>(unchecked("VendorAction"), {
 	data: "hello",
 });
 ```

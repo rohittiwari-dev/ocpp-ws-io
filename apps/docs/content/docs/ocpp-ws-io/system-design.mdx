@@ -86,14 +86,10 @@ server.setAdapter(adapter);
 server.broadcast("Reset", { type: "Soft" });
 
 // Send safely to a single targeted station (avoids unhandled rejections if disconnected)
-const { success, result, error } = await server.safeSendToClient(
-  "CP-001",
-  "ocpp1.6",
-  "GetConfiguration",
-  { key: [] },
-);
-if (!success) {
-  server.logger.error("Failed to get config from CP-001", { error });
+// safeSendToClient gives the response, or undefined if it failed
+const config = await server.safeSendToClient("CP-001", "ocpp1.6", "GetConfiguration", { key: [] });
+if (!config) {
+  server.log.error("Failed to get config from CP-001");
 }
 ```
 
@@ -207,7 +203,7 @@ v1Router.on("client", (client) => {
 
 // 4. Implement a Catch-All Route for unknown endpoints
 server.use(async (ctx) => {
-  ctx.logger.warn(`Rejected unknown connection at ${ctx.handshake.pathname}`);
+  server.log.warn(`Rejected unknown connection at ${ctx.handshake.pathname}`);
   ctx.reject(404, "Unknown Endpoint");
 }); // Root route fall-through
 
@@ -303,9 +299,10 @@ flowchart TD
 
 ```typescript
 // Enabling Strict Schema Validation selectively for maximum performance
+// The built-in 1.6, 2.0.1 and 2.1 validators are used automatically.
 const server = new OCPPServer({
+  protocols: ["ocpp1.6"],
   strictMode: true,
   strictModeMethods: ["BootNotification", "Authorize", "StartTransaction"],
-  strictModeValidators: standardValidators,
 });
 ```

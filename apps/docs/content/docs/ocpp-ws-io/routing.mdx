@@ -135,10 +135,11 @@ const legacyRouter = server
   })
   .route("/api/v1/*");
 
-// Enforce mTLS for modern route
+// Enforce mTLS for modern route (security profile 3)
 const modernRouter = server
   .auth(async (ctx) => {
-    if (ctx.handshake.isSecure) {
+    // getPeerCertificate() gives {} when the charger sent no certificate
+    if (ctx.handshake.clientCertificate?.fingerprint256) {
       ctx.accept({ session: { version: "v2" } });
     } else {
       ctx.reject(403, "TLS Certificate Required");

@@ -522,7 +522,7 @@ const snap = metrics.getMetrics();
 // { activeConnections, peakConnections, totalConnections, totalValidationFailures, totalSecurityEvents, ... }
 
 // Prometheus export
-const lines = await metrics.getCustomMetrics();
+const lines = await metrics.getCustomMetrics?.();
 // ["ocpp_connections_active 42", "ocpp_connections_peak 128", ...]
 ```
 
@@ -670,7 +670,7 @@ const myPlugin = createPlugin({
   name: "my-advanced-plugin",
 
   onInit(server) {
-    console.log(`Plugin loaded on server listening at ${server.options.port}`);
+    server.log.info("my-advanced-plugin loaded");
   },
 
   onSecurityEvent(evt) {
@@ -680,22 +680,22 @@ const myPlugin = createPlugin({
   },
 
   onBeforeReceive(client, rawData) {
-    // Arbitrary size limits or binary magic number checks
-    if (rawData.length > 1024 * 1024) {
+    // The frame as the socket received it, usually a Buffer
+    const size = Buffer.isBuffer(rawData) ? rawData.length : String(rawData).length;
+    if (size > 1024 * 1024) {
       console.error(`Payload too large from ${client.identity}`);
       return false; // Drops the message
     }
   },
 
-  onMessage(client, payload) {
+  onMessage(client, { direction, ctx }) {
     // Unified observability: both outgoing and incoming messages
-    const { message, direction, ctx } = payload;
-    console.log(`[${direction}] ${ctx.action || ctx.type} at ${ctx.timestamp.toISOString()}`);
+    console.log(`[${direction}] ${client.identity} ${ctx.method} at ${ctx.timestamp}`);
   },
 
   onTelemetry(stats) {
     // Push stats to your external monitoring system
-    console.log(`Active Connections: ${stats.activeConnections}`);
+    console.log(`Connected chargers: ${stats.connectedClients}`);
   }
 });
 

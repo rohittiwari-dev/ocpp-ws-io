@@ -1,163 +1,62 @@
 ---
-title: Type Generation
-description: Auto-generated TypeScript types for OCPP 1.6, 2.0.1, and 2.1.
+title: Generated Types
+description: The TypeScript types ocpp-ws-io generates from the official OCPP 1.6, 2.0.1 and 2.1 JSON schemas, and how a call or handler finds its types.
 ---
 
-`ocpp-ws-io` ships with **auto-generated TypeScript types** for all OCPP methods across 1.6, 2.0.1, and 2.1 — generated directly from the official OCPP JSON schemas.
+`ocpp-ws-io` ships TypeScript types for every OCPP 1.6, 2.0.1 and 2.1 action, generated from the official OCA JSON schemas. You do not generate anything for the standard versions: the types are in the package. To use them in your code, see the [TypeScript Guide](/docs/ocpp-ws-io/type-safety).
 
-You don't need to generate anything yourself. All types are included in the package and ready to use.
+## What's included
 
-## What's Included
+Every action has a typed request and response, and every OCPP 2.1 unconfirmed (SEND) message a typed payload:
 
-Every OCPP method has typed request and response interfaces:
+- **OCPP 1.6**: `Authorize`, `BootNotification`, `Heartbeat`, `MeterValues`, `StartTransaction`, `StopTransaction`, `Reset` and all others, with the security extension (`SignedFirmwareStatusNotification`, `SecurityEventNotification`, …)
+- **OCPP 2.0.1**: `BootNotification`, `TransactionEvent`, `StatusNotification`, `RequestStartTransaction` and all others
+- **OCPP 2.1**: every action and SEND message of the OCA schemas (typed from the schemas; not yet tested against real 2.1 hardware)
 
-- **OCPP 1.6**: `Authorize`, `BootNotification`, `Heartbeat`, `MeterValues`, `StartTransaction`, `StopTransaction`, `Reset`, and all others
-- **OCPP 2.0.1**: `BootNotification`, `TransactionEvent`, `StatusNotification`, `RequestStartTransaction`, and all others
-- **OCPP 2.1**: Method coverage generated from the official OCA schemas (type-safe, not yet tested against real 2.1 hardware)
+The types follow the schemas exactly: a required field is required, an enum is a union of its values, and a key a schema does not define is a type error. An object a schema leaves open (OCPP 2.0.1 and 2.1 `customData`) takes any JSON.
 
-Each method is mapped in `OCPPMethodMap` — the single interface that powers all type inference for `handle()`, `call()`, and `protocols`.
+## How a call finds its types
 
-## Type Utilities
+```
+protocols ──▶ P ──▶ OCPPMethodMap[P] ──▶ action ──▶ request / response
+                └─▶ OCPPSendMethodMap[P] ──▶ SEND message ──▶ payload
+```
+
+1. The `protocols` you configure become the type parameter `P`: `new OCPPClient({ protocols: ["ocpp1.6"] })` is an `OCPPClient<"ocpp1.6">`.
+2. `P` selects its method map in `OCPPMethodMap` (`"ocpp1.6"` → `OCPP16Methods`), and its SEND messages in `OCPPSendMethodMap`.
+3. The action name selects the request and the response from that map, for the params of `call()` and the `params` and return value of `handle()`.
+
+All of this happens at compile time; nothing of it exists at runtime. `OCPPMethodMap` and `OCPPSendMethodMap` are interfaces, so you can add your own protocols and actions to them: see [vendor actions](/docs/ocpp-ws-io/type-safety#vendor-actions-on-a-standard-version) and [custom protocols](/docs/ocpp-ws-io/type-safety#custom-protocols).
+
+## Reading the generated types
 
 ```typescript
 import type {
-  OCPPProtocol, // "ocpp1.6" | "ocpp2.0.1" | "ocpp2.1"
-  OCPPProtocolKey, // keyof OCPPMethodMap — extensible via module augmentation
-  OCPPMethodMap, // { "ocpp1.6": OCPP16Methods; "ocpp2.0.1": ...; "ocpp2.1": ... }
-  AllMethodNames, // Union of all method names for a given protocol
-  OCPPRequestType, // Request type for a specific protocol + method
-  OCPPResponseType, // Response type for a specific protocol + method
+  AllMethodNames,
+  OCPP16Methods,
+  OCPPRequestType,
+  OCPPResponseType,
 } from "ocpp-ws-io";
-```
 
-### Examples
-
-```typescript
-// Get all method names for OCPP 1.6
+// All action names of OCPP 1.6
 type Methods16 = AllMethodNames<"ocpp1.6">;
 // "Authorize" | "BootNotification" | "ChangeAvailability" | ...
 
-// Get the request type for BootNotification
-type BootReq = OCPPRequestType<"ocpp1.6", "BootNotification">;
+// The request and response of BootNotification
+type BootRequest = OCPPRequestType<"ocpp1.6", "BootNotification">;
 // { chargePointVendor: string; chargePointModel: string; ... }
+type BootResponse = OCPPResponseType<"ocpp1.6", "BootNotification">;
+// { currentTime: string; interval: number; status: "Accepted" | "Pending" | "Rejected" }
 
-// Get the response type
-type BootRes = OCPPResponseType<"ocpp1.6", "BootNotification">;
-// { status: "Accepted" | "Pending" | "Rejected"; currentTime: string; interval: number }
+// The same, straight from the method map
+type SameRequest = OCPP16Methods["BootNotification"]["request"];
 ```
 
-## Typed Protocols
+The [TypeScript Guide](/docs/ocpp-ws-io/type-safety#types-of-actions) lists every type utility.
 
-The `protocols` field on both `OCPPClient` and `OCPPServer` is typed as `OCPPProtocol[]`, giving you autocomplete and compile-time safety:
+## Types for your own schemas
 
-```typescript
-const client = new OCPPClient({
-  endpoint: "ws://localhost:3000",
-  identity: "CP001",
-  protocols: ["ocpp1.6", "ocpp2.0.1"], // ✅ Autocomplete for all valid protocols
-});
-
-// ❌ TypeScript error — "invalid" is not a valid protocol
-const bad = new OCPPClient({
-  protocols: ["invalid"],
-});
-```
-
-## How It All Fits Together
-
-The type system flows through a single interface chain:
-
-```
-OCPPMethodMap → OCPPProtocolKey → OCPPProtocol → handle() / call() / protocols
-```
-
-When you write `handle("ocpp1.6", "BootNotification", ...)`, TypeScript:
-
-1. Looks up `"ocpp1.6"` in `OCPPMethodMap`
-2. Finds `OCPP16Methods`
-3. Looks up `"BootNotification"` in `OCPP16Methods`
-4. Infers `request` and `response` types for your handler
-
-All of this happens at compile-time — zero runtime overhead.
-
-## Extending with Custom Protocols
-
-Since `OCPPMethodMap` is a TypeScript **interface**, you can extend it with your own protocols using [module augmentation](https://www.typescriptlang.org/docs/handbook/declaration-merging.html#module-augmentation). This gives your custom protocols the same type-safe experience as the built-in OCPP protocols.
-
-A custom protocol needs two things: its types, declared in `OCPPMethodMap`, so calls and handlers are typed, and, for strict mode, a validator built from its JSON schemas. A validator types only the protocol's name, not the payloads. Pick one way:
-
-| You have | Do | You get |
-| --- | --- | --- |
-| JSON schemas for the protocol | `ocpp generate --schema ./vendor-schemas.json --name vendor-proto` (from `ocpp-ws-cli`, see [Project Setup & Generation](/docs/cli/project-setup)) | Types, their augmentation and the validator from the same schemas, so they never disagree; run it again when the schemas change |
-| No schemas, only the shapes | The steps below, by hand | Types; nothing validates the messages |
-| Schemas you build or load yourself | `createValidator("vendor-proto", schemas)` beside the steps below | Validation, with types you keep in step with the schemas yourself |
-
-### Step 1: Define Your Method Types
-
-```typescript
-// src/vendor-types.ts
-export interface MyVendorMethods {
-  VendorAction: {
-    request: { data: string; priority: number };
-    response: { status: "Accepted" | "Rejected" };
-  };
-}
-```
-
-### Step 2: Augment OCPPMethodMap
-
-```typescript
-// src/ocpp-extensions.d.ts
-import type { MyVendorMethods } from "./vendor-types";
-
-declare module "ocpp-ws-io" {
-  interface OCPPMethodMap {
-    "vendor-proto": MyVendorMethods;
-  }
-}
-```
-
-### Step 3: Use — Fully Typed
-
-```typescript
-import { OCPPClient, createValidator } from "ocpp-ws-io";
-import vendorSchemas from "./vendor-schemas.json";
-
-const vendorValidator = createValidator("vendor-proto", vendorSchemas);
-
-const client = new OCPPClient({
-  endpoint: "ws://localhost:3000",
-  identity: "CP001",
-  protocols: ["ocpp1.6", "vendor-proto"], // ✅ Autocompletes
-  strictMode: true,
-  strictModeValidators: [vendorValidator], // Runtime validation
-});
-
-// ✅ Fully typed handle
-client.handle("vendor-proto", "VendorAction", ({ params }) => {
-  console.log(params.data); // string
-  console.log(params.priority); // number
-  return { status: "Accepted" }; // typed
-});
-
-// ✅ Fully typed call
-const res = await client.call("vendor-proto", "VendorAction", {
-  data: "hello",
-  priority: 1,
-});
-console.log(res.status); // "Accepted" | "Rejected"
-```
-
-### What This Gives You
-
-| Feature                       | Without Augmentation                  | With Augmentation              |
-| ----------------------------- | ------------------------------------- | ------------------------------ |
-| `protocols`                   | `"ocpp1.6"` `"ocpp2.0.1"` `"ocpp2.1"` | + `"vendor-proto"`             |
-| `handle("vendor-proto", ...)` | No autocomplete                       | ✅ Method names + typed params |
-| `call("vendor-proto", ...)`   | No autocomplete                       | ✅ Typed params + response     |
-| Runtime validation            | ✅ via `strictModeValidators`         | ✅ Same                        |
-
-> **Note:** Module augmentation only affects the **type system** (compile-time). You still need a runtime `Validator` via `strictModeValidators` for actual schema validation.
+For a custom protocol with JSON schemas, `ocpp generate` (from `ocpp-ws-cli`) writes the same kind of types, the declaration that adds the protocol to `OCPPMethodMap`, and a validator, all from your schemas: see [Project Setup & Generation](/docs/cli/project-setup). It follows the same rules as the generator below; a test compares the two on the OCPP schemas.
 
 ## For Contributors: Re-generating Types
 

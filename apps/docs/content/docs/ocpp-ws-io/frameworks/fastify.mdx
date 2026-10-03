@@ -22,13 +22,13 @@ Use `fastify.register` to attach the OCPP plugin to your Fastify instance.
 ```typescript
 import Fastify from 'fastify';
 import { OCPPServer } from 'ocpp-ws-io';
-import { ocppFastify } from 'ocpp-ws-io/fastify';
+import { ocppFastifyPlugin } from 'ocpp-ws-io/fastify';
 
 const fastify = Fastify({ logger: true });
 const ocppServer = new OCPPServer();
 
 // 1. Register the plugin
-fastify.register(ocppFastify, {
+fastify.register(ocppFastifyPlugin, {
   ocppServer,
   upgradePathPrefix: '/ocpp' // Only upgrade requests to /ocpp
 });
@@ -61,7 +61,7 @@ start();
 
 ## Type Safety
 
-The `ocppFastify` plugin uses Fastify's decorator API. We use TypeScript module augmentation so that `req.ocpp` is fully typed across your entire Fastify application without needing to cast types.
+The `ocppFastifyPlugin` plugin uses Fastify's decorator API. We use TypeScript module augmentation so that `req.ocpp` is fully typed across your entire Fastify application without needing to cast types.
 
 ## Handling Upgrades Manually
 

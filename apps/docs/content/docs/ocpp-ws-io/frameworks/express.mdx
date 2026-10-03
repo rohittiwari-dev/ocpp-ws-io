@@ -89,7 +89,7 @@ app.post("/chargers/:id/reset", async (req, res) => {
     // Respond with the charger's answer (e.g. { status: "Accepted" })
     res.json(response);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 ```

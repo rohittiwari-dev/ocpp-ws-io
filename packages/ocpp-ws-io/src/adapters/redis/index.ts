@@ -9,6 +9,9 @@ import {
   type RedisPubSubDriver,
 } from "./helpers.js";
 
+// For RedisAdapterOptions.driverFactory: one driver per pooled connection.
+export { createDriver };
+
 export interface RedisAdapterOptions {
   /** Redis client for publishing (required unless `driver` is provided) */
   pubClient?: RedisLikeClient;

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { RedisAdapter } from "../src/adapters/redis/index.js";
+import { createDriver, RedisAdapter } from "../src/adapters/redis/index.js";
 
 // Mock Redis client
 const createMockRedis = () => ({
@@ -13,6 +13,20 @@ const createMockRedis = () => ({
 });
 
 describe("RedisAdapter", () => {
+  // B20: poolSize > 1 needs driverFactory, which the clustering guide builds
+  // with createDriver from this entry.
+  it("exports createDriver for poolSize's driverFactory", () => {
+    const factory = vi.fn(() => createDriver(createMockRedis(), createMockRedis()));
+    const adapter = new RedisAdapter({
+      pubClient: createMockRedis(),
+      subClient: createMockRedis(),
+      poolSize: 2,
+      driverFactory: factory,
+    });
+    expect(adapter).toBeInstanceOf(RedisAdapter);
+    expect(factory).toHaveBeenCalledTimes(1);
+  });
+
   it("should subscribe to channels with prefix", async () => {
     const pub = createMockRedis();
     const sub = createMockRedis();

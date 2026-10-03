@@ -48,7 +48,7 @@ export class AppModule {}
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { OcppModule } from 'ocpp-ws-io/nestjs';
-import { RedisPubSubAdapter } from 'ocpp-ws-io/adapters/redis';
+import { RedisAdapter } from 'ocpp-ws-io/adapters/redis';
 import { Redis } from 'ioredis';
 
 @Module({
@@ -58,7 +58,10 @@ import { Redis } from 'ioredis';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         protocols: ['ocpp1.6'],
-        adapter: new RedisPubSubAdapter(new Redis(config.get('REDIS_URL'))),
+        adapter: new RedisAdapter({
+          pubClient: new Redis(config.get('REDIS_URL')),
+          subClient: new Redis(config.get('REDIS_URL')),
+        }),
       }),
     }),
   ],

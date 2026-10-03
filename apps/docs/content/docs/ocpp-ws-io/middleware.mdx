@@ -13,10 +13,13 @@ You can add middleware to both `OCPPServer` and `OCPPClient`.
 
 ```typescript
 client.use(async (ctx, next) => {
-  console.log(`Processing ${ctx.method} (${ctx.direction})`);
+  console.log(`Processing ${ctx.method} (${ctx.type})`);
 
-  // Modify context or just observe
-  ctx.params.timestamp = new Date().toISOString();
+  // ctx is a union on `type`: narrow it before reading phase-specific fields.
+  // Observe the payload; a key its schema does not define fails strict mode.
+  if (ctx.type === "outgoing_call") {
+    console.log("Params:", ctx.params);
+  }
 
   // Proceed to next middleware/handler
   await next();
@@ -33,10 +36,10 @@ client.use(async (ctx, next) => {
 The logging middleware is enabled by default but can be customized. It logs all incoming and outgoing messages.
 
 ```typescript
-import { createLoggingMiddleware } from "ocpp-ws-io/middleware";
+import { createLoggingMiddleware } from "ocpp-ws-io";
 
-// Manually adding (if you disabled default logging)
-client.use(createLoggingMiddleware(logger, "Point1"));
+// Manually adding (if you disabled default logging); any LoggerLike works
+client.use(createLoggingMiddleware(console, "Point1"));
 ```
 
 ## Creating Custom Middleware

@@ -73,6 +73,7 @@ To be released as **3.0.0**. Upgrading from 2.x: see the [migration guide](https
 
 ### Fixed
 
+- **`createDriver` is exported from `ocpp-ws-io/adapters/redis`.** `RedisAdapter`'s `poolSize` needs a `driverFactory`, and the clustering guide builds each driver with `createDriver`, which the entry did not export, so a pool could not be set up as documented.
 - **A custom protocol can send and receive SEND messages.** The types let a protocol that declares SEND messages in `OCPPSendMethodMap` use `send()` (and `ocpp generate` declares them), but `send()` threw `SEND messages exist only in OCPP 2.1` for anything but `"ocpp2.1"`, and an incoming SEND counted as a bad message. A custom protocol now works like OCPP 2.1 for SEND; OCPP 1.6 and 2.0.1 still refuse it, as their RPC framework has no SEND. CALLRESULTERROR stays OCPP 2.1 only.
 - **Generated types follow `additionalProperties`.** OCPP 2.0.1 and 2.1 `CustomDataType`, which the schemas leave open for vendor data, was generated as a closed type; it now takes any JSON key. `DataTransfer`'s `data` (any JSON in the schema) is `JsonValue` instead of `unknown`.
 - **A misspelt version name no longer compiles.** `call("ocpp16", ...)` matched the untyped custom-protocol overload; a named version must now be one of the client's protocols.

@@ -102,7 +102,7 @@ This library uses **voltlog-io** under the hood. You can import logging utilitie
 import { createLogger, consoleTransport } from "ocpp-ws-io/logger";
 
 const logger = createLogger({
-  name: "MyCSMS",
+  context: { service: "MyCSMS" }, // added to every entry
   transports: [consoleTransport()],
 });
 
