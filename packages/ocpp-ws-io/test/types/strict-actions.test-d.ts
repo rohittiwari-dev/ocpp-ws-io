@@ -43,6 +43,11 @@ export async function strictActions() {
   c16.handle("ocpp1.6", "Heartbeat", () => NOREPLY);
   // An async handler may answer or not: the runtime awaits it, then checks.
   c16.handle("Heartbeat", async () => (Math.random() > 0.5 ? { currentTime: "" } : NOREPLY));
+  // Or never answer, after async work.
+  c16.handle("Heartbeat", async ({ params }) => {
+    void params;
+    return NOREPLY;
+  });
   await c16.call("Heartbeat", {}, { noReply: true });
 
   // removeHandler names a known action, or an unchecked one.
@@ -197,6 +202,7 @@ export async function exactKeys() {
   // NOREPLY is a typed answer on the browser client too (B7).
   b16.handle("Heartbeat", () => NOREPLY);
   b16.handle("Heartbeat", async () => (Math.random() > 0.5 ? { currentTime: "" } : NOREPLY));
+  b16.handle("Heartbeat", async () => NOREPLY);
 }
 
 export function emptyResponses() {

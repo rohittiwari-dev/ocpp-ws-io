@@ -1959,11 +1959,16 @@ export type CheckedHandler<M, Shape, R> = CheckedAction<
 /**
  * What a typed handler may return: its answer, or NOREPLY, now or as a
  * promise. The runtime awaits the handler, then answers unless it got NOREPLY.
+ *
+ * The promise also takes any `symbol`: an async function whose only return is
+ * NOREPLY is typed `Promise<symbol>`, as TypeScript keeps NOREPLY's own type
+ * there only when the expected return type is a single promise. Another symbol
+ * would be sent as the answer.
  */
 export type HandlerResult<Shape> =
   | Shape
   | typeof NOREPLY
-  | Promise<Shape | typeof NOREPLY>;
+  | Promise<Shape | typeof NOREPLY | symbol>;
 
 /**
  * A typed handler's return type: {@link HandlerResult}, whatever R is. R, the

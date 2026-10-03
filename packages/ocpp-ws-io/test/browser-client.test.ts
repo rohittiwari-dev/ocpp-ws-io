@@ -829,7 +829,7 @@ describe("BrowserOCPPClient", () => {
         reconnect: false,
       });
 
-      client.handle(unchecked("FireAndForget"), async () => NOREPLY as any);
+      client.handle(unchecked("FireAndForget"), async () => NOREPLY);
 
       await client.connect();
       await new Promise((r) => setTimeout(r, 100));

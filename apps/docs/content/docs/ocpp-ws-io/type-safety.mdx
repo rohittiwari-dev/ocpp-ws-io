@@ -178,6 +178,8 @@ client.on("strictValidationFailure", ({ message, error }) => {
 
 Every protocol strict mode covers needs a validator: built in for OCPP 1.6, 2.0.1 and 2.1, or one of yours in `strictModeValidators`. Otherwise the constructor throws `Missing strictMode validator for subprotocol "…"`, and a route that turns strict mode on refuses a connection on such a protocol, so no connection runs in strict mode unvalidated. A protocol listed twice in `protocols` is a type error and throws as well.
 
+Node and Bun print the line that threw above an uncaught error. The package is published minified, so that line is a long run of bundled code; the message and the stack under it say what to fix.
+
 ### Partial Strict Mode
 
 You can restrict strict mode to specific subprotocols if you support multiple versions but only want validation for some:

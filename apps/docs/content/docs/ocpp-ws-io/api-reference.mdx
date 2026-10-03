@@ -596,6 +596,15 @@ client.handle("StatusNotification", ({ params }) => {
 });
 ```
 
+An async handler can return it too, after its work:
+
+```typescript
+client.handle("StatusNotification", async ({ params }) => {
+	await queue.push(params);
+	return NOREPLY;
+});
+```
+
 ### `unchecked(action)`
 
 Marks an action name the types do not check, for every typed method (`call`, `safeCall`, `callImmediate`, `handle`, `send`, `removeHandler`, `sendToClient`, `safeSendToClient`, `broadcast`, `broadcastBatch`, and a `sendBatch` call's `method`): an undeclared vendor action, a name passed through from the wire, or a test that sends an invalid payload on purpose. Returns the name unchanged.

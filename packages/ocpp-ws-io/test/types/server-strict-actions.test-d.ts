@@ -92,6 +92,7 @@ export function routeHandlers() {
   // B8: NOREPLY is a typed answer on a route too.
   route.handle("Heartbeat", () => NOREPLY);
   route.handle("Heartbeat", async () => (Math.random() > 0.5 ? { currentTime: "" } : NOREPLY));
+  route.handle("Heartbeat", async () => NOREPLY);
   route.handle("StatusNotification", async () => ({}));
   route.handle("Heartbeat", () => new Promise((resolve) => resolve({ currentTime: "" })));
 
