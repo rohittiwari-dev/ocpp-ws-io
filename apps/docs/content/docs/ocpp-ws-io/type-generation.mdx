@@ -84,7 +84,13 @@ All of this happens at compile-time — zero runtime overhead.
 
 Since `OCPPMethodMap` is a TypeScript **interface**, you can extend it with your own protocols using [module augmentation](https://www.typescriptlang.org/docs/handbook/declaration-merging.html#module-augmentation). This gives your custom protocols the same type-safe experience as the built-in OCPP protocols.
 
-> **Generate it instead:** `ocpp generate --schema ./vendor-schemas.json --name vendor-proto` (from `ocpp-ws-cli`) writes the types, the augmentation below and the validator from your JSON schemas. See [Project Setup & Generation](/docs/cli/project-setup). The steps below write the same by hand.
+A custom protocol needs two things: its types, declared in `OCPPMethodMap`, so calls and handlers are typed, and, for strict mode, a validator built from its JSON schemas. A validator types only the protocol's name, not the payloads. Pick one way:
+
+| You have | Do | You get |
+| --- | --- | --- |
+| JSON schemas for the protocol | `ocpp generate --schema ./vendor-schemas.json --name vendor-proto` (from `ocpp-ws-cli`, see [Project Setup & Generation](/docs/cli/project-setup)) | Types, their augmentation and the validator from the same schemas, so they never disagree; run it again when the schemas change |
+| No schemas, only the shapes | The steps below, by hand | Types; nothing validates the messages |
+| Schemas you build or load yourself | `createValidator("vendor-proto", schemas)` beside the steps below | Validation, with types you keep in step with the schemas yourself |
 
 ### Step 1: Define Your Method Types
 

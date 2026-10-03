@@ -102,6 +102,31 @@ export function isISODateTime(value: string): boolean {
 
 // ─── Validator Class ────────────────────────────────────────────
 
+/**
+ * A schema id the client looks a message up by: `urn:` and an action name,
+ * ending in `.req` / `.conf` (OCPP 1.6, 2.0.1), `Request` / `Response`
+ * (2.1), or nothing (a SEND message).
+ */
+const ACTION_SCHEMA_ID = /^urn:[A-Za-z0-9_.-]+$/;
+
+/**
+ * Throws for an `$id` that mentions `urn:` but names no action, such as
+ * `'"urn:Heartbeat.req"'` (quotes inside the string). ajv refuses some of
+ * these with "URI scheme is malformed.", naming neither the schema nor the
+ * fix; it registers others under an id no lookup uses, so strict mode would
+ * let invalid payloads through. An `$id` without `urn:` is left alone: it
+ * serves direct `validate()` calls and `$ref`s.
+ */
+function assertActionSchemaId(subprotocol: string, id: string): void {
+  if (!/urn:/i.test(id) || ACTION_SCHEMA_ID.test(id)) return;
+  throw new TypeError(
+    `schema $id ${JSON.stringify(id)} for "${subprotocol}" does not name an action: ` +
+      'use "urn:<Action>.req" and "urn:<Action>.conf", "urn:<Action>Request" and ' +
+      '"urn:<Action>Response", or "urn:<Message>" for a SEND message, with no ' +
+      "quotes or spaces inside",
+  );
+}
+
 export interface ValidatorSchema {
   $schema?: string;
   $id?: string;
@@ -138,6 +163,9 @@ export class Validator<S extends string = string> {
     // AJV's addSchema() stores schemas as-is; compilation (the expensive part)
     // happens lazily when getSchema() is first called for a given $id.
     for (const schema of schemas) {
+      if (typeof schema.$id === "string") {
+        assertActionSchemaId(subprotocol, schema.$id);
+      }
       const normalized = { ...schema };
       if (typeof normalized.$id === "string") {
         // OCPP 2.1 schemas use `urn:<Method>Request` / `urn:<Method>Response`

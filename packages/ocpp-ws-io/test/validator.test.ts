@@ -54,6 +54,39 @@ describe("Validator", () => {
       const v = new Validator("ocpp1.6", testSchemas);
       expect(v.hasSchema("custom/TestAction.req")).toBe(true);
     });
+
+    // B16: such a schema was either refused by ajv ("URI scheme is
+    // malformed.") or registered under an id no lookup uses, so strict mode
+    // let invalid payloads through.
+    it.each([
+      ['"urn:Asasas.req"'],
+      ['urn:Asasas.req"'],
+      ["urn:Asasas.req "],
+      ["URN:Asasas.req"],
+      ["urn:"],
+    ])("throws for $id %s, which mentions urn: but names no action", (id) => {
+      expect(() =>
+        createValidator("asasas", [{ $id: id, type: "object" }]),
+      ).toThrow(TypeError);
+      expect(() =>
+        createValidator("asasas", [{ $id: id, type: "object" }]),
+      ).toThrow(`schema $id ${JSON.stringify(id)} for "asasas" does not name an action`);
+    });
+
+    it("accepts the ids a lookup uses, in every OCPP style", () => {
+      const v = createValidator("asasas", [
+        { $id: "urn:Asasas.req", type: "object" },
+        { $id: "urn:Asasas.conf", type: "object" },
+        { $id: "urn:VendorPingRequest", type: "object" },
+        { $id: "urn:VendorPingResponse", type: "object" },
+        { $id: "urn:VendorNotify", type: "object" },
+        { $id: "urn:Vendor_Ping-2.req", type: "object" },
+      ]);
+      expect(v.hasSchema("urn:Asasas.req")).toBe(true);
+      expect(v.hasSchema("urn:VendorPing.conf")).toBe(true);
+      expect(v.hasSchema("urn:VendorNotify")).toBe(true);
+      expect(v.hasSchema("urn:Vendor_Ping-2.req")).toBe(true);
+    });
   });
 
   describe("validate", () => {

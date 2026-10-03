@@ -208,6 +208,8 @@ const client = new OCPPClient({
 });
 ```
 
+Each schema's `$id` names the message it validates: `urn:<Action>.req` and `urn:<Action>.conf` (as in OCPP 1.6 and 2.0.1), `urn:<Action>Request` and `urn:<Action>Response` (as in OCPP 2.1), or `urn:<Message>` for a SEND message. `createValidator` throws a `TypeError` for an `$id` that mentions `urn:` but names no action, such as `'"urn:Heartbeat.req"'` with the quotes inside the string.
+
 `createValidator` keeps the protocol's name in its type, `Validator<"vendor-proto">`, and suggests the declared protocols. `strictModeValidators`, a `strictMode` list and `strictModeMethods` take only what the client, server or route is configured with, so a validator for a protocol it does not speak, or an action of another version, is a type error. `strictModeMethods` also takes OCPP 2.1 SEND messages and `unchecked()` names; `reconfigure()` takes any declared action there.
 
 > **Download Template:** You can download a starter template for your custom validator array here: <a href="/schema-example.json" download>schema-example.json</a>.
