@@ -74,7 +74,7 @@ client.handle("BootNotification", () => ({
 }));
 ```
 
-A key the schema does not define is an error at any depth, also when it comes from a variable or an async handler. The message names the keys, on the action name: `"BootNotification" & { "Error: keys not defined by the OCPP schema": "statusInfo" }`. Objects the schema leaves open take any JSON: in OCPP 2.0.1 and 2.1 that is `customData`, for vendor data, and `DataTransfer`'s `data`. On a client of several versions, a key is accepted if the version it fits defines it. Regenerating the types for new schemas updates the check.
+A key the schema does not define is an error at any depth, also when it comes from a variable, an async handler or one branch of a returned union. The message names the keys, on the action name: `"BootNotification" & { "Error: keys not defined by the OCPP schema": "statusInfo" }`. Objects the schema leaves open take any JSON: in OCPP 2.0.1 and 2.1 that is `customData`, for vendor data, and `DataTransfer`'s `data`. On a client of several versions, a key is accepted if the version it fits defines it. Regenerating the types for new schemas updates the check.
 
 ### Actions the types do not know: `unchecked()`
 

@@ -1906,11 +1906,19 @@ type ExtraPaths<Shape, T, Prefix extends string = ""> = T extends unknown
  * declares it, so regenerating the types for new schemas updates the check;
  * an object the schema leaves open (OCPP 2.x's `CustomDataType`) takes any key.
  */
-export type ExactKeys<Shape, T> = [Shape] extends [T]
-  ? [T] extends [Shape]
-    ? unknown
-    : ExactKeysOf<Shape, T>
-  : ExactKeysOf<Shape, T>;
+export type ExactKeys<Shape, T> =
+  true extends IsIdentical<Shape, T> ? unknown : ExactKeysOf<Shape, T>;
+
+/**
+ * True when X and Y are the same type. Assignable both ways is not enough to
+ * skip the check: a type with an optional key Shape lacks is assignable both
+ * ways, and so is a union whose shorter member TypeScript gave that key as
+ * `?: undefined`.
+ */
+type IsIdentical<X, Y> =
+  (<G>() => G extends X ? 1 : 2) extends <G>() => G extends Y ? 1 : 2
+    ? true
+    : false;
 
 /** {@link ExactKeys} once T is known not to be Shape itself. */
 type ExactKeysOf<Shape, T> = [ExtraPaths<Shape, T>] extends [never]
@@ -1931,30 +1939,45 @@ type IsUnion<T, U = T> = T extends unknown
 
 /**
  * The action name a typed method takes: M, plus the {@link ExactKeys} check of
- * the payload T (and U, a handler's awaited return) once M is a single action.
- * M is still a union only when the name given is not an action at all; that
- * call fails anyway, and checking every action's payload would only exceed
- * the compiler's instantiation limit.
+ * the payload T once M is a single action. M is still a union only when the
+ * name given is not an action at all; that call fails anyway, and checking
+ * every action's payload would only exceed the compiler's instantiation limit.
  */
-export type CheckedAction<M, Shape, T, U = never> = M &
-  (true extends IsUnion<M>
-    ? unknown
-    : ExactKeys<Shape, T> &
-        ([U] extends [never] ? unknown : ExactKeys<Shape, U>));
+export type CheckedAction<M, Shape, T> = M &
+  (true extends IsUnion<M> ? unknown : ExactKeys<Shape, T>);
 
 /**
- * The action name a typed handler takes: {@link CheckedAction} for the
- * handler's direct return R and its awaited return A. A response type with no
- * required key, such as 1.6's empty StatusNotification response, also fits a
- * promise, so R can be inferred as the promise an async handler returns; R is
- * then checked as Shape itself, and the awaited value is checked as A.
+ * The action name a typed handler takes: {@link CheckedAction} for what the
+ * handler answers, its return R awaited, without NOREPLY.
  */
-export type CheckedHandler<M, Shape, R, A> = CheckedAction<
+export type CheckedHandler<M, Shape, R> = CheckedAction<
   M,
   Shape,
-  [R] extends [PromiseLike<unknown>] ? Shape : R,
-  A
+  Exclude<Awaited<R>, typeof NOREPLY>
 >;
+
+/**
+ * What a typed handler may return: its answer, or NOREPLY, now or as a
+ * promise. The runtime awaits the handler, then answers unless it got NOREPLY.
+ */
+export type HandlerResult<Shape> =
+  | Shape
+  | typeof NOREPLY
+  | Promise<Shape | typeof NOREPLY>;
+
+/**
+ * A typed handler's return type: {@link HandlerResult}, whatever R is. R, the
+ * handler's actual return, is still inferred, as inference reaches a
+ * conditional type's branches, whole (two objects a handler may return stay
+ * one union), and {@link CheckedHandler} checks it. The type the handler is
+ * checked and suggested against does not depend on R: with R in it, an editor
+ * reads that type twice, with R inferred and with R blocked at the cursor,
+ * and TypeScript drops a promise's `then`, `catch` and `finally` from the
+ * first reading only, so they were suggested in an answer with every field.
+ */
+export type HandlerReturn<R, Shape> = [R] extends [unknown]
+  ? HandlerResult<Shape>
+  : R;
 
 // ─── sendBatch ───────────────────────────────────────────────────
 

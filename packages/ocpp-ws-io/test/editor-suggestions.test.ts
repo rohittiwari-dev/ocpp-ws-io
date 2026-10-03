@@ -48,9 +48,33 @@ void v16.sendToClient("CP1", "ChangeAvailability", { /*send-to-client-params*/ }
 void v16.sendToClient("CP1", "ocpp1.6", "ChangeAvailability", { /*version-send-to-client-params*/ });
 void v16.broadcast("ChangeAvailability", { /*broadcast-params*/ });
 
+v16.on("client", (client) => {
+  client.handle("Heartbeat", async () => ({ /*async-handle*/ }));
+  client.handle("ocpp1.6", "Heartbeat", ({ unconfirmed }) => {
+    void unconfirmed;
+    return { /*block-handle*/ };
+  });
+});
+
 const browser = new BrowserOCPPClient({ identity: "CP1", endpoint: "ws://x", protocols: ["ocpp1.6"] });
 void browser.call("BootNotification", { /*browser-call-params*/ });
 browser.handle("Heartbeat", () => ({ /*browser-handle*/ }));
+
+v16.on("client", (client) => {
+  client.handle("Heartbeat", () => ({ currentTime: "", /*full-handle*/ }));
+  client.handle("Heartbeat", async () => ({ currentTime: "", /*full-async-handle*/ }));
+  client.handle("ocpp1.6", "Heartbeat", ({ unconfirmed }) => {
+    void unconfirmed;
+    return { currentTime: "", /*full-block-handle*/ };
+  });
+  client.forProtocol("ocpp1.6")?.handle("Heartbeat", async () => ({ currentTime: "", /*full-forProtocol-handle*/ }));
+});
+charger.handle("Reset", () => ({ status: "Accepted", /*full-client-handle*/ }));
+charger.handle("Reset", async () => ({ status: "Accepted", /*full-async-client-handle*/ }));
+v16.route("/f/:id").handle("Heartbeat", () => ({ currentTime: "", /*full-router-handle*/ }));
+v16.route("/fa/:id").handle("Heartbeat", async () => ({ currentTime: "", /*full-async-router-handle*/ }));
+browser.handle("Heartbeat", () => ({ currentTime: "", /*full-browser-handle*/ }));
+browser.handle("Heartbeat", async () => ({ currentTime: "", /*full-async-browser-handle*/ }));
 `;
 
 const pkg = join(__dirname, "..");
@@ -118,6 +142,35 @@ describe("editor suggestions", () => {
     ["router-handle", ["currentTime"]],
   ])("suggests the response fields in %s", (marker, expected) => {
     expect(suggestionsAt(marker)).toEqual(expected);
+  });
+
+  // A handler may return a promise, but its answer is never one: the
+  // promise's own members must not be suggested as response fields, in an
+  // empty object or in one that has every field.
+  it.each([
+    ["handle"],
+    ["async-handle"],
+    ["block-handle"],
+    ["version-handle"],
+    ["router-handle"],
+    ["browser-handle"],
+    ["forProtocol-handle"],
+    ["full-handle"],
+    ["full-async-handle"],
+    ["full-block-handle"],
+    ["full-forProtocol-handle"],
+    ["full-client-handle"],
+    ["full-async-client-handle"],
+    ["full-router-handle"],
+    ["full-async-router-handle"],
+    ["full-browser-handle"],
+    ["full-async-browser-handle"],
+  ])("does not suggest then, catch or finally in %s", (marker) => {
+    const pos = source.indexOf(`/*${marker}*/`);
+    const all = (service.getCompletionsAtPosition(file, pos, {})?.entries ?? []).map((e) => e.name);
+    expect(all).not.toEqual(expect.arrayContaining(["then"]));
+    expect(all).not.toEqual(expect.arrayContaining(["catch"]));
+    expect(all).not.toEqual(expect.arrayContaining(["finally"]));
   });
 
   it("suggests the fields of every configured version on a mixed server", () => {

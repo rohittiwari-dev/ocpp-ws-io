@@ -13,9 +13,10 @@ import type {
   CheckedHandler,
   CORSOptions,
   ConnectionMiddleware,
+  HandlerResult,
+  HandlerReturn,
   JsonObject,
   KnownProtocol,
-  NOREPLY,
   ResponseOf,
   RouterConfig,
   RouterHandlerContext,
@@ -214,13 +215,12 @@ export class OCPPRouter<
    */
   handle<
     M extends AllMethodNames<KnownProtocol<P>>,
-    R extends ResponseOf<KnownProtocol<P>, M>,
-    A extends ResponseOf<KnownProtocol<P>, M> = ResponseOf<KnownProtocol<P>, M>,
+    R extends HandlerResult<ResponseOf<KnownProtocol<P>, M>>,
   >(
-    method: CheckedHandler<M, ResponseOf<KnownProtocol<P>, M>, R, A>,
+    method: CheckedHandler<M, ResponseOf<KnownProtocol<P>, M>, R>,
     handler: (
       context: RouterHandlerContext<OCPPRequestType<KnownProtocol<P>, M>, P>,
-    ) => R | Promise<A | ResponseOf<KnownProtocol<P>, M>> | typeof NOREPLY,
+    ) => HandlerReturn<R, ResponseOf<KnownProtocol<P>, M>>,
   ): this;
 
   /**
@@ -245,14 +245,13 @@ export class OCPPRouter<
   handle<
     V extends KnownProtocol<P>,
     M extends AllMethodNames<V>,
-    R extends ResponseOf<V, M>,
-    A extends ResponseOf<V, M> = ResponseOf<V, M>,
+    R extends HandlerResult<ResponseOf<V, M>>,
   >(
     version: V,
-    method: CheckedHandler<M, ResponseOf<V, M>, R, A>,
+    method: CheckedHandler<M, ResponseOf<V, M>, R>,
     handler: (
       context: RouterHandlerContext<OCPPRequestType<V, M>, P>,
-    ) => R | Promise<A | ResponseOf<V, M>> | typeof NOREPLY,
+    ) => HandlerReturn<R, ResponseOf<V, M>>,
   ): this;
 
   /**

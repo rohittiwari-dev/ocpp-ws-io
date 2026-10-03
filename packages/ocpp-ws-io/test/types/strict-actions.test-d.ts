@@ -41,6 +41,8 @@ export async function strictActions() {
   expectTypeOf(hb.currentTime).toEqualTypeOf<string>();
   c16.handle("Heartbeat", () => ({ currentTime: "" }));
   c16.handle("ocpp1.6", "Heartbeat", () => NOREPLY);
+  // An async handler may answer or not: the runtime awaits it, then checks.
+  c16.handle("Heartbeat", async () => (Math.random() > 0.5 ? { currentTime: "" } : NOREPLY));
   await c16.call("Heartbeat", {}, { noReply: true });
 
   // removeHandler names a known action, or an unchecked one.
@@ -194,6 +196,7 @@ export async function exactKeys() {
   await b16.call("BootNotification", req);
   // NOREPLY is a typed answer on the browser client too (B7).
   b16.handle("Heartbeat", () => NOREPLY);
+  b16.handle("Heartbeat", async () => (Math.random() > 0.5 ? { currentTime: "" } : NOREPLY));
 }
 
 export function emptyResponses() {
@@ -233,4 +236,18 @@ export function normalizedUnions() {
       ? { currentTime: "", interval: 300, status: "Pending" as const }
       : { currentTime: "", interval: 300, status: "Accepted" as const, bogus: 1 },
   );
+
+  // The shorter branch gets `bogus?: undefined`, so the response type fits the
+  // union both ways; each branch is still checked.
+  const c16 = new OCPPClient({ identity: "CP1", endpoint, protocols: ["ocpp1.6"] });
+  // @ts-expect-error a key with a value is still extra
+  c16.handle("Heartbeat", () => (pending ? { currentTime: "" } : { currentTime: "", bogus: 1 }));
+  // An optional key the schema does not define is extra too.
+  const optionalExtra: { currentTime: string; bogus?: number } = { currentTime: "" };
+  // @ts-expect-error bogus is not a 1.6 Heartbeat response key
+  c16.handle("Heartbeat", () => optionalExtra);
+  // @ts-expect-error in an async handler too
+  c16.handle("Heartbeat", async () => (pending ? { currentTime: "" } : { currentTime: "", bogus: 1 }));
+  // @ts-expect-error and in the promise of a handler that answers now or later
+  c16.handle("Heartbeat", () => (pending ? { currentTime: "" } : Promise.resolve({ currentTime: "", bogus: 1 })));
 }
