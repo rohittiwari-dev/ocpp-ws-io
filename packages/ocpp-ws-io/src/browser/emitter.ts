@@ -6,8 +6,11 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Listener = (...args: any[]) => void;
 
+/** A listener as stored: a once() wrapper keeps the listener it wraps, for off(). */
+type StoredListener = Listener & { __wrapped?: Listener };
+
 export class EventEmitter {
-  private _listeners = new Map<string, Listener[]>();
+  private _listeners = new Map<string, StoredListener[]>();
 
   on(event: string, listener: Listener): this {
     const arr = this._listeners.get(event);
@@ -20,12 +23,11 @@ export class EventEmitter {
   }
 
   once(event: string, listener: Listener): this {
-    const wrapper: Listener = (...args) => {
+    const wrapper: StoredListener = (...args) => {
       this.off(event, wrapper);
       listener(...args);
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (wrapper as any).__wrapped = listener;
+    wrapper.__wrapped = listener;
     return this.on(event, wrapper);
   }
 
@@ -33,8 +35,7 @@ export class EventEmitter {
     const arr = this._listeners.get(event);
     if (!arr) return this;
     const idx = arr.findIndex(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (fn) => fn === listener || (fn as any).__wrapped === listener,
+      (fn) => fn === listener || fn.__wrapped === listener,
     );
     if (idx !== -1) arr.splice(idx, 1);
     if (arr.length === 0) this._listeners.delete(event);

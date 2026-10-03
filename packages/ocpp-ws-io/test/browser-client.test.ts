@@ -439,6 +439,28 @@ describe("BrowserOCPPClient", () => {
       });
     });
 
+    it("sends a version-named unchecked call without params as that action", async () => {
+      const received: { method: string; params: unknown }[] = [];
+      server.on("client", (serverClient) => {
+        serverClient.handle((method, { params }) => {
+          received.push({ method, params });
+          return { pong: true };
+        });
+      });
+
+      client = new BrowserOCPPClient({
+        identity: "CS001",
+        endpoint: `ws://localhost:${port}`,
+        protocols: ["ocpp1.6"],
+        reconnect: false,
+      });
+
+      await client.connect();
+      const result = await client.call("ocpp1.6", unchecked("VendorPing"));
+      expect(result).toEqual({ pong: true });
+      expect(received).toEqual([{ method: "VendorPing", params: {} }]);
+    });
+
     it("should reject calls when not connected", async () => {
       client = new BrowserOCPPClient({
         identity: "CS001",
@@ -1003,7 +1025,55 @@ describe("BrowserOCPPClient", () => {
         (c) => c[0].type === "incoming_error",
       )?.[0];
       expect(errCtx).toBeDefined();
-      expect((errCtx as any).error.rpcErrorCode).toBe("NotImplemented");
+      // The CALLERROR frame, as the type and the Node client give it.
+      expect(errCtx.error).toEqual([
+        MessageType.CALLERROR,
+        errCtx.messageId,
+        "NotImplemented",
+        expect.any(String),
+        expect.any(Object),
+      ]);
+    });
+
+    it("rejects with the error an incoming_error middleware leaves", async () => {
+      server.on("client", () => {
+        // No handler -> returns NotImplemented CallError
+      });
+
+      client = new BrowserOCPPClient({
+        identity: "CS001",
+        endpoint: `ws://localhost:${port}`,
+        protocols: ["ocpp1.6"],
+        reconnect: false,
+      });
+
+      client.use(async (ctx, next) => {
+        if (ctx.type === "incoming_error") {
+          ctx.error = [
+            MessageType.CALLERROR,
+            ctx.messageId,
+            "SecurityError",
+            "rewritten",
+            {},
+          ];
+        }
+        return next();
+      });
+      const callErrors: unknown[] = [];
+      client.on("callError", (frame) => callErrors.push(frame));
+
+      await client.connect();
+
+      await expect(
+        client.call(unchecked("UnknownAction"), {}),
+      ).rejects.toMatchObject({
+        name: "RPCSecurityError",
+        rpcErrorCode: "SecurityError",
+        message: "rewritten",
+      });
+      expect(callErrors).toEqual([
+        [MessageType.CALLERROR, expect.any(String), "SecurityError", "rewritten", {}],
+      ]);
     });
   });
 

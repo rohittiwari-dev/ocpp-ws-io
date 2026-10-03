@@ -1,7 +1,9 @@
 import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { DiscoveryService, MetadataScanner } from "@nestjs/core";
 import type { InstanceWrapper } from "@nestjs/core/injector/instance-wrapper.js";
+import type { MiddlewareFunction } from "../../middleware.js";
 import type { OCPPServer } from "../../server.js";
+import type { MiddlewareContext } from "../../types.js";
 import {
   OCPP_AUTH_METADATA,
   OCPP_CONNECTION_MIDDLEWARE_METADATA,
@@ -47,7 +49,10 @@ export class OcppExplorer implements OnModuleInit {
         metatype,
       );
       const corsOptions = Reflect.getMetadata(OCPP_CORS_METADATA, metatype);
-      const rpcMiddlewares = Reflect.getMetadata(
+      // Set by @UseOcppRpcMiddleware().
+      const rpcMiddlewares:
+        | MiddlewareFunction<MiddlewareContext>[]
+        | undefined = Reflect.getMetadata(
         OCPP_RPC_MIDDLEWARE_METADATA,
         metatype,
       );
@@ -84,7 +89,7 @@ export class OcppExplorer implements OnModuleInit {
       ) {
         router.on("client", (client) => {
           if (rpcMiddlewares?.length) {
-            for (const mw of rpcMiddlewares as any[]) {
+            for (const mw of rpcMiddlewares) {
               client.use(mw);
             }
           }
@@ -92,7 +97,7 @@ export class OcppExplorer implements OnModuleInit {
             instance.onOcppClientConnected(client);
           }
           if (hasDisconnectedHook) {
-            client.on("close", (args: any) => {
+            client.on("close", (args) => {
               instance.onOcppClientDisconnected(
                 client,
                 args?.code ?? 1000,

@@ -12,6 +12,7 @@ import { assertUniqueProtocols, supportsSend } from "../protocol-list.js";
 import type {
   CheckedAction,
   CheckedHandler,
+  HandleArgs,
   HandlerResult,
   HandlerReturn,
   JsonObject,
@@ -492,10 +493,9 @@ export class BrowserOCPPClient<
   /** Register a wildcard handler for all unhandled methods. */
   handle(handler: WildcardHandler): void;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  handle(...args: any[]): void {
+  handle(...args: HandleArgs): void {
     if (args.length === 1 && typeof args[0] === "function") {
-      this._wildcardHandler = args[0] as WildcardHandler;
+      this._wildcardHandler = args[0];
     } else if (
       args.length === 2 &&
       typeof args[0] === "string" &&
@@ -657,12 +657,10 @@ export class BrowserOCPPClient<
     let params: unknown;
     let options: CallOptions | NoReplyCallOptions;
 
-    if (
-      args.length >= 3 &&
-      typeof args[0] === "string" &&
-      typeof args[1] === "string"
-    ) {
-      // call(version, method, params, options?)
+    // A version-named call has its action, a string, where the other form has
+    // params (an object), also when it has no params.
+    if (typeof args[0] === "string" && typeof args[1] === "string") {
+      // call(version, method, params?, options?)
       method = args[1] as string;
       params = args[2] ?? {};
       options = (args[3] as CallOptions | NoReplyCallOptions) ?? {};
@@ -1355,7 +1353,7 @@ export class BrowserOCPPClient<
   }
 
   private async _handleCallError(message: OCPPCallError): Promise<void> {
-    const [, msgId, errorCode, errorMessage, errorDetails] = message;
+    const [, msgId] = message;
 
     if (!this._pendingCalls.has(msgId)) {
       if (this._takeNoReplyAnswer(msgId)) return;
@@ -1367,13 +1365,13 @@ export class BrowserOCPPClient<
 
     const pending = this._pendingCalls.get(msgId)!;
 
-    const error = createRPCError(errorCode, errorMessage, errorDetails);
-
+    // The frame, as the Node client gives it: middleware sees and may change
+    // the CALLERROR, and the call fails with what it leaves.
     const ctx: MiddlewareContext = {
       type: "incoming_error",
       messageId: msgId,
       method: pending.method,
-      error: error as unknown as OCPPCallError, // Map to types.ts expected `error` shape which takes OCPPCallError specifically here, though we pass it via RPCError
+      error: message,
     };
 
     const chain = this._middleware.execute(ctx, async (c) => {
@@ -1381,23 +1379,14 @@ export class BrowserOCPPClient<
         MiddlewareContext,
         { type: "incoming_error" }
       >;
+      this.emit("callError", ctxvals.error);
 
-      // Cast back to any to extract dynamic properties cleanly
-      const resolvedRpcErr = ctxvals.error as unknown as any;
-
-      const modifiedMessage: OCPPCallError = [
-        MessageType.CALLERROR,
-        msgId,
-        resolvedRpcErr.rpcErrorCode,
-        resolvedRpcErr.message,
-        resolvedRpcErr.rpcErrorDetails ?? {},
-      ];
-      this.emit("callError", modifiedMessage);
+      const [, , code, errorMessage, details] = ctxvals.error;
 
       clearTimeout(pending.timeoutHandle);
       pending.removeAbortListener?.();
       this._pendingCalls.delete(msgId);
-      pending.reject(resolvedRpcErr);
+      pending.reject(createRPCError(code, errorMessage, details));
     });
     try {
       await chain;

@@ -13,8 +13,11 @@ import type {
   CheckedHandler,
   CORSOptions,
   ConnectionMiddleware,
+  HandleArgs,
+  HandlerContext,
   HandlerResult,
   HandlerReturn,
+  HandlesByArgs,
   JsonObject,
   KnownProtocol,
   ResponseOf,
@@ -86,6 +89,78 @@ export async function executeMiddlewareChain(
 export interface CompiledRegexPattern {
   regex: RegExp;
   paramNames: string[];
+}
+
+/**
+ * A route's handle() arguments: its handlers' contexts have the connection.
+ * An action's handler takes `never` params, as in HandleArgs.
+ */
+type RouteHandleArgs<P extends AnyOCPPProtocol> = HandleArgs<
+  RouterWildcardHandler<P>,
+  (context: RouterHandlerContext<never, P>) => unknown
+>;
+
+/** Gives a handler's context the connection as `ctx.client`. */
+function attachClient<T, C>(
+  context: HandlerContext<T>,
+  client: C,
+): asserts context is HandlerContext<T> & { client: C } {
+  if (context && typeof context === "object") {
+    Object.defineProperty(context, "client", {
+      value: client,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+}
+
+/**
+ * A route's handle() arguments as a connection takes them: each handler is
+ * wrapped to get the connection as `ctx.client`. Anything else, which only
+ * untyped code can pass, goes on unchanged for the connection's handle() to
+ * refuse.
+ */
+function forConnection<P extends AnyOCPPProtocol>(
+  args: RouteHandleArgs<P>,
+  client: OCPPServerClient<P>,
+): HandleArgs {
+  if (args.length === 1) {
+    const [handler] = args;
+    return [
+      typeof handler === "function"
+        ? (method, context) => {
+            attachClient(context, client);
+            return handler(method, context);
+          }
+        : handler,
+    ];
+  }
+  if (args.length === 2) {
+    const [method, handler] = args;
+    return [
+      method,
+      typeof handler === "function"
+        ? (context) => {
+            attachClient(context, client);
+            return handler(context);
+          }
+        : handler,
+    ];
+  }
+  if (args.length === 3) {
+    const [version, method, handler] = args;
+    return [
+      version,
+      method,
+      typeof handler === "function"
+        ? (context) => {
+            attachClient(context, client);
+            return handler(context);
+          }
+        : handler,
+    ];
+  }
+  return args;
 }
 
 /**
@@ -296,33 +371,11 @@ export class OCPPRouter<
    *
    * @throws {Error} AT RUNTIME when a client connects, if a wildcard handler is already registered for that client.
    */
-  handle(handler: RouterWildcardHandler): this;
+  handle(handler: RouterWildcardHandler<P>): this;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  handle(...args: any[]): this {
+  handle(...args: RouteHandleArgs<P>): this {
     this.on("client", (client) => {
-      const originalHandler = args[args.length - 1];
-      const wrappedArgs = [...args];
-
-      if (typeof originalHandler === "function") {
-        wrappedArgs[wrappedArgs.length - 1] = (...handlerArgs: any[]) => {
-          const contextIndex = handlerArgs.length - 1;
-          const context = handlerArgs[contextIndex];
-
-          if (context && typeof context === "object") {
-            Object.defineProperty(context, "client", {
-              value: client,
-              enumerable: true,
-              configurable: true,
-            });
-          }
-
-          return originalHandler(...handlerArgs);
-        };
-      }
-
-      // @ts-expect-error - forward arguments to client
-      client.handle(...wrappedArgs);
+      (client as HandlesByArgs).handle(...forConnection(args, client));
     });
     return this;
   }

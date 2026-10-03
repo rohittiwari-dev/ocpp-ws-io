@@ -9,12 +9,16 @@ import {
   type ServerOptions as HttpsServerOptions,
 } from "node:https";
 import type { Duplex } from "node:stream";
-import type { SecureContextOptions, TLSSocket } from "node:tls";
+import type {
+  SecureContextOptions,
+  TLSSocket,
+  Server as TlsServer,
+} from "node:tls";
 import { WebSocketServer, type ServerOptions as WsLibServerOptions } from "ws";
 import { AdaptiveLimiter } from "./adaptive-limiter.js";
 import { checkCORS } from "./cors.js";
 import { EventEmitterBase } from "./emitter-base.js";
-import { HandshakeRejection, TimeoutError } from "./errors.js";
+import { HandshakeRejection, type RPCError, TimeoutError } from "./errors.js";
 import { initLogger } from "./init-logger.js";
 import { LRUMap } from "./lru-map.js";
 import { assertUniqueProtocols } from "./protocol-list.js";
@@ -104,6 +108,52 @@ const WSS_OPTION_HINT: Record<ManagedWsServerOption, string> = {
 const MANAGED_WSS_OPTIONS = Object.keys(
   WSS_OPTION_HINT,
 ) as ManagedWsServerOption[];
+
+/** sendToClient's arguments: an action, or a version and then an action. */
+type PlainSendArgs = [
+  identity: string,
+  method: string,
+  params?: object,
+  options?: CallOptions,
+];
+type VersionNamedSendArgs = [
+  identity: string,
+  version: string,
+  method: string,
+  params?: object,
+  options?: CallOptions,
+];
+type SendToClientArgs = PlainSendArgs | VersionNamedSendArgs;
+
+/** A version-named call has its action, a string, where the other has params. */
+function isVersionNamed(args: SendToClientArgs): args is VersionNamedSendArgs {
+  return typeof args[2] === "string";
+}
+
+/** The parts of sendToClient's arguments, whichever form they take. */
+function parseSendToClientArgs(args: SendToClientArgs): {
+  identity: string;
+  version?: string;
+  method: string;
+  params?: object;
+  options?: CallOptions;
+} {
+  if (isVersionNamed(args)) {
+    const [identity, version, method, params, options] = args;
+    return { identity, version, method, params, options };
+  }
+  const [identity, method, params, options] = args;
+  return { identity, method, params, options };
+}
+
+/** A listening server whose certificate can be replaced in place (HTTPS). */
+function canReloadSecureContext(
+  srv: Server,
+): srv is Server & Pick<TlsServer, "setSecureContext"> {
+  return (
+    "setSecureContext" in srv && typeof srv.setSecureContext === "function"
+  );
+}
 
 /**
  * OCPPServer — A typed WebSocket RPC server for OCPP communication.
@@ -331,7 +381,7 @@ export class OCPPServer<
           memPercent: number;
         }) => {
           this._logger?.info?.("Adaptive rate limit adjusted", event);
-          this.emit("rateLimit:adapted" as any, event);
+          this.emit("rateLimit:adapted", event);
         },
       );
       this._adaptiveLimiter.start();
@@ -1408,11 +1458,8 @@ export class OCPPServer<
 
     let updated = 0;
     for (const srv of this._httpServers) {
-      if (
-        "setSecureContext" in srv &&
-        typeof (srv as any).setSecureContext === "function"
-      ) {
-        (srv as any).setSecureContext(httpsOptions);
+      if (canReloadSecureContext(srv)) {
+        srv.setSecureContext(httpsOptions);
         updated++;
       }
     }
@@ -2959,7 +3006,7 @@ export class OCPPServer<
             memPercent: number;
           }) => {
             this._logger?.info?.("Adaptive rate limit adjusted", event);
-            this.emit("rateLimit:adapted" as any, event);
+            this.emit("rateLimit:adapted", event);
           },
         );
         this._adaptiveLimiter.start();
@@ -3075,33 +3122,14 @@ export class OCPPServer<
     options?: CallOptions,
   ): Promise<TResult | undefined>;
 
-  async sendToClient(...args: any[]): Promise<any> {
-    let identity: string;
-    let version: string | undefined;
-    let method: string;
-    let params: any;
-    let options: CallOptions | undefined;
+  async sendToClient(...args: SendToClientArgs): Promise<unknown> {
+    return await this._sendToClient(args);
+  }
 
-    // Parse overloads
-    if (
-      args.length >= 4 &&
-      typeof args[0] === "string" &&
-      typeof args[1] === "string" &&
-      typeof args[2] === "string"
-    ) {
-      // (identity, version, method, params, options)
-      identity = args[0];
-      version = args[1];
-      method = args[2];
-      params = args[3];
-      options = args[4];
-    } else {
-      // (identity, method, params, options)
-      identity = args[0];
-      method = args[1];
-      params = args[2];
-      options = args[3];
-    }
+  /** sendToClient, for its arguments in either form. */
+  private async _sendToClient(args: SendToClientArgs): Promise<unknown> {
+    const { identity, version, method, params, options } =
+      parseSendToClientArgs(args);
 
     // 1. Check local (O(1) identity lookup)
     const localClient = this._clientsByIdentity.get(identity);
@@ -3254,10 +3282,9 @@ export class OCPPServer<
     options?: CallOptions,
   ): Promise<TResult | undefined>;
 
-  async safeSendToClient(...args: any[]): Promise<any> {
+  async safeSendToClient(...args: SendToClientArgs): Promise<unknown> {
     try {
-      // @ts-expect-error
-      return await this.sendToClient(...args);
+      return await this._sendToClient(args);
     } catch (error) {
       if (
         this._logger &&
@@ -3266,14 +3293,7 @@ export class OCPPServer<
       ) {
         this._logger.warn("SafeSendToClient failed", {
           identity: args[0],
-          method:
-            args.length >= 4 &&
-            typeof args[1] === "string" &&
-            typeof args[2] === "string"
-              ? args[2] // versioned: id, ver, method, params, options
-              : args.length >= 3 && typeof args[1] === "string"
-                ? args[1] // global: id, method, params, options
-                : "unknown",
+          method: parseSendToClientArgs(args).method,
           error,
         });
       }
@@ -3869,12 +3889,13 @@ export class OCPPServer<
             this._publishRemoteResult(payload, {
               ok: false,
               error: {
-                code: (err as any)?.rpcErrorCode ?? "GenericError",
+                code:
+                  (err as Partial<RPCError>)?.rpcErrorCode ?? "GenericError",
                 // Carried so the origin can rebuild the same error class it
                 // would have thrown for a local call.
                 name: (err as Error)?.name,
                 message: (err as Error)?.message ?? "",
-                details: (err as any)?.details ?? {},
+                details: (err as Partial<RPCError>)?.details ?? {},
               },
             });
             if ((err as Error).name !== "TimeoutError") {
@@ -4037,7 +4058,7 @@ export class OCPPServer<
     options?: CallOptions,
   ): Promise<void> {
     const localIdentities = new Set<string>();
-    const localPromises: Promise<any>[] = [];
+    const localPromises: Promise<JsonObject | undefined>[] = [];
 
     // 1. Send to local clients immediately (O(1) lookup via _clientsByIdentity)
     for (const identity of identities) {
@@ -4045,7 +4066,9 @@ export class OCPPServer<
       if (client) {
         localIdentities.add(identity);
         localPromises.push(
-          client.call(unchecked(method), params, options).catch(() => {}),
+          client
+            .call(unchecked(method), params, options)
+            .catch(() => undefined),
         );
       }
     }

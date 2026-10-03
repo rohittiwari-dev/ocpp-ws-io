@@ -77,6 +77,13 @@ export function routesNarrowTheServer() {
     expectTypeOf(params.chargePointVendor).toEqualTypeOf<string>();
     return { currentTime: "", interval: 300, status: "Accepted" as const };
   });
+  // A wildcard handler's connection is the route's too (B23).
+  v16.handle((_method, ctx) => {
+    expectTypeOf(ctx.client).toEqualTypeOf<OCPPServerClient<"ocpp1.6">>();
+    // @ts-expect-error 2.0.1 is not one of this route's protocols
+    void ctx.client.call("ocpp2.0.1", "Heartbeat", {});
+    return {};
+  });
   // @ts-expect-error a route offers only protocols its server has
   csms.route("/v21/:id").config({ protocols: ["ocpp2.1"] });
 }
@@ -133,6 +140,12 @@ export function typedFitsThePlainTypeAsIn2x() {
     return { currentTime: "", interval: 300, status: "Accepted" as const };
   };
   csms.route("/boot/:id").handle("BootNotification", boot);
+  // And a wildcard handler written on its own (B23 types the route's own).
+  const wildcard = (_method: string, ctx: RouterHandlerContext) => {
+    void ctx.client.identity;
+    return {};
+  };
+  csms.route("/any/:id").handle(wildcard);
   // Not the reverse: a plain server may offer any protocol.
   const plain: OCPPServer = new OCPPServer();
   // @ts-expect-error a plain server is not a 1.6 server

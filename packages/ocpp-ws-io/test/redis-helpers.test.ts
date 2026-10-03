@@ -3,7 +3,14 @@ import {
   IoRedisDriver,
   NodeRedisDriver,
   createDriver,
+  type NodeRedisClient,
+  type RedisLikeClient,
 } from "../src/adapters/redis/helpers";
+
+/** A client double with only the commands a test touches. */
+function mockClient<T>(commands: Partial<T>): T {
+  return commands as T;
+}
 
 describe("IoRedisDriver", () => {
   let pub: any;
@@ -385,7 +392,11 @@ describe("NodeRedisDriver", () => {
           { name: "s", messages: [{ id: "1-0", message: { k: "v" } }] },
         ]),
     };
-    const driverWithBlocking = new NodeRedisDriver(pub, sub, blockingClient);
+    const driverWithBlocking = new NodeRedisDriver(
+      pub,
+      sub,
+      mockClient<NodeRedisClient>(blockingClient),
+    );
     await driverWithBlocking.xread([{ key: "s", id: "0" }], 5, 1000);
     expect(blockingClient.xRead).toHaveBeenCalled();
     expect(pub.xRead).not.toHaveBeenCalled();
@@ -450,13 +461,16 @@ describe("NodeRedisDriver", () => {
 
 describe("createDriver", () => {
   test("detects NodeRedis via isOpen", () => {
-    const mockNodeRedis = { isOpen: true, subscribe: () => {} };
+    const mockNodeRedis = mockClient<RedisLikeClient>({
+      isOpen: true,
+      subscribe: async () => undefined,
+    });
     const d = createDriver(mockNodeRedis, mockNodeRedis);
     expect(d).toBeInstanceOf(NodeRedisDriver);
   });
 
   test("defaults to IoRedisDriver", () => {
-    const mockIoRedis = { on: () => {} };
+    const mockIoRedis = mockClient<RedisLikeClient>({ on: () => {} });
     const d = createDriver(mockIoRedis, mockIoRedis);
     expect(d).toBeInstanceOf(IoRedisDriver);
   });

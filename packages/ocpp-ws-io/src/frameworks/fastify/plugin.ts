@@ -29,8 +29,9 @@ const ocppPlugin: FastifyPluginAsync<OcppFastifyPluginOptions> = async (
 
   const context = createOcppFastifyContext(ocppServer);
 
-  // Decorate the request
-  fastify.decorateRequest("ocpp", null as any);
+  // Decorate the request: null until the hook below sets it (Fastify's
+  // overload for a decoration declared without a value).
+  fastify.decorateRequest("ocpp", null, []);
 
   // Inject context on every request
   fastify.addHook("onRequest", async (request: FastifyRequest) => {

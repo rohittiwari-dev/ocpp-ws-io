@@ -910,6 +910,57 @@ describe("OCPPClient - Version-Aware Call", () => {
     await srv.close({ force: true });
   });
 
+  it("sends a version-named unchecked call without params as that action", async () => {
+    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
+    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
+    const received: { method: string; params: unknown }[] = [];
+    srv.on("client", (sc) => {
+      sc.handle((method, { params }) => {
+        received.push({ method, params });
+        return { pong: true };
+      });
+    });
+    const httpServer = await srv.listen(0);
+    const p = getPort(httpServer);
+
+    const cl = new OCPPClient({
+      identity: "CS_VCALL_UNCHECKED",
+      endpoint: `ws://localhost:${p}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+    const warn = vi.fn();
+    // @ts-ignore - reaching into private
+    cl._logger = { warn, debug() {}, info() {}, error() {} };
+
+    await cl.connect();
+    try {
+      expect(await cl.call("ocpp1.6", unchecked("VendorPing"))).toEqual({
+        pong: true,
+      });
+      expect(await cl.safeCall("ocpp1.6", unchecked("VendorPing"))).toEqual({
+        pong: true,
+      });
+      expect(received).toEqual([
+        { method: "VendorPing", params: {} },
+        { method: "VendorPing", params: {} },
+      ]);
+
+      // A failed one is logged under its action, not its version.
+      await cl.close({ force: true });
+      expect(
+        await cl.safeCall("ocpp1.6", unchecked("VendorPing")),
+      ).toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(
+        "SafeCall failed",
+        expect.objectContaining({ method: "VendorPing" }),
+      );
+    } finally {
+      await cl.close({ force: true }).catch(() => {});
+      await srv.close({ force: true });
+    }
+  });
+
   it("should support version-aware call from server to client", async () => {
     const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
     srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));

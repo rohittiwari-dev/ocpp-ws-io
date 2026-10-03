@@ -33,6 +33,7 @@ import {
   type ClientOptions,
   type CloseOptions,
   ConnectionState,
+  type HandleArgs,
   type HandlerContext,
   type HandlerResult,
   type HandlerReturn,
@@ -177,6 +178,19 @@ interface PendingCall {
   removeAbortListener?: () => void;
   method: string;
   sentAt: number;
+}
+
+/** safeCall()'s arguments: an action, or a version and then an action. */
+type SafeCallArgs =
+  | [method: string, params?: object, options?: CallOptions]
+  | [version: string, method: string, params?: object, options?: CallOptions];
+
+/**
+ * call() by its implementation's arguments. safeCall() passes its own on
+ * through call(), so a subclass that overrides call() is still used.
+ */
+interface CallsByArgs {
+  call(...args: SafeCallArgs): Promise<unknown>;
 }
 
 /**
@@ -818,14 +832,13 @@ export class OCPPClient<
    */
   handle(handler: WildcardHandler): void;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  handle(...args: any[]): void {
+  handle(...args: HandleArgs): void {
     if (args.length === 1 && typeof args[0] === "function") {
       // Wildcard handler
       if (this._wildcardHandler) {
         throw new Error("Wildcard handler is already registered.");
       }
-      this._wildcardHandler = args[0] as WildcardHandler;
+      this._wildcardHandler = args[0];
     } else if (
       args.length === 2 &&
       typeof args[0] === "string" &&
@@ -1045,12 +1058,10 @@ export class OCPPClient<
     let params: unknown;
     let options: CallOptions | NoReplyCallOptions;
 
-    if (
-      args.length >= 3 &&
-      typeof args[0] === "string" &&
-      typeof args[1] === "string"
-    ) {
-      // call(version, method, params, options?) — version-specific
+    // A version-named call has its action, a string, where the other form has
+    // params (an object), also when it has no params.
+    if (typeof args[0] === "string" && typeof args[1] === "string") {
+      // call(version, method, params?, options?) — version-specific
       // version is type-level only, not sent on the wire
       method = args[1] as string;
       params = args[2] ?? {};
@@ -1313,18 +1324,15 @@ export class OCPPClient<
     options?: CallOptions,
   ): Promise<TResult | undefined>;
 
-  async safeCall(...args: any[]): Promise<any> {
+  async safeCall(...args: SafeCallArgs): Promise<unknown> {
     try {
-      // @ts-expect-error - Spread arguments to the matching call overload
-      return await this.call(...args);
+      return await (this as CallsByArgs).call(...args);
     } catch (error) {
       if ((error as Error).name !== "TimeoutError") {
         // Resolve the method name the same way call() parses its overloads:
-        // (version, method, params, options?) vs (method, params?, options?).
+        // (version, method, params?, options?) vs (method, params?, options?).
         const method =
-          args.length >= 3 &&
-          typeof args[0] === "string" &&
-          typeof args[1] === "string"
+          typeof args[0] === "string" && typeof args[1] === "string"
             ? args[1]
             : args[0];
         const payload = {
@@ -3089,7 +3097,7 @@ export class OCPPClient<
 
     if (
       this._options.strictModeMethods &&
-      !this._options.strictModeMethods.includes(method as any)
+      !(this._options.strictModeMethods as readonly string[]).includes(method)
     ) {
       return; // Skip validation if method is not in the explicit strict list
     }
@@ -3116,7 +3124,7 @@ export class OCPPClient<
 
     if (
       this._options.strictModeMethods &&
-      !this._options.strictModeMethods.includes(method as any)
+      !(this._options.strictModeMethods as readonly string[]).includes(method)
     ) {
       return; // Skip validation if method is not in the explicit strict list
     }

@@ -30,6 +30,140 @@ export interface StreamEntry {
   messages: StreamMessage[];
 }
 
+// ─── Client Commands ────────────────────────────────────────────
+//
+// The commands each driver sends, typed as the clients answer them. Clients
+// arrive as RedisLikeClient (RedisAdapterOptions, createDriver); createDriver
+// tells node-redis from ioredis and hands each driver its own kind.
+
+/** A reply of a Lua script or a pipelined command. */
+export type RedisReply = string | number | null | Buffer | RedisReply[];
+
+/** Event subscription both client libraries share. */
+interface ClientEvents {
+  on(event: "error", listener: (err: Error) => void): unknown;
+  on(event: "connect" | "ready", listener: () => void): unknown;
+  on(
+    event: "message",
+    listener: (channel: string, message: string) => void,
+  ): unknown;
+  removeListener(event: "error", listener: (err: Error) => void): unknown;
+  removeListener(event: "connect" | "ready", listener: () => void): unknown;
+}
+
+/** ioredis XREAD reply: `[[stream, [[id, [field, value, ...]], ...]], ...]`. */
+export type IoRedisStreamReply = [
+  stream: string,
+  messages: [id: string, fields: string[]][],
+][];
+
+/** The ioredis pipeline commands the drivers queue. */
+export interface IoRedisPipeline {
+  set(key: string, value: string, mode: "EX", seconds: number): unknown;
+  xadd(key: string, ...args: string[]): unknown;
+  // ioredis declares each result as unknown
+  exec(): Promise<[error: Error | null, result: unknown][] | null>;
+}
+
+/** The ioredis commands IoRedisDriver and ClusterDriver send (Redis or Cluster). */
+export interface IoRedisClient
+  extends Omit<RedisLikeClient, "on">,
+    ClientEvents {
+  set(key: string, value: string): Promise<unknown>;
+  set(
+    key: string,
+    value: string,
+    mode: "EX",
+    seconds: number,
+  ): Promise<unknown>;
+  get(key: string): Promise<string | null>;
+  mget(...keys: string[]): Promise<(string | null)[]>;
+  del(key: string): Promise<number>;
+  // ioredis declares a script reply as unknown
+  eval(
+    script: string,
+    numKeys: number,
+    ...keysAndArgs: string[]
+  ): Promise<unknown>;
+  xadd(key: string, ...args: string[]): Promise<string | null>;
+  xread(...args: (string | number)[]): Promise<IoRedisStreamReply | null>;
+  xlen(key: string): Promise<number>;
+  expire(key: string, seconds: number): Promise<number>;
+  pipeline(): IoRedisPipeline;
+  quit(): Promise<unknown>;
+}
+
+/** node-redis XREAD reply. */
+export type NodeRedisStreamReply = {
+  name: string;
+  messages: { id: string; message: Record<string, string> }[];
+}[];
+
+/** node-redis stream trimming, as XADD's `TRIM` option. */
+interface NodeRedisTrim {
+  strategy: "MAXLEN";
+  strategyModifier: "~";
+  threshold: number;
+}
+
+/** The node-redis multi commands the driver queues. */
+export interface NodeRedisMulti {
+  set(key: string, value: string, options: { EX: number }): unknown;
+  xAdd(
+    key: string,
+    id: string,
+    message: Record<string, string>,
+    options?: { TRIM?: NodeRedisTrim },
+  ): unknown;
+  exec(): Promise<RedisReply[]>;
+}
+
+/** The node-redis (v4+) commands NodeRedisDriver sends. */
+export interface NodeRedisClient
+  extends Omit<RedisLikeClient, "on">,
+    ClientEvents {
+  subscribe(
+    channel: string,
+    listener: (message: string) => void,
+  ): Promise<unknown>;
+  set(key: string, value: string, options?: { EX: number }): Promise<unknown>;
+  get(key: string): Promise<string | null>;
+  mGet(keys: string[]): Promise<(string | null)[]>;
+  del(key: string): Promise<number>;
+  eval(
+    script: string,
+    options: { keys: string[]; arguments: string[] },
+  ): Promise<RedisReply>;
+  xAdd(
+    key: string,
+    id: string,
+    message: Record<string, string>,
+    options?: { TRIM?: NodeRedisTrim },
+  ): Promise<string>;
+  xRead(
+    streams: { key: string; id: string }[],
+    options?: { COUNT?: number; BLOCK?: number },
+  ): Promise<NodeRedisStreamReply | null>;
+  xLen(key: string): Promise<number>;
+  expire(key: string, seconds: number): Promise<number | boolean>;
+  multi(): NodeRedisMulti;
+  disconnect(): Promise<void>;
+}
+
+/** An ioredis XREAD reply as stream entries. */
+export function fromIoRedisStreams(reply: IoRedisStreamReply): StreamEntry[] {
+  return reply.map(([stream, messages]) => ({
+    stream,
+    messages: messages.map(([id, fields]) => {
+      const data: Record<string, string> = {};
+      for (let i = 0; i < fields.length; i += 2) {
+        data[fields[i]] = fields[i + 1];
+      }
+      return { id, data };
+    }),
+  }));
+}
+
 // ─── Extended Redis Driver ──────────────────────────────────────
 
 export interface RedisPubSubDriver {
@@ -147,9 +281,9 @@ export class IoRedisDriver implements RedisPubSubDriver {
   private _handlers = new Map<string, (msg: string) => void>();
 
   constructor(
-    private pub: any,
-    private sub: any,
-    private blocking?: any,
+    private pub: IoRedisClient,
+    private sub: IoRedisClient,
+    private blocking?: IoRedisClient,
   ) {
     if (this.sub.on) {
       this.sub.on("message", (channel: string, message: string) => {
@@ -273,8 +407,7 @@ export class IoRedisDriver implements RedisPubSubDriver {
     const client = block && this.blocking ? this.blocking : this.pub;
 
     // ioredis returns [[key, [[id, [k,v,k,v]]]]]
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = (await client.xread(...args)) as any;
+    const result = await client.xread(...args);
 
     // Normalise "no data" to null. ioredis can hand back an empty array where
     // node-redis returns nil, and the caller's poll loop treats a truthy result
@@ -282,27 +415,16 @@ export class IoRedisDriver implements RedisPubSubDriver {
     // the loop hot.
     if (!result || result.length === 0) return null;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return result.map(([stream, messages]: any) => ({
-      stream,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      messages: messages.map(([id, fields]: any) => {
-        const data: Record<string, string> = {};
-        for (let i = 0; i < fields.length; i += 2) {
-          data[fields[i]] = fields[i + 1];
-        }
-        return { id, data };
-      }),
-    }));
+    return fromIoRedisStreams(result);
   }
 
   async xlen(stream: string): Promise<number> {
-    return (await this.pub.xlen(stream)) as number;
+    return await this.pub.xlen(stream);
   }
 
   async disconnect(): Promise<void> {
     this._handlers.clear();
-    const close = async (c: any) => {
+    const close = async (c: IoRedisClient | undefined) => {
       if (!c) return;
       if (c.quit) await c.quit();
       else if (c.disconnect) await c.disconnect();
@@ -343,9 +465,9 @@ export class IoRedisDriver implements RedisPubSubDriver {
 
 export class NodeRedisDriver implements RedisPubSubDriver {
   constructor(
-    private pub: any,
-    private sub: any,
-    private blocking?: any,
+    private pub: NodeRedisClient,
+    private sub: NodeRedisClient,
+    private blocking?: NodeRedisClient,
   ) {}
 
   get hasBlockingClient(): boolean {
@@ -405,18 +527,7 @@ export class NodeRedisDriver implements RedisPubSubDriver {
     args: Record<string, string>,
     maxLen?: number,
   ): Promise<string> {
-    const options: any = {};
-    if (maxLen) {
-      options.MKSTREAM = true; // Make sure stream exists
-      // node-redis specific options for MAXLEN
-      // But basic xadd signature is (key, id, message, options?)
-    }
-    // Node Redis v4 xAdd: (key, id, message)
-    // For trimming, it might be in options.
-    // Let's assume standard usage for now.
-    // Actually Node Redis v4: .xAdd(key, id, message, options)
-
-    // Construct message object
+    // Node Redis v4: .xAdd(key, id, message, options); trimming is `TRIM`.
     return await this.pub.xAdd(stream, "*", args, {
       TRIM: maxLen
         ? {
@@ -454,7 +565,7 @@ export class NodeRedisDriver implements RedisPubSubDriver {
     block?: number,
   ): Promise<StreamEntry[] | null> {
     // Node Redis v4 .xRead(streams, options)
-    const options: any = {};
+    const options: { COUNT?: number; BLOCK?: number } = {};
     if (count) options.COUNT = count;
     if (typeof block === "number") options.BLOCK = block;
 
@@ -463,18 +574,15 @@ export class NodeRedisDriver implements RedisPubSubDriver {
       id: s.id,
     }));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const client = block && this.blocking ? this.blocking : this.pub;
-    const result = (await client.xRead(streamsParam, options)) as any;
+    const result = await client.xRead(streamsParam, options);
 
     if (!result || result.length === 0) return null;
 
     // Node Redis v4 returns: { name: string, messages: { id: string, message: Record<string,string> }[] }[]
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return result.map((entry: any) => ({
+    return result.map((entry) => ({
       stream: entry.name,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      messages: entry.messages.map((msg: any) => ({
+      messages: entry.messages.map((msg) => ({
         id: msg.id,
         data: msg.message,
       })),
@@ -482,11 +590,11 @@ export class NodeRedisDriver implements RedisPubSubDriver {
   }
 
   async xlen(stream: string): Promise<number> {
-    return (await this.pub.xLen(stream)) as number;
+    return await this.pub.xLen(stream);
   }
 
   async disconnect(): Promise<void> {
-    const close = async (c: any) => {
+    const close = async (c: NodeRedisClient | undefined) => {
       if (!c) return;
       await c.disconnect();
     };
@@ -521,15 +629,28 @@ export class NodeRedisDriver implements RedisPubSubDriver {
   }
 }
 
+/**
+ * The driver for a pair (or trio) of node-redis or ioredis clients. The
+ * clients are the caller's own instances, taken as RedisLikeClient; their
+ * kind decides which commands the driver sends.
+ */
 export function createDriver(
-  pub: any,
-  sub: any,
-  blocking?: any,
+  pub: RedisLikeClient,
+  sub: RedisLikeClient,
+  blocking?: RedisLikeClient,
 ): RedisPubSubDriver {
   // Simple heuristic: Node Redis v4 clients usually have 'isOpen' boolean
   if (sub.isOpen !== undefined && typeof sub.subscribe === "function") {
-    return new NodeRedisDriver(pub, sub, blocking);
+    return new NodeRedisDriver(
+      pub as NodeRedisClient,
+      sub as NodeRedisClient,
+      blocking as NodeRedisClient | undefined,
+    );
   }
   // Default to IoRedis / Generic
-  return new IoRedisDriver(pub, sub, blocking);
+  return new IoRedisDriver(
+    pub as IoRedisClient,
+    sub as IoRedisClient,
+    blocking as IoRedisClient | undefined,
+  );
 }

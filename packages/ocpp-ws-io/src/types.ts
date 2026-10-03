@@ -339,10 +339,38 @@ export interface RouterHandlerContext<
   client: import("./server-client.js").OCPPServerClient<P>;
 }
 
-export type RouterWildcardHandler = (
-  method: string,
-  context: RouterHandlerContext,
-) => unknown | Promise<unknown>;
+/** A route's wildcard handler: its context has the connection, typed for P. */
+export type RouterWildcardHandler<P extends AnyOCPPProtocol = AnyOCPPProtocol> =
+  (
+    method: string,
+    context: RouterHandlerContext<unknown, P>,
+  ) => unknown | Promise<unknown>;
+
+/**
+ * `handle()`'s arguments as its implementation reads them, whichever overload
+ * was called: a wildcard handler, an action and its handler, or a version, an
+ * action and its handler. The handler types are a client's by default, or a
+ * route's. An action's handler is typed for that action's params, so here
+ * it takes `never`: any of them fits, and none can be called with params
+ * TypeScript has not checked.
+ * @internal
+ */
+export type HandleArgs<
+  TWildcard = WildcardHandler,
+  THandler = CallHandler<never>,
+> =
+  | [handler: TWildcard]
+  | [method: string, handler: THandler]
+  | [version: string, method: string, handler: THandler];
+
+/**
+ * A client's `handle()` by its implementation's arguments, for code that
+ * passes `handle()` arguments on: a route, to each of its connections.
+ * @internal
+ */
+export interface HandlesByArgs {
+  handle(...args: HandleArgs): void;
+}
 
 // ─── Message IDs ─────────────────────────────────────────────────
 
@@ -1525,6 +1553,8 @@ export interface ServerEvents<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
   ];
   listening: [];
   headers: [headers: string[], request: import("node:http").IncomingMessage];
+  /** The adaptive rate limiter changed its multiplier. */
+  "rateLimit:adapted": [import("./adaptive-limiter.js").AdaptedEvent];
 }
 
 /**

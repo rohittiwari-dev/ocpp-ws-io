@@ -1,5 +1,18 @@
 import { createRequire } from "node:module";
-import type { RedisPubSubDriver, StreamEntry } from "./helpers.js";
+import {
+  fromIoRedisStreams,
+  type IoRedisClient,
+  type RedisPubSubDriver,
+  type StreamEntry,
+} from "./helpers.js";
+
+/** The part of the ioredis module ClusterDriver loads at runtime. */
+interface IoRedisModule {
+  Cluster: new (
+    nodes: { host: string; port: number }[],
+    options: Record<string, unknown>,
+  ) => IoRedisClient;
+}
 
 // ─── Redis Cluster Driver ───────────────────────────────────────
 //
@@ -38,13 +51,13 @@ export interface ClusterDriverOptions {
  * ```
  */
 export class ClusterDriver implements RedisPubSubDriver {
-  private _cluster: any;
-  private _subscriber: any;
+  private _cluster: IoRedisClient;
+  private _subscriber: IoRedisClient;
   private _handlers = new Map<string, (msg: string) => void>();
   /** Distinguishes the initial connect from a genuine reconnect. */
   private _hasBeenReady = false;
 
-  private _blocking: any;
+  private _blocking?: IoRedisClient;
 
   /**
    * True once a dedicated connection exists for blocking XREAD.
@@ -63,7 +76,7 @@ export class ClusterDriver implements RedisPubSubDriver {
   constructor(_options: ClusterDriverOptions) {
     // Dynamically require ioredis to avoid bundling it. `__filename` exists
     // in the CJS build natively and via the tsup shim in the ESM build.
-    let IoRedis: any;
+    let IoRedis: IoRedisModule;
     try {
       const dynamicRequire = createRequire(__filename);
       IoRedis = dynamicRequire("ioredis");
@@ -250,23 +263,14 @@ export class ClusterDriver implements RedisPubSubDriver {
       typeof block === "number" && this._blocking
         ? this._blocking
         : this._cluster;
-    const result = (await client.xread(...args)) as any;
+    const result = await client.xread(...args);
     if (!result) return null;
 
-    return result.map(([stream, messages]: any) => ({
-      stream,
-      messages: messages.map(([id, fields]: any) => {
-        const data: Record<string, string> = {};
-        for (let i = 0; i < fields.length; i += 2) {
-          data[fields[i]] = fields[i + 1];
-        }
-        return { id, data };
-      }),
-    }));
+    return fromIoRedisStreams(result);
   }
 
   async xlen(stream: string): Promise<number> {
-    return (await this._cluster.xlen(stream)) as number;
+    return await this._cluster.xlen(stream);
   }
 
   async disconnect(): Promise<void> {

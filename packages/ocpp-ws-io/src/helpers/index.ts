@@ -234,7 +234,7 @@ export function createLoggingMiddleware(
         case "outgoing_call":
           if (exchangeLog && prettify) {
             logger[level]?.(`✅ ${identity}  ←  ${method}  [RES]`, {
-              messageId: (ctx as any).messageId,
+              messageId: ctx.messageId,
               method: ctx.method,
               durationMs,
               payload: result,
@@ -242,7 +242,7 @@ export function createLoggingMiddleware(
             });
           } else {
             logger[level]?.(`CALLRESULT ←`, {
-              messageId: (ctx as any).messageId,
+              messageId: ctx.messageId,
               method: ctx.method,
               durationMs,
               payload: result,
@@ -278,7 +278,7 @@ export function createLoggingMiddleware(
       } else if (ctx.type === "outgoing_call") {
         if (exchangeLog && prettify) {
           logger.warn?.(`🚨 ${identity}  ←  ${method}  [ERR]`, {
-            messageId: (ctx as any).messageId,
+            messageId: ctx.messageId,
             method: ctx.method,
             durationMs,
             error: msg,
@@ -286,7 +286,7 @@ export function createLoggingMiddleware(
           });
         } else {
           logger.warn?.(`CALLERROR ←`, {
-            messageId: (ctx as any).messageId,
+            messageId: ctx.messageId,
             method: ctx.method,
             durationMs,
             error: msg,
