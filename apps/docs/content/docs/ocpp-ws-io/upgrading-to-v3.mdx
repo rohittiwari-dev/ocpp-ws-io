@@ -9,6 +9,7 @@ description: Every breaking change in ocpp-ws-io 3.0.0, who it affects, and how 
 
 - **Node.js 20 or later** (was 18). Node 20 is past its end of life too, so 22 or 24 is the better choice.
 - **Fastify 5.12.5 or later** if you use the Fastify plugin. Fastify 4 is end of life and has an unfixed authentication bypass.
+- **TypeScript 5.4 or later** to type-check against the package's types, which use `NoInfer`. JavaScript projects are not affected.
 
 ## Breaking changes
 
@@ -62,6 +63,7 @@ These change only what compiles; nothing differs at runtime.
 | A payload may not carry a key the OCPP schema does not define, at any depth, also from a variable, an async handler or one branch of a returned union. Objects the schema leaves open (2.x `customData`, `DataTransfer`'s `data`) take any JSON | You send or return extra keys | Remove them, or use `unchecked()` |
 | A type argument on a typed method is the action now: `call<{ status: string }>("BootNotification", ...)` no longer compiles | You passed a response type | Remove it; the response type comes from the action. For an action the types do not know: `call<MyResult>(unchecked("Vendor"), ...)` |
 | A version named with an action the types do not know must be one of the client's protocols: a typo such as `call("ocpp16", ...)` compiled before | You name a version the client is not configured for | Add it to `protocols`, or correct the name |
+| `strictModeValidators`, a `strictMode` list and `strictModeMethods` name only what the server, route or client is configured with: a validator, protocol or action for anything else compiled and did nothing. `createValidator("vendor-proto", schemas)` returns a `Validator<"vendor-proto">`. A configured custom protocol can now be listed in `strictMode` | You list a protocol or action you do not configure, or build a validator from a name known only at runtime | Remove the entry, or add its protocol to `protocols`; for an action the types do not know, `unchecked("VendorAction")`; name the validator's protocol literally |
 | NestJS `@OcppMessageEvent(action, protocol?)` takes an action that exists, in that protocol when one is given; a misspelt name used to register a handler nothing called | You name an action the types do not know | `@OcppMessageEvent(unchecked("VendorAction"))`, or declare it on its version's method map |
 
 What keeps compiling: a typed server, route, connection or Node client still fits a variable or list typed as plain `OCPPServer`, `OCPPRouter`, `OCPPServerClient` or `OCPPClient`, typed for every version as in 2.x. The framework adapters take any server; callbacks from `defineAuth()` or `combineAuth()`, handlers typed with plain `RouterHandlerContext`, and plugins typed `OCPPPlugin` fit any server or route.

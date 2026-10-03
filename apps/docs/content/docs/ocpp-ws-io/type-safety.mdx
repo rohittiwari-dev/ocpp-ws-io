@@ -208,6 +208,8 @@ const client = new OCPPClient({
 });
 ```
 
+`createValidator` keeps the protocol's name in its type, `Validator<"vendor-proto">`, and suggests the declared protocols. `strictModeValidators`, a `strictMode` list and `strictModeMethods` take only what the client, server or route is configured with, so a validator for a protocol it does not speak, or an action of another version, is a type error. `strictModeMethods` also takes OCPP 2.1 SEND messages and `unchecked()` names; `reconfigure()` takes any declared action there.
+
 > **Download Template:** You can download a starter template for your custom validator array here: <a href="/schema-example.json" download>schema-example.json</a>.
 
 > **Tip:** Combine custom validators with [module augmentation](#extending-with-custom-protocols) to get both runtime validation **and** compile-time type safety for your custom protocols.

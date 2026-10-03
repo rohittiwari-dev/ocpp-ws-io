@@ -61,6 +61,7 @@ import {
   SecurityProfile,
   type SendMethodNames,
   type SendRequestOf,
+  type StrictModeMethodsFor,
   type TypedEventEmitter,
   type UncheckedAction,
   type UncheckedHandler,
@@ -269,14 +270,17 @@ export class OCPPClient<
   }> = [];
   private _middleware: MiddlewareStack<MiddlewareContext>;
   /** Explicit validators from options; null means resolve per protocol. */
-  private _validators: Validator[] | null = null;
+  private _validators: readonly Validator[] | null = null;
   private _strictProtocols: string[] | null = null;
   protected _handshake: unknown = null;
   protected _logger: LoggerLike = NOOP_LOGGER;
   protected _exchangeLog = false;
   protected _prettify = false;
 
-  constructor(options: WithUniqueProtocols<ClientOptions<P>, P, L>) {
+  constructor(
+    options: WithUniqueProtocols<ClientOptions<P>, P, L> &
+      StrictModeMethodsFor<P>,
+  ) {
     super();
     this.setMaxListeners(0);
 

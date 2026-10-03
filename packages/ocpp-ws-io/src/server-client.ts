@@ -6,6 +6,7 @@ import {
   ConnectionState,
   type HandshakeInfo,
   type OCPPPlugin,
+  type StrictModeMethodsFor,
 } from "./types.js";
 import type { WorkerPool } from "./worker-pool.js";
 
@@ -39,7 +40,9 @@ export class OCPPServerClient<
       plugins?: OCPPPlugin<P>[];
     },
   ) {
-    super(options);
+    // The server checked strictModeMethods against its protocols, or a
+    // route's config() against the route's, when it was configured.
+    super(options as ClientOptions<P> & StrictModeMethodsFor<P>);
 
     this._serverSession = context.session;
     this._serverHandshake = context.handshake;

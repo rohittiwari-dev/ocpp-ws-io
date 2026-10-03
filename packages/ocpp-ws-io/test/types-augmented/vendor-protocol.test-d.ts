@@ -1,5 +1,11 @@
 import { expectTypeOf } from "vitest";
-import { OCPPClient, OCPPServer, OCPPServerClient } from "ocpp-ws-io";
+import {
+  createValidator,
+  OCPPClient,
+  OCPPServer,
+  OCPPServerClient,
+  type Validator,
+} from "ocpp-ws-io";
 
 /**
  * A custom protocol declared the way the docs and `ocpp generate` do it, by
@@ -102,4 +108,25 @@ export async function serverWithCustom() {
   expectTypeOf(res).toEqualTypeOf<
     { status: "Accepted" | "Rejected" } | undefined
   >();
+}
+
+/** T4a: strict-mode options for a declared custom protocol. */
+export function vendorStrictMode(schemas: { $id: string }[]) {
+  const vendor = createValidator("vendor-proto", schemas);
+  expectTypeOf(vendor).toEqualTypeOf<Validator<"vendor-proto">>();
+
+  new OCPPServer({
+    protocols: ["ocpp2.0.1", "vendor-proto"],
+    strictMode: ["vendor-proto"],
+    strictModeValidators: [vendor],
+    strictModeMethods: ["VendorAction", "BootNotification"],
+  });
+  new OCPPServer({
+    protocols: ["ocpp2.0.1"],
+    strictMode: true,
+    // @ts-expect-error vendor-proto is declared, but not configured here
+    strictModeMethods: ["VendorAction"],
+  });
+  // @ts-expect-error a validator for a protocol the server does not use
+  new OCPPServer({ protocols: ["ocpp2.0.1"], strictMode: true, strictModeValidators: [vendor] });
 }

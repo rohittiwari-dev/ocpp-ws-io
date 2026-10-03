@@ -99,6 +99,34 @@ export type KnownProtocol<P extends AnyOCPPProtocol> = string extends P
   : Extract<P, OCPPProtocol>;
 
 /**
+ * T where TypeScript does not infer from: a list such as `strictMode` is then
+ * checked against the configured protocols instead of adding to them.
+ */
+type Configured<T> = NoInfer<T>;
+
+/**
+ * An action strict mode can be limited to (`strictModeMethods`): a CALL action
+ * or SEND message of P's protocols (by default every declared one), or an
+ * `unchecked()` name.
+ */
+export type StrictModeMethod<P extends AnyOCPPProtocol = AnyOCPPProtocol> =
+  | AllMethodNames<KnownProtocol<P>>
+  | SendMethodNames<KnownProtocol<P>>
+  | UncheckedAction;
+
+/**
+ * The `strictModeMethods` a constructor or a route's `config()` takes: the
+ * configured protocols' actions. Checked there rather than in the options
+ * types a client or server keeps: TypeScript cannot tell that a protocol's
+ * action names grow with the protocols, so options typed that way would stop
+ * a typed client fitting a plain `OCPPClient`. `reconfigure()` takes any
+ * declared action.
+ */
+export type StrictModeMethodsFor<P extends AnyOCPPProtocol> = {
+  strictModeMethods?: readonly Configured<StrictModeMethod<P>>[];
+};
+
+/**
  * The connection type of a server or route, for storing its connections:
  * `new Map<string, ConnectionOf<typeof server>>()`.
  */
@@ -642,12 +670,18 @@ export interface ClientOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
   pongTimeoutMs?: number;
   /** Maximum concurrent outbound calls (default: 1) */
   callConcurrency?: number;
-  /** Enable strict mode validation (default: false) */
-  strictMode?: boolean | OCPPProtocol[];
-  /** If defined, restricts strict mode validation ONLY to these methods */
-  strictModeMethods?: Array<AllMethodNames<OCPPProtocol>>;
-  /** Custom validators for strict mode */
-  strictModeValidators?: Validator[];
+  /**
+   * Enable strict mode validation (default: false): `true` for every
+   * configured protocol, or a list of them.
+   */
+  strictMode?: boolean | readonly Configured<P>[];
+  /**
+   * If defined, restricts strict mode validation ONLY to these methods: the
+   * constructor takes the configured protocols' ({@link StrictModeMethodsFor})
+   */
+  strictModeMethods?: readonly StrictModeMethod[];
+  /** Custom validators for strict mode, for configured protocols */
+  strictModeValidators?: readonly Configured<Validator<P>>[];
   /**
    * Creates the message ID of each outgoing CALL and SEND. A per-call
    * `idempotencyKey` still wins; without this, a random UUID is used.
@@ -805,9 +839,12 @@ export interface RouterConfig<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
   /** Max concurrent outbound calls — overrides server default */
   callConcurrency?: number;
   /** Enable strict mode validation — overrides server default */
-  strictMode?: boolean | OCPPProtocol[];
-  /** If defined, restricts strict mode validation ONLY to these methods */
-  strictModeMethods?: Array<AllMethodNames<OCPPProtocol>>;
+  strictMode?: boolean | readonly Configured<P>[];
+  /**
+   * If defined, restricts strict mode validation ONLY to these methods:
+   * `config()` takes the route's protocols' ({@link StrictModeMethodsFor})
+   */
+  strictModeMethods?: readonly StrictModeMethod[];
   /**
    * Rate Limiting configuration — overrides server default.
    *
@@ -857,7 +894,7 @@ export interface CORSOptions {
 
 // ─── Server Options ──────────────────────────────────────────────
 
-interface ServerOptionsBase {
+interface ServerOptionsBase<P extends AnyOCPPProtocol> {
   /** OCPP Security Profile (default: NONE) */
   securityProfile?: SecurityProfile;
   /**
@@ -907,10 +944,13 @@ interface ServerOptionsBase {
   deferPingsOnActivity?: boolean;
   /** Max concurrent outbound calls — inherited (default: 1) */
   callConcurrency?: number;
-  /** If defined, restricts strict mode validation ONLY to these methods */
-  strictModeMethods?: Array<AllMethodNames<OCPPProtocol>>;
-  /** Custom validators — inherited */
-  strictModeValidators?: Validator[];
+  /**
+   * If defined, restricts strict mode validation ONLY to these methods: the
+   * constructor takes the configured protocols' ({@link StrictModeMethodsFor})
+   */
+  strictModeMethods?: readonly StrictModeMethod[];
+  /** Custom validators, for configured protocols — inherited */
+  strictModeValidators?: readonly Configured<Validator<P>>[];
   /**
    * Creates the message ID of each CALL sent to a charging station — inherited.
    * A per-call `idempotencyKey` still wins; without this, a random UUID is
@@ -1169,7 +1209,7 @@ interface ServerOptionsBase {
  * backstop for JavaScript callers.
  */
 interface StrictServerOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol>
-  extends ServerOptionsBase {
+  extends ServerOptionsBase<P> {
   /**
    * Validate every message against the official OCPP JSON schemas.
    *
@@ -1189,7 +1229,7 @@ interface StrictServerOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol>
    * @example
    * new OCPPServer({ protocols: ["ocpp1.6"], strictMode: true })
    */
-  strictMode: true | OCPPProtocol[];
+  strictMode: true | readonly Configured<P>[];
 
   /**
    * Subprotocols this server accepts, most preferred first, offered during the
@@ -1208,7 +1248,7 @@ interface StrictServerOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol>
  * as-is. Set `strictMode` to switch to {@link StrictServerOptions}.
  */
 interface RelaxedServerOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol>
-  extends ServerOptionsBase {
+  extends ServerOptionsBase<P> {
   /**
    * Schema validation. **Off by default** — omit it, or set `false`, and no
    * message is validated in either direction.

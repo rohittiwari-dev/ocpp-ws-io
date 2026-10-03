@@ -60,6 +60,7 @@ import {
   SecurityProfile,
   type ServerEvents,
   type ServerOptions,
+  type StrictModeMethodsFor,
   type TypedEventEmitter,
   type UncheckedAction,
   type WithUniqueProtocols,
@@ -241,7 +242,10 @@ export class OCPPServer<
   /** Longest a connecting charger waits for the adapter's stored session. */
   private static readonly _SESSION_FETCH_TIMEOUT_MS = 1000;
 
-  constructor(options: WithUniqueProtocols<ServerOptions<P>, P, L> = {}) {
+  constructor(
+    options: WithUniqueProtocols<ServerOptions<P>, P, L> &
+      StrictModeMethodsFor<P> = {},
+  ) {
     super();
     this.setMaxListeners(0);
 
@@ -2297,7 +2301,13 @@ export class OCPPServer<
         maxBadMessages: this._options.maxBadMessages,
         badMessageWindowMs: this._options.badMessageWindowMs,
         respondWithDetailedErrors: this._options.respondWithDetailedErrors,
-        strictMode: matchedRouterConfig?.strictMode ?? this._options.strictMode,
+        // A route's list was limited to its protocols, a subset of the
+        // server's, by config().
+        strictMode:
+          (matchedRouterConfig?.strictMode as
+            | boolean
+            | readonly P[]
+            | undefined) ?? this._options.strictMode,
         strictModeMethods:
           matchedRouterConfig?.strictModeMethods ??
           this._options.strictModeMethods,

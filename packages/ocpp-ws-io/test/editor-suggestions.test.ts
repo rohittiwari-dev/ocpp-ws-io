@@ -18,6 +18,9 @@ const source = `
 import { BrowserOCPPClient } from "../src/browser/client.js";
 import { OCPPClient } from "../src/client.js";
 import { OCPPServer } from "../src/server.js";
+import { createValidator } from "../src/validator.js";
+
+void createValidator("", []);
 
 const v16 = new OCPPServer({ protocols: ["ocpp1.6"] });
 const mixed = new OCPPServer({ protocols: ["ocpp1.6", "ocpp2.0.1"] });
@@ -171,6 +174,12 @@ describe("editor suggestions", () => {
     expect(all).not.toEqual(expect.arrayContaining(["then"]));
     expect(all).not.toEqual(expect.arrayContaining(["catch"]));
     expect(all).not.toEqual(expect.arrayContaining(["finally"]));
+  });
+
+  it("suggests the declared protocols in createValidator", () => {
+    const pos = source.indexOf('createValidator("') + 'createValidator("'.length;
+    const names = (service.getCompletionsAtPosition(file, pos, {})?.entries ?? []).map((e) => e.name);
+    expect(names).toEqual(expect.arrayContaining(["ocpp1.6", "ocpp2.0.1", "ocpp2.1"]));
   });
 
   it("suggests the fields of every configured version on a mixed server", () => {

@@ -22,6 +22,7 @@ import type {
   RouterHandlerContext,
   RouterWildcardHandler,
   ServerEvents,
+  StrictModeMethodsFor,
   TypedEventEmitter,
   UncheckedAction,
   UncheckedHandler,
@@ -184,7 +185,8 @@ export class OCPPRouter<
    * its connections are typed for them.
    */
   config<Q extends P, const L extends readonly Q[] = readonly Q[]>(
-    options: WithUniqueProtocols<RouterConfig<Q>, Q, L>,
+    options: WithUniqueProtocols<RouterConfig<Q>, Q, L> &
+      StrictModeMethodsFor<Q>,
   ): OCPPRouter<Q>;
   // The same router; only its type narrows to the route's protocols.
   config(options: RouterConfig<P>): object {

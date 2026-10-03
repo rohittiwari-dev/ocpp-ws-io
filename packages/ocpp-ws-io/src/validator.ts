@@ -1,5 +1,6 @@
 import Ajv, { type ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
+import type { AnyOCPPProtocol } from "./types.js";
 import { createRPCError } from "./util.js";
 
 // ─── Validation Error Mapping ───────────────────────────────────
@@ -114,12 +115,13 @@ export interface ValidatorSchema {
  * E2: Schemas are registered at construction time but compiled lazily
  * on first use, reducing startup time from ~400ms to ~5ms.
  */
-export class Validator {
-  readonly subprotocol: string;
+export class Validator<S extends string = string> {
+  /** The subprotocol this validator checks, such as "ocpp1.6". */
+  readonly subprotocol: S;
   /** @internal */
   _ajv: Ajv;
 
-  constructor(subprotocol: string, schemas: ValidatorSchema[]) {
+  constructor(subprotocol: S, schemas: ValidatorSchema[]) {
     this.subprotocol = subprotocol;
     this._ajv = new Ajv({
       allErrors: true,
@@ -215,13 +217,16 @@ export class Validator {
 /**
  * Create a validator for a specific subprotocol version.
  *
+ * The validator keeps the protocol's name in its type (`Validator<"vendor-proto">`),
+ * so `strictModeValidators` accept it only where that protocol is configured.
+ *
  * Always returns a fresh instance so custom schema sets are never shadowed
  * by previously created validators for the same subprotocol (report M8).
  * Standard validators are cached separately by getStandardValidators().
  */
-export function createValidator(
-  subprotocol: string,
+export function createValidator<S extends AnyOCPPProtocol>(
+  subprotocol: S,
   schemas: ValidatorSchema[],
-): Validator {
+): Validator<S> {
   return new Validator(subprotocol, schemas);
 }
