@@ -1,37 +1,31 @@
-// ── Configuration ──────────────────────────────────────────────
+// ── Rules ──────────────────────────────────────────────────────
+//
+// The same rules as the library's own generator
+// (packages/ocpp-ws-io/scripts/generate-types.js). A test runs both on the
+// OCPP 1.6, 2.0.1 and 2.1 schemas and compares their output, so a rule
+// changed in one and not the other fails.
 
+/** One protocol to write: its schema file, map names and protocol name. */
 export interface VersionConfig {
+  /** The types file's name, without extension. */
   key: string;
+  /** The schema file, named in the types file's header. */
   file: string;
+  /** The interface of the CALL actions, the `OCPPMethodMap` entry. */
   mapName: string;
+  /** The interface of the SEND messages, the `OCPPSendMethodMap` entry. */
+  sendMapName: string;
+  /** The subprotocol, such as "vendor-proto". */
   protocol: string;
 }
 
-export const VERSIONS: VersionConfig[] = [
-  {
-    key: "ocpp16",
-    file: "ocpp1_6.json",
-    mapName: "OCPP16Methods",
-    protocol: "ocpp1.6",
-  },
-  {
-    key: "ocpp201",
-    file: "ocpp2_0_1.json",
-    mapName: "OCPP201Methods",
-    protocol: "ocpp2.0.1",
-  },
-  {
-    key: "ocpp21",
-    file: "ocpp2_1.json",
-    mapName: "OCPP21Methods",
-    protocol: "ocpp2.1",
-  },
-];
+/** A value a schema can list in `enum`. */
+type JsonPrimitive = string | number | boolean | null;
 
 export interface SchemaEntry {
   $id?: string;
   type?: string | string[];
-  enum?: unknown[];
+  enum?: JsonPrimitive[];
   properties?: Record<string, SchemaEntry>;
   required?: string[];
   definitions?: Record<string, SchemaEntry>;
@@ -42,15 +36,36 @@ export interface SchemaEntry {
   additionalProperties?: SchemaEntry | boolean;
 }
 
+/** A CALL action's request and response schemas. */
+export interface MethodSchemas {
+  request?: SchemaEntry;
+  response?: SchemaEntry;
+}
+
+/** Options for {@link generateVersionFile}. */
+export interface GenerateOptions {
+  /** The module the types file imports `JsonValue` from (default "ocpp-ws-io"). */
+  typesModule?: string;
+}
+
 // ── Extract Methods ────────────────────────────────────────────
 
+/**
+ * CALL actions by name, from `urn:<Name>.req` / `urn:<Name>.conf` (OCPP 1.6,
+ * 2.0.1) or `urn:<Name>Request` / `urn:<Name>Response` (OCPP 2.1).
+ */
 export function extractMethods(
   schema: SchemaEntry[],
-): Map<string, { request?: SchemaEntry; response?: SchemaEntry }> {
-  const methods = new Map<
-    string,
-    { request?: SchemaEntry; response?: SchemaEntry }
-  >();
+): Map<string, MethodSchemas> {
+  const methods = new Map<string, MethodSchemas>();
+  const methodNamed = (name: string): MethodSchemas => {
+    let method = methods.get(name);
+    if (!method) {
+      method = {};
+      methods.set(name, method);
+    }
+    return method;
+  };
 
   for (const entry of schema) {
     const id = entry.$id;
@@ -60,11 +75,7 @@ export function extractMethods(
     let match = id.match(/^urn:(.+)\.(req|conf)$/);
     if (match) {
       const [, name, suffix] = match;
-      if (!methods.has(name)) methods.set(name, {});
-      const method = methods.get(name);
-      if (method?.[suffix === "req" ? "request" : "response"]) {
-        method[suffix === "req" ? "request" : "response"] = entry;
-      }
+      methodNamed(name)[suffix === "req" ? "request" : "response"] = entry;
       continue;
     }
 
@@ -72,15 +83,41 @@ export function extractMethods(
     match = id.match(/^urn:(.+)(Request|Response)$/);
     if (match) {
       const [, name, suffix] = match;
-      if (!methods.has(name)) methods.set(name, {});
-      const method = methods.get(name);
-      if (method?.[suffix === "Request" ? "request" : "response"]) {
-        method[suffix === "Request" ? "request" : "response"] = entry;
-      }
+      methodNamed(name)[suffix === "Request" ? "request" : "response"] = entry;
     }
   }
 
   return methods;
+}
+
+/**
+ * Unconfirmed (SEND) messages by name, as in OCPP 2.1: a single schema whose
+ * id has no request or response suffix, such as `urn:NotifyPeriodicEventStream`.
+ */
+export function extractSendMethods(
+  schema: SchemaEntry[],
+): Map<string, SchemaEntry> {
+  const sendMethods = new Map<string, SchemaEntry>();
+  for (const entry of schema) {
+    const id = entry.$id;
+    if (!id) continue;
+    const match = id.match(/^urn:([A-Za-z][A-Za-z0-9]*)$/);
+    if (!match || /(Request|Response)$/.test(match[1])) continue;
+    sendMethods.set(match[1], entry);
+  }
+  return sendMethods;
+}
+
+// ── Open objects ───────────────────────────────────────────────
+
+// JSON Schema allows keys an object does not list unless
+// `additionalProperties` is false. Typed methods reject keys the generated
+// types do not define, so an open object gets an index signature.
+// `undefined` keeps optional properties compatible with the signature.
+const OPEN_VALUE = "JsonValue | undefined";
+
+function isOpen(schema: SchemaEntry): boolean {
+  return schema.additionalProperties !== false;
 }
 
 // ── JSON Schema → TypeScript Type ──────────────────────────────
@@ -89,11 +126,12 @@ function jsonSchemaToTS(
   schema: SchemaEntry | undefined,
   definitions: Map<string, SchemaEntry>,
 ): string {
-  if (!schema) return "unknown";
+  // No schema, or no type: any JSON value.
+  if (!schema) return "JsonValue";
 
   // $ref
-  if (schema?.$ref) {
-    return schema?.$ref?.replace("#/definitions/", "");
+  if (schema.$ref) {
+    return schema.$ref.replace("#/definitions/", "");
   }
 
   // anyOf / oneOf
@@ -136,7 +174,7 @@ function jsonSchemaToTS(
       const needsParens = itemType.includes("|") || itemType.includes("{");
       return needsParens ? `(${itemType})[]` : `${itemType}[]`;
     }
-    return "unknown[]";
+    return "JsonValue[]";
   }
 
   if (type === "object") {
@@ -146,6 +184,7 @@ function jsonSchemaToTS(
         const opt = required.has(name) ? "" : "?";
         return `${name}${opt}: ${jsonSchemaToTS(ps, definitions)}`;
       });
+      if (isOpen(schema)) props.push(`[key: string]: ${OPEN_VALUE}`);
       return `{ ${props.join("; ")} }`;
     }
     if (
@@ -153,14 +192,15 @@ function jsonSchemaToTS(
       typeof schema.additionalProperties === "object"
     ) {
       return `Record<string, ${jsonSchemaToTS(
-        schema.additionalProperties as SchemaEntry,
+        schema.additionalProperties,
         definitions,
       )}>`;
     }
-    return "Record<string, unknown>";
+    if (schema.additionalProperties === false) return "Record<string, never>";
+    return `{ [key: string]: ${OPEN_VALUE} }`;
   }
 
-  return "unknown";
+  return "JsonValue";
 }
 
 // ── Generate Named Type ────────────────────────────────────────
@@ -172,9 +212,7 @@ function generateNamedType(
 ): string[] {
   if (schema.type === "string" && schema.enum) {
     return [
-      `export type ${name} = ${(schema.enum as string[])
-        .map((v) => `"${v}"`)
-        .join(" | ")};`,
+      `export type ${name} = ${schema.enum.map((v) => `"${v}"`).join(" | ")};`,
     ];
   }
   if (schema.type === "object") {
@@ -204,6 +242,7 @@ function generateInterface(
       lines.push(`  ${safeName}${opt}: ${tsType};`);
     }
   }
+  if (isOpen(schema)) lines.push(`  [key: string]: ${OPEN_VALUE};`);
 
   lines.push("}");
   return lines;
@@ -211,9 +250,15 @@ function generateInterface(
 
 // ── Generate Version File ──────────────────────────────────────
 
+/**
+ * The types of one protocol: shared definitions, each CALL action's request
+ * and response, the CALL map and the SEND map.
+ */
 export function generateVersionFile(
   version: VersionConfig,
-  methods: Map<string, { request?: SchemaEntry; response?: SchemaEntry }>,
+  methods: Map<string, MethodSchemas>,
+  sendMethods: Map<string, SchemaEntry> = new Map(),
+  options: GenerateOptions = {},
 ): string {
   const lines: string[] = [];
   lines.push(
@@ -222,12 +267,17 @@ export function generateVersionFile(
     "",
   );
 
-  // Collect all definitions
+  // Collect all definitions across all schema entries
   const allDefinitions = new Map<string, SchemaEntry>();
-  for (const [, schemas] of methods) {
-    for (const entry of [schemas.request, schemas.response]) {
+  const entryGroups = [
+    ...[...methods.values()].map((s) => [s.request, s.response]),
+    ...[...sendMethods.values()].map((entry) => [entry]),
+  ];
+  for (const entries of entryGroups) {
+    for (const entry of entries) {
       if (!entry?.definitions) continue;
       for (const [defName, defSchema] of Object.entries(entry.definitions)) {
+        // Use first occurrence (schemas often duplicate definitions)
         if (!allDefinitions.has(defName)) {
           allDefinitions.set(defName, defSchema);
         }
@@ -282,67 +332,34 @@ export function generateVersionFile(
   }
   lines.push("}", "");
 
-  return lines.join("\n");
-}
-
-// ── Generate Index ─────────────────────────────────────────────
-
-export function generateIndexFile(versions: VersionConfig[]): string {
-  const lines: string[] = [
-    "// Auto-generated by ocpp-ws-cli — DO NOT EDIT",
-    "/* eslint-disable */",
-    "",
-  ];
-
-  for (const v of versions) {
-    lines.push(`import type { ${v.mapName} } from "./${v.key}.js";`);
+  // Unconfirmed (SEND) messages get their own map so call() cannot send them
+  // as a CALL and send() cannot send a CALL action.
+  lines.push("// ═══ SEND Message Map (unconfirmed, no response) ═══", "");
+  if (sendMethods.size === 0) {
+    lines.push(
+      `export type ${version.sendMapName} = Record<never, never>;`,
+      "",
+    );
+  } else {
+    for (const [name, entry] of sendMethods) {
+      lines.push(...generateInterface(name, entry, allDefinitions), "");
+    }
+    lines.push(`export interface ${version.sendMapName} {`);
+    for (const [name] of sendMethods) {
+      lines.push(`  ${name}: { request: ${name} };`);
+    }
+    lines.push("}", "");
   }
 
-  lines.push(
-    "",
-    "/**",
-    " * Maps OCPP protocol strings to their method type maps.",
-    " * Used by OCPPClient<P> and OCPPServer to provide auto-typed",
-    " * handle(), call(), and event listener signatures.",
-    " */",
-    "export interface OCPPMethodMap {",
-  );
-
-  for (const v of versions) {
-    lines.push(`  "${v.protocol}": ${v.mapName};`);
-  }
-
-  lines.push(
-    "}",
-    "",
-    "/** All valid OCPP protocol strings. */",
-    "export type OCPPProtocolKey = keyof OCPPMethodMap;",
-    "",
-    "/** All valid method names for a given protocol. */",
-    "export type OCPPMethodNames<P extends keyof OCPPMethodMap> =",
-    "  string & keyof OCPPMethodMap[P];",
-    "",
-    "/** Distributes over union protocols to get all method names. */",
-    "export type AllMethodNames<P extends keyof OCPPMethodMap> =",
-    "  P extends keyof OCPPMethodMap ? keyof OCPPMethodMap[P] & string : never;",
-    "",
-    "/** Request type for a given protocol + method. */",
-    "export type OCPPRequestType<",
-    "  P extends keyof OCPPMethodMap,",
-    "  M extends string,",
-    "> = P extends keyof OCPPMethodMap",
-    "  ? M extends keyof OCPPMethodMap[P] ? OCPPMethodMap[P][M] extends { request: infer R } ? R : never : never",
-    "  : never;",
-    "",
-    "/** Response type for a given protocol + method. */",
-    "export type OCPPResponseType<",
-    "  P extends keyof OCPPMethodMap,",
-    "  M extends string,",
-    "> = P extends keyof OCPPMethodMap",
-    "  ? M extends keyof OCPPMethodMap[P] ? OCPPMethodMap[P][M] extends { response: infer R } ? R : never : never",
-    "  : never;",
-    "",
-  );
-
-  return lines.join("\n");
+  // Open objects and untyped fields use JsonValue from the library's types.
+  const body = lines.join("\n");
+  if (!/\bJsonValue\b/.test(body)) return body;
+  const [first, second, ...rest] = lines;
+  const typesModule = options.typesModule ?? "ocpp-ws-io";
+  return [
+    first,
+    second,
+    `import type { JsonValue } from "${typesModule}";`,
+    ...rest,
+  ].join("\n");
 }

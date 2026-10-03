@@ -7,7 +7,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## `ocpp generate`
 
-Generates TypeScript declaration files (`.d.ts`) from custom JSON schemas. This is crucial for ensuring type safety when working with vendor-specific OCPP extensions.
+Generates a custom protocol's TypeScript types, the augmentation that declares it to `ocpp-ws-io`, and its strict-mode validator, all from one JSON schema file, so the types and what strict mode validates always agree.
 
 ### Usage
 
@@ -28,6 +28,29 @@ ocpp generate [options]
 ```bash
 ocpp generate --schema ./custom-schemas/station.json --name vendor-extensions --out ./src/types
 ```
+
+### Output
+
+| File | What it holds |
+| :--- | :--- |
+| `<name>.ts` | The request and response types of each action, the SEND messages (unconfirmed, as in OCPP 2.1), and the `…Methods` and `…SendMethods` maps. An object the schema leaves open (no `additionalProperties: false`) takes any JSON keys. |
+| `augment.d.ts` | Declares the protocol in `OCPPMethodMap`, and in `OCPPSendMethodMap` when it has SEND messages, so clients, servers and routes configured with it are typed. |
+| `<name>.validator.ts` | The strict-mode validator, `createValidator("<protocol>", schemas)`, typed with the protocol. |
+
+Schema `$id`s name the actions: `urn:<Action>.req` and `urn:<Action>.conf` (as in OCPP 1.6 and 2.0.1), `urn:<Action>Request` and `urn:<Action>Response` (as in OCPP 2.1), and `urn:<Message>` for a SEND message.
+
+```typescript
+import { OCPPServer } from "ocpp-ws-io";
+import { vendorExtensionsValidator } from "./types/vendorextensions.validator.js";
+
+const server = new OCPPServer({
+  protocols: ["ocpp2.0.1", "vendor-extensions"],
+  strictMode: true,
+  strictModeValidators: [vendorExtensionsValidator],
+});
+```
+
+Run `ocpp generate` again when the schemas change: it rewrites all three files together.
 
 ---
 

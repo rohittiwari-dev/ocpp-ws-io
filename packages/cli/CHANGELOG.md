@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **`ocpp generate` writes request and response types.** Every action came out as `{ request: Record<string, never>; response: Record<string, never> }`: the generator never kept the schemas it read, so the types were unusable. Generated types from an earlier version should be regenerated.
+- **`ocpp generate` writes the validator too**, `<name>.validator.ts`: `createValidator("<protocol>", schemas)` from the same schemas as the types, for `strictModeValidators`. It compiles with `ocpp-ws-io` 2.x and 3.0.
+- **SEND messages are declared.** A schema whose `$id` has no request or response suffix (`urn:VendorNotify`) is an unconfirmed message, as in OCPP 2.1: typed for `send()` and declared in `OCPPSendMethodMap`. It was written as a CALL with an empty response.
+- **Open objects take any JSON keys.** An object the schema leaves open (no `additionalProperties: false`) gets an index signature, so `ocpp-ws-io`'s exact-keys check accepts what the schema allows; a field with no type is `JsonValue`, not `unknown`.
+- Generation follows `ocpp-ws-io`'s own generator: tests compare the two on the OCPP 1.6, 2.0.1 and 2.1 schemas, and an end-to-end test compiles a server and client using generated files. The CLI now has a `test` script.
+
 - **Requires Node.js 20 or later** (new `engines` field: `>=20.0.0`), the same floor as `ocpp-ws-io` 3.0.0; Node 18 reached end of life in April 2025. The build now targets Node 20.
 
 ## 1.2.0

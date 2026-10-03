@@ -97,7 +97,7 @@ Execute modularized test suites against your servers:
 
 ### `ocpp generate` : Type Generation
 
-Read your custom JSON schemas and output exact TypeScript `.d.ts` declaration libraries for 100% strict type safety across your entire charging network.
+Reads a custom protocol's JSON schemas and writes its TypeScript types, the augmentation that declares it to `ocpp-ws-io`, and its strict-mode validator, so the types and what strict mode validates come from the same file.
 
 ### `ocpp load-test` : Distributed Load Testing Engine
 

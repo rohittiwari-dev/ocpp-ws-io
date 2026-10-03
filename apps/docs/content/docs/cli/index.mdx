@@ -31,7 +31,7 @@ These commands help you write code faster by automating boilerplate and TypeScri
 
 ### `ocpp generate` [stable]
 
-**What it does:** Reads your custom `.json` OCPP schemas and generates perfectly typed `.d.ts` declaration files.  
+**What it does:** Reads a custom protocol's `.json` schemas and writes its TypeScript types, the augmentation that declares it to `ocpp-ws-io`, and its strict-mode validator.  
 **When to use it:** When your hardware vendor provides custom DataTransfer methods and you want full IDE autocomplete in your handlers.
 
 ```bash
