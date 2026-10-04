@@ -1,6 +1,6 @@
 # ocpp-ws-io
 
-## Unreleased
+## v3.0.1 - Session Helper (2026-10-04)
 
 ### Added
 
