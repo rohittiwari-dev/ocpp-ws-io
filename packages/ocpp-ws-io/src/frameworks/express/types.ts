@@ -1,15 +1,7 @@
 import type { Server as HttpServer, IncomingMessage } from "node:http";
 import type { OCPPServer } from "../../server.js";
 import type { OCPPServerClient } from "../../server-client.js";
-import type {
-  AllMethodNames,
-  CallOptions,
-  CloseOptions,
-  OCPPProtocol,
-  OCPPRequestType,
-  OCPPResponseType,
-  OCPPServerStats,
-} from "../../types.js";
+import type { CloseOptions, OCPPServerStats } from "../../types.js";
 
 export interface OcppExpressContext {
   readonly server: OCPPServer;
@@ -22,45 +14,13 @@ export interface OcppExpressContext {
   hasLocalClient(identity: string): boolean;
   hasClient(identity: string): Promise<boolean>;
 
-  sendToClient<V extends OCPPProtocol, M extends AllMethodNames<V>>(
-    identity: string,
-    version: V,
-    method: M,
-    params: OCPPRequestType<V, M>,
-    options?: CallOptions,
-  ): Promise<OCPPResponseType<V, M> | undefined>;
-  sendToClient<M extends AllMethodNames<any>>(
-    identity: string,
-    method: M,
-    params: OCPPRequestType<any, M>,
-    options?: CallOptions,
-  ): Promise<OCPPResponseType<any, M> | undefined>;
-  sendToClient<TResult = any>(
-    identity: string,
-    method: string,
-    params: Record<string, any>,
-    options?: CallOptions,
-  ): Promise<TResult | undefined>;
-
-  safeSendToClient<V extends OCPPProtocol, M extends AllMethodNames<V>>(
-    identity: string,
-    version: V,
-    method: M,
-    params: OCPPRequestType<V, M>,
-    options?: CallOptions,
-  ): Promise<OCPPResponseType<V, M> | undefined>;
-  safeSendToClient<M extends AllMethodNames<any>>(
-    identity: string,
-    method: M,
-    params: OCPPRequestType<any, M>,
-    options?: CallOptions,
-  ): Promise<OCPPResponseType<any, M> | undefined>;
-  safeSendToClient<TResult = any>(
-    identity: string,
-    method: string,
-    params: Record<string, any>,
-    options?: CallOptions,
-  ): Promise<TResult | undefined>;
+  /**
+   * As the server's `sendToClient()`: known actions of every declared
+   * protocol with exact params, or `unchecked()`.
+   */
+  sendToClient: OCPPServer["sendToClient"];
+  /** As the server's `safeSendToClient()`. */
+  safeSendToClient: OCPPServer["safeSendToClient"];
 
   close(options?: CloseOptions): Promise<void>;
 }

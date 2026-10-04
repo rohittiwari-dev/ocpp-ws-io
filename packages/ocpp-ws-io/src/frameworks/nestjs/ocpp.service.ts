@@ -12,12 +12,18 @@ import type { OCPPServer } from "../../server.js";
 import type { OCPPServerClient } from "../../server-client.js";
 import type {
   AllMethodNames,
+  AnyOCPPProtocol,
   CallOptions,
+  CheckedAction,
   CloseOptions,
+  JsonObject,
   OCPPProtocol,
-  OCPPRequestType,
   OCPPResponseType,
   OCPPServerStats,
+  RequestOf,
+  SendsToClientByArgs,
+  SendToClientArgs,
+  UncheckedAction,
 } from "../../types.js";
 import { matchesPrefix } from "../base/utils.js";
 import { OCPP_SERVER_INSTANCE, OCPP_SERVER_OPTIONS } from "./constants.js";
@@ -91,56 +97,97 @@ export class OcppService implements OnModuleInit, OnModuleDestroy {
     return this.ocppServer.isClientConnected(identity);
   }
 
-  sendToClient<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+  // The plain server's overloads: known actions of every declared protocol
+  // with exact params, or unchecked(). Kept identical to OCPPServer's
+  // (test/types/framework-bindings.test-d.ts checks).
+  sendToClient<
+    M extends AllMethodNames<OCPPProtocol>,
+    T extends RequestOf<OCPPProtocol, M>,
+  >(
+    identity: string,
+    method: CheckedAction<M, RequestOf<OCPPProtocol, M>, T>,
+    params: T,
+  ): Promise<OCPPResponseType<OCPPProtocol, M> | undefined>;
+  sendToClient<
+    V extends OCPPProtocol,
+    M extends AllMethodNames<V>,
+    T extends RequestOf<V, M>,
+  >(
     identity: string,
     version: V,
-    method: M,
-    params: OCPPRequestType<V, M>,
+    method: CheckedAction<M, RequestOf<V, M>, T>,
+    params: T,
     options?: CallOptions,
   ): Promise<OCPPResponseType<V, M> | undefined>;
-  sendToClient<M extends AllMethodNames<any>>(
+  sendToClient<
+    M extends AllMethodNames<OCPPProtocol>,
+    T extends RequestOf<OCPPProtocol, M>,
+  >(
     identity: string,
-    method: M,
-    params: OCPPRequestType<any, M>,
-    options?: CallOptions,
-  ): Promise<OCPPResponseType<any, M> | undefined>;
-  sendToClient<TResult = any>(
+    method: CheckedAction<M, RequestOf<OCPPProtocol, M>, T>,
+    params: T,
+    options: CallOptions,
+  ): Promise<OCPPResponseType<OCPPProtocol, M> | undefined>;
+  sendToClient<TResult = JsonObject>(
     identity: string,
-    method: string,
-    params: Record<string, any>,
+    method: UncheckedAction,
+    params?: object,
     options?: CallOptions,
   ): Promise<TResult | undefined>;
-  async sendToClient(...args: any[]): Promise<any> {
-    const send = this.ocppServer.sendToClient as (
-      ...callArgs: any[]
-    ) => Promise<any>;
-    return send.apply(this.ocppServer, args);
+  sendToClient<TResult = JsonObject>(
+    identity: string,
+    version: AnyOCPPProtocol,
+    method: UncheckedAction,
+    params?: object,
+    options?: CallOptions,
+  ): Promise<TResult | undefined>;
+  async sendToClient(...args: SendToClientArgs): Promise<unknown> {
+    return (this.ocppServer as SendsToClientByArgs).sendToClient(...args);
   }
 
-  safeSendToClient<V extends OCPPProtocol, M extends AllMethodNames<V>>(
+  safeSendToClient<
+    M extends AllMethodNames<OCPPProtocol>,
+    T extends RequestOf<OCPPProtocol, M>,
+  >(
+    identity: string,
+    method: CheckedAction<M, RequestOf<OCPPProtocol, M>, T>,
+    params: T,
+  ): Promise<OCPPResponseType<OCPPProtocol, M> | undefined>;
+  safeSendToClient<
+    V extends OCPPProtocol,
+    M extends AllMethodNames<V>,
+    T extends RequestOf<V, M>,
+  >(
     identity: string,
     version: V,
-    method: M,
-    params: OCPPRequestType<V, M>,
+    method: CheckedAction<M, RequestOf<V, M>, T>,
+    params: T,
     options?: CallOptions,
   ): Promise<OCPPResponseType<V, M> | undefined>;
-  safeSendToClient<M extends AllMethodNames<any>>(
+  safeSendToClient<
+    M extends AllMethodNames<OCPPProtocol>,
+    T extends RequestOf<OCPPProtocol, M>,
+  >(
     identity: string,
-    method: M,
-    params: OCPPRequestType<any, M>,
-    options?: CallOptions,
-  ): Promise<OCPPResponseType<any, M> | undefined>;
-  safeSendToClient<TResult = any>(
+    method: CheckedAction<M, RequestOf<OCPPProtocol, M>, T>,
+    params: T,
+    options: CallOptions,
+  ): Promise<OCPPResponseType<OCPPProtocol, M> | undefined>;
+  safeSendToClient<TResult = JsonObject>(
     identity: string,
-    method: string,
-    params: Record<string, any>,
+    method: UncheckedAction,
+    params?: object,
     options?: CallOptions,
   ): Promise<TResult | undefined>;
-  async safeSendToClient(...args: any[]): Promise<any> {
-    const send = this.ocppServer.safeSendToClient as (
-      ...callArgs: any[]
-    ) => Promise<any>;
-    return send.apply(this.ocppServer, args);
+  safeSendToClient<TResult = JsonObject>(
+    identity: string,
+    version: AnyOCPPProtocol,
+    method: UncheckedAction,
+    params?: object,
+    options?: CallOptions,
+  ): Promise<TResult | undefined>;
+  async safeSendToClient(...args: SendToClientArgs): Promise<unknown> {
+    return (this.ocppServer as SendsToClientByArgs).safeSendToClient(...args);
   }
 
   close(options?: CloseOptions): Promise<void> {

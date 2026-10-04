@@ -10,6 +10,7 @@ import type {
   MiddlewareContext,
   MiddlewareFunction,
   OCPPPlugin,
+  SessionData,
 } from "../types.js";
 
 // ─── Middleware Definition ───────────────────────────────────────
@@ -76,7 +77,7 @@ export function defineRpcMiddleware<TContext = MiddlewareContext>(
  * that server's protocols; on its own, the callback fits any server.
  */
 export function defineAuth<
-  TSession = Record<string, unknown>,
+  TSession = SessionData,
   P extends AnyOCPPProtocol = AnyOCPPProtocol,
 >(cb: AuthCallback<TSession, P>): AuthCallback<TSession, P> {
   return cb;
@@ -93,14 +94,14 @@ export function defineAuth<
  *   answers 500 without its details.
  */
 export function combineAuth<P extends AnyOCPPProtocol = AnyOCPPProtocol>(
-  ...cbs: AuthCallback<Record<string, unknown>, P>[]
-): AuthCallback<Record<string, unknown>, P> {
+  ...cbs: AuthCallback<SessionData, P>[]
+): AuthCallback<SessionData, P> {
   return async (ctx) => {
     let accepted = false;
     let rejected = false;
 
     // Wrap the underlying accept/reject purely to detect when they fire
-    const trackedAccept = (opts?: AuthAccept<Record<string, unknown>, P>) => {
+    const trackedAccept = (opts?: AuthAccept<SessionData, P>) => {
       accepted = true;
       ctx.accept(opts);
     };
@@ -110,7 +111,7 @@ export function combineAuth<P extends AnyOCPPProtocol = AnyOCPPProtocol>(
       return ctx.reject(code, message);
     };
 
-    const trackedCtx: AuthContext<Record<string, unknown>, P> = {
+    const trackedCtx: AuthContext<SessionData, P> = {
       ...ctx,
       accept: trackedAccept,
       reject: trackedReject,

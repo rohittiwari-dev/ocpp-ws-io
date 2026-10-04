@@ -231,6 +231,38 @@ server.route("/ocpp/:identity").handle("Heartbeat", () => ({
 }));
 ```
 
+## Sessions
+
+A connection's session is filled in three places, each over the one before: what connection middleware leaves in `ctx.state` (directly, or through `ctx.next(payload)`), the session stored for the identity (by the cluster adapter, or on this node), and the `session` the auth callback passes to `ctx.accept()`. The result is `client.session`. Declare its keys once on `OCPPSession`, and all of them are typed by it:
+
+```typescript
+import { OCPPServer } from "ocpp-ws-io";
+
+declare module "ocpp-ws-io" {
+  interface OCPPSession {
+    tenantId: string;
+    role: "admin" | "charger";
+  }
+}
+
+const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+server.use(async (ctx) => {
+  await ctx.next({ tenantId: ctx.handshake.params.tenant });
+});
+
+server.auth((ctx) => {
+  ctx.accept({ session: { role: "charger" } });
+});
+
+server.on("client", (client) => {
+  client.session.tenantId; // string | undefined: a session may not have it yet
+  client.session.role; // "admin" | "charger" | undefined
+});
+```
+
+Session values are JSON, as the cluster adapter stores them: a `Date`, a function or a class instance is a type error, also under a key you do not declare (such keys take any JSON value). Keep other per-connection data in a `Map` keyed by `client.identity`.
+
 ## Keeping typed objects
 
 A typed client fits a variable of its own type, or a plain `OCPPClient`. For connections, use `ConnectionOf<typeof server>`; for lists that mix differently configured clients or connections, use `AnyOCPPClient` and `AnyOCPPServerClient`, which keep every member except the calls typed by protocol:
@@ -466,4 +498,5 @@ Prefer declaring the action, as above: an `unchecked()` call is checked neither 
 | `Argument of type '"NotifyPeriodicEventStream"' is not assignable to parameter of type 'never'` on `send()` | The client's protocols have no SEND messages (only OCPP 2.1 and custom protocols do) | Configure `"ocpp2.1"`, or declare the message in `OCPPSendMethodMap` |
 | `Type '"ocpp1.6"' is not assignable to type '"ocpp1.6" & ListedTwice<"ocpp1.6">'` | A protocol appears twice in `protocols` | Remove the repeat |
 | `Type '"vendor-x"' is not assignable to type '"ocpp1.6"'` in `strictMode` or `strictModeValidators` | Strict mode names a protocol the client, server or route is not configured with | Add the protocol to `protocols`, or remove the entry |
+| `Type 'Date' is not assignable to type 'JsonValue'` in `ctx.accept({ session })`, `ctx.state` or `ctx.next()` | A session value JSON cannot hold; sessions are stored as JSON | Store a JSON form (`date.toISOString()`), or keep the value outside the session |
 | `Cannot find name 'NoInfer'` in the package's types | TypeScript is older than 5.4 | Upgrade TypeScript |

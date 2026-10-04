@@ -372,6 +372,60 @@ export interface HandlesByArgs {
   handle(...args: HandleArgs): void;
 }
 
+/**
+ * A route's `handle()` arguments: its handlers' contexts have the connection.
+ * An action's handler takes `never` params, as in HandleArgs.
+ * @internal
+ */
+export type RouteHandleArgs<P extends AnyOCPPProtocol> = HandleArgs<
+  RouterWildcardHandler<P>,
+  (context: RouterHandlerContext<never, P>) => unknown
+>;
+
+/**
+ * A route's `handle()` by its implementation's arguments, for code that
+ * registers handlers named only at runtime: the NestJS explorer, from its
+ * decorators' metadata.
+ * @internal
+ */
+export interface RoutesByArgs {
+  handle(...args: RouteHandleArgs<AnyOCPPProtocol>): unknown;
+}
+
+/** `sendToClient()`'s arguments naming an action. @internal */
+export type PlainSendArgs = [
+  identity: string,
+  method: string,
+  params?: object,
+  options?: CallOptions,
+];
+
+/** `sendToClient()`'s arguments naming a version and then an action. @internal */
+export type VersionNamedSendArgs = [
+  identity: string,
+  version: string,
+  method: string,
+  params?: object,
+  options?: CallOptions,
+];
+
+/**
+ * `sendToClient()`'s arguments as its implementation reads them, whichever
+ * overload was called.
+ * @internal
+ */
+export type SendToClientArgs = PlainSendArgs | VersionNamedSendArgs;
+
+/**
+ * A server's `sendToClient()` and `safeSendToClient()` by their
+ * implementation's arguments, for a framework binding that passes its own on.
+ * @internal
+ */
+export interface SendsToClientByArgs {
+  sendToClient(...args: SendToClientArgs): Promise<unknown>;
+  safeSendToClient(...args: SendToClientArgs): Promise<unknown>;
+}
+
 // ─── Message IDs ─────────────────────────────────────────────────
 
 /**
@@ -483,7 +537,42 @@ export interface HandshakeInfo {
 
 // ─── Session Data ────────────────────────────────────────────────
 
-export type SessionData<T = Record<string, any>> = T;
+/**
+ * A connection's session. `client.session` starts as what connection
+ * middleware left in `ctx.state` (directly or through `ctx.next(payload)`),
+ * then the session stored for the identity (by the cluster adapter, or on
+ * this node), then the `session` an auth callback passes to `ctx.accept()`,
+ * each over the one before. Declare its keys once, and all of those are typed
+ * by them:
+ *
+ * ```ts
+ * declare module "ocpp-ws-io" {
+ *   interface OCPPSession {
+ *     tenantId: string;
+ *     role: "admin" | "charger";
+ *   }
+ * }
+ * ```
+ *
+ * Values are JSON, as the cluster adapter stores them; a key that is not
+ * declared takes any JSON value.
+ */
+export interface OCPPSession {
+  [key: string]: JsonValue;
+}
+
+/**
+ * A session as it is held and filled: the keys declared on OCPPSession (or
+ * on T), each of which a session may not have yet, and any other key with a
+ * JSON value.
+ */
+export type SessionData<T extends object = OCPPSession> = {
+  [K in keyof T as string extends K
+    ? never
+    : number extends K
+      ? never
+      : K]?: T[K];
+} & { [key: string]: JsonValue };
 
 // ─── Logger Interface ────────────────────────────────────────────
 
@@ -1391,12 +1480,12 @@ export interface ListenOptions {
 // ─── Auth Callback ───────────────────────────────────────────────
 
 export interface AuthAccept<
-  TSession = Record<string, unknown>,
+  TSession = SessionData,
   P extends AnyOCPPProtocol = AnyOCPPProtocol,
 > {
   /** Subprotocol to use for this client */
   protocol?: P;
-  /** Session data attached to the client */
+  /** Session data for the connection, over what `ctx.state` and the stored session hold. */
   session?: TSession;
   /**
    * Override the connection identity.
@@ -1422,7 +1511,7 @@ export interface AuthAccept<
 }
 
 export type AuthCallback<
-  TSession = Record<string, unknown>,
+  TSession = SessionData,
   P extends AnyOCPPProtocol = AnyOCPPProtocol,
 > = (ctx: AuthContext<TSession, P>) => void | Promise<void>;
 
@@ -1430,7 +1519,7 @@ export type RoutePattern = string | RegExp;
 
 export interface AuthRoute {
   pattern: RoutePattern | null; // null represents the default fallback route
-  handler: AuthCallback<any>;
+  handler: AuthCallback;
 }
 
 // ─── Message Direction & Payload Types ──────────────────────────
@@ -2308,19 +2397,23 @@ export type { MiddlewareFunction, MiddlewareNext } from "./middleware.js";
 export interface BaseConnectionContext {
   /** The handshake info from the upgrading WebSocket request */
   handshake: HandshakeInfo;
-  /** Modifiable record object suitable for passing data between middlewares (e.g. auth tokens) */
-  state: Record<string, unknown>;
+  /**
+   * Data passed between middlewares and the auth callback (e.g. auth
+   * tokens). It becomes the start of the connection's session (OCPPSession),
+   * so its values are JSON.
+   */
+  state: SessionData;
   /** Safely reject the WebSocket connection explicitly with an HTTP code and reason */
   reject: (code?: number, message?: string) => never;
 }
 
 export interface ConnectionContext extends BaseConnectionContext {
   /** Triggers the next middleware in the execution chain, optionally merging a payload into ctx.state and then client.session in the chain*/
-  next: (payload?: Record<string, unknown>) => Promise<void>;
+  next: (payload?: SessionData) => Promise<void>;
 }
 
 export interface AuthContext<
-  TSession = Record<string, unknown>,
+  TSession = SessionData,
   P extends AnyOCPPProtocol = AnyOCPPProtocol,
 > extends BaseConnectionContext {
   /** The AbortSignal representing if the client abruptly closed the underlying socket */

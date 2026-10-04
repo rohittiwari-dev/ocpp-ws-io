@@ -3,7 +3,13 @@ import type { DiscoveryService, MetadataScanner } from "@nestjs/core";
 import type { InstanceWrapper } from "@nestjs/core/injector/instance-wrapper.js";
 import type { MiddlewareFunction } from "../../middleware.js";
 import type { OCPPServer } from "../../server.js";
-import type { MiddlewareContext } from "../../types.js";
+import type { OCPPServerClient } from "../../server-client.js";
+import type {
+  CORSOptions,
+  HandshakeInfo,
+  MiddlewareContext,
+  RoutesByArgs,
+} from "../../types.js";
 import {
   OCPP_AUTH_METADATA,
   OCPP_CONNECTION_MIDDLEWARE_METADATA,
@@ -14,8 +20,51 @@ import {
   OCPP_WILDCARD_EVENT_METADATA,
   PARAM_ARGS_METADATA,
 } from "./constants.js";
-import { type OcppParamMetadata, OcppParamType } from "./interfaces.js";
+import type { OcppMessageEventMetadata } from "./decorators/method.decorators.js";
+import {
+  type OcppGatewayOptions,
+  type OcppParamMetadata,
+  OcppParamType,
+  type OnOcppClientConnected,
+  type OnOcppClientDisconnected,
+  type OnOcppClientError,
+} from "./interfaces.js";
 import type { OcppService } from "./ocpp.service.js";
+
+/**
+ * A gateway provider as the explorer reads it: the lifecycle hooks it may
+ * have, and its methods by name.
+ */
+type GatewayInstance = Partial<
+  OnOcppClientConnected & OnOcppClientDisconnected & OnOcppClientError
+> & {
+  readonly constructor: object;
+  readonly [key: string]: unknown;
+};
+
+/** A gateway method: called with what its parameter decorators select. */
+type GatewayMethod = (this: GatewayInstance, ...args: unknown[]) => unknown;
+
+function isGatewayMethod(value: unknown): value is GatewayMethod {
+  return typeof value === "function";
+}
+
+/**
+ * What a gateway method's parameter decorators read, from the context it is
+ * called with: a connection middleware's, an auth callback's or a message
+ * handler's. Each reads what its context has.
+ */
+interface GatewayContext {
+  client?: OCPPServerClient;
+  handshake?: HandshakeInfo;
+  state?: Record<string, unknown>;
+  message?: unknown;
+  messageId?: string;
+  method?: string;
+  protocol?: string;
+  params?: unknown;
+  payload?: unknown;
+}
 
 @Injectable()
 export class OcppExplorer implements OnModuleInit {
@@ -41,14 +90,18 @@ export class OcppExplorer implements OnModuleInit {
     );
 
     gateways.forEach((wrapper: InstanceWrapper) => {
-      const { instance, metatype } = wrapper;
+      // A provider's instance, as Nest gives it.
+      const instance: GatewayInstance | undefined = wrapper.instance;
+      const { metatype } = wrapper;
       if (!instance || !metatype) return;
 
-      const gatewayOptions = Reflect.getMetadata(
-        OCPP_GATEWAY_METADATA,
+      // Set by @OcppGateway() and @OcppCors().
+      const gatewayOptions: OcppGatewayOptions | undefined =
+        Reflect.getMetadata(OCPP_GATEWAY_METADATA, metatype);
+      const corsOptions: CORSOptions | undefined = Reflect.getMetadata(
+        OCPP_CORS_METADATA,
         metatype,
       );
-      const corsOptions = Reflect.getMetadata(OCPP_CORS_METADATA, metatype);
       // Set by @UseOcppRpcMiddleware().
       const rpcMiddlewares:
         | MiddlewareFunction<MiddlewareContext>[]
@@ -94,11 +147,11 @@ export class OcppExplorer implements OnModuleInit {
             }
           }
           if (hasConnectedHook) {
-            instance.onOcppClientConnected(client);
+            instance.onOcppClientConnected?.(client);
           }
           if (hasDisconnectedHook) {
             client.on("close", (args) => {
-              instance.onOcppClientDisconnected(
+              instance.onOcppClientDisconnected?.(
                 client,
                 args?.code ?? 1000,
                 args?.reason ? args.reason.toString() : "",
@@ -107,7 +160,7 @@ export class OcppExplorer implements OnModuleInit {
           }
           if (hasErrorHook) {
             client.on("error", (err) => {
-              instance.onOcppClientError(client, err);
+              instance.onOcppClientError?.(client, err);
             });
           }
         });
@@ -119,15 +172,15 @@ export class OcppExplorer implements OnModuleInit {
         Object.getPrototypeOf(instance),
         (key: string) => {
           const method = instance[key];
-          if (typeof method !== "function") return;
+          if (!isGatewayMethod(method)) return;
 
           // 1. Connection Middleware
           if (
             Reflect.hasMetadata(OCPP_CONNECTION_MIDDLEWARE_METADATA, method)
           ) {
-            router.use((ctx: any) =>
-              this.executeWithParams(instance, method, key, ctx),
-            );
+            router.use(async (ctx) => {
+              await this.executeWithParams(instance, method, key, ctx);
+            });
             this.logger.log(
               `Mapped Connection Middleware: ${metatype.name}.${key}`,
             );
@@ -135,29 +188,31 @@ export class OcppExplorer implements OnModuleInit {
 
           // 2. Auth Handler
           if (Reflect.hasMetadata(OCPP_AUTH_METADATA, method)) {
-            router.auth((ctx: any) =>
-              this.executeWithParams(instance, method, key, ctx),
-            );
+            router.auth(async (ctx) => {
+              await this.executeWithParams(instance, method, key, ctx);
+            });
             this.logger.log(`Mapped Auth Handler: ${metatype.name}.${key}`);
           }
 
           // 3. Message Event Handlers
-          const messageEvent = Reflect.getMetadata(
-            OCPP_MESSAGE_EVENT_METADATA,
-            method,
-          );
+          // Set by @OcppMessageEvent(), which checks the action's name; the
+          // method's answer goes back as the response, as the route's
+          // implementation takes it (RoutesByArgs).
+          const messageEvent: OcppMessageEventMetadata | undefined =
+            Reflect.getMetadata(OCPP_MESSAGE_EVENT_METADATA, method);
           if (messageEvent) {
             const { action, protocol } = messageEvent;
-            const handler = (ctx: any) =>
+            const handler = (ctx: GatewayContext) =>
               this.executeWithParams(instance, method, key, ctx);
+            const routes: RoutesByArgs = router;
 
             if (protocol) {
-              router.handle(protocol, action, handler);
+              routes.handle(protocol, action, handler);
               this.logger.log(
                 `Mapped RPC Event: ${action} (${protocol}) -> ${metatype.name}.${key}`,
               );
             } else {
-              router.handle(action, handler);
+              routes.handle(action, handler);
               this.logger.log(
                 `Mapped RPC Event: ${action} -> ${metatype.name}.${key}`,
               );
@@ -166,7 +221,7 @@ export class OcppExplorer implements OnModuleInit {
 
           // 4. Wildcard Handlers
           if (Reflect.hasMetadata(OCPP_WILDCARD_EVENT_METADATA, method)) {
-            router.handle((methodName: string, ctx: any) =>
+            router.handle((methodName, ctx) =>
               this.executeWithParams(instance, method, key, {
                 ...ctx,
                 method: ctx?.method ?? methodName,
@@ -180,19 +235,19 @@ export class OcppExplorer implements OnModuleInit {
   }
 
   private async executeWithParams(
-    instance: any,
-    method: (...args: any[]) => any,
+    instance: GatewayInstance,
+    method: GatewayMethod,
     key: string,
-    ctx: any,
-  ) {
+    ctx: GatewayContext,
+  ): Promise<unknown> {
     // Look up param metadata by the property key the decorator stored it under.
     // (Using `method.name` would break for bound/renamed methods.)
-    const paramsMetadata =
+    const paramsMetadata: Record<string, unknown> =
       Reflect.getMetadata(PARAM_ARGS_METADATA, instance.constructor, key) || {};
 
     // Determine the max parameter index to initialize the array length
     const maxIndex = Math.max(-1, ...Object.keys(paramsMetadata).map(Number));
-    const args = new Array(maxIndex + 1).fill(undefined);
+    const args: unknown[] = new Array(maxIndex + 1).fill(undefined);
 
     // If there are no parameter decorators, just pass the context as the first argument
     if (Object.keys(paramsMetadata).length === 0) {

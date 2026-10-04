@@ -128,6 +128,7 @@ export {
   type OCPPProtocol,
   type OCPPSend,
   type OCPPServerStats,
+  type OCPPSession,
   type PersistedSession,
   type RateLimitOptions,
   type RouterConfig,

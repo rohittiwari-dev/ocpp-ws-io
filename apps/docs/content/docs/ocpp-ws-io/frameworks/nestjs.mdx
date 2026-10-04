@@ -224,7 +224,7 @@ export class ChargerController {
   constructor(private readonly ocppService: OcppService) {}
 
   @Post(':identity/reset')
-  async resetCharger(@Param('identity') identity: string, @Body('type') type: string) {
+  async resetCharger(@Param('identity') identity: string, @Body('type') type: 'Hard' | 'Soft') {
     // Check if connected
     const isConnected = await this.ocppService.hasClient(identity);
     if (!isConnected) return { success: false, reason: 'Offline' };
@@ -238,11 +238,11 @@ export class ChargerController {
 
 The `OcppService` provides:
 - `.server`: Access to the raw `OCPPServer` instance.
-- `.clients`: A Map of locally connected clients.
+- `.clients`: A Set of locally connected clients.
 - `.getClient(identity)`: Retrieve a local client instance.
 - `.hasClient(identity)`: Check if a client is connected (supports Redis checks if configured).
 - `.sendToClient(identity, action, payload)`: Send a message to a client and await its response.
-- `.safeSendToClient(identity, action, payload)`: Fire-and-forget message sending.
+- `.safeSendToClient(identity, action, payload)`: Like `sendToClient`, but resolves with `undefined` instead of throwing when the call fails.
 - `.stats()`: Connection statistics.
 
 ## Bringing it All Together: Exposing the WebSockets

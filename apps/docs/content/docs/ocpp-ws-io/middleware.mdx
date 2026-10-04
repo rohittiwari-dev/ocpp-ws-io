@@ -161,7 +161,9 @@ const rateLimitConnection = defineMiddleware(async (ctx) => {
     ctx.reject(429, "Too Many Requests");
   } else {
     // Or proceed down the execution chain. You can optionally pass an object
-    // to next(), which will automatically be shallow-merged into `ctx.state`.
+    // to next(), which will automatically be shallow-merged into `ctx.state`,
+    // and from there into the connection's session (JSON values; see Sessions
+    // in the TypeScript guide).
     await ctx.next({
       isTrusted: true,
       rateLimitRemaining: 99,

@@ -21,10 +21,12 @@ import type {
   JsonObject,
   KnownProtocol,
   ResponseOf,
+  RouteHandleArgs,
   RouterConfig,
   RouterHandlerContext,
   RouterWildcardHandler,
   ServerEvents,
+  SessionData,
   StrictModeMethodsFor,
   TypedEventEmitter,
   UncheckedAction,
@@ -40,10 +42,7 @@ export async function executeMiddlewareChain(
   ctx: Parameters<ConnectionMiddleware>[0],
 ): Promise<void> {
   let index = -1;
-  const dispatch = async (
-    i: number,
-    payload?: Record<string, unknown>,
-  ): Promise<void> => {
+  const dispatch = async (i: number, payload?: SessionData): Promise<void> => {
     if (payload) {
       ctx.state = {
         ...(ctx.state || {}),
@@ -66,7 +65,7 @@ export async function executeMiddlewareChain(
     // error handling instead of escaping as an unhandled rejection, which
     // ended the process.
     let downstream: Promise<void> | undefined;
-    ctx.next = (nextPayload?: Record<string, unknown>) => {
+    ctx.next = (nextPayload?: SessionData) => {
       downstream = dispatch(i + 1, nextPayload);
       // Handled from the start, in case it rejects while the middleware is
       // still running; the await below still raises the error.
@@ -90,15 +89,6 @@ export interface CompiledRegexPattern {
   regex: RegExp;
   paramNames: string[];
 }
-
-/**
- * A route's handle() arguments: its handlers' contexts have the connection.
- * An action's handler takes `never` params, as in HandleArgs.
- */
-type RouteHandleArgs<P extends AnyOCPPProtocol> = HandleArgs<
-  RouterWildcardHandler<P>,
-  (context: RouterHandlerContext<never, P>) => unknown
->;
 
 /** Gives a handler's context the connection as `ctx.client`. */
 function attachClient<T, C>(
@@ -189,7 +179,7 @@ export class OCPPRouter<
   /** Connection middlewares attached to this router. */
   public middlewares: ConnectionMiddleware[];
   /** Auth callback for this route endpoint. */
-  public authCallback: AuthCallback<unknown, P> | null = null;
+  public authCallback: AuthCallback<SessionData, P> | null = null;
   /** Route-level CORS options. */
   public _routeCORS?: CORSOptions;
   /** Route-level config overrides. */
@@ -273,10 +263,8 @@ export class OCPPRouter<
   /**
    * Registers an authentication and protocol-negotiation callback for this route endpoint.
    */
-  auth<TSession = Record<string, unknown>>(
-    callback: AuthCallback<TSession, P>,
-  ): this {
-    this.authCallback = callback as AuthCallback<unknown, P>;
+  auth<TSession = SessionData>(callback: AuthCallback<TSession, P>): this {
+    this.authCallback = callback as AuthCallback<SessionData, P>;
     return this;
   }
 

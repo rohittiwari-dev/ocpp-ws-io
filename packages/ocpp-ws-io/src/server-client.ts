@@ -6,6 +6,7 @@ import {
   ConnectionState,
   type HandshakeInfo,
   type OCPPPlugin,
+  type SessionData,
   type StrictModeMethodsFor,
 } from "./types.js";
 import type { WorkerPool } from "./worker-pool.js";
@@ -20,7 +21,7 @@ import type { WorkerPool } from "./worker-pool.js";
 export class OCPPServerClient<
   P extends AnyOCPPProtocol = AnyOCPPProtocol,
 > extends OCPPClient<P> {
-  private _serverSession: Record<string, any>;
+  private _serverSession: SessionData;
   private _serverHandshake: HandshakeInfo;
   /** Plugins passed from OCPPServer for hook execution */
   private _serverPlugins: OCPPPlugin<P>[];
@@ -30,7 +31,7 @@ export class OCPPServerClient<
     context: {
       ws: WebSocket;
       handshake: HandshakeInfo;
-      session: Record<string, any>;
+      session: SessionData;
       protocol?: string;
       /** Optional adaptive rate multiplier getter (from OCPPServer.AdaptiveLimiter) */
       adaptiveMultiplier?: () => number;
@@ -438,9 +439,10 @@ export class OCPPServerClient<
   }
 
   /**
-   * Session data associated with this client connection.
+   * The connection's session (OCPPSession): `ctx.state`, the stored session
+   * and the auth callback's `accept({ session })`, merged when it connected.
    */
-  get session(): Record<string, any> {
+  get session(): SessionData {
     return this._serverSession;
   }
 

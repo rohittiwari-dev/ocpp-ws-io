@@ -94,15 +94,15 @@ app.post("/chargers/:id/reset", async (req, res) => {
 });
 ```
 
-### Example: Fire-and-Forget Messages
+### Example: Messages That Must Not Throw
 
-If you don't need to wait for the charger to reply (or if you are sending a high volume of metrics/triggers), you can use `safeSendToClient` which sends the payload and immediately resolves without awaiting the charger's response.
+`safeSendToClient` waits for the charger's answer like `sendToClient`, but resolves with `undefined` instead of throwing when the charger is not connected or the call fails, so a trigger that may not reach the charger needs no `try`/`catch`.
 
 ```typescript
 app.post("/chargers/:id/trigger-message", async (req, res) => {
   const chargerId = req.params.id;
   
-  // Triggers the message without blocking the HTTP response
+  // undefined, without throwing, if the charger cannot be reached
   await req.ocpp.safeSendToClient(chargerId, "TriggerMessage", {
     requestedMessage: "MeterValues"
   });
@@ -171,7 +171,7 @@ This context exposes the following properties and methods to interact with the O
 
 **Message Sending:**
 - **`sendToClient(identity, action, payload, options?)`**: Sends a message to a client and awaits the response payload. Works seamlessly across Redis clusters if the client is connected to another node.
-- **`safeSendToClient(identity, action, payload, options?)`**: Fire-and-forget message sending without awaiting a response.
+- **`safeSendToClient(identity, action, payload, options?)`**: Like `sendToClient`, but resolves with `undefined` instead of throwing when the charger is not connected or the call fails.
 
 **Lifecycle:**
 - **`close()`**: Closes the context and the underlying OCPP server.

@@ -62,11 +62,14 @@ import {
   type PersistedSession,
   type RequestOf,
   SecurityProfile,
+  type SendToClientArgs,
   type ServerEvents,
   type ServerOptions,
+  type SessionData,
   type StrictModeMethodsFor,
   type TypedEventEmitter,
   type UncheckedAction,
+  type VersionNamedSendArgs,
   type WithUniqueProtocols,
 } from "./types.js";
 import { unchecked } from "./unchecked.js";
@@ -108,22 +111,6 @@ const WSS_OPTION_HINT: Record<ManagedWsServerOption, string> = {
 const MANAGED_WSS_OPTIONS = Object.keys(
   WSS_OPTION_HINT,
 ) as ManagedWsServerOption[];
-
-/** sendToClient's arguments: an action, or a version and then an action. */
-type PlainSendArgs = [
-  identity: string,
-  method: string,
-  params?: object,
-  options?: CallOptions,
-];
-type VersionNamedSendArgs = [
-  identity: string,
-  version: string,
-  method: string,
-  params?: object,
-  options?: CallOptions,
-];
-type SendToClientArgs = PlainSendArgs | VersionNamedSendArgs;
 
 /** A version-named call has its action, a string, where the other has params. */
 function isVersionNamed(args: SendToClientArgs): args is VersionNamedSendArgs {
@@ -278,7 +265,7 @@ export class OCPPServer<
   private static readonly _REMOTE_RESPONSE_GRACE_MS = 2000;
   private _sessions: LRUMap<
     string,
-    { data: Record<string, any>; lastActive: number }
+    { data: PersistedSession; lastActive: number }
   >;
   private _gcInterval: NodeJS.Timeout | null = null;
   private readonly _sessionTimeoutMs: number;
@@ -1024,7 +1011,7 @@ export class OCPPServer<
   /**
    * Registers a top-level auth handler, returning a router to attach `.on()` or `.use()`.
    */
-  auth<TSession = Record<string, unknown>>(
+  auth<TSession = SessionData>(
     callback: AuthCallback<TSession, P>,
   ): OCPPRouter<P> {
     const router = new OCPPRouter<P>();
@@ -2017,7 +2004,7 @@ export class OCPPServer<
           reject: (code = 401, message = "Unauthorized") => {
             throw new HandshakeRejection(code, message);
           },
-          next: async (_payload?: Record<string, unknown>) => {}, // Bound dynamically inside executeMiddlewareChain
+          next: async (_payload?: SessionData) => {}, // Bound dynamically inside executeMiddlewareChain
         };
 
         const chain = [...matchedMiddlewares];
@@ -2382,7 +2369,7 @@ export class OCPPServer<
       const finalSession = {
         ...(ctx?.state || {}),
         ...(storedSession ?? this._sessions.get(identity)?.data ?? {}),
-        ...(((acceptOptions as any)?.session as Record<string, unknown>) || {}),
+        ...((acceptOptions as AuthAccept | undefined)?.session || {}),
       };
 
       const client = new OCPPServerClient(clientOptions, {
