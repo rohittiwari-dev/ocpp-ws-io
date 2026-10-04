@@ -1,8 +1,8 @@
 # ocpp-ws-io
 
-## Unreleased
+## v3.0.0 - Typed by Configuration (2026-10-04)
 
-To be released as **3.0.0**. Upgrading from 2.x: see the [migration guide](https://ocpp-ws-io.rohittiwari.me/docs/ocpp-ws-io/upgrading-to-v3), which lists each breaking change, who it affects and the option that keeps the 2.x behaviour.
+Upgrading from 2.x: see the [migration guide](https://ocpp-ws-io.rohittiwari.me/docs/ocpp-ws-io/upgrading-to-v3), which lists each breaking change, who it affects and the option that keeps the 2.x behaviour.
 
 ### Breaking changes
 

@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.2.1
 
+### Patch Changes
+
+- **Requires `ocpp-ws-io` 3.0.0** (`^3.0.0`, was `^2.3.2`). The adapter forwards each translated action with `unchecked()`, which 3.0 added: 3.0's typed calls take only actions their protocols declare, and a proxy forwards actions it only knows at runtime.
 - **Requires Node.js 20 or later** (`engines` was `>=18.0.0`), the same floor as `ocpp-ws-io` 3.0.0; Node 18 reached end of life in April 2025. The build now targets Node 20.
 
 ## 0.2.0

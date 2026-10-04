@@ -1,6 +1,6 @@
 {
   "name": "ocpp-ws-board",
-  "version": "0.2.0-alpha.0",
+  "version": "0.2.1-alpha.1",
   "description": "Monitoring UI and backend integration for ocpp-ws-io. Type-safe TypeScript toolkit for EV charging, CSMS backends, Redis scaling, and protocol validation.",
   "repository": {
     "type": "git",
@@ -55,7 +55,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.external.json"
   },
   "peerDependencies": {
-    "ocpp-ws-io": "^2.3.2"
+    "ocpp-ws-io": "^3.0.0"
   },
   "peerDependenciesMeta": {
     "ocpp-ws-io": {

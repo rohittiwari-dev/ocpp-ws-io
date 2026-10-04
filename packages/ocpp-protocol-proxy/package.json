@@ -1,6 +1,6 @@
 {
   "name": "ocpp-protocol-proxy",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Transport-agnostic OCPP version translation proxy — translate any OCPP version to any other with pluggable middleware, stateful sessions, and spec-compliant presets.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -61,7 +61,7 @@
   },
   "homepage": "https://ocpp-ws-io.rohittiwari.me/docs/protocol-proxy",
   "dependencies": {
-    "ocpp-ws-io": "^2.3.2"
+    "ocpp-ws-io": "^3.0.0"
   },
   "files": [
     "dist",

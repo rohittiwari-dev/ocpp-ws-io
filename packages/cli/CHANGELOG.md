@@ -1,6 +1,8 @@
 # ocpp-ws-cli
 
-## Unreleased
+## 1.2.1
+
+### Patch Changes
 
 - **`ocpp generate` writes request and response types.** Every action came out as `{ request: Record<string, never>; response: Record<string, never> }`: the generator never kept the schemas it read, so the types were unusable. Generated types from an earlier version should be regenerated.
 - **`ocpp generate` writes the validator too**, `<name>.validator.ts`: `createValidator("<protocol>", schemas)` from the same schemas as the types, for `strictModeValidators`. It compiles with `ocpp-ws-io` 2.x and 3.0.

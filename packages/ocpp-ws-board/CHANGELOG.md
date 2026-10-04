@@ -1,7 +1,10 @@
 # ocpp-ws-board
 
-## Unreleased
+## 0.2.1-alpha.1 (2026-10-04)
 
+### Changes
+
+- **`ocpp-ws-io` peer range is now `^3.0.0`** (was `^2.3.2`): the board is built and tested against `ocpp-ws-io` 3.0.0.
 - **Requires Node.js 20 or later** (new `engines` field: `>=20.0.0`), the same floor as `ocpp-ws-io` 3.0.0; Node 18 reached end of life in April 2025. The build now targets Node 20.
 
 ## 0.2.0-alpha.0 (2026-10-02)
