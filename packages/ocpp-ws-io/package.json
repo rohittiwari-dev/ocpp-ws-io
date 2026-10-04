@@ -1,7 +1,7 @@
 {
 	"name": "ocpp-ws-io",
 	"version": "3.0.0",
-	"description": "OCPP RPC WebSocket client and server for OCPP 1.6J, 2.0.1, and 2.1. Type-safe TypeScript toolkit for EV charging, CSMS backends, Redis scaling, and protocol validation.",
+	"description": "Type-safe OCPP 1.6J, 2.0.1, and 2.1 WebSocket RPC client & server toolkit for Node.js, TypeScript, and NestJS. OCA schema-validated, Redis clustering, and EV charging infrastructure support.",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/rohittiwari-dev/ocpp-ws-io.git"
@@ -137,7 +137,16 @@
 		"testing-cli",
 		"ocpp-testing",
 		"ocpp-implementation",
-		"ocpp-protocol"
+		"ocpp-protocol",
+		"nestjs",
+		"nestjs-ocpp",
+		"oca",
+		"open-charge-alliance",
+		"ocpi",
+		"e-mobility",
+		"e-mobility-os",
+		"citrineos",
+		"smart-charging"
 	],
 	"author": "Rohit Tiwari <rohit@rohittiwari.me>",
 	"homepage": "https://ocpp-ws-io.rohittiwari.me",

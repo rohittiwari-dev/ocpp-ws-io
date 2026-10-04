@@ -7,16 +7,25 @@ import { Hero } from "@/components/landing/hero";
 import { Showcase } from "@/components/landing/showcase";
 import { Stats } from "@/components/landing/stats";
 import { blogSource } from "@/lib/blog";
+import {
+  createSoftwareApplicationJsonLd,
+  serializeJsonLd,
+} from "@/lib/json-ld";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://ocpp-ws-io.rohittiwari.me"),
   title: {
-    absolute: "ocpp-ws-io — Complete OCPP Ecosystem for Node.js",
+    absolute:
+      "ocpp-ws-io — Type-Safe OCPP 1.6/2.0.1/2.1 Ecosystem for Node.js & NestJS",
   },
   description:
-    "The complete, type-safe OCPP ecosystem for Node.js. Core RPC library, Protocol Proxy, Smart Charging Engine, CLI tooling, and Browser Simulator. Supports OCPP 1.6, 2.0.1, and 2.1.",
+    "A type-safe OCPP WebSocket RPC ecosystem for Node.js & TypeScript. Supports OCPP 1.6, 2.0.1, 2.1, native NestJS modules, Redis clustering, OCA schemas, Smart Charging, and Protocol Translation.",
   keywords: [
-    // Core library
+    // Core library & RPC
+    "OCPP",
+    "OCPP RPC",
+    "ocpp-rpc",
+    "OCPP WebSocket RPC",
     "OCPP Library Node.js",
     "TypeScript OCPP WebSocket",
     "OCPP Server Implementation",
@@ -24,7 +33,28 @@ export const metadata: Metadata = {
     "OCPP 1.6 Server",
     "OCPP 2.0.1 Library",
     "OCPP 2.1 TypeScript",
-    "ocpp-ws-io",
+    "node-ocpp",
+    "ocpp node js framework",
+    // Frameworks & Architecture
+    "NestJS OCPP",
+    "NestJS EV charging",
+    "NestJS CSMS",
+    "Express OCPP",
+    "Fastify OCPP",
+    "Hono OCPP",
+    "Bun OCPP",
+    // Open Standards & Ecosystems
+    "Open Charge Alliance",
+    "OCA",
+    "OCPI",
+    "e-mobility",
+    "e-mobility OS",
+    "CitrineOS",
+    "CitrineOS Node.js",
+    "CSMS Builder",
+    "Charge Point Operator",
+    "CPO Software",
+    "EV Fleet Management",
     // Ecosystem packages
     "OCPP Protocol Proxy",
     "OCPP Version Translation",
@@ -33,41 +63,22 @@ export const metadata: Metadata = {
     "EV Load Balancing",
     "OCPP CLI",
     "OCPP Simulator Browser",
-    // Use-cases
-    "CSMS Framework Node.js",
-    "EV Charging Software",
-    "Charge Point Management System",
-    "Open Charge Point Protocol",
-    "EV Infrastructure TypeScript",
-    "OCPP WebSocket RPC",
     "OCPP Redis Clustering",
     "OCPP Security Profiles mTLS",
-    "ocpp-rpc",
-    "Open Charge Aliance",
-    "OCPP-RPC",
-    "ocpp-RPC",
-    "ocpp",
-    "OCPP",
-    "OCPP NODEJS",
-    "ocpp node js framework",
-    "ev smart charging",
-    "csms builder",
-    "ocpp charging grid",
-    "how to create ocpp server",
   ],
   openGraph: {
     siteName: "ocpp-ws-io ecosystem",
-    title: "ocpp-ws-io — Complete OCPP Ecosystem for Node.js",
+    title: "ocpp-ws-io — Type-Safe OCPP 1.6/2.0.1/2.1 Ecosystem for Node.js",
     description:
-      "Type-safe OCPP WebSocket RPC, Protocol Proxy, Smart Charging Engine, CLI tooling, and Browser Simulator — all in one TypeScript ecosystem.",
+      "Type-safe OCPP WebSocket RPC, native NestJS module, Protocol Proxy, Smart Charging Engine, CLI tooling, and Browser Simulator — all in one TypeScript ecosystem.",
     url: "https://ocpp-ws-io.rohittiwari.me",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "ocpp-ws-io — Complete OCPP Ecosystem for Node.js",
+    title: "ocpp-ws-io — Type-Safe OCPP Ecosystem for Node.js & NestJS",
     description:
-      "Type-safe OCPP 1.6/2.0.1/2.1 WebSocket RPC, Protocol Proxy, Smart Charging, CLI tools & Browser Simulator — all open source.",
+      "Type-safe OCPP 1.6/2.0.1/2.1 WebSocket RPC, NestJS integration, Protocol Proxy, Smart Charging, CLI tools & Browser Simulator.",
   },
   alternates: {
     canonical: "/",
@@ -79,36 +90,61 @@ export default function HomePage() {
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 3);
 
-  const jsonLd = {
+  const websiteJsonLd = {
     "@context": "https://schema.org",
     "@type": "WebSite",
     url: "https://ocpp-ws-io.rohittiwari.me",
     name: "OCPP WS IO",
-    alternateName: ["OCPP-WS-IO"],
+    alternateName: ["OCPP-WS-IO", "ocpp-ws-io ecosystem"],
     description:
-      "Type-safe OCPP WebSocket RPC client & server for Node.js. Supports OCPP 1.6, 2.0.1, 2.1.",
+      "Type-safe OCPP WebSocket RPC client & server for Node.js. Supports OCPP 1.6, 2.0.1, 2.1, NestJS, and Redis clustering.",
     publisher: {
       "@type": "Person",
       name: "Rohit Tiwari",
       url: "https://rohittiwari.me",
     },
-    potentialAction: {
-      "@type": "SearchAction",
-      target: {
-        "@type": "EntryPoint",
-        urlTemplate:
-          "https://ocpp-ws-io.rohittiwari.me/docs?search={search_term_string}",
-      },
-      "query-input": "required name=search_term_string",
-    },
   };
+
+  const softwareJsonLd = createSoftwareApplicationJsonLd({
+    name: "ocpp-ws-io",
+    description:
+      "Production-grade, type-safe OCPP 1.6/2.0.1/2.1 WebSocket RPC client and server toolkit for Node.js and NestJS.",
+    url: "https://ocpp-ws-io.rohittiwari.me",
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "Cross-platform (Node.js, Bun, Deno)",
+    programmingLanguage: ["TypeScript", "JavaScript"],
+    codeRepository: "https://github.com/rohittiwari-dev/ocpp-ws-io",
+    keywords: [
+      "OCPP",
+      "OCPP RPC",
+      "OCPP 1.6",
+      "OCPP 2.0.1",
+      "OCPP 2.1",
+      "EV Charging",
+      "CSMS",
+      "Open Charge Alliance",
+      "OCA",
+      "OCPI",
+      "CitrineOS",
+      "NestJS",
+      "Smart Charging",
+    ],
+    version: "3.0.0",
+    license: "https://opensource.org/licenses/MIT",
+    author: {
+      name: "Rohit Tiwari",
+      url: "https://rohittiwari.me",
+    },
+  });
 
   return (
     <div className="flex flex-col min-h-screen w-full">
       <script
         type="application/ld+json"
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: safe as we control the content
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: structured data is serialized with HTML delimiters escaped
+        dangerouslySetInnerHTML={{
+          __html: serializeJsonLd([websiteJsonLd, softwareJsonLd]),
+        }}
       />
       <Hero />
       <Stats />

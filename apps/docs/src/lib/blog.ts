@@ -72,7 +72,7 @@ export function getRelatedDocs(tags: string[], limit = 5) {
   const slugSet = new Set<string>();
 
   for (const tag of tags) {
-    const docSlugs = TAG_TO_DOCS[tag] || [];
+    const docSlugs = TAG_TO_DOCS[tag.toLowerCase()] || [];
     for (const slug of docSlugs) {
       slugSet.add(slug);
     }
@@ -81,7 +81,7 @@ export function getRelatedDocs(tags: string[], limit = 5) {
   const docs: { title: string; description?: string; url: string }[] = [];
 
   for (const slug of slugSet) {
-    const page = source.getPage([slug]);
+    const page = source.getPage(["ocpp-ws-io", slug]);
     if (page) {
       docs.push({
         title: page.data.title ?? "",

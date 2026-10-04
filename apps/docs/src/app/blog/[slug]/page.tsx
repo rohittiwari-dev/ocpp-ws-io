@@ -6,6 +6,11 @@ import { notFound } from "next/navigation";
 import { LLMCopyButton, ViewOptions } from "@/components/ai/page-actions";
 import { Footer } from "@/components/landing/footer";
 import { blogSource, getRelatedDocs, getRelatedPosts } from "@/lib/blog";
+import {
+  createBlogPostingJsonLd,
+  createBreadcrumbJsonLd,
+  serializeJsonLd,
+} from "@/lib/json-ld";
 import { gitConfig } from "@/lib/layout.shared";
 import { getMDXComponents } from "@/mdx-components";
 
@@ -68,8 +73,37 @@ export default async function BlogPostPage({
   const relatedDocs = getRelatedDocs(page.tags);
   const toc = page.toc;
 
+  const breadcrumbItems = [
+    { name: "Blog", url: "/blog" },
+    { name: page.title, url: page.url },
+  ];
+
+  const blogPostingJsonLd = createBlogPostingJsonLd({
+    title: page.title,
+    description: page.description,
+    url: page.url,
+    image: page.image,
+    datePublished: new Date(page.date).toISOString(),
+    dateModified: page.lastModified?.toISOString(),
+    author: {
+      name: page.author.name,
+      url: page.author.twitter,
+    },
+    tags: page.tags,
+    breadcrumbs: breadcrumbItems,
+  });
+
+  const breadcrumbsJsonLd = createBreadcrumbJsonLd(breadcrumbItems);
+
   return (
     <>
+      <script
+        type="application/ld+json"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: structured data is serialized with HTML delimiters escaped
+        dangerouslySetInnerHTML={{
+          __html: serializeJsonLd([blogPostingJsonLd, breadcrumbsJsonLd]),
+        }}
+      />
       <main className="container max-w-[1400px] mx-auto py-12 px-4 md:px-6">
         <div className="flex flex-col lg:flex-row gap-10 mx-auto justify-center">
           {/* Main Content */}

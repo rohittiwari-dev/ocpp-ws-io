@@ -40,6 +40,9 @@ export const changelogCollection = defineCollections({
 export const blogCollection = defineCollections({
   type: "doc",
   dir: "./content/blogs",
+  postprocess: {
+    includeProcessedMarkdown: true,
+  },
   schema: z.object({
     title: z.string(),
     description: z.string(),

@@ -1,7 +1,7 @@
 {
   "name": "ocpp-ws-io-monorepo",
   "version": "2.1.4",
-  "description": "OCPP RPC WebSocket client and server for OCPP 1.6J, 2.0.1, and 2.1. Type-safe TypeScript toolkit for EV charging, CSMS backends, Redis scaling, and protocol validation.",
+  "description": "OCPP RPC WebSocket client and server for OCPP 1.6J, 2.0.1, and 2.1. Type-safe TypeScript toolkit for EV charging, NestJS CSMS backends, OCA schemas, Redis scaling, and protocol validation.",
   "private": true,
   "scripts": {
     "build": "turbo run build",
@@ -77,9 +77,14 @@
     "csms",
     "cpo",
     "load-balancing",
-    "charging-profile",
-    "electric-vehicle",
     "e-mobility",
+    "e-mobility-os",
+    "citrineos",
+    "nestjs",
+    "nestjs-ocpp",
+    "oca",
+    "open-charge-alliance",
+    "ocpi",
     "SetChargingProfile",
     "energy-management",
     "typescript"

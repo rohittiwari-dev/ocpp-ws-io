@@ -31,5 +31,9 @@ export async function getLLMText(page: InferPageType<typeof source>) {
 
   return `# ${page.data.title}
 
+URL: https://ocpp-ws-io.rohittiwari.me${page.url}
+
+${page.data.description || ""}
+
 ${processed}`;
 }

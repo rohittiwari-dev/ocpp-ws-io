@@ -75,14 +75,14 @@ export default function BlogPage() {
               Documentation
             </Link>
             <Link
-              href="/docs/quick-start"
+              href="/docs/ocpp-ws-io/quick-start"
               className="inline-flex items-center gap-2 rounded-full border border-fd-border bg-fd-card/50 px-4 py-2 text-sm font-medium text-fd-muted-foreground transition-all hover:bg-fd-card hover:text-fd-foreground hover:shadow-sm"
             >
               <Code className="h-3.5 w-3.5" />
               Quick Start
             </Link>
             <Link
-              href="/docs/security"
+              href="/docs/ocpp-ws-io/security"
               className="inline-flex items-center gap-2 rounded-full border border-fd-border bg-fd-card/50 px-4 py-2 text-sm font-medium text-fd-muted-foreground transition-all hover:bg-fd-card hover:text-fd-foreground hover:shadow-sm"
             >
               <Shield className="h-3.5 w-3.5" />

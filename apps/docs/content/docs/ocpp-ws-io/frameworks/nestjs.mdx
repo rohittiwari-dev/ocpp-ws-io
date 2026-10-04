@@ -1,6 +1,16 @@
 ---
-title: NestJS Integration
-description: Complete guide to using the native NestJS integration in ocpp-ws-io.
+title: NestJS OCPP Integration — Building Scalable CSMS Gateways
+description: Complete guide to using the native NestJS integration in ocpp-ws-io. Build type-safe OCPP 1.6, 2.0.1, and 2.1 CSMS gateways with @OcppGateway decorators, dependency injection, and Redis clustering.
+keywords:
+  - "NestJS OCPP"
+  - "NestJS EV Charging"
+  - "NestJS CSMS"
+  - "OcppGateway"
+  - "OCPP WebSocket NestJS"
+  - "OCPP 1.6 NestJS"
+  - "OCPP 2.0.1 NestJS"
+  - "OCPP RPC"
+  - "CitrineOS"
 ---
 
 `ocpp-ws-io` provides a robust, native integration with NestJS. This module allows you to easily connect your charging stations, define gateways using classes and decorators, and seamlessly hook into your existing NestJS dependency injection system.
@@ -85,6 +95,13 @@ import {
 } from 'ocpp-ws-io/nestjs';
 import { AuthContext } from 'ocpp-ws-io';
 
+export interface BootNotificationParams {
+  chargePointVendor: string;
+  chargePointModel: string;
+  chargeBoxSerialNumber?: string;
+  firmwareVersion?: string;
+}
+
 @OcppGateway('/api/v1/chargers/*')
 @Injectable()
 export class ChargerGateway {
@@ -103,7 +120,10 @@ export class ChargerGateway {
 
   // 2. Message Event Handler
   @OcppMessageEvent('BootNotification')
-  async handleBoot(@Identity() identity: string, @Params() params: any) {
+  async handleBoot(
+    @Identity() identity: string,
+    @Params() params: BootNotificationParams,
+  ) {
     console.log(`BootNotification from ${identity}:`, params);
     
     return {
@@ -133,10 +153,6 @@ export class ChargerService {
   async processBootNotification(identity: string, vendor: string, model: string) {
     this.logger.log(`Processing boot for ${identity} (${vendor} ${model})`);
     
-    // Example: Look up charger in the database
-    // const charger = await this.db.chargers.findById(identity);
-    // if (!charger) throw new RpcException('Unknown charger');
-
     return {
       status: 'Accepted',
       currentTime: new Date().toISOString(),
@@ -145,11 +161,9 @@ export class ChargerService {
   }
 
   async authorizeCard(identity: string, idTag: string) {
-    // Example: Validate RFID tag
-    // const tag = await this.db.tags.findByTag(idTag);
     return {
       idTagInfo: {
-        status: 'Accepted', // or 'Invalid', 'Expired', etc.
+        status: 'Accepted',
         expiryDate: new Date(Date.now() + 86400000).toISOString(),
       }
     };
@@ -166,6 +180,10 @@ import { Injectable } from '@nestjs/common';
 import { OcppGateway, OcppMessageEvent, Identity, Params } from 'ocpp-ws-io/nestjs';
 import { ChargerService } from './charger.service';
 
+export interface AuthorizeParams {
+  idTag: string;
+}
+
 @OcppGateway('/api/v1/chargers/*')
 @Injectable()
 export class ChargerGateway {
@@ -174,7 +192,10 @@ export class ChargerGateway {
   constructor(private readonly chargerService: ChargerService) {}
 
   @OcppMessageEvent('BootNotification')
-  async handleBoot(@Identity() identity: string, @Params() params: any) {
+  async handleBoot(
+    @Identity() identity: string,
+    @Params() params: BootNotificationParams,
+  ) {
     // Delegate business logic to the service
     return this.chargerService.processBootNotification(
       identity, 
@@ -184,10 +205,14 @@ export class ChargerGateway {
   }
 
   @OcppMessageEvent('Authorize')
-  async handleAuthorize(@Identity() identity: string, @Params() params: any) {
+  async handleAuthorize(
+    @Identity() identity: string,
+    @Params() params: AuthorizeParams,
+  ) {
     return this.chargerService.authorizeCard(identity, params.idTag);
   }
 }
+```
 ```
 
 ### 3. Register in your Module
