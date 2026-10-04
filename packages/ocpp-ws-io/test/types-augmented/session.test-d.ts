@@ -1,5 +1,5 @@
 import { expectTypeOf } from "vitest";
-import { defineAuth, type JsonValue, OCPPServer } from "ocpp-ws-io";
+import { defineAuth, OCPPServer, type SessionValue } from "ocpp-ws-io";
 
 /**
  * T5e (D14): keys declared once on OCPPSession type every place a session is
@@ -41,8 +41,8 @@ export function declaredSession() {
       "admin" | "charger" | undefined
     >();
     expectTypeOf(client.session.company).toEqualTypeOf<string | undefined>();
-    // Undeclared keys take any JSON value, and a session may not have them.
-    expectTypeOf(client.session.visits).toEqualTypeOf<JsonValue | undefined>();
+    // Undeclared keys take any JSON value, a Date or undefined, at any depth.
+    expectTypeOf(client.session.visits).toEqualTypeOf<SessionValue>();
   });
 }
 

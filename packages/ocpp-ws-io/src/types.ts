@@ -566,7 +566,7 @@ export interface OCPPSession {
 /**
  * A session as it is held and filled: the keys declared on OCPPSession (or
  * on T), each of which a session may not have yet, and any other key with a
- * JSON value or `undefined`.
+ * SessionValue.
  */
 export type SessionData<T extends object = OCPPSession> = {
   [K in keyof T as string extends K
@@ -574,35 +574,23 @@ export type SessionData<T extends object = OCPPSession> = {
     : number extends K
       ? never
       : K]?: T[K];
-} & { [key: string]: JsonValue | undefined };
+} & { [key: string]: SessionValue };
 
 /**
- * T as an object whose values JSON holds, as `sessionOf` takes it. Each value
- * is a JSON primitive, an array of such values, or an object checked the same
- * way, so an `interface` fits as well as a `type` (`JsonValue`'s object form
- * needs an index signature, which an interface does not have). A key may hold
- * `undefined`, which JSON leaves out like an absent key, so optional keys
- * fit; in an array JSON writes it as `null`, so there it does not. A
- * function, `Date`, `Map`, `Set`, class instance with methods, `bigint`,
- * `symbol` or `unknown` does not fit, nor does an array or a primitive as T.
+ * A value a session holds: JSON, a `Date` or `undefined`, at any depth. The
+ * cluster adapter stores sessions as JSON, so there a `Date` comes back as
+ * its ISO string, and a key holding `undefined` is left out (in an array,
+ * written as `null`).
  */
-export type JsonObjectShape<T> = object & JsonShapeKeys<T>;
-
-// `as K` maps an array by all its keys (push, length…), so it does not fit,
-// where a plain homomorphic mapping would map it to an array.
-type JsonShapeKeys<T> = {
-  [K in keyof T as K]: JsonShapeValue<T[K]> | undefined;
-};
-
-type JsonShapeValue<V> = V extends string | number | boolean | null
-  ? V
-  : V extends readonly (infer U)[]
-    ? readonly JsonShapeValue<U>[]
-    : V extends (...args: never[]) => unknown
-      ? never
-      : V extends object
-        ? JsonShapeKeys<V>
-        : never;
+export type SessionValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | Date
+  | SessionValue[]
+  | { [key: string]: SessionValue };
 
 // ─── Logger Interface ────────────────────────────────────────────
 
@@ -1707,9 +1695,10 @@ export type JsonValue =
 
 /**
  * Session data as an adapter stores it — must be JSON-serializable. A key
- * holding `undefined` is left out by `JSON.stringify`, like an absent key.
+ * holding `undefined` is left out by `JSON.stringify`, like an absent key,
+ * and a `Date` is written as its ISO string.
  */
-export type PersistedSession = { [key: string]: JsonValue | undefined };
+export type PersistedSession = { [key: string]: SessionValue };
 
 export interface EventAdapterInterface {
   publish(channel: string, data: unknown): Promise<void>;

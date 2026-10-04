@@ -1,11 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { RPCError } from "./errors.js";
 import * as errors from "./errors.js";
-import type {
-  JsonObjectShape,
-  LoggerLikeNotOptional,
-  SessionData,
-} from "./types.js";
+import type { LoggerLikeNotOptional, SessionData } from "./types.js";
 
 // ─── ID Generation ──────────────────────────────────────────────
 
@@ -168,22 +164,22 @@ export function safeDecodeURIComponent(value: string): string {
  * Typed access to a connection's session without declaring `OCPPSession`.
  * `to` is for where a session is written (`ctx.next()`,
  * `ctx.accept({ session })`) and checks the keys and their types; `from`
- * reads a session (`client.session`, `ctx.state`) as T, each key possibly
- * missing. Both return what they are given: nothing is checked at runtime.
- * T's values must be JSON, as the cluster adapter stores sessions; optional
- * keys and nested interfaces fit.
+ * reads a session (`client.session`, `ctx.state`) back as T. Both return
+ * what they are given: T is not checked, at compile time or at runtime.
+ * Declare a key optional (`?`) when a session may not have it; a value JSON
+ * cannot hold (a `Date`) comes back from the cluster adapter's store as JSON.
  *
  * ```ts
  * const chargerSession = sessionOf<{ tenantId: string; role: "admin" | "charger" }>();
  * ctx.accept({ session: chargerSession.to({ role: "charger" }) });
- * const { tenantId } = chargerSession.from(client.session); // string | undefined
+ * const { tenantId } = chargerSession.from(client.session); // string
  * ```
  */
-export function sessionOf<T extends JsonObjectShape<T>>() {
+export function sessionOf<T extends object>() {
   return {
     /** Where a session is written: checks the keys and their types. */
     to: (data: Partial<T>): SessionData => data as SessionData,
-    /** Where a session is read: as T, each key possibly missing. */
-    from: (session: SessionData): Partial<T> => session as Partial<T>,
+    /** Where a session is read: as T. */
+    from: (session: SessionData): T => session as T,
   };
 }

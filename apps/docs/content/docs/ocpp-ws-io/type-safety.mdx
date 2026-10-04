@@ -10,32 +10,32 @@ description: How the types follow your configuration — typed calls and handler
 ## Types follow your `protocols`
 
 ```typescript
-import { OCPPClient } from "ocpp-ws-io";
+import { OCPPClient } from 'ocpp-ws-io';
 
 const client = new OCPPClient({
-  identity: "CP001",
-  endpoint: "ws://localhost:3000",
-  protocols: ["ocpp1.6"],
+	identity: 'CP001',
+	endpoint: 'ws://localhost:3000',
+	protocols: ['ocpp1.6'],
 });
 // client is an OCPPClient<"ocpp1.6">: every call and handler uses OCPP 1.6.
 
-const boot = await client.call("BootNotification", {
-  chargePointVendor: "VendorX",
-  chargePointModel: "ModelY",
+const boot = await client.call('BootNotification', {
+	chargePointVendor: 'VendorX',
+	chargePointModel: 'ModelY',
 });
 boot.status; // "Accepted" | "Pending" | "Rejected"
 boot.interval; // number
 
 // @ts-expect-error TransactionEvent is an OCPP 2.0.1 action, not 1.6
-await client.call("TransactionEvent", {});
+await client.call('TransactionEvent', {});
 ```
 
-| You configure | The type | What it means |
-| --- | --- | --- |
-| `protocols: ["ocpp1.6"]` | `OCPPClient<"ocpp1.6">` | Only 1.6 actions, with 1.6 params and responses |
-| `protocols: ["ocpp1.6", "ocpp2.0.1"]` | `OCPPClient<"ocpp1.6" \| "ocpp2.0.1">` | Actions of both; name a version to pick one shape |
-| `protocols: ["ocpp2.0.1", "vendor-proto"]` | `OCPPClient<"ocpp2.0.1" \| "vendor-proto">` | A custom protocol is typed once you [declare it](#custom-protocols) |
-| no `protocols`, or a `string[]` known only at runtime | `OCPPClient` | Every OCPP version, as in 2.x |
+| You configure                                         | The type                                    | What it means                                                       |
+| ----------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------- |
+| `protocols: ["ocpp1.6"]`                              | `OCPPClient<"ocpp1.6">`                     | Only 1.6 actions, with 1.6 params and responses                     |
+| `protocols: ["ocpp1.6", "ocpp2.0.1"]`                 | `OCPPClient<"ocpp1.6" \| "ocpp2.0.1">`      | Actions of both; name a version to pick one shape                   |
+| `protocols: ["ocpp2.0.1", "vendor-proto"]`            | `OCPPClient<"ocpp2.0.1" \| "vendor-proto">` | A custom protocol is typed once you [declare it](#custom-protocols) |
+| no `protocols`, or a `string[]` known only at runtime | `OCPPClient`                                | Every OCPP version, as in 2.x                                       |
 
 Servers, routes and their connections follow the same rule, as do `BrowserOCPPClient` and `createPlugin`. Any protocol name is accepted, including your own; a protocol listed twice is a type error.
 
@@ -44,42 +44,42 @@ Servers, routes and their connections follow the same rule, as do `BrowserOCPPCl
 `call()` resolves with the response and throws on a CALLERROR or a timeout; `safeCall()` resolves with the response, or `undefined` when the call failed. On a client of several versions, name the version first:
 
 ```typescript
-import { OCPPClient } from "ocpp-ws-io";
+import { OCPPClient } from 'ocpp-ws-io';
 
 const client = new OCPPClient({
-  identity: "CP001",
-  endpoint: "ws://localhost:3000",
-  protocols: ["ocpp1.6", "ocpp2.0.1"],
+	identity: 'CP001',
+	endpoint: 'ws://localhost:3000',
+	protocols: ['ocpp1.6', 'ocpp2.0.1'],
 });
 
-const boot = await client.call("ocpp2.0.1", "BootNotification", {
-  reason: "PowerUp",
-  chargingStation: { model: "ModelY", vendorName: "VendorX" },
+const boot = await client.call('ocpp2.0.1', 'BootNotification', {
+	reason: 'PowerUp',
+	chargingStation: { model: 'ModelY', vendorName: 'VendorX' },
 });
 boot.status; // "Accepted" | "Pending" | "Rejected"
 
-const heartbeat = await client.safeCall("ocpp1.6", "Heartbeat", {});
+const heartbeat = await client.safeCall('ocpp1.6', 'Heartbeat', {});
 if (heartbeat) {
-  heartbeat.currentTime; // string
+	heartbeat.currentTime; // string
 }
 ```
 
 `send()` sends an unconfirmed (SEND) message, which OCPP 2.1 and custom protocols define; it is never answered. On a client without SEND messages, `send()` takes only `unchecked()` names.
 
 ```typescript
-import { OCPPClient } from "ocpp-ws-io";
+import { OCPPClient } from 'ocpp-ws-io';
 
 const client = new OCPPClient({
-  identity: "CP001",
-  endpoint: "ws://localhost:3000",
-  protocols: ["ocpp2.1"],
+	identity: 'CP001',
+	endpoint: 'ws://localhost:3000',
+	protocols: ['ocpp2.1'],
 });
 
-await client.send("NotifyPeriodicEventStream", {
-  id: 1,
-  pending: 0,
-  basetime: new Date().toISOString(),
-  data: [{ t: 0, v: "230.4" }],
+await client.send('NotifyPeriodicEventStream', {
+	id: 1,
+	pending: 0,
+	basetime: new Date().toISOString(),
+	data: [{ t: 0, v: '230.4' }],
 });
 ```
 
@@ -88,58 +88,61 @@ await client.send("NotifyPeriodicEventStream", {
 A handler's `params` are the request of its action, and what it returns is checked as the response. A handler may be async, and may return `NOREPLY` to answer nothing, now or after async work:
 
 ```typescript
-import { NOREPLY, OCPPClient } from "ocpp-ws-io";
+import { NOREPLY, OCPPClient } from 'ocpp-ws-io';
 
 declare function startCharging(idTag: string): Promise<boolean>;
 declare function queue(data: string | undefined): Promise<void>;
 
 const client = new OCPPClient({
-  identity: "CP001",
-  endpoint: "ws://localhost:3000",
-  protocols: ["ocpp1.6"],
+	identity: 'CP001',
+	endpoint: 'ws://localhost:3000',
+	protocols: ['ocpp1.6'],
 });
 
-client.handle("Reset", ({ params }) => {
-  params.type; // "Hard" | "Soft"
-  return { status: "Accepted" };
+client.handle('Reset', ({ params }) => {
+	params.type; // "Hard" | "Soft"
+	return { status: 'Accepted' };
 });
 
-client.handle("RemoteStartTransaction", async ({ params }) => {
-  const started = await startCharging(params.idTag);
-  return { status: started ? "Accepted" : "Rejected" };
+client.handle('RemoteStartTransaction', async ({ params }) => {
+	const started = await startCharging(params.idTag);
+	return { status: started ? 'Accepted' : 'Rejected' };
 });
 
-client.handle("DataTransfer", async ({ params }) => {
-  await queue(params.data);
-  return NOREPLY; // answer later, or never
+client.handle('DataTransfer', async ({ params }) => {
+	await queue(params.data);
+	return NOREPLY; // answer later, or never
 });
 
 // @ts-expect-error "Maybe" is not a Reset status
-client.handle("Reset", () => ({ status: "Maybe" }));
+client.handle('Reset', () => ({ status: 'Maybe' }));
 ```
 
 To write a handler as its own function, type it with `HandlerContext` and the action's request and response types:
 
 ```typescript
 import {
-  OCPPClient,
-  type HandlerContext,
-  type OCPPRequestType,
-  type OCPPResponseType,
-} from "ocpp-ws-io";
+	OCPPClient,
+	type HandlerContext,
+	type OCPPRequestType,
+	type OCPPResponseType,
+} from 'ocpp-ws-io';
 
 function onReset({
-  params,
-}: HandlerContext<OCPPRequestType<"ocpp1.6", "Reset">>): OCPPResponseType<"ocpp1.6", "Reset"> {
-  return { status: params.type === "Hard" ? "Rejected" : "Accepted" };
+	params,
+}: HandlerContext<OCPPRequestType<'ocpp1.6', 'Reset'>>): OCPPResponseType<
+	'ocpp1.6',
+	'Reset'
+> {
+	return { status: params.type === 'Hard' ? 'Rejected' : 'Accepted' };
 }
 
 const client = new OCPPClient({
-  identity: "CP001",
-  endpoint: "ws://localhost:3000",
-  protocols: ["ocpp1.6"],
+	identity: 'CP001',
+	endpoint: 'ws://localhost:3000',
+	protocols: ['ocpp1.6'],
 });
-client.handle("Reset", onReset);
+client.handle('Reset', onReset);
 ```
 
 A handler for an OCPP 2.1 SEND message gets `unconfirmed: true` and its return value is ignored. A wildcard handler, `client.handle((method, ctx) => …)`, catches every action without a handler of its own; it is not typed by action.
@@ -149,36 +152,36 @@ A handler for an OCPP 2.1 SEND message gets `unconfirmed: true` and its return v
 Params and responses must have exactly the keys the OCPP schema defines, at any depth, also from a variable, an async handler or one branch of a returned union. The error is on the action name and lists the extra keys:
 
 ```typescript
-import { OCPPClient } from "ocpp-ws-io";
+import { OCPPClient } from 'ocpp-ws-io';
 
 const client = new OCPPClient({
-  identity: "CP001",
-  endpoint: "ws://localhost:3000",
-  protocols: ["ocpp1.6"],
+	identity: 'CP001',
+	endpoint: 'ws://localhost:3000',
+	protocols: ['ocpp1.6'],
 });
 
 // @ts-expect-error statusInfo is OCPP 2.0.1, not 1.6
-client.handle("BootNotification", () => ({
-  currentTime: new Date().toISOString(),
-  interval: 300,
-  status: "Accepted",
-  statusInfo: { reasonCode: "x" },
+client.handle('BootNotification', () => ({
+	currentTime: new Date().toISOString(),
+	interval: 300,
+	status: 'Accepted',
+	statusInfo: { reasonCode: 'x' },
 }));
 ```
 
 The message reads `"BootNotification" & { "Error: keys not defined by the OCPP schema": "statusInfo" }`. An object the schema leaves open takes any JSON: in OCPP 2.0.1 and 2.1 that is `customData` (vendor data, with its `vendorId`) and `DataTransfer`'s `data`.
 
 ```typescript
-import { OCPPClient } from "ocpp-ws-io";
+import { OCPPClient } from 'ocpp-ws-io';
 
 const client = new OCPPClient({
-  identity: "CP001",
-  endpoint: "ws://localhost:3000",
-  protocols: ["ocpp2.0.1"],
+	identity: 'CP001',
+	endpoint: 'ws://localhost:3000',
+	protocols: ['ocpp2.0.1'],
 });
 
-await client.call("Heartbeat", {
-  customData: { vendorId: "com.example", firmwareBuild: 42 },
+await client.call('Heartbeat', {
+	customData: { vendorId: 'com.example', firmwareBuild: 42 },
 });
 ```
 
@@ -187,47 +190,62 @@ await client.call("Heartbeat", {
 A server is typed by its `protocols`, and so is every connection it hands you. On a server of several versions, `forProtocol()` narrows a connection to the version it speaks, or gives `undefined`:
 
 ```typescript
-import { OCPPServer } from "ocpp-ws-io";
+import { OCPPServer } from 'ocpp-ws-io';
 
-const server = new OCPPServer({ protocols: ["ocpp1.6", "ocpp2.0.1"] });
+const server = new OCPPServer({ protocols: ['ocpp1.6', 'ocpp2.0.1'] });
 
-server.on("client", (client) => {
-  // Actions both versions define are typed for both.
-  client.handle("Heartbeat", () => ({ currentTime: new Date().toISOString() }));
+server.on('client', client => {
+	// Actions both versions define are typed for both.
+	client.handle('Heartbeat', () => ({
+		currentTime: new Date().toISOString(),
+	}));
 
-  const v16 = client.forProtocol("ocpp1.6");
-  v16?.handle("BootNotification", ({ params }) => {
-    params.chargePointVendor; // string, a 1.6 field
-    return { currentTime: new Date().toISOString(), interval: 300, status: "Accepted" };
-  });
+	const v16 = client.forProtocol('ocpp1.6');
+	v16?.handle('BootNotification', ({ params }) => {
+		params.chargePointVendor; // string, a 1.6 field
+		return {
+			currentTime: new Date().toISOString(),
+			interval: 300,
+			status: 'Accepted',
+		};
+	});
 });
 
-const answer = await server.sendToClient("CP001", "ocpp1.6", "ChangeAvailability", {
-  connectorId: 0,
-  type: "Inoperative",
-});
+const answer = await server.sendToClient(
+	'CP001',
+	'ocpp1.6',
+	'ChangeAvailability',
+	{
+		connectorId: 0,
+		type: 'Inoperative',
+	}
+);
 answer?.status; // "Accepted" | "Rejected" | "Scheduled", or undefined if not connected
 ```
 
 A route may narrow the server's protocols; its connections and handlers are typed by the route's list:
 
 ```typescript
-import { OCPPServer } from "ocpp-ws-io";
+import { OCPPServer } from 'ocpp-ws-io';
 
-const server = new OCPPServer({ protocols: ["ocpp1.6", "ocpp2.0.1"] });
+const server = new OCPPServer({ protocols: ['ocpp1.6', 'ocpp2.0.1'] });
 
 server
-  .route("/ocpp/v201/:identity")
-  .config({ protocols: ["ocpp2.0.1"] })
-  .on("client", (client) => {
-    client.handle("BootNotification", ({ params }) => {
-      params.chargingStation.model; // string, a 2.0.1 field
-      return { currentTime: new Date().toISOString(), interval: 300, status: "Accepted" };
-    });
-  });
+	.route('/ocpp/v201/:identity')
+	.config({ protocols: ['ocpp2.0.1'] })
+	.on('client', client => {
+		client.handle('BootNotification', ({ params }) => {
+			params.chargingStation.model; // string, a 2.0.1 field
+			return {
+				currentTime: new Date().toISOString(),
+				interval: 300,
+				status: 'Accepted',
+			};
+		});
+	});
 
-server.route("/ocpp/:identity").handle("Heartbeat", () => ({
-  currentTime: new Date().toISOString(),
+server.route('/ocpp/:identity').handle('Heartbeat', () => ({
+	currentTime: new Date().toISOString(),
 }));
 ```
 
@@ -236,97 +254,89 @@ server.route("/ocpp/:identity").handle("Heartbeat", () => ({
 A connection's session is filled in three places, each over the one before: what connection middleware leaves in `ctx.state` (directly, or through `ctx.next(payload)`), the session stored for the identity (by the cluster adapter, or on this node), and the `session` the auth callback passes to `ctx.accept()`. The result is `client.session`. Declare its keys once on `OCPPSession`, and all of them are typed by it:
 
 ```typescript
-import { OCPPServer } from "ocpp-ws-io";
+import { OCPPServer } from 'ocpp-ws-io';
 
-declare module "ocpp-ws-io" {
-  interface OCPPSession {
-    tenantId: string;
-    role: "admin" | "charger";
-  }
+declare module 'ocpp-ws-io' {
+	interface OCPPSession {
+		tenantId: string;
+		role: 'admin' | 'charger';
+	}
 }
 
-const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+const server = new OCPPServer({ protocols: ['ocpp1.6'] });
 
-server.use(async (ctx) => {
-  await ctx.next({ tenantId: ctx.handshake.params.tenant });
+server.use(async ctx => {
+	await ctx.next({ tenantId: ctx.handshake.params.tenant });
 });
 
-server.auth((ctx) => {
-  ctx.accept({ session: { role: "charger" } });
+server.auth(ctx => {
+	ctx.accept({ session: { role: 'charger' } });
 });
 
-server.on("client", (client) => {
-  client.session.tenantId; // string | undefined: a session may not have it yet
-  client.session.role; // "admin" | "charger" | undefined
+server.on('client', client => {
+	client.session.tenantId; // string | undefined: a session may not have it yet
+	client.session.role; // "admin" | "charger" | undefined
 });
 ```
 
-Session values are JSON, as the cluster adapter stores them: a `Date`, a function or a class instance is a type error, also under a key you do not declare (such keys take any JSON value). Keep other per-connection data in a `Map` keyed by `client.identity`.
+Session values are JSON, a `Date` or `undefined`, at any depth (`SessionValue`). The cluster adapter stores them as JSON: a `Date` as its ISO string, which another node reads back as a string. A function or a class instance is a type error, also under a key you do not declare (such keys take any `SessionValue`). Keep other per-connection data in a `Map` keyed by `client.identity`.
 
-A key may hold `undefined`, for a value one charger has and another does not: `ctx.state.company = company` with a `string | undefined` compiles, and the cluster adapter stores the session without that key. Each step is spread over the one before, so a later `undefined` replaces an earlier value: `ctx.accept({ session: { company: undefined } })` clears what middleware set. A key may be declared optional (`company?: string`), and a key you do not declare reads as `JsonValue | undefined`. Declare a nested object with `type`, not `interface`: a declared key must fit the session's JSON index signature, which TypeScript does not give an interface.
+A key may hold `undefined`, for a value one charger has and another does not: `ctx.state.company = company` with a `string | undefined` compiles, and the cluster adapter stores the session without that key. Each step is spread over the one before, so a later `undefined` replaces an earlier value: `ctx.accept({ session: { company: undefined } })` clears what middleware set. A key may be declared optional (`company?: string`), and a key you do not declare reads as `SessionValue`. Declare a nested object with `type`, not `interface`: a declared key must fit the session's JSON index signature, which TypeScript does not give an interface.
 
 ### Without declaring `OCPPSession`
 
-To keep the session's type in your own code instead of augmenting the module, use the library's `sessionOf<T>()`. It gives two functions for where a session is written and read, and changes nothing at runtime: `to` checks the keys and types you write, `from` reads a session as your type.
+To keep the session's type in your own code instead of augmenting the module, use the library's `sessionOf<T>()`. It gives two functions for where a session is written and read, and changes nothing at runtime: `to` checks the keys and types you write, `from` gives a session back as your type, exactly as you declared it.
 
 ```typescript
-import { OCPPServer, sessionOf } from "ocpp-ws-io";
+import { OCPPServer, sessionOf } from 'ocpp-ws-io';
 
 interface ChargerSession {
-  tenantId: string;
-  role: "admin" | "charger";
+	tenantId: string;
+	role: 'admin' | 'charger';
 }
 const chargerSession = sessionOf<ChargerSession>();
 
-const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+const server = new OCPPServer({ protocols: ['ocpp1.6'] });
 
-server.use(async (ctx) => {
-  const tenantId = ctx.handshake.query.get("tenant") ?? "default";
-  await ctx.next(chargerSession.to({ tenantId }));
+server.use(async ctx => {
+	const tenantId = ctx.handshake.query.get('tenant') ?? 'default';
+	await ctx.next(chargerSession.to({ tenantId }));
 });
 
-server.auth((ctx) => {
-  const { tenantId } = chargerSession.from(ctx.state); // string | undefined
-  ctx.accept({ session: chargerSession.to({ role: tenantId ? "charger" : "admin" }) });
+server.auth(ctx => {
+	const { tenantId } = chargerSession.from(ctx.state); // string
+	ctx.accept({
+		session: chargerSession.to({ role: tenantId ? 'charger' : 'admin' }),
+	});
 });
 
-server.on("client", (client) => {
-  const { tenantId, role } = chargerSession.from(client.session);
-  console.log(tenantId, role); // string | undefined, "admin" | "charger" | undefined
+server.on('client', client => {
+	const { tenantId, role } = chargerSession.from(client.session);
+	console.log(tenantId, role); // string, "admin" | "charger"
 });
 ```
 
 Next to declaring `OCPPSession`:
 
 - The type stays where you use it, so two servers in one process can keep different sessions; a declaration is one type for the whole program.
-- Every write and read goes through `to` or `from`. Read directly, `client.session.role` is a `JsonValue | undefined`; with `OCPPSession` declared, it is typed everywhere without them.
-- `sessionOf` refuses a type JSON cannot hold (a `Date`, a class instance), as a declaration does. Optional keys (`company?: string`) and objects declared with `interface` fit.
+- Every write and read goes through `to` or `from`. Read directly, `client.session.role` is a `SessionValue`; with `OCPPSession` declared, it is typed everywhere without them.
+- `sessionOf` takes any type and checks none of it. Declare a key optional (`company?: string`) when a session may not have it. With the cluster adapter, keep the values JSON: it stores sessions as JSON, so a `Date` comes back as a string on another node.
 - `from` is a cast, as a declaration is: nothing checks at runtime that a session holds your type, for example one stored by an older version of your app. Check such values where it matters.
 
 <Callout type="info">
-  `sessionOf` is in `ocpp-ws-io` 3.0.1 and later. On 3.0.1 it refuses optional keys and objects declared with `interface` (fixed in 3.0.2): leave out the `?`, as `to` and `from` treat every key as optional anyway, and declare such objects with `type`. On 3.0.0, the same lines in your own code do the same:
+  `sessionOf` is in `ocpp-ws-io` 3.0.1 and later; this form, which takes any type and gives it back from `from`, in 3.0.3 and later. On earlier versions, the same lines in your own code do the same:
 
 ```typescript
-import type { SessionData } from "ocpp-ws-io";
+import type { SessionData } from 'ocpp-ws-io';
 
-type Keys<T> = { [K in keyof T as K]: Value<T[K]> | undefined };
-type Value<V> = V extends string | number | boolean | null
-  ? V
-  : V extends readonly (infer U)[]
-    ? readonly Value<U>[]
-    : V extends (...args: never[]) => unknown
-      ? never
-      : V extends object
-        ? Keys<V>
-        : never;
-
-function sessionOf<T extends object & Keys<T>>() {
-  return {
-    to: (data: Partial<T>): SessionData => data as SessionData,
-    from: (session: SessionData): Partial<T> => session as Partial<T>,
-  };
+function sessionOf<T extends object>() {
+	return {
+		to: (data: Partial<T>): SessionData => data as SessionData,
+		from: (session: SessionData): T => session as T,
+	};
 }
 ```
+
 </Callout>
 
 ## Keeping typed objects
@@ -335,31 +345,31 @@ A typed client fits a variable of its own type, or a plain `OCPPClient`. For con
 
 ```typescript
 import {
-  OCPPClient,
-  OCPPServer,
-  type AnyOCPPClient,
-  type ConnectionOf,
-} from "ocpp-ws-io";
+	OCPPClient,
+	OCPPServer,
+	type AnyOCPPClient,
+	type ConnectionOf,
+} from 'ocpp-ws-io';
 
-const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+const server = new OCPPServer({ protocols: ['ocpp1.6'] });
 const connections = new Map<string, ConnectionOf<typeof server>>();
-server.on("client", (client) => {
-  connections.set(client.identity, client);
+server.on('client', client => {
+	connections.set(client.identity, client);
 });
 
-const v16: OCPPClient<"ocpp1.6"> = new OCPPClient({
-  identity: "CP001",
-  endpoint: "ws://localhost:3000",
-  protocols: ["ocpp1.6"],
+const v16: OCPPClient<'ocpp1.6'> = new OCPPClient({
+	identity: 'CP001',
+	endpoint: 'ws://localhost:3000',
+	protocols: ['ocpp1.6'],
 });
 const v201 = new OCPPClient({
-  identity: "CP002",
-  endpoint: "ws://localhost:3000",
-  protocols: ["ocpp2.0.1"],
+	identity: 'CP002',
+	endpoint: 'ws://localhost:3000',
+	protocols: ['ocpp2.0.1'],
 });
 
 const all: AnyOCPPClient[] = [v16, v201];
-await Promise.all(all.map((client) => client.close()));
+await Promise.all(all.map(client => client.close()));
 ```
 
 ## Types of actions
@@ -368,54 +378,62 @@ Import a request or response type to use it elsewhere in your code:
 
 ```typescript
 import type {
-  AllMethodNames,
-  OCPPRequestType,
-  OCPPResponseType,
-  OCPPSendRequestType,
-  SendMethodNames,
-} from "ocpp-ws-io";
+	AllMethodNames,
+	OCPPRequestType,
+	OCPPResponseType,
+	OCPPSendRequestType,
+	SendMethodNames,
+} from 'ocpp-ws-io';
 
-type Actions16 = AllMethodNames<"ocpp1.6">; // "Authorize" | "BootNotification" | …
-type BootRequest = OCPPRequestType<"ocpp1.6", "BootNotification">;
-type BootResponse = OCPPResponseType<"ocpp1.6", "BootNotification">;
-type Messages21 = SendMethodNames<"ocpp2.1">; // "NotifyPeriodicEventStream" | …
-type StreamData = OCPPSendRequestType<"ocpp2.1", "NotifyPeriodicEventStream">;
+type Actions16 = AllMethodNames<'ocpp1.6'>; // "Authorize" | "BootNotification" | …
+type BootRequest = OCPPRequestType<'ocpp1.6', 'BootNotification'>;
+type BootResponse = OCPPResponseType<'ocpp1.6', 'BootNotification'>;
+type Messages21 = SendMethodNames<'ocpp2.1'>; // "NotifyPeriodicEventStream" | …
+type StreamData = OCPPSendRequestType<'ocpp2.1', 'NotifyPeriodicEventStream'>;
 
-const request: BootRequest = { chargePointVendor: "VendorX", chargePointModel: "ModelY" };
-const response: BootResponse = { currentTime: "2026-01-01T00:00:00Z", interval: 300, status: "Accepted" };
+const request: BootRequest = {
+	chargePointVendor: 'VendorX',
+	chargePointModel: 'ModelY',
+};
+const response: BootResponse = {
+	currentTime: '2026-01-01T00:00:00Z',
+	interval: 300,
+	status: 'Accepted',
+};
 ```
 
-| Type | What it is |
-| --- | --- |
-| `OCPPProtocol` | The protocols with types: `"ocpp1.6" \| "ocpp2.0.1" \| "ocpp2.1"` and any you declare |
-| `AllMethodNames<P>` / `SendMethodNames<P>` | The CALL actions / SEND messages of protocol `P` |
-| `OCPPRequestType<P, A>` / `OCPPResponseType<P, A>` | The request / response of action `A` in `P` |
-| `OCPPSendRequestType<P, M>` | The payload of SEND message `M` in `P` |
-| `HandlerContext<Params>` | What a handler gets: `params`, `method`, `protocol`, `messageId`, `signal`, `unconfirmed` |
-| `OCPP16Methods`, `OCPP201Methods`, `OCPP21Methods` | The method map of each version, for declaring vendor actions |
-| `OCPPMethodMap` / `OCPPSendMethodMap` | Every protocol's map, for declaring custom protocols |
-| `JsonValue` / `JsonObject` | Any JSON value / object |
+| Type                                               | What it is                                                                                |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `OCPPProtocol`                                     | The protocols with types: `"ocpp1.6" \| "ocpp2.0.1" \| "ocpp2.1"` and any you declare     |
+| `AllMethodNames<P>` / `SendMethodNames<P>`         | The CALL actions / SEND messages of protocol `P`                                          |
+| `OCPPRequestType<P, A>` / `OCPPResponseType<P, A>` | The request / response of action `A` in `P`                                               |
+| `OCPPSendRequestType<P, M>`                        | The payload of SEND message `M` in `P`                                                    |
+| `HandlerContext<Params>`                           | What a handler gets: `params`, `method`, `protocol`, `messageId`, `signal`, `unconfirmed` |
+| `OCPP16Methods`, `OCPP201Methods`, `OCPP21Methods` | The method map of each version, for declaring vendor actions                              |
+| `OCPPMethodMap` / `OCPPSendMethodMap`              | Every protocol's map, for declaring custom protocols                                      |
+| `JsonValue` / `JsonObject`                         | Any JSON value / object                                                                   |
+| `SessionValue`                                     | A session value: JSON, a `Date` or `undefined`, at any depth                              |
 
 ## Vendor actions on a standard version
 
 Declare a vendor action once on its version's method map, and it is typed and checked like any other action:
 
 ```typescript
-import { OCPPClient } from "ocpp-ws-io";
+import { OCPPClient } from 'ocpp-ws-io';
 
-declare module "ocpp-ws-io" {
-  interface OCPP16Methods {
-    VendorPing: { request: { n: number }; response: { pong: boolean } };
-  }
+declare module 'ocpp-ws-io' {
+	interface OCPP16Methods {
+		VendorPing: { request: { n: number }; response: { pong: boolean } };
+	}
 }
 
 const client = new OCPPClient({
-  identity: "CP001",
-  endpoint: "ws://localhost:3000",
-  protocols: ["ocpp1.6"],
+	identity: 'CP001',
+	endpoint: 'ws://localhost:3000',
+	protocols: ['ocpp1.6'],
 });
 
-const res = await client.call("VendorPing", { n: 1 });
+const res = await client.call('VendorPing', { n: 1 });
 res.pong; // boolean
 ```
 
@@ -423,80 +441,82 @@ res.pong; // boolean
 
 A custom protocol needs its types, declared in `OCPPMethodMap` so calls and handlers are typed, and, for strict mode, a validator built from its JSON schemas. A validator types only the protocol's name, not the payloads. Pick one way:
 
-| You have | Do | You get |
-| --- | --- | --- |
-| JSON schemas for the protocol | `ocpp generate --schema ./vendor-schemas.json --name vendor-proto` (from `ocpp-ws-cli`; see [Project Setup & Generation](/docs/cli/project-setup)) | Types, their declaration and the validator from the same schemas, so they never disagree. Run it again when the schemas change |
-| No schemas, only the shapes | Declare the types by hand, as below | Types; nothing validates the messages |
-| Schemas you write or load yourself | Declare the types by hand and build the validator with `createValidator` | Validation, with types you keep in step with the schemas yourself |
+| You have                           | Do                                                                                                                                                 | You get                                                                                                                        |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| JSON schemas for the protocol      | `ocpp generate --schema ./vendor-schemas.json --name vendor-proto` (from `ocpp-ws-cli`; see [Project Setup & Generation](/docs/cli/project-setup)) | Types, their declaration and the validator from the same schemas, so they never disagree. Run it again when the schemas change |
+| No schemas, only the shapes        | Declare the types by hand, as below                                                                                                                | Types; nothing validates the messages                                                                                          |
+| Schemas you write or load yourself | Declare the types by hand and build the validator with `createValidator`                                                                           | Validation, with types you keep in step with the schemas yourself                                                              |
 
 Declared by hand, in one file, with a CALL action, a SEND message and a validator:
 
 ```typescript
-import { createValidator, OCPPClient, OCPPServer } from "ocpp-ws-io";
+import { createValidator, OCPPClient, OCPPServer } from 'ocpp-ws-io';
 
 interface VendorMethods {
-  VendorPing: {
-    request: { n: number };
-    response: { status: "Accepted" | "Rejected" };
-  };
+	VendorPing: {
+		request: { n: number };
+		response: { status: 'Accepted' | 'Rejected' };
+	};
 }
 
 interface VendorSendMethods {
-  VendorNotify: { request: { at: string } };
+	VendorNotify: { request: { at: string } };
 }
 
-declare module "ocpp-ws-io" {
-  interface OCPPMethodMap {
-    "vendor-proto": VendorMethods;
-  }
-  interface OCPPSendMethodMap {
-    "vendor-proto": VendorSendMethods;
-  }
+declare module 'ocpp-ws-io' {
+	interface OCPPMethodMap {
+		'vendor-proto': VendorMethods;
+	}
+	interface OCPPSendMethodMap {
+		'vendor-proto': VendorSendMethods;
+	}
 }
 
-const vendorValidator = createValidator("vendor-proto", [
-  {
-    $id: "urn:VendorPing.req",
-    type: "object",
-    properties: { n: { type: "integer" } },
-    required: ["n"],
-    additionalProperties: false,
-  },
-  {
-    $id: "urn:VendorPing.conf",
-    type: "object",
-    properties: { status: { type: "string", enum: ["Accepted", "Rejected"] } },
-    required: ["status"],
-    additionalProperties: false,
-  },
-  {
-    $id: "urn:VendorNotify",
-    type: "object",
-    properties: { at: { type: "string" } },
-    required: ["at"],
-    additionalProperties: false,
-  },
+const vendorValidator = createValidator('vendor-proto', [
+	{
+		$id: 'urn:VendorPing.req',
+		type: 'object',
+		properties: { n: { type: 'integer' } },
+		required: ['n'],
+		additionalProperties: false,
+	},
+	{
+		$id: 'urn:VendorPing.conf',
+		type: 'object',
+		properties: {
+			status: { type: 'string', enum: ['Accepted', 'Rejected'] },
+		},
+		required: ['status'],
+		additionalProperties: false,
+	},
+	{
+		$id: 'urn:VendorNotify',
+		type: 'object',
+		properties: { at: { type: 'string' } },
+		required: ['at'],
+		additionalProperties: false,
+	},
 ]);
 
 const server = new OCPPServer({
-  protocols: ["ocpp2.0.1", "vendor-proto"],
-  strictMode: true,
-  strictModeValidators: [vendorValidator],
+	protocols: ['ocpp2.0.1', 'vendor-proto'],
+	strictMode: true,
+	strictModeValidators: [vendorValidator],
 });
-server.on("client", (client) => {
-  client.handle("vendor-proto", "VendorPing", ({ params }) => ({
-    status: params.n > 0 ? "Accepted" : "Rejected",
-  }));
+server.on('client', client => {
+	client.handle('vendor-proto', 'VendorPing', ({ params }) => ({
+		status: params.n > 0 ? 'Accepted' : 'Rejected',
+	}));
 });
 
 const charger = new OCPPClient({
-  identity: "CP001",
-  endpoint: "ws://localhost:3000",
-  protocols: ["vendor-proto"],
+	identity: 'CP001',
+	endpoint: 'ws://localhost:3000',
+	protocols: ['vendor-proto'],
 });
-const pong = await charger.call("VendorPing", { n: 1 });
+const pong = await charger.call('VendorPing', { n: 1 });
 pong.status; // "Accepted" | "Rejected"
-await charger.send("VendorNotify", { at: new Date().toISOString() });
+await charger.send('VendorNotify', { at: new Date().toISOString() });
 ```
 
 A protocol without SEND messages needs no `OCPPSendMethodMap` entry. The validator does not give these types: TypeScript cannot read a JSON schema's shape from a value, and a JSON file it imports loses its literal values. `ocpp generate` writes both from the schemas.
@@ -506,23 +526,27 @@ A protocol without SEND messages needs no `OCPPSendMethodMap` entry. The validat
 Strict mode validates every message, both ways, against the JSON schemas. A failure throws an `RPCError` with the OCPP error code and emits `strictValidationFailure`.
 
 ```typescript
-import { createValidator, OCPPClient, unchecked } from "ocpp-ws-io";
+import { createValidator, OCPPClient, unchecked } from 'ocpp-ws-io';
 
-const vendorValidator = createValidator("vendor-proto", [
-  { $id: "urn:VendorPing.req", type: "object", properties: { n: { type: "integer" } } },
+const vendorValidator = createValidator('vendor-proto', [
+	{
+		$id: 'urn:VendorPing.req',
+		type: 'object',
+		properties: { n: { type: 'integer' } },
+	},
 ]);
 
 const client = new OCPPClient({
-  identity: "CP001",
-  endpoint: "ws://localhost:3000",
-  protocols: ["ocpp1.6", "ocpp2.0.1", "vendor-proto"],
-  strictMode: ["ocpp2.0.1", "vendor-proto"], // or true for every protocol
-  strictModeValidators: [vendorValidator], // adds to the built-in 1.6, 2.0.1 and 2.1 validators
-  strictModeMethods: ["BootNotification", unchecked("VendorPing")], // only these actions
+	identity: 'CP001',
+	endpoint: 'ws://localhost:3000',
+	protocols: ['ocpp1.6', 'ocpp2.0.1', 'vendor-proto'],
+	strictMode: ['ocpp2.0.1', 'vendor-proto'], // or true for every protocol
+	strictModeValidators: [vendorValidator], // adds to the built-in 1.6, 2.0.1 and 2.1 validators
+	strictModeMethods: ['BootNotification', unchecked('VendorPing')], // only these actions
 });
 
-client.on("strictValidationFailure", ({ error }) => {
-  console.error("Validation failed:", error.message);
+client.on('strictValidationFailure', ({ error }) => {
+	console.error('Validation failed:', error.message);
 });
 ```
 
@@ -537,32 +561,32 @@ client.on("strictValidationFailure", ({ error }) => {
 Wrap a name in `unchecked()` to use an action the types do not know: an undeclared vendor action, a name passed through from the wire, or a test that sends invalid data on purpose. It returns the name unchanged; nothing differs at runtime.
 
 ```typescript
-import { OCPPClient, unchecked } from "ocpp-ws-io";
+import { OCPPClient, unchecked } from 'ocpp-ws-io';
 
 const client = new OCPPClient({
-  identity: "CP001",
-  endpoint: "ws://localhost:3000",
-  protocols: ["ocpp1.6", "vendor-proto"],
+	identity: 'CP001',
+	endpoint: 'ws://localhost:3000',
+	protocols: ['ocpp1.6', 'vendor-proto'],
 });
 
-const pong = await client.call(unchecked("VendorPing"), { n: 1 }); // a JSON object
-const typed = await client.call<{ pong: boolean }>(unchecked("VendorPing"), {});
+const pong = await client.call(unchecked('VendorPing'), { n: 1 }); // a JSON object
+const typed = await client.call<{ pong: boolean }>(unchecked('VendorPing'), {});
 typed.pong; // boolean, as you said
-client.handle(unchecked("VendorPing"), () => ({ pong: true }));
-await client.call("vendor-proto", unchecked("Ping"), {});
+client.handle(unchecked('VendorPing'), () => ({ pong: true }));
+await client.call('vendor-proto', unchecked('Ping'), {});
 ```
 
 Prefer declaring the action, as above: an `unchecked()` call is checked neither for its params nor its response.
 
 ## Common type errors
 
-| The error says | It means | Fix |
-| --- | --- | --- |
-| `Argument of type '"TransactionEvent"' is not assignable to parameter of type '"Authorize" \| "BootNotification" \| …'` | The action is not one of the configured protocols' actions: a typo, another version's action, or an undeclared one | Correct the name, add its protocol to `protocols`, [declare it](#vendor-actions-on-a-standard-version), or use `unchecked()` |
-| `"Error: keys not defined by the OCPP schema": "statusInfo"` | The payload or answer has a key its schema does not define | Remove it, or check the version: `statusInfo` is 2.0.1, not 1.6 |
-| `Type '"Maybe"' is not assignable to type '"Accepted" \| "Rejected"'` | A value outside the schema's enum | Use one of the listed values |
-| `Argument of type '"NotifyPeriodicEventStream"' is not assignable to parameter of type 'never'` on `send()` | The client's protocols have no SEND messages (only OCPP 2.1 and custom protocols do) | Configure `"ocpp2.1"`, or declare the message in `OCPPSendMethodMap` |
-| `Type '"ocpp1.6"' is not assignable to type '"ocpp1.6" & ListedTwice<"ocpp1.6">'` | A protocol appears twice in `protocols` | Remove the repeat |
-| `Type '"vendor-x"' is not assignable to type '"ocpp1.6"'` in `strictMode` or `strictModeValidators` | Strict mode names a protocol the client, server or route is not configured with | Add the protocol to `protocols`, or remove the entry |
-| `Type 'Date' is not assignable to type 'JsonValue \| undefined'` in `ctx.accept({ session })`, `ctx.state` or `ctx.next()` | A session value JSON cannot hold; sessions are stored as JSON | Store a JSON form (`date.toISOString()`), or keep the value outside the session |
-| `Cannot find name 'NoInfer'` in the package's types | TypeScript is older than 5.4 | Upgrade TypeScript |
+| The error says                                                                                                                                        | It means                                                                                                           | Fix                                                                                                                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Argument of type '"TransactionEvent"' is not assignable to parameter of type '"Authorize" \| "BootNotification" \| …'`                               | The action is not one of the configured protocols' actions: a typo, another version's action, or an undeclared one | Correct the name, add its protocol to `protocols`, [declare it](#vendor-actions-on-a-standard-version), or use `unchecked()`                                                            |
+| `"Error: keys not defined by the OCPP schema": "statusInfo"`                                                                                          | The payload or answer has a key its schema does not define                                                         | Remove it, or check the version: `statusInfo` is 2.0.1, not 1.6                                                                                                                         |
+| `Type '"Maybe"' is not assignable to type '"Accepted" \| "Rejected"'`                                                                                 | A value outside the schema's enum                                                                                  | Use one of the listed values                                                                                                                                                            |
+| `Argument of type '"NotifyPeriodicEventStream"' is not assignable to parameter of type 'never'` on `send()`                                           | The client's protocols have no SEND messages (only OCPP 2.1 and custom protocols do)                               | Configure `"ocpp2.1"`, or declare the message in `OCPPSendMethodMap`                                                                                                                    |
+| `Type '"ocpp1.6"' is not assignable to type '"ocpp1.6" & ListedTwice<"ocpp1.6">'`                                                                     | A protocol appears twice in `protocols`                                                                            | Remove the repeat                                                                                                                                                                       |
+| `Type '"vendor-x"' is not assignable to type '"ocpp1.6"'` in `strictMode` or `strictModeValidators`                                                   | Strict mode names a protocol the client, server or route is not configured with                                    | Add the protocol to `protocols`, or remove the entry                                                                                                                                    |
+| `Type 'IUser or any other interface of an object' is not assignable to type 'SessionValue'` in `ctx.accept({ session })`, `ctx.state` or `ctx.next()` | An object declared with `interface` (it has no index signature), a function or a class instance                    | Declare the object with `type` instead of `interface`, write it through `sessionOf<T>().to()`,or cast the the type with `as unknown as JsonValue` or keep the value outside the session |
+| `Cannot find name 'NoInfer'` in the package's types                                                                                                   | TypeScript is older than 5.4                                                                                       | Upgrade TypeScript                                                                                                                                                                      |

@@ -1,5 +1,12 @@
 # ocpp-ws-io
 
+## Unreleased
+
+### Changed
+
+- **Sessions take a `Date` and `undefined` at any depth** (types only). `ctx.state.when = new Date()`, `ctx.state.user = { id, joined: new Date() }`, `ctx.next({ since: new Date() })` and `ctx.accept({ session: { at: new Date() } })` were refused with `Type 'Date' is not assignable to type 'JsonValue | undefined'`. `SessionData` and `PersistedSession` (the server hands sessions to the adapter as it) now hold the new `SessionValue`: JSON, a `Date` or `undefined`, also inside nested objects and arrays. `JsonValue` itself is unchanged. A key you do not declare reads as `SessionValue` instead of `JsonValue | undefined`. The cluster adapter stores a `Date` as its ISO string, so another node reads it back as a string. An object declared with `interface` is still refused (it has no index signature): declare it with `type`, or write it through `sessionOf<T>().to()`.
+- **`sessionOf<T>()` gives back `T` as declared, and takes any object type** (types only). `from()` returns `T` instead of `Partial<T>`, so a key reads as declared: declare it optional (`company?: string`) when a session may not have it. `T` is no longer checked for JSON values (3.0.1 and 3.0.2 refused a `Date`, `unknown` or a function): with the cluster adapter, keep values JSON, as it stores sessions as JSON. `to()` still takes `Partial<T>` and checks its keys and types. Code written for 3.0.1 or 3.0.2 keeps compiling, except an assignment of `undefined` to a required key of `from()`'s result: declare that key optional.
+
 ## v3.0.2 - Optional Session Keys (2026-10-04)
 
 ### Fixed

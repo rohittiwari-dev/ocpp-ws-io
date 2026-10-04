@@ -137,6 +137,7 @@ export {
   type ServerEvents,
   type ServerOptions,
   type SessionData,
+  type SessionValue,
   type TelemetryConfig,
   type TLSOptions,
   type TypedEventEmitter,
