@@ -50,6 +50,7 @@ import { Queue } from "./queue.js";
 import {
   type AllMethodNames,
   type AnyOCPPProtocol,
+  type BrowserClientEvents,
   type BrowserClientOptions,
   type CallHandler,
   type CallOptions,
@@ -122,7 +123,7 @@ export class BrowserOCPPClient<
   P extends AnyOCPPProtocol = AnyOCPPProtocol,
   // The protocols list as given, so a protocol listed twice is a type error.
   const L extends readonly P[] = readonly P[],
-> extends EventEmitter {
+> extends EventEmitter<BrowserClientEvents> {
   // Static connection states
   static readonly CONNECTING = CONNECTING;
   static readonly OPEN = OPEN;
@@ -1673,7 +1674,10 @@ type ProtocolTypedMember =
   | "send"
   | "forProtocol";
 
-type EmitterListener = Parameters<EventEmitter["on"]>[1];
+/** A listener of one of the browser client's events. */
+type ClientEventListener<K extends keyof BrowserClientEvents> = (
+  ...args: BrowserClientEvents[K]
+) => void;
 /** Emitter methods that return `this`, the client of one protocol set. */
 type ChainingMember =
   | "on"
@@ -1691,13 +1695,25 @@ type ChainingMember =
  */
 export interface AnyBrowserOCPPClient
   extends Omit<BrowserOCPPClient, ProtocolTypedMember | ChainingMember> {
-  on(event: string, listener: EmitterListener): AnyBrowserOCPPClient;
-  once(event: string, listener: EmitterListener): AnyBrowserOCPPClient;
-  off(event: string, listener: EmitterListener): AnyBrowserOCPPClient;
-  addListener(event: string, listener: EmitterListener): AnyBrowserOCPPClient;
-  removeListener(
-    event: string,
-    listener: EmitterListener,
+  on<K extends keyof BrowserClientEvents>(
+    event: K,
+    listener: ClientEventListener<K>,
   ): AnyBrowserOCPPClient;
-  removeAllListeners(event?: string): AnyBrowserOCPPClient;
+  once<K extends keyof BrowserClientEvents>(
+    event: K,
+    listener: ClientEventListener<K>,
+  ): AnyBrowserOCPPClient;
+  off<K extends keyof BrowserClientEvents>(
+    event: K,
+    listener: ClientEventListener<K>,
+  ): AnyBrowserOCPPClient;
+  addListener<K extends keyof BrowserClientEvents>(
+    event: K,
+    listener: ClientEventListener<K>,
+  ): AnyBrowserOCPPClient;
+  removeListener<K extends keyof BrowserClientEvents>(
+    event: K,
+    listener: ClientEventListener<K>,
+  ): AnyBrowserOCPPClient;
+  removeAllListeners(event?: keyof BrowserClientEvents): AnyBrowserOCPPClient;
 }

@@ -155,7 +155,7 @@ export function createLoggingMiddleware(
   logger: LoggerLike,
   identity: string,
   config: LoggingConfig | boolean = {},
-): MiddlewareFunction<MiddlewareContext, any> {
+): MiddlewareFunction<MiddlewareContext> {
   const options = typeof config === "object" ? config : {};
   const { exchangeLog = false, prettify = false } = options;
 

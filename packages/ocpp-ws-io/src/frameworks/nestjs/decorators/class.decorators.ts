@@ -1,6 +1,6 @@
 import { SetMetadata } from "@nestjs/common";
 import type { MiddlewareFunction } from "../../../middleware.js";
-import type { CORSOptions } from "../../../types.js";
+import type { CORSOptions, MiddlewareContext } from "../../../types.js";
 import {
   OCPP_CORS_METADATA,
   OCPP_GATEWAY_METADATA,
@@ -22,5 +22,5 @@ export const OcppCors = (options: CORSOptions): ClassDecorator =>
   SetMetadata(OCPP_CORS_METADATA, options);
 
 export const UseOcppRpcMiddleware = (
-  ...middlewares: MiddlewareFunction<any>[]
+  ...middlewares: MiddlewareFunction<MiddlewareContext>[]
 ): ClassDecorator => SetMetadata(OCPP_RPC_MIDDLEWARE_METADATA, middlewares);

@@ -12,16 +12,25 @@ export type MiddlewareFunction<TContext, TReturn = unknown> = (
   next: MiddlewareNext<TReturn>,
 ) => Promise<TReturn> | TReturn;
 
+/**
+ * A middleware as the stack runs it: `execute()` hands each one a `next`
+ * for its own TReturn, whichever TReturn the middleware was added with.
+ */
+type StackedMiddleware<TContext> = <TReturn>(
+  context: TContext,
+  next: MiddlewareNext<TReturn>,
+) => Promise<TReturn> | TReturn;
+
 export class MiddlewareStack<TContext> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _stack: MiddlewareFunction<TContext, any>[] = [];
+  private _stack: StackedMiddleware<TContext>[] = [];
 
   /**
    * Add a middleware function to the stack.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  use<TReturn = any>(middleware: MiddlewareFunction<TContext, TReturn>): void {
-    this._stack.push(middleware);
+  use<TReturn = unknown>(
+    middleware: MiddlewareFunction<TContext, TReturn>,
+  ): void {
+    this._stack.push(middleware as StackedMiddleware<TContext>);
   }
 
   /**

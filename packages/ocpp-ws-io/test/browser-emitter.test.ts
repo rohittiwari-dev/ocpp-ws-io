@@ -206,4 +206,15 @@ describe("Browser EventEmitter", () => {
     expect(emitter.emit("test")).toBe(false);
     expect(emitter.listenerCount("test")).toBe(0);
   });
+
+  it("handles events named like Object members", () => {
+    const emitter = new EventEmitter();
+    // Nothing is registered under these until a listener is added.
+    expect(emitter.listenerCount("constructor")).toBe(0);
+    expect(emitter.emit("toString")).toBe(false);
+    const fn = vi.fn();
+    emitter.on("toString", fn);
+    expect(emitter.emit("toString", 1)).toBe(true);
+    expect(fn).toHaveBeenCalledWith(1);
+  });
 });

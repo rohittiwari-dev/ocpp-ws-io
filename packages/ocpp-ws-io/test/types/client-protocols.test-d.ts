@@ -3,6 +3,7 @@ import {
   type AnyBrowserOCPPClient,
   BrowserOCPPClient,
 } from "../../src/browser/client.js";
+import type { OCPPCallError } from "../../src/browser/types.js";
 import { type AnyOCPPClient, OCPPClient } from "../../src/client.js";
 import type { ClientOptions } from "../../src/types.js";
 
@@ -120,4 +121,28 @@ export function typedClientFitsThePlainType() {
   // @ts-expect-error a typed browser client does not fit the plain type
   const browsers: BrowserOCPPClient[] = [b16];
   return [held, browsers];
+}
+
+export function browserClientEventsAreTyped() {
+  // B19: the browser client's events are typed, as the Node client's are.
+  const b16 = new BrowserOCPPClient({ identity: "CP1", endpoint, protocols: ["ocpp1.6"] });
+  b16.on("reconnect", ({ attempt, delay }) => {
+    expectTypeOf(attempt).toEqualTypeOf<number>();
+    expectTypeOf(delay).toEqualTypeOf<number>();
+  });
+  b16.once("close", ({ code, reason }) => {
+    expectTypeOf(code).toEqualTypeOf<number>();
+    expectTypeOf(reason).toEqualTypeOf<string>();
+  });
+  b16.on("callError", (frame) => {
+    expectTypeOf(frame).toEqualTypeOf<OCPPCallError>();
+  });
+  // @ts-expect-error the error event can carry a DOM Event, not only an Error
+  b16.on("error", (err: Error) => void err);
+  // @ts-expect-error reconnect is emitted with an object
+  b16.emit("reconnect", 1);
+  // An event the client does not declare takes any arguments.
+  b16.on("custom", (...args) => {
+    expectTypeOf(args).toEqualTypeOf<unknown[]>();
+  });
 }

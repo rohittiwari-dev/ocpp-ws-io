@@ -1,5 +1,5 @@
 import type { IncomingMessage } from "node:http";
-import type { DynamicModule, ForwardReference, Type } from "@nestjs/common";
+import type { FactoryProvider, ModuleMetadata, Type } from "@nestjs/common";
 import type { OCPPServerClient } from "../../server-client.js";
 import type { RouterConfig, ServerOptions } from "../../types.js";
 
@@ -30,13 +30,14 @@ export interface OcppOptionsFactory {
   createOcppOptions(): Promise<OcppModuleOptions> | OcppModuleOptions;
 }
 
+/** `OcppModule.forRootAsync()`'s options, with Nest's own module and injection types. */
 export interface OcppModuleAsyncOptions {
-  imports?: Array<
-    Type<any> | DynamicModule | Promise<DynamicModule> | ForwardReference
-  >;
-  inject?: any[];
+  imports?: ModuleMetadata["imports"];
+  /** Providers to hand `useFactory`, in its parameters' order. */
+  inject?: FactoryProvider["inject"];
+  /** Takes the providers named in `inject`, whatever their types. */
   useFactory?: (
-    ...args: any[]
+    ...args: never[]
   ) => Promise<OcppModuleOptions> | OcppModuleOptions;
   useClass?: Type<OcppOptionsFactory>;
   useExisting?: Type<OcppOptionsFactory>;
