@@ -10,6 +10,8 @@ declare module "ocpp-ws-io" {
   interface OCPPSession {
     tenantId: string;
     role: "admin" | "charger";
+    // B26: an optional key was refused (TS2411).
+    company?: string;
   }
 }
 
@@ -38,7 +40,21 @@ export function declaredSession() {
     expectTypeOf(client.session.role).toEqualTypeOf<
       "admin" | "charger" | undefined
     >();
-    // Undeclared keys take any JSON value.
-    expectTypeOf(client.session.visits).toEqualTypeOf<JsonValue>();
+    expectTypeOf(client.session.company).toEqualTypeOf<string | undefined>();
+    // Undeclared keys take any JSON value, and a session may not have them.
+    expectTypeOf(client.session.visits).toEqualTypeOf<JsonValue | undefined>();
+  });
+}
+
+export function declaredKeysTakeUndefined(company: string | undefined) {
+  const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+  server.use(async (ctx) => {
+    ctx.state.company = company;
+    await ctx.next({ company });
+    // @ts-expect-error company is a string
+    await ctx.next({ company: 1 });
+  });
+  server.auth((ctx) => {
+    ctx.accept({ session: { company, role: "charger" } });
   });
 }

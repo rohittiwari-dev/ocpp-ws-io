@@ -27,11 +27,28 @@ export function sessionsHoldJson() {
   });
   defineAuth((ctx) => ctx.accept({ session: { role: "charger" } }));
   server.on("client", (client) => {
-    expectTypeOf(client.session.tenantId).toEqualTypeOf<JsonValue>();
+    // A session may not have the key.
+    expectTypeOf(client.session.tenantId).toEqualTypeOf<
+      JsonValue | undefined
+    >();
     // As the cluster adapter stores it.
     const persisted: PersistedSession = client.session;
     void persisted;
   });
+}
+
+export function sessionsTakeUndefined(company: string | undefined) {
+  // B26: one charger has a value, another not; JSON leaves the key out.
+  const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+  server.use(async (ctx) => {
+    ctx.state.company = company;
+    ctx.state.note = undefined;
+    await ctx.next({ company });
+  });
+  server.auth((ctx) => {
+    ctx.accept({ session: { company } });
+  });
+  defineAuth((ctx) => ctx.accept({ session: { company } }));
 }
 
 export function sessionOfHelper() {
@@ -64,4 +81,51 @@ export function sessionOfHelper() {
   });
   // @ts-expect-error a Date is not a JSON value
   sessionOf<{ since: Date }>();
+}
+
+export function sessionOfTakesWhatJsonHolds() {
+  // B25: optional keys and interfaces, which JSON holds, were refused.
+  interface Company {
+    name: string;
+    vat?: string;
+    tags: string[];
+  }
+  interface Tree {
+    name: string;
+    children?: Tree[];
+  }
+  interface WebSocketSession {
+    tenantId: string;
+    company?: string;
+    org: Company;
+    tree?: Tree;
+    note: string | undefined;
+    pair: readonly [string, number];
+    meta: JsonValue;
+  }
+  const ws = sessionOf<WebSocketSession>();
+  ws.to({ company: "acme", org: { name: "Acme", tags: [] } });
+  expectTypeOf(ws.from({}).company).toEqualTypeOf<string | undefined>();
+  expectTypeOf(ws.from({}).org).toEqualTypeOf<Company | undefined>();
+  sessionOf<PersistedSession>();
+
+  // Still refused: what JSON drops or changes.
+  // @ts-expect-error a Date inside an object
+  sessionOf<{ org: { since: Date } }>();
+  // @ts-expect-error a function
+  sessionOf<{ check: () => boolean }>();
+  // @ts-expect-error a class instance with methods
+  sessionOf<{ c: { name: string; greet(): string } }>();
+  // @ts-expect-error a Map
+  sessionOf<{ m: Map<string, string> }>();
+  // @ts-expect-error a bigint
+  sessionOf<{ n: bigint }>();
+  // @ts-expect-error unknown may be anything
+  sessionOf<{ u: unknown }>();
+  // @ts-expect-error JSON writes undefined in an array as null
+  sessionOf<{ list: (string | undefined)[] }>();
+  // @ts-expect-error a session is an object
+  sessionOf<string>();
+  // @ts-expect-error a session is an object, not an array
+  sessionOf<string[]>();
 }

@@ -254,7 +254,8 @@ No configuration required — just use `RedisAdapter` and session persistence is
 <Callout type="info">
 Session data must be JSON-serializable (no functions, class instances, or circular
 references). The `PersistedSession` type describes the accepted shape. Typical
-OCPP session data (strings, numbers, plain objects) already fits.
+OCPP session data (strings, numbers, plain objects) already fits. A key holding
+`undefined` is left out when stored, as if absent.
 </Callout>
 
 ### Hybrid adapters

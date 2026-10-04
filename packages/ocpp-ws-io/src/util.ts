@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { RPCError } from "./errors.js";
 import * as errors from "./errors.js";
-import type { JsonValue, LoggerLikeNotOptional, SessionData } from "./types.js";
+import type {
+  JsonObjectShape,
+  LoggerLikeNotOptional,
+  SessionData,
+} from "./types.js";
 
 // ─── ID Generation ──────────────────────────────────────────────
 
@@ -166,7 +170,8 @@ export function safeDecodeURIComponent(value: string): string {
  * `ctx.accept({ session })`) and checks the keys and their types; `from`
  * reads a session (`client.session`, `ctx.state`) as T, each key possibly
  * missing. Both return what they are given: nothing is checked at runtime.
- * T's values must be JSON, as the cluster adapter stores sessions.
+ * T's values must be JSON, as the cluster adapter stores sessions; optional
+ * keys and nested interfaces fit.
  *
  * ```ts
  * const chargerSession = sessionOf<{ tenantId: string; role: "admin" | "charger" }>();
@@ -174,7 +179,7 @@ export function safeDecodeURIComponent(value: string): string {
  * const { tenantId } = chargerSession.from(client.session); // string | undefined
  * ```
  */
-export function sessionOf<T extends Record<keyof T, JsonValue>>() {
+export function sessionOf<T extends JsonObjectShape<T>>() {
   return {
     /** Where a session is written: checks the keys and their types. */
     to: (data: Partial<T>): SessionData => data as SessionData,

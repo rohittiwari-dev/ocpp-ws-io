@@ -263,6 +263,8 @@ server.on("client", (client) => {
 
 Session values are JSON, as the cluster adapter stores them: a `Date`, a function or a class instance is a type error, also under a key you do not declare (such keys take any JSON value). Keep other per-connection data in a `Map` keyed by `client.identity`.
 
+A key may hold `undefined`, for a value one charger has and another does not: `ctx.state.company = company` with a `string | undefined` compiles, and the cluster adapter stores the session without that key. Each step is spread over the one before, so a later `undefined` replaces an earlier value: `ctx.accept({ session: { company: undefined } })` clears what middleware set. A key may be declared optional (`company?: string`), and a key you do not declare reads as `JsonValue | undefined`. Declare a nested object with `type`, not `interface`: a declared key must fit the session's JSON index signature, which TypeScript does not give an interface.
+
 ### Without declaring `OCPPSession`
 
 To keep the session's type in your own code instead of augmenting the module, use the library's `sessionOf<T>()`. It gives two functions for where a session is written and read, and changes nothing at runtime: `to` checks the keys and types you write, `from` reads a session as your type.
@@ -297,17 +299,28 @@ server.on("client", (client) => {
 Next to declaring `OCPPSession`:
 
 - The type stays where you use it, so two servers in one process can keep different sessions; a declaration is one type for the whole program.
-- Every write and read goes through `to` or `from`. Read directly, `client.session.role` is a `JsonValue`; with `OCPPSession` declared, it is typed everywhere without them.
-- `sessionOf` refuses a type JSON cannot hold (a `Date`, a class instance), as a declaration does.
+- Every write and read goes through `to` or `from`. Read directly, `client.session.role` is a `JsonValue | undefined`; with `OCPPSession` declared, it is typed everywhere without them.
+- `sessionOf` refuses a type JSON cannot hold (a `Date`, a class instance), as a declaration does. Optional keys (`company?: string`) and objects declared with `interface` fit.
 - `from` is a cast, as a declaration is: nothing checks at runtime that a session holds your type, for example one stored by an older version of your app. Check such values where it matters.
 
 <Callout type="info">
-  `sessionOf` is in `ocpp-ws-io` 3.0.1 and later. On 3.0.0, the same lines in your own code do the same:
+  `sessionOf` is in `ocpp-ws-io` 3.0.1 and later. On 3.0.1 it refuses optional keys and objects declared with `interface` (fixed in 3.0.2): leave out the `?`, as `to` and `from` treat every key as optional anyway, and declare such objects with `type`. On 3.0.0, the same lines in your own code do the same:
 
 ```typescript
-import type { JsonValue, SessionData } from "ocpp-ws-io";
+import type { SessionData } from "ocpp-ws-io";
 
-function sessionOf<T extends Record<keyof T, JsonValue>>() {
+type Keys<T> = { [K in keyof T as K]: Value<T[K]> | undefined };
+type Value<V> = V extends string | number | boolean | null
+  ? V
+  : V extends readonly (infer U)[]
+    ? readonly Value<U>[]
+    : V extends (...args: never[]) => unknown
+      ? never
+      : V extends object
+        ? Keys<V>
+        : never;
+
+function sessionOf<T extends object & Keys<T>>() {
   return {
     to: (data: Partial<T>): SessionData => data as SessionData,
     from: (session: SessionData): Partial<T> => session as Partial<T>,
@@ -551,5 +564,5 @@ Prefer declaring the action, as above: an `unchecked()` call is checked neither 
 | `Argument of type '"NotifyPeriodicEventStream"' is not assignable to parameter of type 'never'` on `send()` | The client's protocols have no SEND messages (only OCPP 2.1 and custom protocols do) | Configure `"ocpp2.1"`, or declare the message in `OCPPSendMethodMap` |
 | `Type '"ocpp1.6"' is not assignable to type '"ocpp1.6" & ListedTwice<"ocpp1.6">'` | A protocol appears twice in `protocols` | Remove the repeat |
 | `Type '"vendor-x"' is not assignable to type '"ocpp1.6"'` in `strictMode` or `strictModeValidators` | Strict mode names a protocol the client, server or route is not configured with | Add the protocol to `protocols`, or remove the entry |
-| `Type 'Date' is not assignable to type 'JsonValue'` in `ctx.accept({ session })`, `ctx.state` or `ctx.next()` | A session value JSON cannot hold; sessions are stored as JSON | Store a JSON form (`date.toISOString()`), or keep the value outside the session |
+| `Type 'Date' is not assignable to type 'JsonValue \| undefined'` in `ctx.accept({ session })`, `ctx.state` or `ctx.next()` | A session value JSON cannot hold; sessions are stored as JSON | Store a JSON form (`date.toISOString()`), or keep the value outside the session |
 | `Cannot find name 'NoInfer'` in the package's types | TypeScript is older than 5.4 | Upgrade TypeScript |

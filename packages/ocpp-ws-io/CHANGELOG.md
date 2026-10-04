@@ -1,5 +1,12 @@
 # ocpp-ws-io
 
+## Unreleased
+
+### Fixed
+
+- **`sessionOf<T>()` takes optional keys and objects declared with `interface`** (types only). `sessionOf<{ company?: string }>()` and a key holding an interface (`{ org: Company }`) were refused with TS2344, although JSON holds both: the check compared each key's type with `JsonValue`, which has no `undefined` (part of every optional key's type) and needs an index signature an interface does not have. Each key is now checked by its shape. A key may hold `undefined`, which JSON leaves out like an absent key. Still refused: a `Date`, function, `Map`, `Set`, class instance with methods, `bigint`, `symbol`, `unknown`, `undefined` inside an array, or a `T` that is not an object.
+- **Sessions take `undefined`** (types only). `ctx.state.company = company` with a `string | undefined`, `ctx.next({ company })` and `ctx.accept({ session: { company } })` were refused (TS2322), as was an optional key declared on `OCPPSession` (`company?: string`, TS2411), though one charger may have a value and another not. `OCPPSession`, `SessionData` and `PersistedSession` now take `undefined` as a value. Nothing changes at runtime: in memory the key holds `undefined`, a later `undefined` replaces an earlier value (`accept({ session })` over `ctx.state`), and the cluster adapter's JSON leaves the key out. A key you do not declare now reads as `JsonValue | undefined`, as a session may not have it, so code that passes one on as a `JsonValue` needs a check (`?? null`). A nested object declared on `OCPPSession` still needs `type`, not `interface`.
+
 ## v3.0.1 - Session Helper (2026-10-04)
 
 ### Added
