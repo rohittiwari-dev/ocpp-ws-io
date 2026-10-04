@@ -1,5 +1,11 @@
 # ocpp-ws-io
 
+## Unreleased
+
+### Added
+
+- **`sessionOf<T>()`**: typed access to a connection's session without declaring `OCPPSession`. `to()` checks the keys and types where a session is written (`ctx.next()`, `ctx.accept({ session })`), `from()` reads one (`client.session`, `ctx.state`) as `T`, each key possibly missing. Both return what they are given, so nothing changes at runtime; a `T` with values JSON cannot hold (a `Date`, a class instance) is refused. Two servers in one process can keep different session types this way. See Sessions in the TypeScript guide.
+
 ## v3.0.0 - Typed by Configuration (2026-10-04)
 
 Upgrading from 2.x: see the [migration guide](https://ocpp-ws-io.rohittiwari.me/docs/ocpp-ws-io/upgrading-to-v3), which lists each breaking change, who it affects and the option that keeps the 2.x behaviour.

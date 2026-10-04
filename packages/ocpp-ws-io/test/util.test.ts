@@ -3,6 +3,7 @@ import {
   createRPCError,
   getErrorPlainObject,
   getPackageIdent,
+  sessionOf,
 } from "../src/util.js";
 import {
   RPCGenericError,
@@ -123,5 +124,16 @@ describe("getPackageIdent version (low)", () => {
       readFileSync(new URL("../package.json", import.meta.url), "utf8"),
     );
     expect(getPackageIdent()).toBe(`ocpp-ws-io/${pkg.version}`);
+  });
+});
+
+describe("sessionOf", () => {
+  it("returns what it is given: types only, no runtime check", () => {
+    const access = sessionOf<{ tenantId: string }>();
+    const data = { tenantId: "t1" };
+    expect(access.to(data)).toBe(data);
+    const stored = { tenantId: 7, other: "x" };
+    // A stored session is read as given, even when it does not match T.
+    expect(access.from(stored)).toBe(stored);
   });
 });

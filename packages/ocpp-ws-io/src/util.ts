@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { RPCError } from "./errors.js";
 import * as errors from "./errors.js";
-import type { LoggerLikeNotOptional } from "./types.js";
+import type { JsonValue, LoggerLikeNotOptional, SessionData } from "./types.js";
 
 // ─── ID Generation ──────────────────────────────────────────────
 
@@ -158,4 +158,27 @@ export function safeDecodeURIComponent(value: string): string {
   } catch {
     return value;
   }
+}
+
+/**
+ * Typed access to a connection's session without declaring `OCPPSession`.
+ * `to` is for where a session is written (`ctx.next()`,
+ * `ctx.accept({ session })`) and checks the keys and their types; `from`
+ * reads a session (`client.session`, `ctx.state`) as T, each key possibly
+ * missing. Both return what they are given: nothing is checked at runtime.
+ * T's values must be JSON, as the cluster adapter stores sessions.
+ *
+ * ```ts
+ * const chargerSession = sessionOf<{ tenantId: string; role: "admin" | "charger" }>();
+ * ctx.accept({ session: chargerSession.to({ role: "charger" }) });
+ * const { tenantId } = chargerSession.from(client.session); // string | undefined
+ * ```
+ */
+export function sessionOf<T extends Record<keyof T, JsonValue>>() {
+  return {
+    /** Where a session is written: checks the keys and their types. */
+    to: (data: Partial<T>): SessionData => data as SessionData,
+    /** Where a session is read: as T, each key possibly missing. */
+    from: (session: SessionData): Partial<T> => session as Partial<T>,
+  };
 }

@@ -265,20 +265,10 @@ Session values are JSON, as the cluster adapter stores them: a `Date`, a functio
 
 ### Without declaring `OCPPSession`
 
-To keep the session's type in your own code instead of augmenting the module, go through two small functions where a session is written and read. They change nothing at runtime: `to` checks the keys and types you write, `from` reads a session as your type.
+To keep the session's type in your own code instead of augmenting the module, use the library's `sessionOf<T>()`. It gives two functions for where a session is written and read, and changes nothing at runtime: `to` checks the keys and types you write, `from` reads a session as your type.
 
 ```typescript
-import { type JsonValue, OCPPServer, type SessionData } from "ocpp-ws-io";
-
-/** Typed access to a connection's session, without declaring OCPPSession. */
-function sessionOf<T extends Record<keyof T, JsonValue>>() {
-  return {
-    /** Where a session is written: checks the keys and their types. */
-    to: (data: Partial<T>): SessionData => data as SessionData,
-    /** Where a session is read: as T, each key possibly missing. */
-    from: (session: SessionData): Partial<T> => session as Partial<T>,
-  };
-}
+import { OCPPServer, sessionOf } from "ocpp-ws-io";
 
 interface ChargerSession {
   tenantId: string;
@@ -310,6 +300,21 @@ Next to declaring `OCPPSession`:
 - Every write and read goes through `to` or `from`. Read directly, `client.session.role` is a `JsonValue`; with `OCPPSession` declared, it is typed everywhere without them.
 - `sessionOf` refuses a type JSON cannot hold (a `Date`, a class instance), as a declaration does.
 - `from` is a cast, as a declaration is: nothing checks at runtime that a session holds your type, for example one stored by an older version of your app. Check such values where it matters.
+
+<Callout type="info">
+  `sessionOf` is in `ocpp-ws-io` 3.1.0 and later. On 3.0, the same lines in your own code do the same:
+
+```typescript
+import type { JsonValue, SessionData } from "ocpp-ws-io";
+
+function sessionOf<T extends Record<keyof T, JsonValue>>() {
+  return {
+    to: (data: Partial<T>): SessionData => data as SessionData,
+    from: (session: SessionData): Partial<T> => session as Partial<T>,
+  };
+}
+```
+</Callout>
 
 ## Keeping typed objects
 

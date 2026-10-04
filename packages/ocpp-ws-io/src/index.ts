@@ -153,6 +153,7 @@ export {
   createRPCError,
   getErrorPlainObject,
   getPackageIdent,
+  sessionOf,
 } from "./util.js";
 // ─── Validation ──────────────────────────────────────────────────
 export { createValidator, Validator } from "./validator.js";
