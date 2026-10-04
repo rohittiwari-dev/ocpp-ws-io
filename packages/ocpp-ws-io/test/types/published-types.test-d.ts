@@ -2,6 +2,10 @@ import { expectTypeOf } from "vitest";
 import { UseOcppRpcMiddleware } from "../../src/frameworks/nestjs/decorators/class.decorators.js";
 import type { OcppModuleAsyncOptions } from "../../src/frameworks/nestjs/interfaces.js";
 import type { OcppHonoNodeBinding } from "../../src/frameworks/hono/middleware.js";
+import type {
+  RedisAdapter,
+  RedisAdapterMetrics,
+} from "../../src/adapters/redis/index.js";
 import { createLoggingMiddleware } from "../../src/helpers/index.js";
 import { type MiddlewareFunction, MiddlewareStack } from "../../src/middleware.js";
 import type {
@@ -55,4 +59,12 @@ export function loggingMiddlewareType() {
   const mw = createLoggingMiddleware(logger, "CP1");
   expectTypeOf(mw).toEqualTypeOf<MiddlewareFunction<MiddlewareContext>>();
   new MiddlewareStack<MiddlewareContext>().use(mw);
+}
+
+export async function redisMetricsTyped(adapter: RedisAdapter) {
+  // T6a: what RedisAdapter.metrics() reports, field by field.
+  const m = await adapter.metrics();
+  expectTypeOf(m).toEqualTypeOf<RedisAdapterMetrics>();
+  expectTypeOf(m.pollErrors).toEqualTypeOf<number>();
+  expectTypeOf(m.lastPollError).toEqualTypeOf<string | undefined>();
 }

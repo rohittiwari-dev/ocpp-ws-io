@@ -528,6 +528,13 @@ export class OCPPClient<
       );
       this._ws = ws;
 
+      // The handshake response, from ws's own event: ws clears its request
+      // (and so the response with it) before "open".
+      let upgradeResponse: import("node:http").IncomingMessage | undefined;
+      const onUpgrade = (res: import("node:http").IncomingMessage) => {
+        upgradeResponse = res;
+      };
+
       const onOpen = () => {
         cleanup();
         this._state = OPEN;
@@ -562,15 +569,8 @@ export class OCPPClient<
 
         this._logger?.info?.("Connected", { protocol: ws.protocol });
 
-        // Create a minimal response object
-        const response = (
-          ws as unknown as {
-            _req?: { res?: import("node:http").IncomingMessage };
-          }
-        )._req?.res;
-        const result = {
-          response: response as import("node:http").IncomingMessage,
-        };
+        // ws emits "upgrade" before "open", so the response is set here.
+        const result = { response: upgradeResponse! };
         this.emit("open", result);
         resolve(result);
       };
@@ -607,11 +607,13 @@ export class OCPPClient<
       };
 
       const cleanup = () => {
+        ws.removeListener("upgrade", onUpgrade);
         ws.removeListener("open", onOpen);
         ws.removeListener("error", onError);
         ws.removeListener("unexpected-response", onUnexpectedResponse);
       };
 
+      ws.on("upgrade", onUpgrade);
       ws.on("open", onOpen);
       ws.on("error", onError);
       ws.on("unexpected-response", onUnexpectedResponse);

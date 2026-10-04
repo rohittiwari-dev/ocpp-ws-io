@@ -12,6 +12,23 @@ import {
 // For RedisAdapterOptions.driverFactory: one driver per pooled connection.
 export { createDriver };
 
+/** What `RedisAdapter.metrics()` reports. */
+export type RedisAdapterMetrics = {
+  /**
+   * Entries in this node's streams. XLEN also counts entries already read but
+   * not yet trimmed, so this is an upper bound of the backlog.
+   */
+  pendingMessages: number;
+  /** Streams this node reads. */
+  activeStreams: number;
+  /** Entries per stream; -1 when XLEN failed for it. */
+  streamDetails: Record<string, number>;
+  /** Stream read failures. Not 0: cross-node delivery into this node is broken. */
+  pollErrors: number;
+  /** The last stream read failure, once there has been one. */
+  lastPollError?: string;
+};
+
 export interface RedisAdapterOptions {
   /** Redis client for publishing (required unless `driver` is provided) */
   pubClient?: RedisLikeClient;
@@ -602,7 +619,7 @@ return 0`;
 
   // ─── Observability Pipeline ────────────────────────────────────────
 
-  async metrics(): Promise<Record<string, unknown>> {
+  async metrics(): Promise<RedisAdapterMetrics> {
     let pendingMessages = 0;
     const streamDetails: Record<string, number> = {};
 

@@ -60,6 +60,7 @@ import {
   type OCPPPlugin,
   type OCPPResponseType,
   type PersistedSession,
+  type PluginHookResult,
   type RequestOf,
   SecurityProfile,
   type SendToClientArgs,
@@ -525,7 +526,7 @@ export class OCPPServer<
    * A hook that overruns is abandoned and logged, and shutdown continues.
    */
   private async _awaitShutdownHook(
-    result: unknown,
+    result: PluginHookResult,
     pluginName: string,
     hook: "onClosing" | "onClose",
   ): Promise<void> {
@@ -590,7 +591,7 @@ export class OCPPServer<
 
   /** Attach a rejection handler when a hook returned a promise. */
   private _guardPluginHook(
-    result: unknown,
+    result: PluginHookResult,
     pluginName: string,
     hook: string,
   ): void {

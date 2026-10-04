@@ -1782,6 +1782,11 @@ export interface EventAdapterInterface {
  * its hooks see each connection typed for every version, as in 2.x. Type an
  * app's own plugin for its server's protocols with `createPlugin<"ocpp1.6">()`.
  */
+/** What a plugin's lifecycle and event hooks return. @internal */
+export type PluginHookResult = ReturnType<
+  NonNullable<OCPPPlugin["onConnection"]>
+>;
+
 export interface OCPPPlugin<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
   /**
    * Plugin name, used for logging and diagnostics.

@@ -250,7 +250,7 @@ export function abortHandshake(
   const forceDestroy = setTimeout(() => {
     if (!socket.destroyed) socket.destroy();
   }, 5000);
-  (forceDestroy as unknown as { unref?: () => void }).unref?.();
+  forceDestroy.unref?.();
 
   const finish = () => {
     clearTimeout(forceDestroy);

@@ -62,6 +62,25 @@ describe("OCPPClient", () => {
     expect(client.protocol).toBe("ocpp1.6");
   });
 
+  it("gives the handshake response on open and from connect() (R17)", async () => {
+    client = new OCPPClient({
+      identity: "CS001",
+      endpoint: `ws://localhost:${port}`,
+      protocols: ["ocpp1.6"],
+      reconnect: false,
+    });
+    const opened = new Promise<import("node:http").IncomingMessage>(
+      (resolve) => client.on("open", ({ response }) => resolve(response)),
+    );
+
+    const result = await client.connect();
+    const response = await opened;
+
+    expect(response?.statusCode).toBe(101);
+    expect(response?.headers["sec-websocket-protocol"]).toBe("ocpp1.6");
+    expect(result.response).toBe(response);
+  });
+
   it('should emit "open" event on connect', async () => {
     client = new OCPPClient({
       identity: "CS001",

@@ -72,6 +72,10 @@ const ERROR_PROPERTIES = [
   "details",
 ] as const;
 
+/** An error as getErrorPlainObject reads it: any Error fits. */
+type ErrorFields = Error &
+  Partial<Record<(typeof ERROR_PROPERTIES)[number], unknown>>;
+
 /**
  * Convert an Error (or subclass) into a plain, JSON-safe object.
  *
@@ -90,7 +94,7 @@ export function getErrorPlainObject(
 
   for (const prop of ERROR_PROPERTIES) {
     if (prop === "stack" && !includeStack) continue;
-    const value = (err as unknown as Record<string, unknown>)[prop];
+    const value = (err as ErrorFields)[prop];
     if (value !== undefined) {
       // Skip functions and symbols — they aren't JSON-serializable
       if (typeof value === "function" || typeof value === "symbol") continue;

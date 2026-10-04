@@ -7,10 +7,10 @@ import {
   type ValidatorSchema,
 } from "./validator.js";
 
-const SCHEMAS: Record<string, unknown[]> = {
-  "ocpp1.6": ocpp16 as unknown[],
-  "ocpp2.0.1": ocpp201 as unknown[],
-  "ocpp2.1": ocpp21 as unknown[],
+const SCHEMAS: Record<string, ValidatorSchema[]> = {
+  "ocpp1.6": ocpp16 as ValidatorSchema[],
+  "ocpp2.0.1": ocpp201 as ValidatorSchema[],
+  "ocpp2.1": ocpp21 as ValidatorSchema[],
 };
 
 /**
@@ -38,7 +38,7 @@ export function getStandardValidator(protocol: string): Validator | null {
   const schemas = SCHEMAS[protocol];
   if (!schemas) return null;
 
-  const validator = createValidator(protocol, schemas as ValidatorSchema[]);
+  const validator = createValidator(protocol, schemas);
   _byProtocol.set(protocol, validator);
   return validator;
 }

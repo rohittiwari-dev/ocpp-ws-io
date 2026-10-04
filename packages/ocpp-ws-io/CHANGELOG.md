@@ -45,6 +45,7 @@ To be released as **3.0.0**. Upgrading from 2.x: see the [migration guide](https
 
 ### Added
 
+- **`RedisAdapterMetrics`**, exported from `ocpp-ws-io/adapters/redis`: what `RedisAdapter.metrics()` reports (`pendingMessages`, `activeStreams`, `streamDetails`, `pollErrors`, `lastPollError`). It returned `Record<string, unknown>`; the fields are unchanged.
 - **`forProtocol(protocol)`** on `OCPPClient`, `BrowserOCPPClient` and `OCPPServerClient`: the same client or connection typed for one of its protocols, or `undefined` while it speaks another or is not connected. With `AnyOCPPClient`, `AnyBrowserOCPPClient`, `AnyOCPPServerClient` (lists of differently configured clients or connections, without the calls typed by protocol) and `KnownProtocol<P>` (the protocols among P that have types).
 - **`ConnectionOf<typeof server>`**: the connection type of a server or route, to store connections with their exact type.
 - **`createPlugin<"ocpp1.6">({ ... })`** types an app's own plugin for its server's protocols (`OCPPPlugin<P>`); only a server with those protocols accepts it. Without a type argument a plugin fits any server, as before. `defineAuth()` and `combineAuth()` written inline in `auth()` take the server's protocols.
@@ -77,6 +78,7 @@ To be released as **3.0.0**. Upgrading from 2.x: see the [migration guide](https
 
 ### Fixed
 
+- **The Node client's `open` event and `connect()` give the handshake response.** `response` was always `undefined`, though typed `IncomingMessage`, so reading `response.statusCode` or its headers threw: the client read it from `ws`'s private request, which `ws` clears before `open`. It now comes from `ws`'s `upgrade` event, as in ocpp-rpc.
 - **The Express and NestJS guides no longer call `safeSendToClient` fire-and-forget.** It waits for the charger's answer like `sendToClient` and only resolves with `undefined` instead of throwing, so code awaiting it to answer at once could wait for the call timeout.
 - **The browser client's `incoming_error` middleware gets the CALLERROR frame** (`OCPPCallError`), as its type, the middleware guide and the Node client give it. It got an `RPCError` object instead, so a middleware reading `ctx.error[2]` for the code got `undefined`, and one that replaced `ctx.error` made the call reject with a plain array instead of an `RPCError`. The call still rejects with an `RPCError`, now built from the frame the middleware leaves, and the `callError` event carries that frame with its `details` (they were always `{}`). A browser middleware that read `ctx.error.rpcErrorCode` reads `ctx.error[2]`.
 - **`createDriver` is exported from `ocpp-ws-io/adapters/redis`.** `RedisAdapter`'s `poolSize` needs a `driverFactory`, and the clustering guide builds each driver with `createDriver`, which the entry did not export, so a pool could not be set up as documented.
