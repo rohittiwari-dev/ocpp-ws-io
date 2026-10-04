@@ -263,6 +263,54 @@ server.on("client", (client) => {
 
 Session values are JSON, as the cluster adapter stores them: a `Date`, a function or a class instance is a type error, also under a key you do not declare (such keys take any JSON value). Keep other per-connection data in a `Map` keyed by `client.identity`.
 
+### Without declaring `OCPPSession`
+
+To keep the session's type in your own code instead of augmenting the module, go through two small functions where a session is written and read. They change nothing at runtime: `to` checks the keys and types you write, `from` reads a session as your type.
+
+```typescript
+import { type JsonValue, OCPPServer, type SessionData } from "ocpp-ws-io";
+
+/** Typed access to a connection's session, without declaring OCPPSession. */
+function sessionOf<T extends Record<keyof T, JsonValue>>() {
+  return {
+    /** Where a session is written: checks the keys and their types. */
+    to: (data: Partial<T>): SessionData => data as SessionData,
+    /** Where a session is read: as T, each key possibly missing. */
+    from: (session: SessionData): Partial<T> => session as Partial<T>,
+  };
+}
+
+interface ChargerSession {
+  tenantId: string;
+  role: "admin" | "charger";
+}
+const chargerSession = sessionOf<ChargerSession>();
+
+const server = new OCPPServer({ protocols: ["ocpp1.6"] });
+
+server.use(async (ctx) => {
+  const tenantId = ctx.handshake.query.get("tenant") ?? "default";
+  await ctx.next(chargerSession.to({ tenantId }));
+});
+
+server.auth((ctx) => {
+  const { tenantId } = chargerSession.from(ctx.state); // string | undefined
+  ctx.accept({ session: chargerSession.to({ role: tenantId ? "charger" : "admin" }) });
+});
+
+server.on("client", (client) => {
+  const { tenantId, role } = chargerSession.from(client.session);
+  console.log(tenantId, role); // string | undefined, "admin" | "charger" | undefined
+});
+```
+
+Next to declaring `OCPPSession`:
+
+- The type stays where you use it, so two servers in one process can keep different sessions; a declaration is one type for the whole program.
+- Every write and read goes through `to` or `from`. Read directly, `client.session.role` is a `JsonValue`; with `OCPPSession` declared, it is typed everywhere without them.
+- `sessionOf` refuses a type JSON cannot hold (a `Date`, a class instance), as a declaration does.
+- `from` is a cast, as a declaration is: nothing checks at runtime that a session holds your type, for example one stored by an older version of your app. Check such values where it matters.
+
 ## Keeping typed objects
 
 A typed client fits a variable of its own type, or a plain `OCPPClient`. For connections, use `ConnectionOf<typeof server>`; for lists that mix differently configured clients or connections, use `AnyOCPPClient` and `AnyOCPPServerClient`, which keep every member except the calls typed by protocol:
