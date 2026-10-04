@@ -1,6 +1,6 @@
 # ocpp-ws-io
 
-## Unreleased
+## v3.0.2 - Optional Session Keys (2026-10-04)
 
 ### Fixed
 

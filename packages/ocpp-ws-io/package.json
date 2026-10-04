@@ -1,6 +1,6 @@
 {
 	"name": "ocpp-ws-io",
-	"version": "3.0.1",
+	"version": "3.0.2",
 	"description": "Type-safe OCPP 1.6J, 2.0.1, and 2.1 WebSocket RPC client & server toolkit for Node.js, TypeScript, and NestJS. OCA schema-validated, Redis clustering, and EV charging infrastructure support.",
 	"repository": {
 		"type": "git",
