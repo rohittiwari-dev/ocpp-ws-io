@@ -1,6 +1,6 @@
 # ocpp-ws-io
 
-## Unreleased
+## v3.0.3 - Session Values (2026-10-04)
 
 ### Changed
 
