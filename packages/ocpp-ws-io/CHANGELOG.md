@@ -1,6 +1,6 @@
 # ocpp-ws-io
 
-## Unreleased
+## v3.0.4 - Handshake now has more options
 
 ### Added
 
@@ -138,7 +138,7 @@ A full review of the package, worked subsystem by subsystem. One authentication 
 
 ### Breaking changes
 
-- **`piiRedactorPlugin` no longer redacts outbound payloads by default (`outgoing` is now `false`).** It redacts the payload rather than a logging copy, and an outbound message is built from the payload *after* middleware runs — so redacting `idTag`, the key the plugin's own example used, sent `"***REDACTED***"` to the charge point and broke every `RemoteStartTransaction`. Enable it only for keys the charger does not act on; redact at the sink otherwise.
+- **`piiRedactorPlugin` no longer redacts outbound payloads by default (`outgoing` is now `false`).** It redacts the payload rather than a logging copy, and an outbound message is built from the payload _after_ middleware runs — so redacting `idTag`, the key the plugin's own example used, sent `"***REDACTED***"` to the charge point and broke every `RemoteStartTransaction`. Enable it only for keys the charger does not act on; redact at the sink otherwise.
 - **OCPP 1.6 validation failures now report `OccurenceConstraintViolation`** (one `r`, as 1.6 Part 4 spells it) instead of the 2.0.1 `OccurrenceConstraintViolation`. 2.0.1 and 2.1 are unchanged. Check any 1.6 code branching on that string, or on `instanceof RPCOccurrenceConstraintViolationError`, and use the new `RPCOccurenceConstraintViolationError` there.
 - **A frame with an unsupported MessageTypeId is answered with a CALLERROR** rather than dropped, so a peer that was previously met with silence now receives `MessageTypeNotSupported`.
 - **`replayBufferPlugin` answers `{ status: "Queued" }` instead of `{ status: "Accepted" }`** for a command it only queued, since `Accepted` is the charge point's own commitment to carry it out — narrow it with the new `isQueuedOffline()`, and check any call site branching on `status === "Accepted"`.
@@ -152,7 +152,7 @@ A full review of the package, worked subsystem by subsystem. One authentication 
 
 ### Added
 
-- `ClientOptions.connectTimeoutMs` (30000), `retryInitialConnect` (`false`) and `handlerGraceMs` (1000) — bound the WebSocket upgrade, retry a failed *first* connect, and let an early CALL wait for a handler that is about to be registered.
+- `ClientOptions.connectTimeoutMs` (30000), `retryInitialConnect` (`false`) and `handlerGraceMs` (1000) — bound the WebSocket upgrade, retry a failed _first_ connect, and let an early CALL wait for a handler that is about to be registered.
 - `ServerOptions.remoteCallGraceMs` and `pluginShutdownTimeoutMs` (5000) — cover adapter round-trip latency on cross-node calls, and stop one hung plugin blocking shutdown forever.
 - `ServerOptions.connectionRateLimit.trustProxy` — resolve the client IP from `X-Forwarded-For` without configuring CORS; the server warns once if it sees that header while trusting no proxy.
 - `AuthAccept.identity` — override the connection identity from an auth callback, so `/tenant-a/CP001` and `/tenant-b/CP001` stop colliding on one registry entry.
@@ -274,12 +274,12 @@ Patch release. No runtime changes — types only.
 
 - **`ocpp-ws-io/browser` shipped without type declarations.** The two `tsup` configs run concurrently against the same `outDir`, and `clean: true` on the Node config raced the browser config's declaration output: `dist/browser.d.ts` and `dist/browser.d.mts` were written and then deleted whenever `dist/` already existed (always true at publish time, since `prepublishOnly` builds over it). TypeScript consumers importing `ocpp-ws-io/browser` resolved the JS through the `exports` map, found no `types` target, and fell back to an implicit `any`:
 
-  ```
-  Could not find a declaration file for module 'ocpp-ws-io/browser'.
-  '.../node_modules/ocpp-ws-io/dist/browser.js' implicitly has an 'any' type.
-  ```
+    ```
+    Could not find a declaration file for module 'ocpp-ws-io/browser'.
+    '.../node_modules/ocpp-ws-io/dist/browser.js' implicitly has an 'any' type.
+    ```
 
-  Cleaning now happens once in the `build` script, before the concurrent tsup runs.
+    Cleaning now happens once in the `build` script, before the concurrent tsup runs.
 
 - **Subpath types were invisible to `moduleResolution: "node"`.** Legacy TS resolution ignores `exports`, so every subpath (`/browser`, `/adapters/redis`, `/plugins`, `/logger`, `/express`, `/nestjs`, `/fastify`, `/hono`) resolved to `any` — only the root entry carried types. Added `typesVersions` so all subpaths resolve under `node`, `node16`, and `bundler`.
 
@@ -331,8 +331,8 @@ Fixes every finding from the full-codebase security & reliability review
 
 - **Strict Plugin Initialization**: Added runtime validation to prevent **zero-key PII redaction** (which caused silent failures) and **uninitialized Redis plugins**. The `initialize()` call now throws an informative error if `options.sensitiveKeys` is missing or empty, or if a Redis-backed plugin is initialized without a Redis client.
 - **Refined PII Redaction Logic**:
-  - **Default Value Removed**: `options.sensitiveKeys` now defaults to `undefined`, forcing the caller to explicitly list keys. This prevents accidental redaction of essential fields like `idToken` in `Authorize` messages.
-  - **Breaking Change Documentation**: Updated `src/plugins/pii-redactor.ts` to clearly state in the JSDoc that `sensitiveKeys` is a **required** property and provide explicit usage examples.
+    - **Default Value Removed**: `options.sensitiveKeys` now defaults to `undefined`, forcing the caller to explicitly list keys. This prevents accidental redaction of essential fields like `idToken` in `Authorize` messages.
+    - **Breaking Change Documentation**: Updated `src/plugins/pii-redactor.ts` to clearly state in the JSDoc that `sensitiveKeys` is a **required** property and provide explicit usage examples.
 - **Graceful Redis Plugin Handling**: Modified `OCPPPluginFactory.initialize` to check for the presence of a `redisClient` when creating Redis-backed plugins. If a plugin requires a Redis client and none is provided, it will now log a warning and skip initialization instead of throwing a hard error, ensuring the rest of the plugin chain remains functional.
 
 ## v2.2.3 - Transport Hardening
@@ -371,20 +371,20 @@ This massive release transforms `ocpp-ws-io` from a standalone WebSocket engine 
 
 - **Unified Context Architecture (`BaseOcppContext`)**: Completely abstracted the core context logic, allowing any Node.js framework to inject a standard, strongly-typed `ocpp` object directly into its request lifecycle.
 - **First-Class Fastify Integration (`ocpp-ws-io/fastify`)**:
-  - Shipped a native Fastify plugin that seamlessly handles HTTP upgrades.
-  - Hardened with strict memory-leak prevention (automatically deregisters `upgrade` hooks on server close).
-  - TypeScript module augmentation injects `req.ocpp` safely across all Fastify routes.
+    - Shipped a native Fastify plugin that seamlessly handles HTTP upgrades.
+    - Hardened with strict memory-leak prevention (automatically deregisters `upgrade` hooks on server close).
+    - TypeScript module augmentation injects `req.ocpp` safely across all Fastify routes.
 - **First-Class Hono Integration (`ocpp-ws-io/hono`)**:
-  - Shipped native middleware (`ocppMiddleware`) compatible with Hono's `ContextVariableMap`.
-  - Added `@hono/node-server` adapters to elegantly handle raw Node server upgrades without dropping performance.
+    - Shipped native middleware (`ocppMiddleware`) compatible with Hono's `ContextVariableMap`.
+    - Added `@hono/node-server` adapters to elegantly handle raw Node server upgrades without dropping performance.
 - **Bun & Deno Native Support**:
-  - By hooking into standard Node.js networking (`ws` and `node:http`), `ocpp-ws-io` now inherently supports Bun and Deno environments perfectly via their compatibility layers. Zero configuration required.
+    - By hooking into standard Node.js networking (`ws` and `node:http`), `ocpp-ws-io` now inherently supports Bun and Deno environments perfectly via their compatibility layers. Zero configuration required.
 - **Native NestJS Support (`ocpp-ws-io/nestjs`)**:
-  - **First-Class Decorators**: Introduced `@OcppGateway()`, `@OcppMessageEvent()`, and `@OcppAuth()` for seamless class-based WebSocket routing.
-  - **Parameter Injectors**: Map incoming OCPP properties directly to method parameters via `@Identity()`, `@Params()`, `@Session()`, and `@Context()`.
-  - **Dynamic Module Initialization**: Provided `OcppModule.forRoot()` and `OcppModule.forRootAsync()` to natively register the adapter alongside global configurations.
-  - **Zero-Config WebSockets**: The `OcppService` now automatically hooks into the underlying `HttpAdapterHost`.
-  - **Testing Environment Hardening**: Bypassed ESBuild/Vite decorator stripping behaviors by utilizing NestJS `useFactory` instantiation, guaranteeing 100% test compatibility.
+    - **First-Class Decorators**: Introduced `@OcppGateway()`, `@OcppMessageEvent()`, and `@OcppAuth()` for seamless class-based WebSocket routing.
+    - **Parameter Injectors**: Map incoming OCPP properties directly to method parameters via `@Identity()`, `@Params()`, `@Session()`, and `@Context()`.
+    - **Dynamic Module Initialization**: Provided `OcppModule.forRoot()` and `OcppModule.forRootAsync()` to natively register the adapter alongside global configurations.
+    - **Zero-Config WebSockets**: The `OcppService` now automatically hooks into the underlying `HttpAdapterHost`.
+    - **Testing Environment Hardening**: Bypassed ESBuild/Vite decorator stripping behaviors by utilizing NestJS `useFactory` instantiation, guaranteeing 100% test compatibility.
 
 ### Internal Refactors
 
@@ -404,10 +404,10 @@ This massive release transforms `ocpp-ws-io` from a standalone WebSocket engine 
 - **Improved Type Safety**: Added missing `backpressure` and `rateLimitExceeded` events to the `ClientEvents` interface to allow fully type-safe event listeners.
 - **Fixed Outbound Interception Bypass**: Guarded the `CALLERROR` generated from `_onBadMessage` with `_invokeBeforeSend` to ensure it can be intercepted by plugins.
 - **Massive Plugin System Upgrade**: Expanded the `OCPPPlugin` interface from 4 to 26 hooks, adding complete lifecycle observability and control.
-  - Added message interception: `onBeforeReceive` and `onBeforeSend` hooks (return `false` to drop/block messages).
-  - Added new error event hooks: `onBadMessage`, `onValidationFailure`, `onHandlerError`, `onError`.
-  - Added security and lifecycle hooks: `onSecurityEvent`, `onAuthFailed`, `onRateLimitExceeded`, `onEviction`.
-  - Added infrastructure hooks: `onBackpressure`, `onPongTimeout`, `onClosing`, `onReconfigure`, `onTLSUpdate`.
+    - Added message interception: `onBeforeReceive` and `onBeforeSend` hooks (return `false` to drop/block messages).
+    - Added new error event hooks: `onBadMessage`, `onValidationFailure`, `onHandlerError`, `onError`.
+    - Added security and lifecycle hooks: `onSecurityEvent`, `onAuthFailed`, `onRateLimitExceeded`, `onEviction`.
+    - Added infrastructure hooks: `onBackpressure`, `onPongTimeout`, `onClosing`, `onReconfigure`, `onTLSUpdate`.
 - **Telemetry Engine**: Added background telemetry push mechanism via `telemetry.pushIntervalMs` option. Automatically pushes `OCPPServerStats` to plugins implementing `onTelemetry`.
 - **Custom Metrics**: Restored `getCustomMetrics` natively to `/metrics` so plugins can contribute custom Prometheus lines.
 - **Client & Server Integration**: Built-in support across both `OCPPClient` and `OCPPServerClient` objects. All existing plugins are fully backward compatible.
@@ -417,11 +417,11 @@ This massive release transforms `ocpp-ws-io` from a standalone WebSocket engine 
 ### Major Changes
 
 - **BREAKING**: Unified message event API with direction tracking and enriched context
-  - New `message` event emits `{ message, direction, ctx }` payload instead of raw `OCPPMessage`
-  - Direction indicator: `"IN"` (from peer) | `"OUT"` (to peer)
-  - Enriched context includes: `timestamp`, `latencyMs`, `protocol`, `method`, `type`
-  - Applies to both `OCPPClient` and `OCPPServerClient` (server-side connections)
-  - See [MIGRATION_v3_MESSAGE_EVENTS.md](./MIGRATION_v3_MESSAGE_EVENTS.md) for detailed migration guide
+    - New `message` event emits `{ message, direction, ctx }` payload instead of raw `OCPPMessage`
+    - Direction indicator: `"IN"` (from peer) | `"OUT"` (to peer)
+    - Enriched context includes: `timestamp`, `latencyMs`, `protocol`, `method`, `type`
+    - Applies to both `OCPPClient` and `OCPPServerClient` (server-side connections)
+    - See [MIGRATION_v3_MESSAGE_EVENTS.md](./MIGRATION_v3_MESSAGE_EVENTS.md) for detailed migration guide
 
 ### Backward Compatibility Notes
 
@@ -442,17 +442,17 @@ This massive release transforms `ocpp-ws-io` from a standalone WebSocket engine 
 **Before (v2.1.15):**
 
 ```typescript
-client.on("call", (msg) => {
-  const [, id, method] = msg;
-  console.log(`Call: ${method}`);
+client.on('call', msg => {
+	const [, id, method] = msg;
+	console.log(`Call: ${method}`);
 });
 ```
 
 **After (v2.2.0):**
 
 ```typescript
-client.on("message", ({ message, direction, ctx }) => {
-  console.log(`${direction} ${ctx.method} [latency: ${ctx.latencyMs}ms]`);
+client.on('message', ({ message, direction, ctx }) => {
+	console.log(`${direction} ${ctx.method} [latency: ${ctx.latencyMs}ms]`);
 });
 ```
 
@@ -475,27 +475,27 @@ client.on("message", ({ message, direction, ctx }) => {
 
 - Bump `voltlog-io` to v1.0.6
 
-  v1.0.5 and earlier shipped `dist/chunk-DAFMRCAN.mjs` which unconditionally
-  executed `import { fileURLToPath } from "url"` (a Node.js built-in) as part of
-  tsup's ESM shim, crashing every browser bundler (Vite, Next.js/webpack, esbuild)
-  with `fileURLToPath is not a function`.
+    v1.0.5 and earlier shipped `dist/chunk-DAFMRCAN.mjs` which unconditionally
+    executed `import { fileURLToPath } from "url"` (a Node.js built-in) as part of
+    tsup's ESM shim, crashing every browser bundler (Vite, Next.js/webpack, esbuild)
+    with `fileURLToPath is not a function`.
 
-  v1.0.6 removes the shared chunk entirely and ships a clean browser-safe client
-  bundle — no Node.js shim, no `path`/`url` imports.
+    v1.0.6 removes the shared chunk entirely and ships a clean browser-safe client
+    bundle — no Node.js shim, no `path`/`url` imports.
 
-  This unblocks `voltlog-io/client` usage in `ocpp-ws-io/browser` (`browser/init-logger.ts`)
-  which was added in the previous patch to replace the root `init-logger.ts` that
-  imported from the Node.js-only full `voltlog-io` entry point.
+    This unblocks `voltlog-io/client` usage in `ocpp-ws-io/browser` (`browser/init-logger.ts`)
+    which was added in the previous patch to replace the root `init-logger.ts` that
+    imported from the Node.js-only full `voltlog-io` entry point.
 
 ## 2.1.12
 
 ### Patch Changes
 
 - Fix browser package pulling in Node.js-only modules
-  - `browser/util.ts`: inline `NOOP_LOGGER` definition instead of re-exporting from `../util.js`, which transitively imported `node:crypto` and would break any strict browser bundler (Vite, webpack, esbuild)
-  - `browser/init-logger.ts`: new browser-safe logger initialiser that imports from `voltlog-io/client` (the browser-only bundle) instead of the full `voltlog-io` package which includes Node.js transports
-  - `browser/client.ts`: update `initLogger` import to `./init-logger.js` (new browser-local file)
-  - `browser/index.ts`: replace `export * from "../helpers/index.js"` with explicit named exports of only the two browser-safe helpers (`createLoggingMiddleware`, `defineRpcMiddleware`); server-only exports (`defineMiddleware`, `createPlugin`, `defineAuth`, `combineAuth`) are no longer part of the browser API surface
+    - `browser/util.ts`: inline `NOOP_LOGGER` definition instead of re-exporting from `../util.js`, which transitively imported `node:crypto` and would break any strict browser bundler (Vite, webpack, esbuild)
+    - `browser/init-logger.ts`: new browser-safe logger initialiser that imports from `voltlog-io/client` (the browser-only bundle) instead of the full `voltlog-io` package which includes Node.js transports
+    - `browser/client.ts`: update `initLogger` import to `./init-logger.js` (new browser-local file)
+    - `browser/index.ts`: replace `export * from "../helpers/index.js"` with explicit named exports of only the two browser-safe helpers (`createLoggingMiddleware`, `defineRpcMiddleware`); server-only exports (`defineMiddleware`, `createPlugin`, `defineAuth`, `combineAuth`) are no longer part of the browser API surface
 
 ## 2.1.11
 
@@ -518,7 +518,7 @@ client.on("message", ({ message, direction, ctx }) => {
 
 - fix: resolve CodeQL security vulnerabilities including dynamic method call invocation issues
 
-  fix: update CI/CD pipeline with Netlify build hooks for reliable monorepo deployments
+    fix: update CI/CD pipeline with Netlify build hooks for reliable monorepo deployments
 
 ## 2.1.8
 
@@ -526,13 +526,13 @@ client.on("message", ({ message, direction, ctx }) => {
 
 - **Built-in Plugin Architecture**: Introduced `server.plugin()` API for composable server extensions. Plugins receive lifecycle hooks (`onInit`, `onConnection`, `onDisconnect`, `onClose`) and can be registered via `import { ... } from "ocpp-ws-io/plugins"`.
 - **7 Built-in Plugins**:
-  - `heartbeatPlugin()` — Auto-responds to OCPP `Heartbeat` calls with `{ currentTime }`.
-  - `metricsPlugin()` — Real-time connection metrics (active, peak, avg duration, uptime) with periodic snapshots.
-  - `connectionGuardPlugin()` — Enforces hard limit on concurrent connections (force-close with code `4001`).
-  - `anomalyPlugin()` — Detects rapid reconnection storms; emits `securityEvent` with `ANOMALY_RAPID_RECONNECT`.
-  - `sessionLogPlugin()` — Logs connect/disconnect events with identity, IP, protocol, and duration.
-  - `otelPlugin()` — OpenTelemetry span creation for connection lifecycle. Auto-detects `@opentelemetry/api` peer dependency.
-  - `webhookPlugin()` — HTTP POST webhooks on lifecycle events with HMAC-SHA256 signing and retry support.
+    - `heartbeatPlugin()` — Auto-responds to OCPP `Heartbeat` calls with `{ currentTime }`.
+    - `metricsPlugin()` — Real-time connection metrics (active, peak, avg duration, uptime) with periodic snapshots.
+    - `connectionGuardPlugin()` — Enforces hard limit on concurrent connections (force-close with code `4001`).
+    - `anomalyPlugin()` — Detects rapid reconnection storms; emits `securityEvent` with `ANOMALY_RAPID_RECONNECT`.
+    - `sessionLogPlugin()` — Logs connect/disconnect events with identity, IP, protocol, and duration.
+    - `otelPlugin()` — OpenTelemetry span creation for connection lifecycle. Auto-detects `@opentelemetry/api` peer dependency.
+    - `webhookPlugin()` — HTTP POST webhooks on lifecycle events with HMAC-SHA256 signing and retry support.
 - **`createPlugin()` helper** — Type-safe factory for building custom plugins.
 
 ### ⚡ Performance & Scaling
@@ -632,32 +632,31 @@ This patch release encapsulates several major registry layout optimizations and 
 ### Minor Changes
 
 - a2c0f3f: ### ✨ Features
-  - **OCPPRouter Engine**: Introduced an Express-style `OCPPRouter` API to support modular connection routing based on URL patterns (`server.route()`, `server.use()`, `server.auth()`).
-  - **Browser Middleware Parity**: Brought the internal `MiddlewareStack` outwards to the `BrowserOCPPClient`, giving `client.use()` full interceptor-like support natively in the browser.
-  - **TypeScript Middleware Helpers**: Shipped typed utility functions `defineRpcMiddleware` for strict browser/node interceptors, `defineMiddleware` for node connections, and `defineAuth` / `combineAuth` for highly composable authentication logic.
-  - **Structured Logging Configs**: Redesigned `LoggingConfig` interface using a clear `{ prettify, exchangeLog, level }` structure, standardizing real-time stream observability with `[IN]`, `[OUT]`, and `[RES]` log formatting.
+    - **OCPPRouter Engine**: Introduced an Express-style `OCPPRouter` API to support modular connection routing based on URL patterns (`server.route()`, `server.use()`, `server.auth()`).
+    - **Browser Middleware Parity**: Brought the internal `MiddlewareStack` outwards to the `BrowserOCPPClient`, giving `client.use()` full interceptor-like support natively in the browser.
+    - **TypeScript Middleware Helpers**: Shipped typed utility functions `defineRpcMiddleware` for strict browser/node interceptors, `defineMiddleware` for node connections, and `defineAuth` / `combineAuth` for highly composable authentication logic.
+    - **Structured Logging Configs**: Redesigned `LoggingConfig` interface using a clear `{ prettify, exchangeLog, level }` structure, standardizing real-time stream observability with `[IN]`, `[OUT]`, and `[RES]` log formatting.
 
-    ### 🩹 Fixes & Additions
+        ### 🩹 Fixes & Additions
 
-  - **Handshake API Normalization**: Standardized legacy `endpoint` configurations by officially transitioning them to Node-native `pathname` properties inside `HandshakeInfo` and constructor objects.
-  - **Duplicate Handler Collisions**: Protected `client.handle()` RPC registration tables from silently overriding each other by throwing explicit runtime errors when identical handlers are accidentally attached.
-  - **Global Server Fallbacks**: Modernized the core `OCPPServer` HTTP routing logic to cleanly enforce wildcard sub-routers, providing built-in unauthenticated catch-alls that terminate hanging connections.
-  - **Logging Formatter Duplication**: Resolved manual format injection overhead inside the browser bundles by deferring payload formatting accurately to `createLoggingMiddleware()`.
+    - **Handshake API Normalization**: Standardized legacy `endpoint` configurations by officially transitioning them to Node-native `pathname` properties inside `HandshakeInfo` and constructor objects.
+    - **Duplicate Handler Collisions**: Protected `client.handle()` RPC registration tables from silently overriding each other by throwing explicit runtime errors when identical handlers are accidentally attached.
+    - **Global Server Fallbacks**: Modernized the core `OCPPServer` HTTP routing logic to cleanly enforce wildcard sub-routers, providing built-in unauthenticated catch-alls that terminate hanging connections.
+    - **Logging Formatter Duplication**: Resolved manual format injection overhead inside the browser bundles by deferring payload formatting accurately to `createLoggingMiddleware()`.
 
 - # Reliability, Middleware, and Type Safety
 
-  ## 🚀 Features
+    ## 🚀 Features
+    - **Redis Streams for Unicast**: Replaced Pub/Sub for node-to-node communication. This ensures **zero message loss** during temporary node restarts or network instability.
+    - **Middleware System**: Added `client.use()` and server-side middleware for intercepting and modifying OCPP messages.
+    - **Enhanced Logging**:
+        - New `initLogger` with configurable options (`prettify`, `exchangeLog`).
+        - Built-in logging middleware that traces all incoming/outgoing messages.
+    - **Safe Calls**: Added `safeCall()` and `safeSendToClient()` methods for "fire-and-forget" operations that handle errors gracefully.
+    - **Connection Upgrades**: Added `handshakeTimeoutMs` and `upgradeAborted` event to `OCPPServer` for better control over the WebSocket handshake pipeline.
 
-  - **Redis Streams for Unicast**: Replaced Pub/Sub for node-to-node communication. This ensures **zero message loss** during temporary node restarts or network instability.
-  - **Middleware System**: Added `client.use()` and server-side middleware for intercepting and modifying OCPP messages.
-  - **Enhanced Logging**:
-    - New `initLogger` with configurable options (`prettify`, `exchangeLog`).
-    - Built-in logging middleware that traces all incoming/outgoing messages.
-  - **Safe Calls**: Added `safeCall()` and `safeSendToClient()` methods for "fire-and-forget" operations that handle errors gracefully.
-  - **Connection Upgrades**: Added `handshakeTimeoutMs` and `upgradeAborted` event to `OCPPServer` for better control over the WebSocket handshake pipeline.
+        ## 📚 Documentation
 
-    ## 📚 Documentation
-
-  - Comprehensive updates to `README.md` and `apps/docs`.
-  - New guides for **Middleware**, **Clustering (Redis Streams)**, **Logging**, and **Connection Upgrades**.
-  - Added **Bun** and **Deno** integration examples.
+    - Comprehensive updates to `README.md` and `apps/docs`.
+    - New guides for **Middleware**, **Clustering (Redis Streams)**, **Logging**, and **Connection Upgrades**.
+    - Added **Bun** and **Deno** integration examples.
