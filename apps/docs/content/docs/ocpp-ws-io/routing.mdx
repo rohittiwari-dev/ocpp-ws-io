@@ -35,7 +35,7 @@ const chargerRoute = server.route("/api/v1/chargers/:id");
 
 // 2. Attach handlers for clients matching this route
 chargerRoute.on("client", (client) => {
-  console.log(`Charger connected at endpoint: ${client.handshake.pathname}`);
+  console.log(`Charger connected at endpoint: ${client.handshake.endpoint}`); // "/api/v1/chargers"
 
   client.handle("BootNotification", ({ params }) => {
     return {

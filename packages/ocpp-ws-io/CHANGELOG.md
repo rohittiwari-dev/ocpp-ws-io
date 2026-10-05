@@ -1,5 +1,11 @@
 # ocpp-ws-io
 
+## Unreleased
+
+### Added
+
+- **`handshake.url` and `handshake.endpoint`**, on `ctx.handshake` in connection middleware and auth callbacks, and on `client.handshake`. `url` is the URL the charger requested, with its query: `ws://host:9000/ocpp/CP001?token=abc`, `wss:` when the server's socket is TLS (a proxy terminating TLS in front of it is not seen). `endpoint` is the path without the identity's segment: `/ocpp` for `/ocpp/CP001`, `/api/v16` for a route `/api/:identity/v16`, `/` when the identity is the whole path. Both stay as requested when the auth callback changes the identity. Code building a `HandshakeInfo` itself (test fixtures) needs the two fields.
+
 ## v3.0.3 - Session Values (2026-10-04)
 
 ### Changed

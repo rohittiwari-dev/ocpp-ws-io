@@ -434,7 +434,7 @@ Attach authentication logic.
 
 ```typescript
 server.auth((ctx) => {
-  // ctx.handshake has .identity, .pathname, .headers, etc.
+  // ctx.handshake has .identity, .pathname, .url, .endpoint, .headers, etc.
   ctx.accept({ session: { ... } }); // Attach session data to client
 });
 ```

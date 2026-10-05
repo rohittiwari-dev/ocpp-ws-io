@@ -161,6 +161,23 @@ export function safeDecodeURIComponent(value: string): string {
 }
 
 /**
+ * A handshake's endpoint: the requested path without the identity's segment,
+ * "/ocpp" for "/ocpp/CP001" and "/api/v16" for "/api/CP001/v16" (a route
+ * taking the identity mid-path), "/" when the identity is the whole path. The
+ * last segment that decodes to the identity is the one dropped.
+ */
+export function endpointOf(pathname: string, identity: string): string {
+  const segments = pathname.split("/").filter(Boolean);
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (safeDecodeURIComponent(segments[i]) === identity) {
+      segments.splice(i, 1);
+      break;
+    }
+  }
+  return `/${segments.join("/")}`;
+}
+
+/**
  * Typed access to a connection's session without declaring `OCPPSession`.
  * `to` is for where a session is written (`ctx.next()`,
  * `ctx.accept({ session })`) and checks the keys and their types; `from`

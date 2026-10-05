@@ -44,6 +44,8 @@ function makeClient(plugins: unknown[], errors: string[]) {
         headers: {},
         protocols: new Set(["ocpp1.6"]),
         pathname: "/CP001",
+        url: "ws://localhost/CP001",
+        endpoint: "/",
         securityProfile: SecurityProfile.NONE,
         params: {},
         query: new URLSearchParams(),

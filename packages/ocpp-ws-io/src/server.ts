@@ -77,6 +77,7 @@ import { unchecked } from "./unchecked.js";
 import {
   createId,
   createRPCError,
+  endpointOf,
   NOOP_LOGGER,
   safeDecodeURIComponent,
 } from "./util.js";
@@ -1892,6 +1893,14 @@ export class OCPPServer<
       clientCertificate = (socket as TLSSocket).getPeerCertificate();
     }
 
+    // The URL as the charger asked for it: ws, or wss when this socket is
+    // TLS (a proxy terminating TLS in front of the server is not seen).
+    const requestedUrl = new URL(url.href);
+    requestedUrl.protocol =
+      "encrypted" in req.socket && req.socket.encrypted === true
+        ? "wss:"
+        : "ws:";
+
     // Build HandshakeInfo
     const handshake: HandshakeInfo = {
       identity,
@@ -1899,6 +1908,8 @@ export class OCPPServer<
       headers: req.headers as Record<string, string | string[] | undefined>,
       protocols,
       pathname,
+      url: requestedUrl.href,
+      endpoint: endpointOf(pathname, identity),
       params,
       query: url.searchParams,
       request: req,
