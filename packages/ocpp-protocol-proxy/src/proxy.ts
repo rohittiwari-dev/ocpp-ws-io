@@ -187,12 +187,12 @@ export class OCPPProtocolProxy extends EventEmitter {
       });
 
       // ─── CSMS -> EVSE (Downstream) ───
-      upstreamClient.handle(async (action: string, ctx: any) => {
+      upstreamClient.handle(async (ctx) => {
         const downstreamCall: Extract<OCPPMessage, { type: MessageType.CALL }> =
           {
             type: MessageType.CALL,
             messageId: ctx.messageId || `csms-${Date.now()}`,
-            action,
+            action: ctx.method,
             payload: ctx.params,
           };
 

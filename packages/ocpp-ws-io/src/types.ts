@@ -324,7 +324,6 @@ export type CallHandler<TParams = unknown, TResult = unknown> = (
 ) => TResult | Promise<TResult>;
 
 export type WildcardHandler = (
-  method: string,
   context: HandlerContext,
 ) => unknown | Promise<unknown>;
 
@@ -341,10 +340,7 @@ export interface RouterHandlerContext<
 
 /** A route's wildcard handler: its context has the connection, typed for P. */
 export type RouterWildcardHandler<P extends AnyOCPPProtocol = AnyOCPPProtocol> =
-  (
-    method: string,
-    context: RouterHandlerContext<unknown, P>,
-  ) => unknown | Promise<unknown>;
+  (context: RouterHandlerContext<unknown, P>) => unknown | Promise<unknown>;
 
 /**
  * `handle()`'s arguments as its implementation reads them, whichever overload
@@ -2261,7 +2257,10 @@ type BatchCallExtraKeys<V extends keyof OCPPMethodMap, C> = C extends {
       ? never
       : [ExtraPaths<RequestOf<V, M>, T>] extends [never]
         ? never
-        : { readonly action: M; readonly keys: ExtraPaths<RequestOf<V, M>, T> }
+        : {
+            readonly action: M;
+            readonly keys: ExtraPaths<RequestOf<V, M>, T>;
+          }
   : never;
 
 /**

@@ -2005,7 +2005,7 @@ export class OCPPClient<
           if (handler) {
             await handler(context);
           } else {
-            await this._wildcardHandler?.(ctxvals.method, context);
+            await this._wildcardHandler?.(context);
           }
         } catch (err) {
           this._logger?.warn?.("Handler failed for SEND message", {
@@ -2124,7 +2124,7 @@ export class OCPPClient<
           if (specificHandler) {
             result = await specificHandler(context);
           } else if (this._wildcardHandler) {
-            result = await this._wildcardHandler(ctxvals.method, context);
+            result = await this._wildcardHandler(context);
           }
 
           this._pendingResponses.delete(ctxvals.messageId);

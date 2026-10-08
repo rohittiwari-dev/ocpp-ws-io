@@ -7,29 +7,25 @@
  * vitest (Node.js) environment while connecting to a real OCPPServer.
  */
 import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeAll,
-  beforeEach,
-  afterEach,
-  afterAll,
-} from "vitest";
-import WebSocketModule from "ws";
-import { OCPPServer } from "../src/server.js";
+	describe,
+	it,
+	expect,
+	vi,
+	beforeAll,
+	beforeEach,
+	afterEach,
+	afterAll,
+} from 'vitest';
+import WebSocketModule from 'ws';
+import { OCPPServer } from '../src/server.js';
 import {
-  type AnyBrowserOCPPClient,
-  BrowserOCPPClient,
-} from "../src/browser/client.js";
-import {
-  ConnectionState,
-  MessageType,
-  NOREPLY,
-} from "../src/browser/types.js";
-import { createRPCError } from "../src/browser/util.js";
-import type { OCPPServerClient } from "../src/server-client.js";
-import { unchecked } from "../src/unchecked.js";
+	type AnyBrowserOCPPClient,
+	BrowserOCPPClient,
+} from '../src/browser/client.js';
+import { ConnectionState, MessageType, NOREPLY } from '../src/browser/types.js';
+import { createRPCError } from '../src/browser/util.js';
+import type { OCPPServerClient } from '../src/server-client.js';
+import { unchecked } from '../src/unchecked.js';
 
 // ─── Mock WebSocket shim ──────────────────────────────────────────
 
@@ -41,1756 +37,1818 @@ import { unchecked } from "../src/unchecked.js";
 const OriginalWebSocket = (globalThis as any).WebSocket;
 
 beforeAll(() => {
-  (globalThis as any).WebSocket = WebSocketModule;
+	(globalThis as any).WebSocket = WebSocketModule;
 });
 
 afterAll(() => {
-  if (OriginalWebSocket) {
-    (globalThis as any).WebSocket = OriginalWebSocket;
-  } else {
-    delete (globalThis as any).WebSocket;
-  }
+	if (OriginalWebSocket) {
+		(globalThis as any).WebSocket = OriginalWebSocket;
+	} else {
+		delete (globalThis as any).WebSocket;
+	}
 });
 
 // ─── Test Setup ────────────────────────────────────────────────────
 
 let server: OCPPServer;
-let client: BrowserOCPPClient<"ocpp1.6">;
+let client: BrowserOCPPClient<'ocpp1.6'>;
 let port: number;
 
-const getPort = (srv: import("node:http").Server): number => {
-  const addr = srv.address();
-  if (addr && typeof addr !== "string") return addr.port;
-  return 0;
+const getPort = (srv: import('node:http').Server): number => {
+	const addr = srv.address();
+	if (addr && typeof addr !== 'string') return addr.port;
+	return 0;
 };
 
-describe("BrowserOCPPClient", () => {
-  beforeEach(async () => {
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => {
-      ctx.accept({ protocol: "ocpp1.6" });
-    });
-    const httpServer = await server.listen(0);
-    port = getPort(httpServer);
-  });
-
-  afterEach(async () => {
-    if (client) await client.close({ force: true }).catch(() => {});
-    await server.close({ force: true });
-  });
-
-  // ─── Construction ────────────────────────────────────────────
-
-  describe("Construction", () => {
-    it("should throw if identity is missing", () => {
-      expect(
-        () =>
-          new BrowserOCPPClient({
-            identity: "",
-            endpoint: "ws://localhost:9999",
-          }),
-      ).toThrow("identity is required");
-    });
-
-    it("should be in CLOSED state initially", () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-      expect(client.state).toBe(BrowserOCPPClient.CLOSED);
-    });
-
-    it("should expose static connection state constants", () => {
-      expect(BrowserOCPPClient.CONNECTING).toBe(ConnectionState.CONNECTING);
-      expect(BrowserOCPPClient.OPEN).toBe(ConnectionState.OPEN);
-      expect(BrowserOCPPClient.CLOSING).toBe(ConnectionState.CLOSING);
-      expect(BrowserOCPPClient.CLOSED).toBe(ConnectionState.CLOSED);
-    });
-
-    it("should set identity correctly", () => {
-      client = new BrowserOCPPClient({
-        identity: "MY-STATION",
-        endpoint: `ws://localhost:${port}`,
-        reconnect: false,
-      });
-      expect(client.identity).toBe("MY-STATION");
-    });
-  });
-
-  // ─── Logging ─────────────────────────────────────────────────
-
-  describe("Logging", () => {
-    it("should provide a default logger when not specified", () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        reconnect: false,
-      });
-      expect(client.log).toBeDefined();
-      expect(typeof client.log.info).toBe("function");
-    });
-
-    it("should provide a safe NOOP logger when logging is false", () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        reconnect: false,
-        logging: false,
-      });
-      // The logger should exist and have functions that don't do anything, but importantly not crash.
-      expect(client.log).toBeDefined();
-      expect(typeof client.log.info).toBe("function");
-      expect(typeof client.log.warn).toBe("function");
-
-      // Attempting to call should not throw
-      expect(() => client.log.info("Hidden message")).not.toThrow();
-    });
-
-    it("should use a custom logger instance and attempt to bind context via child()", () => {
-      const customLogger = {
-        info: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn(),
-        debug: vi.fn(),
-        child: vi.fn().mockReturnThis(),
-      };
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        reconnect: false,
-        logging: { logger: customLogger as any },
-      });
-
-      expect(client.log).toBe(customLogger);
-      expect(customLogger.child).toHaveBeenCalledWith({
-        component: "BrowserOCPPClient",
-        identity: "CS001",
-      });
-    });
-
-    it("should apply a custom handler transport correctly", async () => {
-      const handlerLog = vi.fn();
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        reconnect: false,
-        logging: { handler: handlerLog },
-      });
-
-      client.log.info("Test browser handler message");
-      // handler executions might be on the microtask queue, yield briefly
-      await new Promise((r) => setTimeout(r, 10));
-
-      expect(handlerLog).toHaveBeenCalled();
-      const entry = handlerLog.mock.calls[0][0];
-      expect(entry.message).toContain("Test browser handler message");
-      expect(entry.level).toBe(30);
-      expect(entry.context).toMatchObject({
-        component: "BrowserOCPPClient",
-        identity: "CS001",
-      });
-    });
-  });
-
-  // ─── Connection ──────────────────────────────────────────────
-
-  describe("Connection", () => {
-    it("should connect successfully", async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      expect(client.state).toBe(BrowserOCPPClient.OPEN);
-    });
-
-    it("should set protocol after connection", async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      expect(client.protocol).toBe("ocpp1.6");
-    });
-
-    it('should emit "open" event on connect', async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      let opened = false;
-      client.on("open", () => {
-        opened = true;
-      });
-      await client.connect();
-      expect(opened).toBe(true);
-    });
-
-    it('should emit "connecting" event before WebSocket opens', async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      let connectingUrl = "";
-      client.on("connecting", ({ url }: { url: string }) => {
-        connectingUrl = url;
-      });
-      await client.connect();
-      expect(connectingUrl).toContain("CS001");
-    });
-
-    it("should reject connect when already connected", async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      await expect(client.connect()).rejects.toThrow("Cannot connect");
-    });
-
-    it("should build endpoint with identity appended", async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS/001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      let url = "";
-      client.on("connecting", (event: { url: string }) => {
-        url = event.url;
-      });
-      // This may fail to connect because identity contains "/" which gets encoded,
-      // but that's fine — we just want to check the URL format
-      try {
-        await client.connect();
-      } catch {}
-      expect(url).toContain(encodeURIComponent("CS/001"));
-    });
-
-    it("should append query params to endpoint", async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        query: { token: "abc123" },
-        reconnect: false,
-      });
-
-      let url = "";
-      client.on("connecting", (event: { url: string }) => {
-        url = event.url;
-      });
-      try {
-        await client.connect();
-      } catch {}
-      expect(url).toContain("token=abc123");
-    });
-  });
-
-  // ─── Close ───────────────────────────────────────────────────
-
-  describe("Close", () => {
-    it("should close gracefully", async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      const result = await client.close();
-      expect(result.code).toBe(1000);
-      expect(client.state).toBe(BrowserOCPPClient.CLOSED);
-    });
-
-    it("should emit close event", async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      const closePromise = new Promise<{ code: number; reason: string }>(
-        (resolve) => client.on("close", resolve),
-      );
-      await client.close();
-      const result = await closePromise;
-      expect(result.code).toBe(1000);
-    });
-
-    it("should return immediately when already closed", async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        reconnect: false,
-      });
-      const result = await client.close();
-      expect(result).toEqual({ code: 1000, reason: "" });
-    });
-
-    it("should handle double close gracefully", async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      const [r1, r2] = await Promise.all([client.close(), client.close()]);
-      expect(r1.code).toBe(1000);
-      expect(r2.code).toBe(1000);
-      expect(client.state).toBe(BrowserOCPPClient.CLOSED);
-    });
-
-    it("should close with force option", async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      await client.close({ force: true });
-      expect(client.state).toBe(BrowserOCPPClient.CLOSED);
-    });
-
-    it("should close with custom code and reason", async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      await client.close({ code: 1001, reason: "going away" });
-      expect(client.state).toBe(BrowserOCPPClient.CLOSED);
-    });
-  });
-
-  // ─── RPC Calls ───────────────────────────────────────────────
-
-  describe("RPC Calls", () => {
-    it("should send a call and receive a response", async () => {
-      server.on("client", (serverClient) => {
-        serverClient.handle("BootNotification", async () => ({
-          status: "Accepted",
-          currentTime: new Date().toISOString(),
-          interval: 300,
-        }));
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      const result = await client.call("BootNotification", {
-        chargePointVendor: "TestVendor",
-        chargePointModel: "TestModel",
-      });
-      expect((result as any).status).toBe("Accepted");
-      expect((result as any).interval).toBe(300);
-    });
-
-    it("should receive call error from server", async () => {
-      server.on("client", () => {
-        // No handler registered → server responds with NotImplemented
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      await expect(client.call(unchecked("UnknownMethod"), {})).rejects.toMatchObject({
-        rpcErrorCode: "NotImplemented",
-      });
-    });
-
-    it("sends a version-named unchecked call without params as that action", async () => {
-      const received: { method: string; params: unknown }[] = [];
-      server.on("client", (serverClient) => {
-        serverClient.handle((method, { params }) => {
-          received.push({ method, params });
-          return { pong: true };
-        });
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      const result = await client.call("ocpp1.6", unchecked("VendorPing"));
-      expect(result).toEqual({ pong: true });
-      expect(received).toEqual([{ method: "VendorPing", params: {} }]);
-    });
-
-    it("should reject calls when not connected", async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        reconnect: false,
-      });
-      await expect(client.call(unchecked("Test"), {})).rejects.toThrow("Cannot call");
-    });
-
-    it("should timeout calls that take too long", async () => {
-      server.on("client", (serverClient) => {
-        serverClient.handle(unchecked("SlowMethod"), async () => {
-          // Never respond
-          await new Promise(() => {});
-        });
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-        callTimeoutMs: 200,
-      });
-
-      await client.connect();
-      await expect(client.call(unchecked("SlowMethod"), {})).rejects.toThrow("timed out");
-    });
-
-    it("should emit message event when sending a call", async () => {
-      server.on("client", (serverClient) => {
-        serverClient.handle("Heartbeat", async () => ({
-          currentTime: new Date().toISOString(),
-        }));
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      const messages: unknown[] = [];
-      client.on("message", (msg: unknown) => messages.push(msg));
-      await client.call("Heartbeat", {});
-      expect(messages.length).toBe(1);
-      expect((messages[0] as any)[0]).toBe(MessageType.CALL);
-      expect((messages[0] as any)[2]).toBe("Heartbeat");
-    });
-
-    it("should emit callResult event when receiving a response", async () => {
-      server.on("client", (serverClient) => {
-        serverClient.handle("Heartbeat", async () => ({
-          currentTime: new Date().toISOString(),
-        }));
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      const results: unknown[] = [];
-      client.on("callResult", (msg: unknown) => results.push(msg));
-      await client.call("Heartbeat", {});
-      expect(results.length).toBeGreaterThanOrEqual(1);
-    });
-
-    it("should support concurrent calls with callConcurrency > 1", async () => {
-      server.on("client", (serverClient) => {
-        serverClient.handle("Heartbeat", async () => ({
-          currentTime: new Date().toISOString(),
-        }));
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-        callConcurrency: 3,
-      });
-
-      await client.connect();
-      const results = await Promise.all([
-        client.call("Heartbeat", {}),
-        client.call("Heartbeat", {}),
-        client.call("Heartbeat", {}),
-      ]);
-      expect(results).toHaveLength(3);
-    });
-
-    it("should abort a call with AbortSignal", async () => {
-      server.on("client", (serverClient) => {
-        serverClient.handle(unchecked("SlowMethod"), async () => {
-          await new Promise((r) => setTimeout(r, 5000));
-          return {};
-        });
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      const ac = new AbortController();
-
-      const callPromise = client.call(unchecked("SlowMethod"), {}, { signal: ac.signal });
-      setTimeout(() => ac.abort(), 50);
-
-      await expect(callPromise).rejects.toThrow();
-    });
-
-    it("should immediately reject if AbortSignal is already aborted", async () => {
-      server.on("client", (serverClient) => {
-        serverClient.handle(unchecked("Test"), async () => ({}));
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      const ac = new AbortController();
-      ac.abort();
-
-      await expect(
-        client.call(unchecked("Test"), {}, { signal: ac.signal }),
-      ).rejects.toThrow();
-    });
-  });
-
-  // ─── Incoming Calls (Handlers) ───────────────────────────────
-
-  describe("Incoming Call Handlers", () => {
-    it("should handle incoming calls from server", async () => {
-      let serverClient;
-
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      client.handle("Reset", async () => {
-        return { status: "Accepted" };
-      });
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100)); // Wait for server to register
-
-      const result = await serverClient!.call("Reset", { type: "Hard" });
-      expect((result as any).status).toBe("Accepted");
-    });
-
-    it("should invoke wildcard handler for unregistered methods", async () => {
-      let serverClient;
-
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      const methods: string[] = [];
-      client.handle((method) => {
-        methods.push(method);
-        return { status: "Accepted" };
-      });
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      await serverClient!.call("AnyMethod", {});
-      expect(methods).toContain("AnyMethod");
-    });
-
-    it("should respond with NotImplemented for unhandled methods", async () => {
-      let serverClient;
-
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      await expect(
-        serverClient!.call("UnhandledMethod", {}),
-      ).rejects.toMatchObject({
-        rpcErrorCode: "NotImplemented",
-      });
-    });
-
-    it("should prefer version-specific handler over generic handler", async () => {
-      let serverClient;
-
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      client.handle("Reset", async () => ({ status: "Rejected" }));
-      client.handle("ocpp1.6", "Reset", async () => ({ status: "Accepted" }));
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      const result = await serverClient!.call("Reset", { type: "Hard" });
-      // Version-specific handler should win over generic
-      expect((result as any).status).toBe("Accepted");
-    });
-
-    it("should remove a specific handler with removeHandler()", async () => {
-      let serverClient;
-
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      client.handle("Reset", async () => ({ status: "Accepted" }));
-      client.removeHandler("Reset");
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      await expect(
-        serverClient!.call("Reset", { type: "Hard" }),
-      ).rejects.toMatchObject({
-        rpcErrorCode: "NotImplemented",
-      });
-    });
-
-    it("should remove version-specific handler with removeHandler(version, method)", async () => {
-      let serverClient;
-
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      client.handle("Reset", async () => ({ status: "Rejected" }));
-      client.handle("ocpp1.6", "Reset", async () => ({ status: "Accepted" }));
-      client.removeHandler("ocpp1.6", "Reset");
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      const result = await serverClient!.call("Reset", { type: "Hard" });
-      // Should fall back to generic handler after version-specific was removed
-      expect((result as any).status).toBe("Rejected");
-    });
-
-    it("should remove wildcard handler with removeHandler()", () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        reconnect: false,
-      });
-
-      client.handle(() => ({}));
-      client.removeHandler(); // Removes wildcard
-      // No assertion needed — just verifying no throw
-    });
-
-    it("should remove all handlers with removeAllHandlers()", async () => {
-      let serverClient;
-
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      client.handle("Reset", async () => ({ status: "Accepted" }));
-      client.handle(() => ({ status: "Wildcard" }));
-      client.removeAllHandlers();
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      await expect(
-        serverClient!.call("Reset", { type: "Hard" }),
-      ).rejects.toMatchObject({
-        rpcErrorCode: "NotImplemented",
-      });
-    });
-
-    it("should throw on invalid handle() arguments", () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        reconnect: false,
-      });
-
-      expect(() => (client as any).handle(123)).toThrow("Invalid arguments");
-    });
-
-    it("should emit call event for incoming calls", async () => {
-      let serverClient;
-
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      client.handle("Heartbeat", async () => ({
-        currentTime: new Date().toISOString(),
-      }));
-
-      const calls: unknown[] = [];
-      client.on("call", (msg: unknown) => calls.push(msg));
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      await serverClient!.call("Heartbeat", {});
-      expect(calls.length).toBeGreaterThanOrEqual(1);
-      expect((calls[0] as any)[2]).toBe("Heartbeat");
-    });
-
-    it("should support NOREPLY from handler", async () => {
-      const { NOREPLY } = await import("../src/browser/types.js");
-      let serverClient;
-
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      client.handle(unchecked("FireAndForget"), async () => NOREPLY);
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      // Server call should timeout since no response is sent
-      await expect(
-        serverClient!.call("FireAndForget", {}, { timeoutMs: 300 }),
-      ).rejects.toThrow();
-    });
-
-    it("should include detailed errors when respondWithDetailedErrors is true", async () => {
-      let serverClient;
-
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-        respondWithDetailedErrors: true,
-      });
-
-      client.handle(unchecked("Buggy"), async () => {
-        throw new Error("Something broke");
-      });
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      try {
-        await serverClient!.call("Buggy", {});
-        expect.unreachable();
-      } catch (err: any) {
-        // Should get the detailed error information
-        expect(err.rpcErrorCode).toBe("InternalError");
-      }
-    });
-  });
-
-  // ─── Middleware ──────────────────────────────────────────────
-
-  describe("Middleware", () => {
-    it("should intercept outgoing calls", async () => {
-      server.on("client", (serverClient) => {
-        serverClient.handle("BootNotification", async () => ({
-          currentTime: new Date().toISOString(),
-          interval: 300,
-          status: "Accepted",
-        }));
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      const mwSpy = vi.fn(async (ctx, next) => {
-        if (ctx.type === "outgoing_call") {
-          ctx.params = { ...(ctx.params as any), intercepted: true };
-        }
-        await next();
-      });
-
-      client.use(mwSpy);
-      await client.connect();
-      await client.call("BootNotification", {
-        chargePointVendor: "Test",
-        chargePointModel: "Test",
-      });
-
-      expect(mwSpy).toHaveBeenCalled();
-      const callCtx = mwSpy.mock.calls.find(
-        (c) => c[0].type === "outgoing_call",
-      )?.[0];
-      expect(callCtx).toBeDefined();
-      expect((callCtx as any).params.intercepted).toBe(true);
-    });
-
-    it("should intercept incoming calls", async () => {
-      let serverClient;
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-      client.handle("TriggerMessage", async () => ({ status: "Accepted" }));
-
-      const mwSpy = vi.fn(async (_ctx, next) => await next());
-      client.use(mwSpy);
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100)); // wait for connect sync
-
-      await serverClient!.call("TriggerMessage", {
-        requestedMessage: "BootNotification",
-      });
-
-      const inCtx = mwSpy.mock.calls.find(
-        (c) => c[0].type === "incoming_call",
-      )?.[0];
-      expect(inCtx).toBeDefined();
-      expect((inCtx as any).method).toBe("TriggerMessage");
-    });
-
-    it("should intercept incoming results", async () => {
-      server.on("client", (serverClient) => {
-        serverClient.handle("Heartbeat", async () => ({
-          currentTime: "2023-01-01T00:00:00Z",
-        }));
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-      const mwSpy = vi.fn(async (ctx, next) => {
-        if (ctx.type === "incoming_result") {
-          ctx.payload = { ...(ctx.payload as any), interceptedResult: true };
-        }
-        await next();
-      });
-
-      client.use(mwSpy);
-      await client.connect();
-
-      const res: any = await client.call("Heartbeat", {});
-
-      const resCtx = mwSpy.mock.calls.find(
-        (c) => c[0].type === "incoming_result",
-      )?.[0];
-      expect(resCtx).toBeDefined();
-      expect(res.interceptedResult).toBe(true);
-    });
-
-    it("should intercept incoming errors", async () => {
-      server.on("client", () => {
-        // No handler -> returns NotImplemented CallError
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      const mwSpy = vi.fn(async (_ctx, next) => await next());
-      client.use(mwSpy);
-
-      await client.connect();
-
-      await expect(client.call(unchecked("UnknownAction"), {})).rejects.toThrow();
-
-      const errCtx = mwSpy.mock.calls.find(
-        (c) => c[0].type === "incoming_error",
-      )?.[0];
-      expect(errCtx).toBeDefined();
-      // The CALLERROR frame, as the type and the Node client give it.
-      expect(errCtx.error).toEqual([
-        MessageType.CALLERROR,
-        errCtx.messageId,
-        "NotImplemented",
-        expect.any(String),
-        expect.any(Object),
-      ]);
-    });
-
-    it("rejects with the error an incoming_error middleware leaves", async () => {
-      server.on("client", () => {
-        // No handler -> returns NotImplemented CallError
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      client.use(async (ctx, next) => {
-        if (ctx.type === "incoming_error") {
-          ctx.error = [
-            MessageType.CALLERROR,
-            ctx.messageId,
-            "SecurityError",
-            "rewritten",
-            {},
-          ];
-        }
-        return next();
-      });
-      const callErrors: unknown[] = [];
-      client.on("callError", (frame) => callErrors.push(frame));
-
-      await client.connect();
-
-      await expect(
-        client.call(unchecked("UnknownAction"), {}),
-      ).rejects.toMatchObject({
-        name: "RPCSecurityError",
-        rpcErrorCode: "SecurityError",
-        message: "rewritten",
-      });
-      expect(callErrors).toEqual([
-        [MessageType.CALLERROR, expect.any(String), "SecurityError", "rewritten", {}],
-      ]);
-    });
-  });
-
-  // ─── sendRaw ─────────────────────────────────────────────────
-
-  describe("sendRaw", () => {
-    it("should send raw data over WebSocket", async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      // sendRaw shouldn't throw for valid string
-      expect(() => client.sendRaw("hello")).not.toThrow();
-    });
-
-    it("should throw when not connected", () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        reconnect: false,
-      });
-      expect(() => client.sendRaw("hello")).toThrow("Cannot send");
-    });
-  });
-
-  // ─── reconfigure ─────────────────────────────────────────────
-
-  describe("reconfigure", () => {
-    it("should update options", () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        reconnect: false,
-        callTimeoutMs: 5000,
-      });
-
-      client.reconfigure({ callTimeoutMs: 10000 });
-      // Can't directly check private _options, but we can verify
-      // it works by calling after reconfigure
-    });
-
-    it("should update call concurrency dynamically", async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-        callConcurrency: 1,
-      });
-
-      // Reconfigure before connect
-      client.reconfigure({ callConcurrency: 5 });
-
-      // No error
-    });
-  });
-
-  // ─── Bad Messages ────────────────────────────────────────────
-
-  describe("Bad Messages", () => {
-    it("should emit badMessage for invalid JSON", async () => {
-      let serverClient;
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      const badMessages: unknown[] = [];
-      client.on("badMessage", (msg: unknown) => badMessages.push(msg));
-
-      // Send malformed data from server
-      serverClient!.sendRaw("not-json{{{");
-      await new Promise((r) => setTimeout(r, 100));
-
-      expect(badMessages.length).toBe(1);
-    });
-
-    it("should emit badMessage for non-array message", async () => {
-      let serverClient;
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      const badMessages: unknown[] = [];
-      client.on("badMessage", (msg: unknown) => badMessages.push(msg));
-
-      serverClient!.sendRaw(JSON.stringify({ type: "invalid" }));
-      await new Promise((r) => setTimeout(r, 100));
-
-      expect(badMessages.length).toBe(1);
-    });
-
-    // A bad message, answered MessageTypeNotSupported.
-    it("should emit badMessage for unknown message type", async () => {
-      let serverClient;
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      const badMessages: unknown[] = [];
-      client.on("badMessage", (msg: unknown) => badMessages.push(msg));
-
-      serverClient!.sendRaw(JSON.stringify([99, "id", "payload"]));
-      await new Promise((r) => setTimeout(r, 100));
-
-      expect(badMessages).toHaveLength(1);
-    });
-
-    // 1.6J §4.2.1 and 2.x §4.1.5 allow an absent payload to be sent as null.
-    it("delivers a null CALL payload to the handler as {}", async () => {
-      let serverClient: OCPPServerClient | undefined;
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-      client = new BrowserOCPPClient({
-        identity: "CS-NULL",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-      const received: unknown[] = [];
-      client.handle("ClearCache", async (ctx) => {
-        received.push(ctx.params);
-        return { status: "Accepted" };
-      });
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      serverClient!.sendRaw(JSON.stringify([2, "n1", "ClearCache", null]));
-      await new Promise((r) => setTimeout(r, 100));
-
-      expect(received).toEqual([{}]);
-    });
-
-    it("drops OCPP 2.1 SEND frames on a 2.1 connection without counting them", async () => {
-      const server21 = new OCPPServer({
-        protocols: ["ocpp2.1"],
-        logging: false,
-      });
-      let serverClient: OCPPServerClient | undefined;
-      server21.on("client", (sc) => {
-        serverClient = sc;
-      });
-      const port21 = getPort(await server21.listen(0));
-      let c21: BrowserOCPPClient<"ocpp2.1"> | undefined;
-      try {
-        c21 = new BrowserOCPPClient({
-          identity: "CS21",
-          endpoint: `ws://localhost:${port21}`,
-          protocols: ["ocpp2.1"],
-          reconnect: false,
-          maxBadMessages: 2,
-        });
-        await c21.connect();
-        await new Promise((r) => setTimeout(r, 100));
-
-        const badMessages: unknown[] = [];
-        c21.on("badMessage", (msg: unknown) => badMessages.push(msg));
-        for (let i = 0; i < 5; i++) {
-          serverClient!.sendRaw(
-            JSON.stringify([6, `s${i}`, "NotifyPeriodicEventStream", {}]),
-          );
-        }
-        await new Promise((r) => setTimeout(r, 100));
-
-        expect(badMessages).toHaveLength(0);
-        expect(c21.state).toBe(ConnectionState.OPEN);
-      } finally {
-        await c21?.close({ force: true }).catch(() => {});
-        await server21.close({ force: true });
-      }
-    });
-
-    const stream21 = {
-      id: 1,
-      pending: 0,
-      basetime: "2026-01-01T00:00:00Z",
-      data: [{ t: 0, v: "230.4" }],
-    };
-
-    it("delivers an OCPP 2.1 SEND to its handler without replying", async () => {
-      const server21 = new OCPPServer({
-        protocols: ["ocpp2.1"],
-        logging: false,
-      });
-      let serverClient: OCPPServerClient | undefined;
-      server21.on("client", (sc) => {
-        serverClient = sc;
-      });
-      const port21 = getPort(await server21.listen(0));
-      let c21: BrowserOCPPClient<"ocpp2.1"> | undefined;
-      try {
-        c21 = new BrowserOCPPClient({
-          identity: "CS21-SEND",
-          endpoint: `ws://localhost:${port21}`,
-          protocols: ["ocpp2.1"],
-          reconnect: false,
-        });
-        const seen: Array<{ unconfirmed?: boolean; params: unknown }> = [];
-        c21.handle("NotifyPeriodicEventStream", (ctx) => {
-          seen.push({ unconfirmed: ctx.unconfirmed, params: ctx.params });
-        });
-        await c21.connect();
-        await new Promise((r) => setTimeout(r, 100));
-
-        const outgoing: string[] = [];
-        const ws = (c21 as never as { _ws: { send(d: string): void } })._ws;
-        const send = ws.send.bind(ws);
-        ws.send = (d: string) => {
-          outgoing.push(d);
-          send(d);
-        };
-
-        serverClient!.sendRaw(
-          JSON.stringify([6, "s1", "NotifyPeriodicEventStream", stream21]),
-        );
-        await new Promise((r) => setTimeout(r, 100));
-
-        expect(seen).toEqual([{ unconfirmed: true, params: stream21 }]);
-        expect(outgoing).toEqual([]);
-      } finally {
-        await c21?.close({ force: true }).catch(() => {});
-        await server21.close({ force: true });
-      }
-    });
-
-    it("sends an OCPP 2.1 SEND with send()", async () => {
-      const server21 = new OCPPServer({
-        protocols: ["ocpp2.1"],
-        logging: false,
-      });
-      const seen: unknown[] = [];
-      server21.on("client", (sc) =>
-        sc.handle("NotifyPeriodicEventStream", (ctx) => {
-          seen.push(ctx.params);
-        }),
-      );
-      const port21 = getPort(await server21.listen(0));
-      let c21: BrowserOCPPClient<"ocpp2.1"> | undefined;
-      try {
-        c21 = new BrowserOCPPClient({
-          identity: "CS21-OUT",
-          endpoint: `ws://localhost:${port21}`,
-          protocols: ["ocpp2.1"],
-          reconnect: false,
-        });
-        await c21.connect();
-        await new Promise((r) => setTimeout(r, 100));
-
-        await c21.send("NotifyPeriodicEventStream", stream21);
-        await new Promise((r) => setTimeout(r, 100));
-
-        expect(seen).toEqual([stream21]);
-      } finally {
-        await c21?.close({ force: true }).catch(() => {});
-        await server21.close({ force: true });
-      }
-    });
-
-    // B17: a custom protocol may use SEND like OCPP 2.1.
-    it("sends a SEND on a custom protocol with send()", async () => {
-      const serverVendor = new OCPPServer({
-        protocols: ["vendor-proto"],
-        logging: false,
-      });
-      const seen: unknown[] = [];
-      serverVendor.on("client", (sc) =>
-        sc.handle(unchecked("VendorNotify"), (ctx) => {
-          seen.push(ctx.params);
-          return NOREPLY;
-        }),
-      );
-      const portVendor = getPort(await serverVendor.listen(0));
-      let cv: BrowserOCPPClient<"vendor-proto"> | undefined;
-      try {
-        cv = new BrowserOCPPClient({
-          identity: "CS-VENDOR-OUT",
-          endpoint: `ws://localhost:${portVendor}`,
-          protocols: ["vendor-proto"],
-          reconnect: false,
-        });
-        await cv.connect();
-        await new Promise((r) => setTimeout(r, 100));
-
-        await cv.send(unchecked("VendorNotify"), { at: "now" });
-        await new Promise((r) => setTimeout(r, 100));
-
-        expect(seen).toEqual([{ at: "now" }]);
-      } finally {
-        await cv?.close({ force: true }).catch(() => {});
-        await serverVendor.close({ force: true });
-      }
-    });
-
-    it("should close after maxBadMessages is reached", async () => {
-      let serverClient;
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-        maxBadMessages: 2,
-      });
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      serverClient!.sendRaw("bad1");
-      serverClient!.sendRaw("bad2");
-      await new Promise((r) => setTimeout(r, 200));
-
-      // After 2 bad messages, client should initiate close
-      expect(client.state).toBe(BrowserOCPPClient.CLOSED);
-    });
-
-    // maxBadMessages counts bad messages in a row: a valid frame resets it.
-    it("resets the bad-message count after a valid message", async () => {
-      let serverClient: OCPPServerClient | undefined;
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-      client = new BrowserOCPPClient({
-        identity: "CS-RESET",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-        maxBadMessages: 2,
-      });
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      serverClient!.sendRaw("bad1");
-      // A CALLRESULT for an unknown ID is a valid frame (ignored, not bad).
-      serverClient!.sendRaw(JSON.stringify([3, "unknown-id", {}]));
-      serverClient!.sendRaw("bad2");
-      await new Promise((r) => setTimeout(r, 200));
-
-      expect(client.state).toBe(BrowserOCPPClient.OPEN);
-    });
-
-    it("ignores empty frames instead of counting them as bad", async () => {
-      let serverClient: OCPPServerClient | undefined;
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-      client = new BrowserOCPPClient({
-        identity: "CS-EMPTY",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-        maxBadMessages: 2,
-      });
-      const badMessages: unknown[] = [];
-      client.on("badMessage", (msg: unknown) => badMessages.push(msg));
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      for (let i = 0; i < 3; i++) serverClient!.sendRaw("");
-      await new Promise((r) => setTimeout(r, 200));
-
-      expect(badMessages).toHaveLength(0);
-      expect(client.state).toBe(BrowserOCPPClient.OPEN);
-    });
-
-    /** Record every frame the browser client writes to its socket. */
-    const captureOutgoing = (c: AnyBrowserOCPPClient) => {
-      const out: unknown[][] = [];
-      const ws = (c as never as { _ws: { send(d: string): void } })._ws;
-      const send = ws.send.bind(ws);
-      ws.send = (d: string) => {
-        out.push(JSON.parse(d));
-        send(d);
-      };
-      return out;
-    };
-
-    // 2.0.1 / 2.1 §4.2.3: when the MessageId cannot be read, reply under "-1".
-    it('answers a frame whose message ID cannot be read under "-1"', async () => {
-      let serverClient: OCPPServerClient | undefined;
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-      client = new BrowserOCPPClient({
-        identity: "CS-UNREADABLE",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-      const outgoing = captureOutgoing(client);
-
-      serverClient!.sendRaw("not json");
-      serverClient!.sendRaw(JSON.stringify([2, 123, "Reset", {}]));
-      await new Promise((r) => setTimeout(r, 100));
-
-      expect(outgoing.map((m) => m.slice(0, 3))).toEqual([
-        [4, "-1", "RpcFrameworkError"],
-        [4, "-1", "RpcFrameworkError"],
-      ]);
-    });
-
-    // 1.6J Table 7 has no RpcFrameworkError.
-    it("answers a duplicate in-flight message ID with GenericError on 1.6", async () => {
-      let serverClient: OCPPServerClient | undefined;
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-      client = new BrowserOCPPClient({
-        identity: "CS-DUP",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-      client.handle("Reset", async () => {
-        await new Promise((r) => setTimeout(r, 150));
-        return { status: "Accepted" };
-      });
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-      const outgoing = captureOutgoing(client);
-
-      const frame = JSON.stringify([2, "dup", "Reset", { type: "Hard" }]);
-      serverClient!.sendRaw(frame);
-      serverClient!.sendRaw(frame);
-      await new Promise((r) => setTimeout(r, 300));
-
-      expect(outgoing.map((m) => m.slice(0, 3))).toContainEqual([
-        4,
-        "dup",
-        "GenericError",
-      ]);
-    });
-
-    // 2.0.1 / 2.1 Table 7: ErrorDescription is string[255].
-    it("limits the error description to 255 characters on 2.0.1", async () => {
-      const server201 = new OCPPServer({
-        protocols: ["ocpp2.0.1"],
-        logging: false,
-      });
-      let serverClient: OCPPServerClient | undefined;
-      server201.on("client", (sc) => {
-        serverClient = sc;
-      });
-      const port201 = getPort(await server201.listen(0));
-      let c201: BrowserOCPPClient<"ocpp2.0.1"> | undefined;
-      try {
-        c201 = new BrowserOCPPClient({
-          identity: "CS-LONG",
-          endpoint: `ws://localhost:${port201}`,
-          protocols: ["ocpp2.0.1"],
-          reconnect: false,
-        });
-        c201.handle("Reset", () => {
-          throw createRPCError("GenericError", "x".repeat(400));
-        });
-        await c201.connect();
-        await new Promise((r) => setTimeout(r, 100));
-        const outgoing = captureOutgoing(c201);
-
-        serverClient!.sendRaw(
-          JSON.stringify([2, "r1", "Reset", { type: "Immediate" }]),
-        );
-        await new Promise((r) => setTimeout(r, 150));
-
-        expect(outgoing[0]?.[0]).toBe(4);
-        expect(String(outgoing[0]?.[3])).toHaveLength(255);
-      } finally {
-        await c201?.close({ force: true }).catch(() => {});
-        await server201.close({ force: true });
-      }
-    });
-  });
-
-  // ─── Reconnection ─────────────────────────────────────────────
-
-  describe("Reconnection", () => {
-    it("should emit reconnect event after unexpected close", async () => {
-      let serverClient;
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: true,
-        maxReconnects: 1,
-        backoffMin: 50,
-        backoffMax: 100,
-      });
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      const reconnectEvents: Array<{ attempt: number; delay: number }> = [];
-      client.on("reconnect", (event: { attempt: number; delay: number }) => {
-        reconnectEvents.push(event);
-      });
-
-      // Simulate server-side disconnect
-      await serverClient!.close({ force: true });
-      await new Promise((r) => setTimeout(r, 300));
-
-      expect(reconnectEvents.length).toBeGreaterThanOrEqual(1);
-      expect(reconnectEvents[0].attempt).toBe(1);
-    });
-
-    it("should not reconnect when reconnect is false", async () => {
-      let serverClient;
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      let reconnected = false;
-      client.on("reconnect", () => {
-        reconnected = true;
-      });
-
-      await serverClient!.close({ force: true });
-      await new Promise((r) => setTimeout(r, 300));
-
-      expect(reconnected).toBe(false);
-    });
-
-    it("should reject pending calls on unexpected close", async () => {
-      server.on("client", (sc) => {
-        sc.handle(unchecked("SlowMethod"), async () => {
-          await new Promise((r) => setTimeout(r, 5000));
-          return {};
-        });
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-        callTimeoutMs: 5000,
-      });
-
-      await client.connect();
-
-      const callPromise = client.call(unchecked("SlowMethod"), {});
-
-      // Attach rejection handler BEFORE closing server to avoid unhandled rejection
-      const expectation =
-        expect(callPromise).rejects.toThrow("Connection closed");
-
-      // Force server close while call is pending
-      await server.close({ force: true });
-
-      await expectation;
-    });
-
-    it("should stop reconnecting when reconfigure disables reconnect", async () => {
-      let serverClient;
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: true,
-        maxReconnects: 10,
-        backoffMin: 500,
-        backoffMax: 1000,
-      });
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      let reconnectCount = 0;
-      client.on("reconnect", () => {
-        reconnectCount++;
-      });
-
-      // Disable reconnection before triggering disconnect
-      client.reconfigure({ reconnect: false });
-
-      // Trigger unexpected close
-      await serverClient!.close({ force: true });
-      await new Promise((r) => setTimeout(r, 600));
-
-      // No reconnect events should have fired
-      expect(reconnectCount).toBe(0);
-      expect(client.state).toBe(BrowserOCPPClient.CLOSED);
-    });
-  });
-
-  // ─── Error Handling ──────────────────────────────────────────
-
-  describe("Error Handling", () => {
-    it("should emit error event on WebSocket error", async () => {
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: "ws://localhost:1", // Invalid port → connection error
-        reconnect: false,
-      });
-
-      const errors: unknown[] = [];
-      client.on("error", (err: unknown) => errors.push(err));
-
-      try {
-        await client.connect();
-      } catch {}
-
-      // Should have emitted at least one error
-      expect(errors.length).toBeGreaterThanOrEqual(0);
-    });
-
-    it("should handle handler throwing non-RPC error", async () => {
-      let serverClient;
-
-      server.on("client", (sc) => {
-        serverClient = sc;
-      });
-
-      client = new BrowserOCPPClient({
-        identity: "CS001",
-        endpoint: `ws://localhost:${port}`,
-        protocols: ["ocpp1.6"],
-        reconnect: false,
-      });
-
-      client.handle(unchecked("Buggy"), async () => {
-        throw new TypeError("unexpected error");
-      });
-
-      await client.connect();
-      await new Promise((r) => setTimeout(r, 100));
-
-      try {
-        await serverClient!.call("Buggy", {});
-        expect.unreachable();
-      } catch (err: any) {
-        // Non-RPC error should be wrapped as InternalError
-        expect(err.rpcErrorCode).toBe("InternalError");
-      }
-    });
-  });
-
-  // ─── Browser-specific Index Exports ──────────────────────────
-
-  describe("Browser Index Exports", () => {
-    it("should export all expected modules", async () => {
-      const browserModule = await import("../src/browser/index.js");
-
-      expect(browserModule.BrowserOCPPClient).toBeDefined();
-      expect(browserModule.TimeoutError).toBeDefined();
-      expect(browserModule.RPCGenericError).toBeDefined();
-      expect(browserModule.RPCNotImplementedError).toBeDefined();
-      expect(browserModule.RPCNotSupportedError).toBeDefined();
-      expect(browserModule.RPCInternalError).toBeDefined();
-      expect(browserModule.RPCProtocolError).toBeDefined();
-      expect(browserModule.RPCSecurityError).toBeDefined();
-      expect(browserModule.RPCFormationViolationError).toBeDefined();
-      expect(browserModule.RPCFormatViolationError).toBeDefined();
-      expect(browserModule.RPCPropertyConstraintViolationError).toBeDefined();
-      expect(browserModule.RPCOccurrenceConstraintViolationError).toBeDefined();
-      expect(browserModule.RPCTypeConstraintViolationError).toBeDefined();
-      expect(browserModule.RPCMessageTypeNotSupportedError).toBeDefined();
-      expect(browserModule.RPCFrameworkError).toBeDefined();
-      expect(browserModule.createRPCError).toBeDefined();
-      expect(browserModule.getErrorPlainObject).toBeDefined();
-      expect(browserModule.ConnectionState).toBeDefined();
-      expect(browserModule.MessageType).toBeDefined();
-    });
-  });
+describe('BrowserOCPPClient', () => {
+	beforeEach(async () => {
+		server = new OCPPServer({ protocols: ['ocpp1.6'] });
+		server.auth(ctx => {
+			ctx.accept({ protocol: 'ocpp1.6' });
+		});
+		const httpServer = await server.listen(0);
+		port = getPort(httpServer);
+	});
+
+	afterEach(async () => {
+		if (client) await client.close({ force: true }).catch(() => {});
+		await server.close({ force: true });
+	});
+
+	// ─── Construction ────────────────────────────────────────────
+
+	describe('Construction', () => {
+		it('should throw if identity is missing', () => {
+			expect(
+				() =>
+					new BrowserOCPPClient({
+						identity: '',
+						endpoint: 'ws://localhost:9999',
+					})
+			).toThrow('identity is required');
+		});
+
+		it('should be in CLOSED state initially', () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+			expect(client.state).toBe(BrowserOCPPClient.CLOSED);
+		});
+
+		it('should expose static connection state constants', () => {
+			expect(BrowserOCPPClient.CONNECTING).toBe(
+				ConnectionState.CONNECTING
+			);
+			expect(BrowserOCPPClient.OPEN).toBe(ConnectionState.OPEN);
+			expect(BrowserOCPPClient.CLOSING).toBe(ConnectionState.CLOSING);
+			expect(BrowserOCPPClient.CLOSED).toBe(ConnectionState.CLOSED);
+		});
+
+		it('should set identity correctly', () => {
+			client = new BrowserOCPPClient({
+				identity: 'MY-STATION',
+				endpoint: `ws://localhost:${port}`,
+				reconnect: false,
+			});
+			expect(client.identity).toBe('MY-STATION');
+		});
+	});
+
+	// ─── Logging ─────────────────────────────────────────────────
+
+	describe('Logging', () => {
+		it('should provide a default logger when not specified', () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				reconnect: false,
+			});
+			expect(client.log).toBeDefined();
+			expect(typeof client.log.info).toBe('function');
+		});
+
+		it('should provide a safe NOOP logger when logging is false', () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				reconnect: false,
+				logging: false,
+			});
+			// The logger should exist and have functions that don't do anything, but importantly not crash.
+			expect(client.log).toBeDefined();
+			expect(typeof client.log.info).toBe('function');
+			expect(typeof client.log.warn).toBe('function');
+
+			// Attempting to call should not throw
+			expect(() => client.log.info('Hidden message')).not.toThrow();
+		});
+
+		it('should use a custom logger instance and attempt to bind context via child()', () => {
+			const customLogger = {
+				info: vi.fn(),
+				warn: vi.fn(),
+				error: vi.fn(),
+				debug: vi.fn(),
+				child: vi.fn().mockReturnThis(),
+			};
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				reconnect: false,
+				logging: { logger: customLogger as any },
+			});
+
+			expect(client.log).toBe(customLogger);
+			expect(customLogger.child).toHaveBeenCalledWith({
+				component: 'BrowserOCPPClient',
+				identity: 'CS001',
+			});
+		});
+
+		it('should apply a custom handler transport correctly', async () => {
+			const handlerLog = vi.fn();
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				reconnect: false,
+				logging: { handler: handlerLog },
+			});
+
+			client.log.info('Test browser handler message');
+			// handler executions might be on the microtask queue, yield briefly
+			await new Promise(r => setTimeout(r, 10));
+
+			expect(handlerLog).toHaveBeenCalled();
+			const entry = handlerLog.mock.calls[0][0];
+			expect(entry.message).toContain('Test browser handler message');
+			expect(entry.level).toBe(30);
+			expect(entry.context).toMatchObject({
+				component: 'BrowserOCPPClient',
+				identity: 'CS001',
+			});
+		});
+	});
+
+	// ─── Connection ──────────────────────────────────────────────
+
+	describe('Connection', () => {
+		it('should connect successfully', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			expect(client.state).toBe(BrowserOCPPClient.OPEN);
+		});
+
+		it('should set protocol after connection', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			expect(client.protocol).toBe('ocpp1.6');
+		});
+
+		it('should emit "open" event on connect', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			let opened = false;
+			client.on('open', () => {
+				opened = true;
+			});
+			await client.connect();
+			expect(opened).toBe(true);
+		});
+
+		it('should emit "connecting" event before WebSocket opens', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			let connectingUrl = '';
+			client.on('connecting', ({ url }: { url: string }) => {
+				connectingUrl = url;
+			});
+			await client.connect();
+			expect(connectingUrl).toContain('CS001');
+		});
+
+		it('should reject connect when already connected', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			await expect(client.connect()).rejects.toThrow('Cannot connect');
+		});
+
+		it('should build endpoint with identity appended', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS/001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			let url = '';
+			client.on('connecting', (event: { url: string }) => {
+				url = event.url;
+			});
+			// This may fail to connect because identity contains "/" which gets encoded,
+			// but that's fine — we just want to check the URL format
+			try {
+				await client.connect();
+			} catch {}
+			expect(url).toContain(encodeURIComponent('CS/001'));
+		});
+
+		it('should append query params to endpoint', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				query: { token: 'abc123' },
+				reconnect: false,
+			});
+
+			let url = '';
+			client.on('connecting', (event: { url: string }) => {
+				url = event.url;
+			});
+			try {
+				await client.connect();
+			} catch {}
+			expect(url).toContain('token=abc123');
+		});
+	});
+
+	// ─── Close ───────────────────────────────────────────────────
+
+	describe('Close', () => {
+		it('should close gracefully', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			const result = await client.close();
+			expect(result.code).toBe(1000);
+			expect(client.state).toBe(BrowserOCPPClient.CLOSED);
+		});
+
+		it('should emit close event', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			const closePromise = new Promise<{ code: number; reason: string }>(
+				resolve => client.on('close', resolve)
+			);
+			await client.close();
+			const result = await closePromise;
+			expect(result.code).toBe(1000);
+		});
+
+		it('should return immediately when already closed', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				reconnect: false,
+			});
+			const result = await client.close();
+			expect(result).toEqual({ code: 1000, reason: '' });
+		});
+
+		it('should handle double close gracefully', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			const [r1, r2] = await Promise.all([
+				client.close(),
+				client.close(),
+			]);
+			expect(r1.code).toBe(1000);
+			expect(r2.code).toBe(1000);
+			expect(client.state).toBe(BrowserOCPPClient.CLOSED);
+		});
+
+		it('should close with force option', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			await client.close({ force: true });
+			expect(client.state).toBe(BrowserOCPPClient.CLOSED);
+		});
+
+		it('should close with custom code and reason', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			await client.close({ code: 1001, reason: 'going away' });
+			expect(client.state).toBe(BrowserOCPPClient.CLOSED);
+		});
+	});
+
+	// ─── RPC Calls ───────────────────────────────────────────────
+
+	describe('RPC Calls', () => {
+		it('should send a call and receive a response', async () => {
+			server.on('client', serverClient => {
+				serverClient.handle('BootNotification', async () => ({
+					status: 'Accepted',
+					currentTime: new Date().toISOString(),
+					interval: 300,
+				}));
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			const result = await client.call('BootNotification', {
+				chargePointVendor: 'TestVendor',
+				chargePointModel: 'TestModel',
+			});
+			expect((result as any).status).toBe('Accepted');
+			expect((result as any).interval).toBe(300);
+		});
+
+		it('should receive call error from server', async () => {
+			server.on('client', () => {
+				// No handler registered → server responds with NotImplemented
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			await expect(
+				client.call(unchecked('UnknownMethod'), {})
+			).rejects.toMatchObject({
+				rpcErrorCode: 'NotImplemented',
+			});
+		});
+
+		it('sends a version-named unchecked call without params as that action', async () => {
+			const received: { method: string; params: unknown }[] = [];
+			server.on('client', serverClient => {
+				serverClient.handle(({ params, method }) => {
+					received.push({ method, params });
+					return { pong: true };
+				});
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			const result = await client.call(
+				'ocpp1.6',
+				unchecked('VendorPing')
+			);
+			expect(result).toEqual({ pong: true });
+			expect(received).toEqual([{ method: 'VendorPing', params: {} }]);
+		});
+
+		it('should reject calls when not connected', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				reconnect: false,
+			});
+			await expect(client.call(unchecked('Test'), {})).rejects.toThrow(
+				'Cannot call'
+			);
+		});
+
+		it('should timeout calls that take too long', async () => {
+			server.on('client', serverClient => {
+				serverClient.handle(unchecked('SlowMethod'), async () => {
+					// Never respond
+					await new Promise(() => {});
+				});
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+				callTimeoutMs: 200,
+			});
+
+			await client.connect();
+			await expect(
+				client.call(unchecked('SlowMethod'), {})
+			).rejects.toThrow('timed out');
+		});
+
+		it('should emit message event when sending a call', async () => {
+			server.on('client', serverClient => {
+				serverClient.handle('Heartbeat', async () => ({
+					currentTime: new Date().toISOString(),
+				}));
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			const messages: unknown[] = [];
+			client.on('message', (msg: unknown) => messages.push(msg));
+			await client.call('Heartbeat', {});
+			expect(messages.length).toBe(1);
+			expect((messages[0] as any)[0]).toBe(MessageType.CALL);
+			expect((messages[0] as any)[2]).toBe('Heartbeat');
+		});
+
+		it('should emit callResult event when receiving a response', async () => {
+			server.on('client', serverClient => {
+				serverClient.handle('Heartbeat', async () => ({
+					currentTime: new Date().toISOString(),
+				}));
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			const results: unknown[] = [];
+			client.on('callResult', (msg: unknown) => results.push(msg));
+			await client.call('Heartbeat', {});
+			expect(results.length).toBeGreaterThanOrEqual(1);
+		});
+
+		it('should support concurrent calls with callConcurrency > 1', async () => {
+			server.on('client', serverClient => {
+				serverClient.handle('Heartbeat', async () => ({
+					currentTime: new Date().toISOString(),
+				}));
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+				callConcurrency: 3,
+			});
+
+			await client.connect();
+			const results = await Promise.all([
+				client.call('Heartbeat', {}),
+				client.call('Heartbeat', {}),
+				client.call('Heartbeat', {}),
+			]);
+			expect(results).toHaveLength(3);
+		});
+
+		it('should abort a call with AbortSignal', async () => {
+			server.on('client', serverClient => {
+				serverClient.handle(unchecked('SlowMethod'), async () => {
+					await new Promise(r => setTimeout(r, 5000));
+					return {};
+				});
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			const ac = new AbortController();
+
+			const callPromise = client.call(
+				unchecked('SlowMethod'),
+				{},
+				{ signal: ac.signal }
+			);
+			setTimeout(() => ac.abort(), 50);
+
+			await expect(callPromise).rejects.toThrow();
+		});
+
+		it('should immediately reject if AbortSignal is already aborted', async () => {
+			server.on('client', serverClient => {
+				serverClient.handle(unchecked('Test'), async () => ({}));
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			const ac = new AbortController();
+			ac.abort();
+
+			await expect(
+				client.call(unchecked('Test'), {}, { signal: ac.signal })
+			).rejects.toThrow();
+		});
+	});
+
+	// ─── Incoming Calls (Handlers) ───────────────────────────────
+
+	describe('Incoming Call Handlers', () => {
+		it('should handle incoming calls from server', async () => {
+			let serverClient;
+
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			client.handle('Reset', async () => {
+				return { status: 'Accepted' };
+			});
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100)); // Wait for server to register
+
+			const result = await serverClient!.call('Reset', { type: 'Hard' });
+			expect((result as any).status).toBe('Accepted');
+		});
+
+		it('should invoke wildcard handler for unregistered methods', async () => {
+			let serverClient;
+
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			const methods: string[] = [];
+			client.handle(({ method }) => {
+				methods.push(method);
+				return { status: 'Accepted' };
+			});
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			await serverClient!.call('AnyMethod', {});
+			expect(methods).toContain('AnyMethod');
+		});
+
+		it('should respond with NotImplemented for unhandled methods', async () => {
+			let serverClient;
+
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			await expect(
+				serverClient!.call('UnhandledMethod', {})
+			).rejects.toMatchObject({
+				rpcErrorCode: 'NotImplemented',
+			});
+		});
+
+		it('should prefer version-specific handler over generic handler', async () => {
+			let serverClient;
+
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			client.handle('Reset', async () => ({ status: 'Rejected' }));
+			client.handle('ocpp1.6', 'Reset', async () => ({
+				status: 'Accepted',
+			}));
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			const result = await serverClient!.call('Reset', { type: 'Hard' });
+			// Version-specific handler should win over generic
+			expect((result as any).status).toBe('Accepted');
+		});
+
+		it('should remove a specific handler with removeHandler()', async () => {
+			let serverClient;
+
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			client.handle('Reset', async () => ({ status: 'Accepted' }));
+			client.removeHandler('Reset');
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			await expect(
+				serverClient!.call('Reset', { type: 'Hard' })
+			).rejects.toMatchObject({
+				rpcErrorCode: 'NotImplemented',
+			});
+		});
+
+		it('should remove version-specific handler with removeHandler(version, method)', async () => {
+			let serverClient;
+
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			client.handle('Reset', async () => ({ status: 'Rejected' }));
+			client.handle('ocpp1.6', 'Reset', async () => ({
+				status: 'Accepted',
+			}));
+			client.removeHandler('ocpp1.6', 'Reset');
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			const result = await serverClient!.call('Reset', { type: 'Hard' });
+			// Should fall back to generic handler after version-specific was removed
+			expect((result as any).status).toBe('Rejected');
+		});
+
+		it('should remove wildcard handler with removeHandler()', () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				reconnect: false,
+			});
+
+			client.handle(() => ({}));
+			client.removeHandler(); // Removes wildcard
+			// No assertion needed — just verifying no throw
+		});
+
+		it('should remove all handlers with removeAllHandlers()', async () => {
+			let serverClient;
+
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			client.handle('Reset', async () => ({ status: 'Accepted' }));
+			client.handle(() => ({ status: 'Wildcard' }));
+			client.removeAllHandlers();
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			await expect(
+				serverClient!.call('Reset', { type: 'Hard' })
+			).rejects.toMatchObject({
+				rpcErrorCode: 'NotImplemented',
+			});
+		});
+
+		it('should throw on invalid handle() arguments', () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				reconnect: false,
+			});
+
+			expect(() => (client as any).handle(123)).toThrow(
+				'Invalid arguments'
+			);
+		});
+
+		it('should emit call event for incoming calls', async () => {
+			let serverClient;
+
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			client.handle('Heartbeat', async () => ({
+				currentTime: new Date().toISOString(),
+			}));
+
+			const calls: unknown[] = [];
+			client.on('call', (msg: unknown) => calls.push(msg));
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			await serverClient!.call('Heartbeat', {});
+			expect(calls.length).toBeGreaterThanOrEqual(1);
+			expect((calls[0] as any)[2]).toBe('Heartbeat');
+		});
+
+		it('should support NOREPLY from handler', async () => {
+			const { NOREPLY } = await import('../src/browser/types.js');
+			let serverClient;
+
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			client.handle(unchecked('FireAndForget'), async () => NOREPLY);
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			// Server call should timeout since no response is sent
+			await expect(
+				serverClient!.call('FireAndForget', {}, { timeoutMs: 300 })
+			).rejects.toThrow();
+		});
+
+		it('should include detailed errors when respondWithDetailedErrors is true', async () => {
+			let serverClient;
+
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+				respondWithDetailedErrors: true,
+			});
+
+			client.handle(unchecked('Buggy'), async () => {
+				throw new Error('Something broke');
+			});
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			try {
+				await serverClient!.call('Buggy', {});
+				expect.unreachable();
+			} catch (err: any) {
+				// Should get the detailed error information
+				expect(err.rpcErrorCode).toBe('InternalError');
+			}
+		});
+	});
+
+	// ─── Middleware ──────────────────────────────────────────────
+
+	describe('Middleware', () => {
+		it('should intercept outgoing calls', async () => {
+			server.on('client', serverClient => {
+				serverClient.handle('BootNotification', async () => ({
+					currentTime: new Date().toISOString(),
+					interval: 300,
+					status: 'Accepted',
+				}));
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			const mwSpy = vi.fn(async (ctx, next) => {
+				if (ctx.type === 'outgoing_call') {
+					ctx.params = { ...(ctx.params as any), intercepted: true };
+				}
+				await next();
+			});
+
+			client.use(mwSpy);
+			await client.connect();
+			await client.call('BootNotification', {
+				chargePointVendor: 'Test',
+				chargePointModel: 'Test',
+			});
+
+			expect(mwSpy).toHaveBeenCalled();
+			const callCtx = mwSpy.mock.calls.find(
+				c => c[0].type === 'outgoing_call'
+			)?.[0];
+			expect(callCtx).toBeDefined();
+			expect((callCtx as any).params.intercepted).toBe(true);
+		});
+
+		it('should intercept incoming calls', async () => {
+			let serverClient;
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+			client.handle('TriggerMessage', async () => ({
+				status: 'Accepted',
+			}));
+
+			const mwSpy = vi.fn(async (_ctx, next) => await next());
+			client.use(mwSpy);
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100)); // wait for connect sync
+
+			await serverClient!.call('TriggerMessage', {
+				requestedMessage: 'BootNotification',
+			});
+
+			const inCtx = mwSpy.mock.calls.find(
+				c => c[0].type === 'incoming_call'
+			)?.[0];
+			expect(inCtx).toBeDefined();
+			expect((inCtx as any).method).toBe('TriggerMessage');
+		});
+
+		it('should intercept incoming results', async () => {
+			server.on('client', serverClient => {
+				serverClient.handle('Heartbeat', async () => ({
+					currentTime: '2023-01-01T00:00:00Z',
+				}));
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+			const mwSpy = vi.fn(async (ctx, next) => {
+				if (ctx.type === 'incoming_result') {
+					ctx.payload = {
+						...(ctx.payload as any),
+						interceptedResult: true,
+					};
+				}
+				await next();
+			});
+
+			client.use(mwSpy);
+			await client.connect();
+
+			const res: any = await client.call('Heartbeat', {});
+
+			const resCtx = mwSpy.mock.calls.find(
+				c => c[0].type === 'incoming_result'
+			)?.[0];
+			expect(resCtx).toBeDefined();
+			expect(res.interceptedResult).toBe(true);
+		});
+
+		it('should intercept incoming errors', async () => {
+			server.on('client', () => {
+				// No handler -> returns NotImplemented CallError
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			const mwSpy = vi.fn(async (_ctx, next) => await next());
+			client.use(mwSpy);
+
+			await client.connect();
+
+			await expect(
+				client.call(unchecked('UnknownAction'), {})
+			).rejects.toThrow();
+
+			const errCtx = mwSpy.mock.calls.find(
+				c => c[0].type === 'incoming_error'
+			)?.[0];
+			expect(errCtx).toBeDefined();
+			// The CALLERROR frame, as the type and the Node client give it.
+			expect(errCtx.error).toEqual([
+				MessageType.CALLERROR,
+				errCtx.messageId,
+				'NotImplemented',
+				expect.any(String),
+				expect.any(Object),
+			]);
+		});
+
+		it('rejects with the error an incoming_error middleware leaves', async () => {
+			server.on('client', () => {
+				// No handler -> returns NotImplemented CallError
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			client.use(async (ctx, next) => {
+				if (ctx.type === 'incoming_error') {
+					ctx.error = [
+						MessageType.CALLERROR,
+						ctx.messageId,
+						'SecurityError',
+						'rewritten',
+						{},
+					];
+				}
+				return next();
+			});
+			const callErrors: unknown[] = [];
+			client.on('callError', frame => callErrors.push(frame));
+
+			await client.connect();
+
+			await expect(
+				client.call(unchecked('UnknownAction'), {})
+			).rejects.toMatchObject({
+				name: 'RPCSecurityError',
+				rpcErrorCode: 'SecurityError',
+				message: 'rewritten',
+			});
+			expect(callErrors).toEqual([
+				[
+					MessageType.CALLERROR,
+					expect.any(String),
+					'SecurityError',
+					'rewritten',
+					{},
+				],
+			]);
+		});
+	});
+
+	// ─── sendRaw ─────────────────────────────────────────────────
+
+	describe('sendRaw', () => {
+		it('should send raw data over WebSocket', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			// sendRaw shouldn't throw for valid string
+			expect(() => client.sendRaw('hello')).not.toThrow();
+		});
+
+		it('should throw when not connected', () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				reconnect: false,
+			});
+			expect(() => client.sendRaw('hello')).toThrow('Cannot send');
+		});
+	});
+
+	// ─── reconfigure ─────────────────────────────────────────────
+
+	describe('reconfigure', () => {
+		it('should update options', () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				reconnect: false,
+				callTimeoutMs: 5000,
+			});
+
+			client.reconfigure({ callTimeoutMs: 10000 });
+			// Can't directly check private _options, but we can verify
+			// it works by calling after reconfigure
+		});
+
+		it('should update call concurrency dynamically', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+				callConcurrency: 1,
+			});
+
+			// Reconfigure before connect
+			client.reconfigure({ callConcurrency: 5 });
+
+			// No error
+		});
+	});
+
+	// ─── Bad Messages ────────────────────────────────────────────
+
+	describe('Bad Messages', () => {
+		it('should emit badMessage for invalid JSON', async () => {
+			let serverClient;
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			const badMessages: unknown[] = [];
+			client.on('badMessage', (msg: unknown) => badMessages.push(msg));
+
+			// Send malformed data from server
+			serverClient!.sendRaw('not-json{{{');
+			await new Promise(r => setTimeout(r, 100));
+
+			expect(badMessages.length).toBe(1);
+		});
+
+		it('should emit badMessage for non-array message', async () => {
+			let serverClient;
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			const badMessages: unknown[] = [];
+			client.on('badMessage', (msg: unknown) => badMessages.push(msg));
+
+			serverClient!.sendRaw(JSON.stringify({ type: 'invalid' }));
+			await new Promise(r => setTimeout(r, 100));
+
+			expect(badMessages.length).toBe(1);
+		});
+
+		// A bad message, answered MessageTypeNotSupported.
+		it('should emit badMessage for unknown message type', async () => {
+			let serverClient;
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			const badMessages: unknown[] = [];
+			client.on('badMessage', (msg: unknown) => badMessages.push(msg));
+
+			serverClient!.sendRaw(JSON.stringify([99, 'id', 'payload']));
+			await new Promise(r => setTimeout(r, 100));
+
+			expect(badMessages).toHaveLength(1);
+		});
+
+		// 1.6J §4.2.1 and 2.x §4.1.5 allow an absent payload to be sent as null.
+		it('delivers a null CALL payload to the handler as {}', async () => {
+			let serverClient: OCPPServerClient | undefined;
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+			client = new BrowserOCPPClient({
+				identity: 'CS-NULL',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+			const received: unknown[] = [];
+			client.handle('ClearCache', async ctx => {
+				received.push(ctx.params);
+				return { status: 'Accepted' };
+			});
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			serverClient!.sendRaw(
+				JSON.stringify([2, 'n1', 'ClearCache', null])
+			);
+			await new Promise(r => setTimeout(r, 100));
+
+			expect(received).toEqual([{}]);
+		});
+
+		it('drops OCPP 2.1 SEND frames on a 2.1 connection without counting them', async () => {
+			const server21 = new OCPPServer({
+				protocols: ['ocpp2.1'],
+				logging: false,
+			});
+			let serverClient: OCPPServerClient | undefined;
+			server21.on('client', sc => {
+				serverClient = sc;
+			});
+			const port21 = getPort(await server21.listen(0));
+			let c21: BrowserOCPPClient<'ocpp2.1'> | undefined;
+			try {
+				c21 = new BrowserOCPPClient({
+					identity: 'CS21',
+					endpoint: `ws://localhost:${port21}`,
+					protocols: ['ocpp2.1'],
+					reconnect: false,
+					maxBadMessages: 2,
+				});
+				await c21.connect();
+				await new Promise(r => setTimeout(r, 100));
+
+				const badMessages: unknown[] = [];
+				c21.on('badMessage', (msg: unknown) => badMessages.push(msg));
+				for (let i = 0; i < 5; i++) {
+					serverClient!.sendRaw(
+						JSON.stringify([
+							6,
+							`s${i}`,
+							'NotifyPeriodicEventStream',
+							{},
+						])
+					);
+				}
+				await new Promise(r => setTimeout(r, 100));
+
+				expect(badMessages).toHaveLength(0);
+				expect(c21.state).toBe(ConnectionState.OPEN);
+			} finally {
+				await c21?.close({ force: true }).catch(() => {});
+				await server21.close({ force: true });
+			}
+		});
+
+		const stream21 = {
+			id: 1,
+			pending: 0,
+			basetime: '2026-01-01T00:00:00Z',
+			data: [{ t: 0, v: '230.4' }],
+		};
+
+		it('delivers an OCPP 2.1 SEND to its handler without replying', async () => {
+			const server21 = new OCPPServer({
+				protocols: ['ocpp2.1'],
+				logging: false,
+			});
+			let serverClient: OCPPServerClient | undefined;
+			server21.on('client', sc => {
+				serverClient = sc;
+			});
+			const port21 = getPort(await server21.listen(0));
+			let c21: BrowserOCPPClient<'ocpp2.1'> | undefined;
+			try {
+				c21 = new BrowserOCPPClient({
+					identity: 'CS21-SEND',
+					endpoint: `ws://localhost:${port21}`,
+					protocols: ['ocpp2.1'],
+					reconnect: false,
+				});
+				const seen: Array<{ unconfirmed?: boolean; params: unknown }> =
+					[];
+				c21.handle('NotifyPeriodicEventStream', ctx => {
+					seen.push({
+						unconfirmed: ctx.unconfirmed,
+						params: ctx.params,
+					});
+				});
+				await c21.connect();
+				await new Promise(r => setTimeout(r, 100));
+
+				const outgoing: string[] = [];
+				const ws = (c21 as never as { _ws: { send(d: string): void } })
+					._ws;
+				const send = ws.send.bind(ws);
+				ws.send = (d: string) => {
+					outgoing.push(d);
+					send(d);
+				};
+
+				serverClient!.sendRaw(
+					JSON.stringify([
+						6,
+						's1',
+						'NotifyPeriodicEventStream',
+						stream21,
+					])
+				);
+				await new Promise(r => setTimeout(r, 100));
+
+				expect(seen).toEqual([{ unconfirmed: true, params: stream21 }]);
+				expect(outgoing).toEqual([]);
+			} finally {
+				await c21?.close({ force: true }).catch(() => {});
+				await server21.close({ force: true });
+			}
+		});
+
+		it('sends an OCPP 2.1 SEND with send()', async () => {
+			const server21 = new OCPPServer({
+				protocols: ['ocpp2.1'],
+				logging: false,
+			});
+			const seen: unknown[] = [];
+			server21.on('client', sc =>
+				sc.handle('NotifyPeriodicEventStream', ctx => {
+					seen.push(ctx.params);
+				})
+			);
+			const port21 = getPort(await server21.listen(0));
+			let c21: BrowserOCPPClient<'ocpp2.1'> | undefined;
+			try {
+				c21 = new BrowserOCPPClient({
+					identity: 'CS21-OUT',
+					endpoint: `ws://localhost:${port21}`,
+					protocols: ['ocpp2.1'],
+					reconnect: false,
+				});
+				await c21.connect();
+				await new Promise(r => setTimeout(r, 100));
+
+				await c21.send('NotifyPeriodicEventStream', stream21);
+				await new Promise(r => setTimeout(r, 100));
+
+				expect(seen).toEqual([stream21]);
+			} finally {
+				await c21?.close({ force: true }).catch(() => {});
+				await server21.close({ force: true });
+			}
+		});
+
+		// B17: a custom protocol may use SEND like OCPP 2.1.
+		it('sends a SEND on a custom protocol with send()', async () => {
+			const serverVendor = new OCPPServer({
+				protocols: ['vendor-proto'],
+				logging: false,
+			});
+			const seen: unknown[] = [];
+			serverVendor.on('client', sc =>
+				sc.handle(unchecked('VendorNotify'), ctx => {
+					seen.push(ctx.params);
+					return NOREPLY;
+				})
+			);
+			const portVendor = getPort(await serverVendor.listen(0));
+			let cv: BrowserOCPPClient<'vendor-proto'> | undefined;
+			try {
+				cv = new BrowserOCPPClient({
+					identity: 'CS-VENDOR-OUT',
+					endpoint: `ws://localhost:${portVendor}`,
+					protocols: ['vendor-proto'],
+					reconnect: false,
+				});
+				await cv.connect();
+				await new Promise(r => setTimeout(r, 100));
+
+				await cv.send(unchecked('VendorNotify'), { at: 'now' });
+				await new Promise(r => setTimeout(r, 100));
+
+				expect(seen).toEqual([{ at: 'now' }]);
+			} finally {
+				await cv?.close({ force: true }).catch(() => {});
+				await serverVendor.close({ force: true });
+			}
+		});
+
+		it('should close after maxBadMessages is reached', async () => {
+			let serverClient;
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+				maxBadMessages: 2,
+			});
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			serverClient!.sendRaw('bad1');
+			serverClient!.sendRaw('bad2');
+			await new Promise(r => setTimeout(r, 200));
+
+			// After 2 bad messages, client should initiate close
+			expect(client.state).toBe(BrowserOCPPClient.CLOSED);
+		});
+
+		// maxBadMessages counts bad messages in a row: a valid frame resets it.
+		it('resets the bad-message count after a valid message', async () => {
+			let serverClient: OCPPServerClient | undefined;
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+			client = new BrowserOCPPClient({
+				identity: 'CS-RESET',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+				maxBadMessages: 2,
+			});
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			serverClient!.sendRaw('bad1');
+			// A CALLRESULT for an unknown ID is a valid frame (ignored, not bad).
+			serverClient!.sendRaw(JSON.stringify([3, 'unknown-id', {}]));
+			serverClient!.sendRaw('bad2');
+			await new Promise(r => setTimeout(r, 200));
+
+			expect(client.state).toBe(BrowserOCPPClient.OPEN);
+		});
+
+		it('ignores empty frames instead of counting them as bad', async () => {
+			let serverClient: OCPPServerClient | undefined;
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+			client = new BrowserOCPPClient({
+				identity: 'CS-EMPTY',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+				maxBadMessages: 2,
+			});
+			const badMessages: unknown[] = [];
+			client.on('badMessage', (msg: unknown) => badMessages.push(msg));
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			for (let i = 0; i < 3; i++) serverClient!.sendRaw('');
+			await new Promise(r => setTimeout(r, 200));
+
+			expect(badMessages).toHaveLength(0);
+			expect(client.state).toBe(BrowserOCPPClient.OPEN);
+		});
+
+		/** Record every frame the browser client writes to its socket. */
+		const captureOutgoing = (c: AnyBrowserOCPPClient) => {
+			const out: unknown[][] = [];
+			const ws = (c as never as { _ws: { send(d: string): void } })._ws;
+			const send = ws.send.bind(ws);
+			ws.send = (d: string) => {
+				out.push(JSON.parse(d));
+				send(d);
+			};
+			return out;
+		};
+
+		// 2.0.1 / 2.1 §4.2.3: when the MessageId cannot be read, reply under "-1".
+		it('answers a frame whose message ID cannot be read under "-1"', async () => {
+			let serverClient: OCPPServerClient | undefined;
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+			client = new BrowserOCPPClient({
+				identity: 'CS-UNREADABLE',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+			const outgoing = captureOutgoing(client);
+
+			serverClient!.sendRaw('not json');
+			serverClient!.sendRaw(JSON.stringify([2, 123, 'Reset', {}]));
+			await new Promise(r => setTimeout(r, 100));
+
+			expect(outgoing.map(m => m.slice(0, 3))).toEqual([
+				[4, '-1', 'RpcFrameworkError'],
+				[4, '-1', 'RpcFrameworkError'],
+			]);
+		});
+
+		// 1.6J Table 7 has no RpcFrameworkError.
+		it('answers a duplicate in-flight message ID with GenericError on 1.6', async () => {
+			let serverClient: OCPPServerClient | undefined;
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+			client = new BrowserOCPPClient({
+				identity: 'CS-DUP',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+			client.handle('Reset', async () => {
+				await new Promise(r => setTimeout(r, 150));
+				return { status: 'Accepted' };
+			});
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+			const outgoing = captureOutgoing(client);
+
+			const frame = JSON.stringify([2, 'dup', 'Reset', { type: 'Hard' }]);
+			serverClient!.sendRaw(frame);
+			serverClient!.sendRaw(frame);
+			await new Promise(r => setTimeout(r, 300));
+
+			expect(outgoing.map(m => m.slice(0, 3))).toContainEqual([
+				4,
+				'dup',
+				'GenericError',
+			]);
+		});
+
+		// 2.0.1 / 2.1 Table 7: ErrorDescription is string[255].
+		it('limits the error description to 255 characters on 2.0.1', async () => {
+			const server201 = new OCPPServer({
+				protocols: ['ocpp2.0.1'],
+				logging: false,
+			});
+			let serverClient: OCPPServerClient | undefined;
+			server201.on('client', sc => {
+				serverClient = sc;
+			});
+			const port201 = getPort(await server201.listen(0));
+			let c201: BrowserOCPPClient<'ocpp2.0.1'> | undefined;
+			try {
+				c201 = new BrowserOCPPClient({
+					identity: 'CS-LONG',
+					endpoint: `ws://localhost:${port201}`,
+					protocols: ['ocpp2.0.1'],
+					reconnect: false,
+				});
+				c201.handle('Reset', () => {
+					throw createRPCError('GenericError', 'x'.repeat(400));
+				});
+				await c201.connect();
+				await new Promise(r => setTimeout(r, 100));
+				const outgoing = captureOutgoing(c201);
+
+				serverClient!.sendRaw(
+					JSON.stringify([2, 'r1', 'Reset', { type: 'Immediate' }])
+				);
+				await new Promise(r => setTimeout(r, 150));
+
+				expect(outgoing[0]?.[0]).toBe(4);
+				expect(String(outgoing[0]?.[3])).toHaveLength(255);
+			} finally {
+				await c201?.close({ force: true }).catch(() => {});
+				await server201.close({ force: true });
+			}
+		});
+	});
+
+	// ─── Reconnection ─────────────────────────────────────────────
+
+	describe('Reconnection', () => {
+		it('should emit reconnect event after unexpected close', async () => {
+			let serverClient;
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: true,
+				maxReconnects: 1,
+				backoffMin: 50,
+				backoffMax: 100,
+			});
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			const reconnectEvents: Array<{ attempt: number; delay: number }> =
+				[];
+			client.on(
+				'reconnect',
+				(event: { attempt: number; delay: number }) => {
+					reconnectEvents.push(event);
+				}
+			);
+
+			// Simulate server-side disconnect
+			await serverClient!.close({ force: true });
+			await new Promise(r => setTimeout(r, 300));
+
+			expect(reconnectEvents.length).toBeGreaterThanOrEqual(1);
+			expect(reconnectEvents[0].attempt).toBe(1);
+		});
+
+		it('should not reconnect when reconnect is false', async () => {
+			let serverClient;
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			let reconnected = false;
+			client.on('reconnect', () => {
+				reconnected = true;
+			});
+
+			await serverClient!.close({ force: true });
+			await new Promise(r => setTimeout(r, 300));
+
+			expect(reconnected).toBe(false);
+		});
+
+		it('should reject pending calls on unexpected close', async () => {
+			server.on('client', sc => {
+				sc.handle(unchecked('SlowMethod'), async () => {
+					await new Promise(r => setTimeout(r, 5000));
+					return {};
+				});
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+				callTimeoutMs: 5000,
+			});
+
+			await client.connect();
+
+			const callPromise = client.call(unchecked('SlowMethod'), {});
+
+			// Attach rejection handler BEFORE closing server to avoid unhandled rejection
+			const expectation =
+				expect(callPromise).rejects.toThrow('Connection closed');
+
+			// Force server close while call is pending
+			await server.close({ force: true });
+
+			await expectation;
+		});
+
+		it('should stop reconnecting when reconfigure disables reconnect', async () => {
+			let serverClient;
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: true,
+				maxReconnects: 10,
+				backoffMin: 500,
+				backoffMax: 1000,
+			});
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			let reconnectCount = 0;
+			client.on('reconnect', () => {
+				reconnectCount++;
+			});
+
+			// Disable reconnection before triggering disconnect
+			client.reconfigure({ reconnect: false });
+
+			// Trigger unexpected close
+			await serverClient!.close({ force: true });
+			await new Promise(r => setTimeout(r, 600));
+
+			// No reconnect events should have fired
+			expect(reconnectCount).toBe(0);
+			expect(client.state).toBe(BrowserOCPPClient.CLOSED);
+		});
+	});
+
+	// ─── Error Handling ──────────────────────────────────────────
+
+	describe('Error Handling', () => {
+		it('should emit error event on WebSocket error', async () => {
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: 'ws://localhost:1', // Invalid port → connection error
+				reconnect: false,
+			});
+
+			const errors: unknown[] = [];
+			client.on('error', (err: unknown) => errors.push(err));
+
+			try {
+				await client.connect();
+			} catch {}
+
+			// Should have emitted at least one error
+			expect(errors.length).toBeGreaterThanOrEqual(0);
+		});
+
+		it('should handle handler throwing non-RPC error', async () => {
+			let serverClient;
+
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+
+			client = new BrowserOCPPClient({
+				identity: 'CS001',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+
+			client.handle(unchecked('Buggy'), async () => {
+				throw new TypeError('unexpected error');
+			});
+
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			try {
+				await serverClient!.call('Buggy', {});
+				expect.unreachable();
+			} catch (err: any) {
+				// Non-RPC error should be wrapped as InternalError
+				expect(err.rpcErrorCode).toBe('InternalError');
+			}
+		});
+	});
+
+	// ─── Browser-specific Index Exports ──────────────────────────
+
+	describe('Browser Index Exports', () => {
+		it('should export all expected modules', async () => {
+			const browserModule = await import('../src/browser/index.js');
+
+			expect(browserModule.BrowserOCPPClient).toBeDefined();
+			expect(browserModule.TimeoutError).toBeDefined();
+			expect(browserModule.RPCGenericError).toBeDefined();
+			expect(browserModule.RPCNotImplementedError).toBeDefined();
+			expect(browserModule.RPCNotSupportedError).toBeDefined();
+			expect(browserModule.RPCInternalError).toBeDefined();
+			expect(browserModule.RPCProtocolError).toBeDefined();
+			expect(browserModule.RPCSecurityError).toBeDefined();
+			expect(browserModule.RPCFormationViolationError).toBeDefined();
+			expect(browserModule.RPCFormatViolationError).toBeDefined();
+			expect(
+				browserModule.RPCPropertyConstraintViolationError
+			).toBeDefined();
+			expect(
+				browserModule.RPCOccurrenceConstraintViolationError
+			).toBeDefined();
+			expect(browserModule.RPCTypeConstraintViolationError).toBeDefined();
+			expect(browserModule.RPCMessageTypeNotSupportedError).toBeDefined();
+			expect(browserModule.RPCFrameworkError).toBeDefined();
+			expect(browserModule.createRPCError).toBeDefined();
+			expect(browserModule.getErrorPlainObject).toBeDefined();
+			expect(browserModule.ConnectionState).toBeDefined();
+			expect(browserModule.MessageType).toBeDefined();
+		});
+	});
 });

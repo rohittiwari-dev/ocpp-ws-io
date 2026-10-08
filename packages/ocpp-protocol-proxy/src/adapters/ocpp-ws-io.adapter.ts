@@ -20,11 +20,11 @@ export class OcppWsIoConnection implements IConnection {
   }
 
   private setupCatchAll() {
-    this.client.handle(async (action: string, ctx: any) => {
+    this.client.handle(async (ctx) => {
       const incomingMessage: OCPPMessage = {
         type: MessageType.CALL,
         messageId: ctx.messageId || `msg-${Date.now()}`,
-        action: action,
+        action: ctx.method,
         payload: ctx.params,
       };
 

@@ -6,7 +6,7 @@ description: Detailed API reference for OCPPClient and OCPPServer.
 ## OCPPClient
 
 ```typescript
-import { OCPPClient } from "ocpp-ws-io";
+import { OCPPClient } from 'ocpp-ws-io';
 ```
 
 ### Constructor
@@ -21,59 +21,59 @@ A typed client still fits a variable or list typed as plain `OCPPClient`, which 
 
 #### ClientOptions
 
-| Option                | Type                            | Default    | Description                                         |
-| :-------------------- | :------------------------------ | :--------- | :-------------------------------------------------- |
-| `identity`            | `string`                        | _required_ | Charging station ID                                 |
-| `endpoint`            | `string`                        | _required_ | WebSocket URL (`ws://` or `wss://`)                 |
-| `protocols`           | `string[]`                      | `[]`       | OCPP subprotocols to negotiate                      |
-| `securityProfile`     | `SecurityProfile`               | `NONE`     | Security profile (0–3)                              |
-| `password`            | `string \| Buffer`              | —          | Password for Basic Auth (Profile 1 & 2)             |
-| `tls`                 | `TLSOptions`                    | —          | TLS settings for a `wss://` endpoint, on every security profile (`ca` for a private CA even on profile 0); profile 3 needs `cert` and `key` |
-| `headers`             | `Record<string, string>`        | —          | Additional WebSocket headers                        |
-| `wsOpts`              | `WsClientOptions`               | —          | Raw `ws` client options: a proxy `agent`, `localAddress`, `family`, `origin`, `maxPayload`, `followRedirects`… (see wsOpts below) |
-| `query`               | `Record<string, string> \| string` | —          | URL query parameters, as an object or a query string (`"a=1&b=2"`, leading `?` optional); added after any query in `endpoint` |
-| `reconnect`           | `boolean`                       | `true`     | Auto-reconnect on disconnect                        |
-| `maxReconnects`       | `number`                        | `Infinity` | Max reconnection attempts                           |
-| `pingIntervalMs`      | `number`                        | `30000`    | Includes ±25% randomized jitter                     |
-| `strictMode`          | `boolean \| string[]`           | `false`    | Schema validation, off by default. Set `true` (or a list of protocols) for full payload validation (2.0.1 / 2.1 §4.1.7) |
-| `strictModeMethods`   | `string[]`                      | —          | Restrict validation to specific methods             |
-| `idGenerator`         | `() => string`                  | —          | Creates the message ID of each outgoing CALL and SEND. A per-call `idempotencyKey` wins; without either, a random UUID |
-| `idValidator`         | `(id: string) => boolean`       | —          | Checks each incoming CALL / SEND message ID, in any mode, in place of the built-in check (see Message IDs) |
-| `logging`             | `LoggingConfig`                 | `{}`       | Configuration for structured logging.               |
-| `offlineQueue`        | `boolean`                       | `false`    | Queue calls while disconnected, flush on reconnect. |
-| `offlineQueueMaxSize` | `number`                        | `100`      | Max offline queue size before oldest are dropped.   |
-| `compression`         | `boolean \| CompressionOptions` | `false`    | Offer WebSocket `permessage-deflate` compression to the CSMS. Off by default: nothing is offered (see Compression) |
-| `callConcurrency`     | `number`                        | `1`        | Outbound CALLs in flight at once. `1` follows OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out. Above 1 only for a CSMS known to cope (see `callImmediate()`) |
-| `respondWithDetailedErrors` | `boolean`                 | `false`    | Send a handler error's properties (not its stack) to the CSMS in CALLERROR `details`. Logs a warning when on; keep it off in production |
+| Option                      | Type                               | Default    | Description                                                                                                                                                                                                      |
+| :-------------------------- | :--------------------------------- | :--------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `identity`                  | `string`                           | _required_ | Charging station ID                                                                                                                                                                                              |
+| `endpoint`                  | `string`                           | _required_ | WebSocket URL (`ws://` or `wss://`)                                                                                                                                                                              |
+| `protocols`                 | `string[]`                         | `[]`       | OCPP subprotocols to negotiate                                                                                                                                                                                   |
+| `securityProfile`           | `SecurityProfile`                  | `NONE`     | Security profile (0–3)                                                                                                                                                                                           |
+| `password`                  | `string \| Buffer`                 | —          | Password for Basic Auth (Profile 1 & 2)                                                                                                                                                                          |
+| `tls`                       | `TLSOptions`                       | —          | TLS settings for a `wss://` endpoint, on every security profile (`ca` for a private CA even on profile 0); profile 3 needs `cert` and `key`                                                                      |
+| `headers`                   | `Record<string, string>`           | —          | Additional WebSocket headers                                                                                                                                                                                     |
+| `wsOpts`                    | `WsClientOptions`                  | —          | Raw `ws` client options: a proxy `agent`, `localAddress`, `family`, `origin`, `maxPayload`, `followRedirects`… (see wsOpts below)                                                                                |
+| `query`                     | `Record<string, string> \| string` | —          | URL query parameters, as an object or a query string (`"a=1&b=2"`, leading `?` optional); added after any query in `endpoint`                                                                                    |
+| `reconnect`                 | `boolean`                          | `true`     | Auto-reconnect on disconnect                                                                                                                                                                                     |
+| `maxReconnects`             | `number`                           | `Infinity` | Max reconnection attempts                                                                                                                                                                                        |
+| `pingIntervalMs`            | `number`                           | `30000`    | Includes ±25% randomized jitter                                                                                                                                                                                  |
+| `strictMode`                | `boolean \| string[]`              | `false`    | Schema validation, off by default. Set `true` (or a list of protocols) for full payload validation (2.0.1 / 2.1 §4.1.7)                                                                                          |
+| `strictModeMethods`         | `string[]`                         | —          | Restrict validation to specific methods                                                                                                                                                                          |
+| `idGenerator`               | `() => string`                     | —          | Creates the message ID of each outgoing CALL and SEND. A per-call `idempotencyKey` wins; without either, a random UUID                                                                                           |
+| `idValidator`               | `(id: string) => boolean`          | —          | Checks each incoming CALL / SEND message ID, in any mode, in place of the built-in check (see Message IDs)                                                                                                       |
+| `logging`                   | `LoggingConfig`                    | `{}`       | Configuration for structured logging.                                                                                                                                                                            |
+| `offlineQueue`              | `boolean`                          | `false`    | Queue calls while disconnected, flush on reconnect.                                                                                                                                                              |
+| `offlineQueueMaxSize`       | `number`                           | `100`      | Max offline queue size before oldest are dropped.                                                                                                                                                                |
+| `compression`               | `boolean \| CompressionOptions`    | `false`    | Offer WebSocket `permessage-deflate` compression to the CSMS. Off by default: nothing is offered (see Compression)                                                                                               |
+| `callConcurrency`           | `number`                           | `1`        | Outbound CALLs in flight at once. `1` follows OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out. Above 1 only for a CSMS known to cope (see `callImmediate()`) |
+| `respondWithDetailedErrors` | `boolean`                          | `false`    | Send a handler error's properties (not its stack) to the CSMS in CALLERROR `details`. Logs a warning when on; keep it off in production                                                                          |
 
 #### wsOpts
 
 Passed to `new WebSocket()` from the [`ws`](https://github.com/websockets/ws/blob/master/doc/ws.md#new-websocketaddress-protocols-options) package, for what the client options do not cover. Node client only: a browser's `WebSocket` takes no such options.
 
 ```typescript
-import { HttpsProxyAgent } from "https-proxy-agent";
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 const client = new OCPPClient({
-  identity: "CP-001",
-  endpoint: "wss://csms.example.com/ocpp",
-  protocols: ["ocpp1.6"],
-  wsOpts: {
-    agent: new HttpsProxyAgent("http://proxy.corp.local:3128"), // through a proxy
-    localAddress: "192.168.8.20", // leave by this network interface
-    maxPayload: 64 * 1024, // refuse messages over 64 KB (the ws default is 100 MiB)
-  },
+	identity: 'CP-001',
+	endpoint: 'wss://csms.example.com/ocpp',
+	protocols: ['ocpp1.6'],
+	wsOpts: {
+		agent: new HttpsProxyAgent('http://proxy.corp.local:3128'), // through a proxy
+		localAddress: '192.168.8.20', // leave by this network interface
+		maxPayload: 64 * 1024, // refuse messages over 64 KB (the ws default is 100 MiB)
+	},
 });
 ```
 
 Its type, `WsClientOptions`, leaves out the options the client sets itself, so they cannot be set in two places:
 
-| Not in `wsOpts` | Use instead |
-| :-- | :-- |
-| `handshakeTimeout` | `connectTimeoutMs` |
-| `perMessageDeflate` | `compression` |
-| `headers` | `headers` (names compared without case, as HTTP does; with `password`, its `Authorization` header wins) |
-| `ca`, `cert`, `key`, `passphrase`, `rejectUnauthorized`, `minVersion`, `maxVersion`, `ciphers` | `tls`, which applies on every security profile |
-| `autoPong` | Nothing: pings are always answered (RFC 6455 §5.5.2), since a CSMS disconnects a charger that stops answering them |
+| Not in `wsOpts`                                                                                | Use instead                                                                                                        |
+| :--------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------- |
+| `handshakeTimeout`                                                                             | `connectTimeoutMs`                                                                                                 |
+| `perMessageDeflate`                                                                            | `compression`                                                                                                      |
+| `headers`                                                                                      | `headers` (names compared without case, as HTTP does; with `password`, its `Authorization` header wins)            |
+| `ca`, `cert`, `key`, `passphrase`, `rejectUnauthorized`, `minVersion`, `maxVersion`, `ciphers` | `tls`, which applies on every security profile                                                                     |
+| `autoPong`                                                                                     | Nothing: pings are always answered (RFC 6455 §5.5.2), since a CSMS disconnects a charger that stops answering them |
 
 From plain JavaScript, where the type does not apply, these are dropped and a warning names the option to use instead. `closeTimeout` (how long a closing connection waits for the CSMS's close frame; `ws` default 30 s) is accepted although `ws`'s own type definitions do not list it yet.
 
@@ -107,13 +107,17 @@ await client.connect();
 The same client, typed for one of its protocols, or `undefined` while it speaks another or is not connected. A client configured for several versions is typed for all of them until narrowed this way.
 
 ```typescript
-const client = new OCPPClient({ identity, endpoint, protocols: ["ocpp1.6", "ocpp2.0.1"] });
+const client = new OCPPClient({
+	identity,
+	endpoint,
+	protocols: ['ocpp1.6', 'ocpp2.0.1'],
+});
 await client.connect();
 
-const v16 = client.forProtocol("ocpp1.6");
+const v16 = client.forProtocol('ocpp1.6');
 if (v16) {
-  const auth = await v16.call("Authorize", { idTag: "ABC" });
-  auth.idTagInfo.status; // the 1.6 response
+	const auth = await v16.call('Authorize', { idTag: 'ABC' });
+	auth.idTagInfo.status; // the 1.6 response
 }
 ```
 
@@ -122,10 +126,10 @@ if (v16) {
 Make an RPC call. Throws a `TimeoutError` or protocol-level Error if the request fails.
 Make an RPC call. Throws a `TimeoutError` or protocol-level Error if the request fails.
 
--   `protocol`: Optional. e.g., "ocpp1.6". If omitted, generic type inference is used.
--   `method`: The OCPP method name (e.g., "BootNotification").
--   `params`: The request payload.
--   `options`: `{ timeoutMs?: number, retries?: number, idempotencyKey?: string, signal?: AbortSignal }`, or `{ noReply: true, … }` (see below)
+- `protocol`: Optional. e.g., "ocpp1.6". If omitted, generic type inference is used.
+- `method`: The OCPP method name (e.g., "BootNotification").
+- `params`: The request payload.
+- `options`: `{ timeoutMs?: number, retries?: number, idempotencyKey?: string, signal?: AbortSignal }`, or `{ noReply: true, … }` (see below)
 
 ```typescript
 // With manual idempotency key to prevent double execution on reconnections
@@ -135,7 +139,11 @@ const result = await client.call("ocpp1.6", "BootNotification", { ... }, { idemp
 With `{ noReply: true }` (typed `NoReplyCallOptions`), the CALL is sent and `call()` resolves with `undefined` once it is written, without waiting for the answer. The peer still answers, as OCPP-J requires: the answer is recognised by its message ID and dropped quietly while it can still arrive (`timeoutMs`, default `callTimeoutMs`), then the ID is forgotten, so nothing piles up and nothing is logged as a stray response. Unlike a call you do not await, it frees the call queue once it is sent, so the next CALL can go out before this one is answered, which OCPP-J §4.1.1 does not allow: use it only with peers known to cope. `retries` cannot be combined with it. On OCPP 2.1, a message defined as unconfirmed (such as `NotifyPeriodicEventStream`) uses `send()` instead.
 
 ```typescript
-await client.call("StatusNotification", { connectorId: 1, errorCode: "NoError", status: "Available" }, { noReply: true });
+await client.call(
+	'StatusNotification',
+	{ connectorId: 1, errorCode: 'NoError', status: 'Available' },
+	{ noReply: true }
+);
 ```
 
 #### `safeCall(protocol?, method, params, options?)`
@@ -144,14 +152,14 @@ Exactly like `call()`, except it catches all errors and returns the response pay
 
 ```typescript
 const result = await client.safeCall(
-	"ocpp1.6",
-	"ClearCache",
+	'ocpp1.6',
+	'ClearCache',
 	{},
-	{ timeoutMs: 15000 },
+	{ timeoutMs: 15000 }
 );
 
 if (result === undefined) {
-	client.log.warn("Station failed to clear cache");
+	client.log.warn('Station failed to clear cache');
 }
 ```
 
@@ -162,8 +170,16 @@ Sends a CALL at once, skipping the `callConcurrency` queue, so it can go out whi
 ```typescript
 // One StatusNotification per connector after boot, without waiting in turn
 await Promise.all([
-  client.callImmediate("StatusNotification", { connectorId: 1, errorCode: "NoError", status: "Available" }),
-  client.callImmediate("StatusNotification", { connectorId: 2, errorCode: "NoError", status: "Available" }),
+	client.callImmediate('StatusNotification', {
+		connectorId: 1,
+		errorCode: 'NoError',
+		status: 'Available',
+	}),
+	client.callImmediate('StatusNotification', {
+		connectorId: 2,
+		errorCode: 'NoError',
+		status: 'Available',
+	}),
 ]);
 ```
 
@@ -171,9 +187,9 @@ await Promise.all([
 
 Register an RPC handler.
 
--   `protocol`: Optional. If provided, handler only triggers for this protocol version.
--   `method`: The OCPP method name.
--   `handler`: `(context) => Response | Promise<Response>`
+- `protocol`: Optional. If provided, handler only triggers for this protocol version.
+- `method`: The OCPP method name.
+- `handler`: `(context) => Response | Promise<Response>`
 
 ```typescript
 // Version specific
@@ -183,7 +199,7 @@ client.handle("ocpp1.6", "Reset", ({ params }) => { ... });
 client.handle("Reset", ({ params }) => { ... });
 
 // Catch-all
-client.handle((method, { params }) => { ... });
+client.handle(({ params,method }) => { ... });
 
 // OCPP 2.1 SEND message: never answered, ctx.unconfirmed is true
 client.handle("NotifyPeriodicEventStream", ({ params, unconfirmed }) => { ... });
@@ -196,11 +212,11 @@ A handler for a SEND message, of OCPP 2.1 (such as `NotifyPeriodicEventStream`) 
 Send an OCPP 2.1 unconfirmed message (RPC type SEND, message type 6). It resolves once the frame is written, because no response exists. It does not wait behind an outstanding `call()`, as the spec allows a SEND at any time. It works on `ocpp2.1` and on a custom protocol, whose SEND messages you declare in `OCPPSendMethodMap` (`ocpp generate` does), and throws on OCPP 1.6 and 2.0.1, whose RPC framework has no SEND: a peer answers one with `MessageTypeNotSupported`. Under `strictMode` the payload is validated against the message's schema, `$id` `urn:<Message>`.
 
 ```typescript
-await client.send("NotifyPeriodicEventStream", {
-  id: 1,
-  pending: 0,
-  basetime: new Date().toISOString(),
-  data: [{ t: 0, v: "230.4" }],
+await client.send('NotifyPeriodicEventStream', {
+	id: 1,
+	pending: 0,
+	basetime: new Date().toISOString(),
+	data: [{ t: 0, v: '230.4' }],
 });
 ```
 
@@ -212,7 +228,7 @@ By default, calling `close()` will wait for all pending RPC requests to complete
 
 ```typescript
 // Graceful close (waits for pending calls, sends 1000 code)
-await client.close({ code: 1000, reason: "Normal Closure" });
+await client.close({ code: 1000, reason: 'Normal Closure' });
 
 // Forceful immediate drop (useful during DDoS or severe errors)
 await client.close({ force: true });
@@ -228,13 +244,13 @@ await client.close({ awaitPending: false });
 The client's logger: the one `logging` configures, which adds the client's `identity` and `component: "OCPPClient"` to every message, or a no-op logger when logging is off.
 
 ```typescript
-client.log.info("Initializing updates", { pendingFiles: 4 });
+client.log.info('Initializing updates', { pendingFiles: 4 });
 ```
 
 ## OCPPServer
 
 ```typescript
-import { OCPPServer } from "ocpp-ws-io";
+import { OCPPServer } from 'ocpp-ws-io';
 ```
 
 ### Constructor
@@ -248,48 +264,48 @@ The server is typed for its `protocols`, like the client: `new OCPPServer({ prot
 A typed server, route or connection still fits a variable or list typed as plain `OCPPServer`, `OCPPRouter` or `OCPPServerClient`, typed for every version as in 2.x. To keep the exact type, use `ConnectionOf<typeof server>`; for connections of differently configured servers that should not make calls typed for the wrong version, `AnyOCPPServerClient`. On a server with several versions, `client.forProtocol("ocpp1.6")` returns the connection typed for the version it negotiated, or `undefined`:
 
 ```typescript
-import { type ConnectionOf, OCPPServer } from "ocpp-ws-io";
+import { type ConnectionOf, OCPPServer } from 'ocpp-ws-io';
 
-const server = new OCPPServer({ protocols: ["ocpp1.6", "ocpp2.0.1"] });
+const server = new OCPPServer({ protocols: ['ocpp1.6', 'ocpp2.0.1'] });
 const connections = new Map<string, ConnectionOf<typeof server>>();
 
-server.on("client", (client) => {
-  connections.set(client.identity, client);
-  client.forProtocol("ocpp1.6")?.handle("Authorize", () => ({
-    idTagInfo: { status: "Accepted" }, // the 1.6 response
-  }));
+server.on('client', client => {
+	connections.set(client.identity, client);
+	client.forProtocol('ocpp1.6')?.handle('Authorize', () => ({
+		idTagInfo: { status: 'Accepted' }, // the 1.6 response
+	}));
 });
 ```
 
 #### ServerOptions
 
-| Option               | Type                            | Default   | Description                                                                                                                                    |
-| :------------------- | :------------------------------ | :-------- | :--------------------------------------------------------------------------------------------------------------------------------------------- |
-| `protocols`          | `string[]`                      | `[]`      | Accepted OCPP subprotocols                                                                                                                     |
-| `securityProfile`    | `SecurityProfile`               | `NONE`    | Security profile                                                                                                                               |
-| `strictMode`         | `boolean \| string[]`           | `false`   | Validate every message against the official OCPP JSON schemas. Off by default, so a payload with missing fields or wrong types reaches your handler. Set `true` (or a list of protocols) for the CALLERROR that 2.0.1 / 2.1 §4.1.7 requires. Needs `protocols` |
-| `idGenerator`        | `() => string`                  | —         | Creates the message ID of each CALL sent to a charging station. A per-call `idempotencyKey` wins; without either, a random UUID |
-| `idValidator`        | `(id: string) => boolean`       | —         | Checks each incoming CALL / SEND message ID, in any mode, in place of the built-in check (see Message IDs) |
-| `requireBasicAuth`   | `boolean`                       | `true`    | On profile 1 or 2, answer HTTP 401 when Basic Auth credentials are missing or the username is not the identity. `false` leaves it to the auth callback |
-| `isKnownIdentity`    | `(identity, handshake) => boolean \| Promise<boolean>` | — | Unknown identity → HTTP 404 before middleware and auth (OCPP-J §3.2). A throw → 500 |
-| `duplicateConnection` | `"replace" \| "reject"` | `"replace"` | A charger that is already connected: replace the old connection, or refuse the new one with HTTP 409 |
-| `maxIdentityLength`  | `number`                        | —         | Longest identity accepted, in any mode; replaces the spec's 48. Without it, `strictMode` applies the spec's identity rules per version. Violation → HTTP 400 |
-| `handshakeTimeoutMs` | `number`                        | `30000`   | Timeout for WebSocket handshake (ms)                                                                                                           |
-| `tls`                | `TLSOptions`                    | —         | TLS options (Profile 2 & 3)                                                                                                                    |
-| `logging`            | `LoggingConfig`                 | `{}`      | Configuration for structured logging.                                                                                                          |
-| `sessionTtlMs`       | `number`                        | `7200000` | Garbage collection inactivity timeout                                                                                                          |
-| `rateLimit`          | `RateLimitOptions`              | —         | Token bucket socket & method limiter                                                                                                           |
-| `healthEndpoint`     | `boolean \| HealthEndpointOptions` | `false` | Expose HTTP `/health` and `/metrics`. Pass `true` for open access, or `{ auth }` to require bearer token or basic auth. Missing or empty credentials throw when the server is created. Without `auth`, `listen()` logs a warning when it starts serving them. |
-| `maxPayloadBytes`    | `number`                        | `65536`   | Max WebSocket frame size in bytes. Rejects oversized messages at the transport layer before any parsing. Prevents OOM from malicious payloads. |
-| `wssOptions`         | `WsServerOptions`               | —         | Raw `ws` server options: `maxFragments`, `maxBufferedChunks`, `allowSynchronousEvents`, `skipUTF8Validation`, a `WebSocket` subclass, `closeTimeout` (see wssOptions below) |
-| `maxBadMessages`     | `number`                        | `50`      | Close a connection on its Nth malformed message **in a row**. Every valid message resets the count and empty frames are ignored. Set `0` for zero tolerance, `Infinity` for no limit (logs a warning). |
-| `badMessageWindowMs` | `number`                        | —         | Also reset a run of bad messages once it is older than this many ms (a valid message always resets it). Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` closes on the 10th bad message in a row within a minute. |
-| `workerThreads`      | `boolean \| object`             | `false`   | Enable worker thread pool for JSON parsing. `true` = auto pool size, `{ poolSize, maxQueueSize }` for fine-tuning.                             |
-| `compression`        | `boolean \| CompressionOptions` | `false`   | Accept WebSocket `permessage-deflate` compression from chargers that offer it. Off by default for memory and CPU; OCPP 2.0.1 / 2.1 require a CSMS to support it (see Compression) |
-| `headersTimeout`     | `number`                        | `30000`   | Max time (ms) to receive HTTP headers on servers created by `listen()`. Prevents HTTP slowloris attacks. Keep it at or below `requestTimeout`. `0` disables. User-provided servers are unaffected. |
-| `requestTimeout`     | `number`                        | `30000`   | Max time (ms) for the complete HTTP request on servers created by `listen()`. Works with `headersTimeout` to harden the HTTP layer. `0` disables. |
-| `callConcurrency`    | `number`                        | `1`       | Outbound CALLs in flight per charger. `1` follows OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out. Above 1 only for chargers known to cope; `sendBatch()` pipelines regardless |
-| `respondWithDetailedErrors` | `boolean`                 | `false`   | Send a handler error's properties (not its stack) to chargers in CALLERROR `details`. Logs a warning when on; keep it off in production |
+| Option                      | Type                                                   | Default     | Description                                                                                                                                                                                                                                                    |
+| :-------------------------- | :----------------------------------------------------- | :---------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `protocols`                 | `string[]`                                             | `[]`        | Accepted OCPP subprotocols                                                                                                                                                                                                                                     |
+| `securityProfile`           | `SecurityProfile`                                      | `NONE`      | Security profile                                                                                                                                                                                                                                               |
+| `strictMode`                | `boolean \| string[]`                                  | `false`     | Validate every message against the official OCPP JSON schemas. Off by default, so a payload with missing fields or wrong types reaches your handler. Set `true` (or a list of protocols) for the CALLERROR that 2.0.1 / 2.1 §4.1.7 requires. Needs `protocols` |
+| `idGenerator`               | `() => string`                                         | —           | Creates the message ID of each CALL sent to a charging station. A per-call `idempotencyKey` wins; without either, a random UUID                                                                                                                                |
+| `idValidator`               | `(id: string) => boolean`                              | —           | Checks each incoming CALL / SEND message ID, in any mode, in place of the built-in check (see Message IDs)                                                                                                                                                     |
+| `requireBasicAuth`          | `boolean`                                              | `true`      | On profile 1 or 2, answer HTTP 401 when Basic Auth credentials are missing or the username is not the identity. `false` leaves it to the auth callback                                                                                                         |
+| `isKnownIdentity`           | `(identity, handshake) => boolean \| Promise<boolean>` | —           | Unknown identity → HTTP 404 before middleware and auth (OCPP-J §3.2). A throw → 500                                                                                                                                                                            |
+| `duplicateConnection`       | `"replace" \| "reject"`                                | `"replace"` | A charger that is already connected: replace the old connection, or refuse the new one with HTTP 409                                                                                                                                                           |
+| `maxIdentityLength`         | `number`                                               | —           | Longest identity accepted, in any mode; replaces the spec's 48. Without it, `strictMode` applies the spec's identity rules per version. Violation → HTTP 400                                                                                                   |
+| `handshakeTimeoutMs`        | `number`                                               | `30000`     | Timeout for WebSocket handshake (ms)                                                                                                                                                                                                                           |
+| `tls`                       | `TLSOptions`                                           | —           | TLS options (Profile 2 & 3)                                                                                                                                                                                                                                    |
+| `logging`                   | `LoggingConfig`                                        | `{}`        | Configuration for structured logging.                                                                                                                                                                                                                          |
+| `sessionTtlMs`              | `number`                                               | `7200000`   | Garbage collection inactivity timeout                                                                                                                                                                                                                          |
+| `rateLimit`                 | `RateLimitOptions`                                     | —           | Token bucket socket & method limiter                                                                                                                                                                                                                           |
+| `healthEndpoint`            | `boolean \| HealthEndpointOptions`                     | `false`     | Expose HTTP `/health` and `/metrics`. Pass `true` for open access, or `{ auth }` to require bearer token or basic auth. Missing or empty credentials throw when the server is created. Without `auth`, `listen()` logs a warning when it starts serving them.  |
+| `maxPayloadBytes`           | `number`                                               | `65536`     | Max WebSocket frame size in bytes. Rejects oversized messages at the transport layer before any parsing. Prevents OOM from malicious payloads.                                                                                                                 |
+| `wssOptions`                | `WsServerOptions`                                      | —           | Raw `ws` server options: `maxFragments`, `maxBufferedChunks`, `allowSynchronousEvents`, `skipUTF8Validation`, a `WebSocket` subclass, `closeTimeout` (see wssOptions below)                                                                                    |
+| `maxBadMessages`            | `number`                                               | `50`        | Close a connection on its Nth malformed message **in a row**. Every valid message resets the count and empty frames are ignored. Set `0` for zero tolerance, `Infinity` for no limit (logs a warning).                                                         |
+| `badMessageWindowMs`        | `number`                                               | —           | Also reset a run of bad messages once it is older than this many ms (a valid message always resets it). Example: `{ maxBadMessages: 10, badMessageWindowMs: 60_000 }` closes on the 10th bad message in a row within a minute.                                 |
+| `workerThreads`             | `boolean \| object`                                    | `false`     | Enable worker thread pool for JSON parsing. `true` = auto pool size, `{ poolSize, maxQueueSize }` for fine-tuning.                                                                                                                                             |
+| `compression`               | `boolean \| CompressionOptions`                        | `false`     | Accept WebSocket `permessage-deflate` compression from chargers that offer it. Off by default for memory and CPU; OCPP 2.0.1 / 2.1 require a CSMS to support it (see Compression)                                                                              |
+| `headersTimeout`            | `number`                                               | `30000`     | Max time (ms) to receive HTTP headers on servers created by `listen()`. Prevents HTTP slowloris attacks. Keep it at or below `requestTimeout`. `0` disables. User-provided servers are unaffected.                                                             |
+| `requestTimeout`            | `number`                                               | `30000`     | Max time (ms) for the complete HTTP request on servers created by `listen()`. Works with `headersTimeout` to harden the HTTP layer. `0` disables.                                                                                                              |
+| `callConcurrency`           | `number`                                               | `1`         | Outbound CALLs in flight per charger. `1` follows OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out. Above 1 only for chargers known to cope; `sendBatch()` pipelines regardless                             |
+| `respondWithDetailedErrors` | `boolean`                                              | `false`     | Send a handler error's properties (not its stack) to chargers in CALLERROR `details`. Logs a warning when on; keep it off in production                                                                                                                        |
 
 #### wssOptions
 
@@ -297,35 +313,35 @@ Passed to `new WebSocketServer()` from the [`ws`](https://github.com/websockets/
 
 ```typescript
 const server = new OCPPServer({
-  protocols: ["ocpp2.0.1"],
-  wssOptions: {
-    maxFragments: 64, // close (1008) on a message split into more fragments
-    maxBufferedChunks: 4096, // the same for buffered chunks of one message
-    closeTimeout: 5_000, // destroy a closing socket after 5 s without the charger's close frame
-  },
+	protocols: ['ocpp2.0.1'],
+	wssOptions: {
+		maxFragments: 64, // close (1008) on a message split into more fragments
+		maxBufferedChunks: 4096, // the same for buffered chunks of one message
+		closeTimeout: 5_000, // destroy a closing socket after 5 s without the charger's close frame
+	},
 });
 ```
 
-| Option | `ws` default | Use |
-| :-- | :-- | :-- |
-| `maxFragments`, `maxBufferedChunks` | 16384, 262144 | Lower them on a server exposed to the internet: limits against fragment floods |
-| `allowSynchronousEvents` | `true` | `false` spreads a burst of messages from one charger over several event-loop turns |
-| `skipUTF8Validation` | `false` | Faster parsing, but invalid UTF-8 then reaches the parser instead of closing the connection with 1007 as RFC 6455 requires |
-| `WebSocket` | `ws`'s `WebSocket` | A subclass, e.g. for instrumentation |
-| `closeTimeout` | 30000 | How long a closing connection waits for the charger's close frame; accepted although `ws`'s type definitions do not list it yet |
+| Option                              | `ws` default       | Use                                                                                                                             |
+| :---------------------------------- | :----------------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| `maxFragments`, `maxBufferedChunks` | 16384, 262144      | Lower them on a server exposed to the internet: limits against fragment floods                                                  |
+| `allowSynchronousEvents`            | `true`             | `false` spreads a burst of messages from one charger over several event-loop turns                                              |
+| `skipUTF8Validation`                | `false`            | Faster parsing, but invalid UTF-8 then reaches the parser instead of closing the connection with 1007 as RFC 6455 requires      |
+| `WebSocket`                         | `ws`'s `WebSocket` | A subclass, e.g. for instrumentation                                                                                            |
+| `closeTimeout`                      | 30000              | How long a closing connection waits for the charger's close frame; accepted although `ws`'s type definitions do not list it yet |
 
 Its type, `WsServerOptions`, leaves out the options the server sets itself:
 
-| Not in `wssOptions` | Use instead |
-| :-- | :-- |
+| Not in `wssOptions`                             | Use instead                                                                            |
+| :---------------------------------------------- | :------------------------------------------------------------------------------------- |
 | `port`, `host`, `server`, `noServer`, `backlog` | `listen(port, host, { server })` or `handleUpgrade`; `backlog` on your own HTTP server |
-| `path` | `route()` |
-| `handleProtocols` | `protocols` |
-| `verifyClient` | `auth()`, middleware or `isKnownIdentity` |
-| `maxPayload` | `maxPayloadBytes` |
-| `perMessageDeflate` | `compression` |
-| `clientTracking` | Nothing: always on, `stats()` needs it |
-| `autoPong` | Nothing: charger pings are always answered (RFC 6455 §5.5.2) |
+| `path`                                          | `route()`                                                                              |
+| `handleProtocols`                               | `protocols`                                                                            |
+| `verifyClient`                                  | `auth()`, middleware or `isKnownIdentity`                                              |
+| `maxPayload`                                    | `maxPayloadBytes`                                                                      |
+| `perMessageDeflate`                             | `compression`                                                                          |
+| `clientTracking`                                | Nothing: always on, `stats()` needs it                                                 |
+| `autoPong`                                      | Nothing: charger pings are always answered (RFC 6455 §5.5.2)                           |
 
 From plain JavaScript, where the type does not apply, these are dropped and a warning names what to use instead.
 
@@ -343,37 +359,37 @@ From plain JavaScript, where the type does not apply, these are dropped and a wa
 
 Used by `ServerOptions.tls` (profiles 2 and 3) and `ClientOptions.tls`.
 
-| Option               | Type                                  | Default       | Description |
-| :------------------- | :------------------------------------ | :------------ | :---------- |
-| `cert`               | `string \| Buffer \| Array<…>`        | —             | Certificate(s), PEM. Pass an RSA and an ECDSA one to serve all four cipher suites OCPP 2.0.1 requires |
-| `key`                | `string \| Buffer \| Array<…>`        | —             | Private key(s), PEM, in the same order as `cert` |
-| `ca`                 | `string \| Buffer \| Array<…>`        | —             | CA certificate(s) for verification |
-| `passphrase`         | `string`                              | —             | Passphrase of an encrypted key |
-| `rejectUnauthorized` | `boolean`                             | `true`        | Reject peers whose certificate does not verify |
-| `minVersion`         | `"TLSv1" \| "TLSv1.1" \| "TLSv1.2" \| "TLSv1.3"` | `"TLSv1.2"` | Lowest TLS version. Lower it only for legacy OCPP 1.6 charge points |
-| `maxVersion`         | same as `minVersion`                  | `"TLSv1.3"`   | Highest TLS version |
-| `ciphers`            | `string`                              | Node's        | OpenSSL cipher list |
+| Option               | Type                                             | Default     | Description                                                                                           |
+| :------------------- | :----------------------------------------------- | :---------- | :---------------------------------------------------------------------------------------------------- |
+| `cert`               | `string \| Buffer \| Array<…>`                   | —           | Certificate(s), PEM. Pass an RSA and an ECDSA one to serve all four cipher suites OCPP 2.0.1 requires |
+| `key`                | `string \| Buffer \| Array<…>`                   | —           | Private key(s), PEM, in the same order as `cert`                                                      |
+| `ca`                 | `string \| Buffer \| Array<…>`                   | —           | CA certificate(s) for verification                                                                    |
+| `passphrase`         | `string`                                         | —           | Passphrase of an encrypted key                                                                        |
+| `rejectUnauthorized` | `boolean`                                        | `true`      | Reject peers whose certificate does not verify                                                        |
+| `minVersion`         | `"TLSv1" \| "TLSv1.1" \| "TLSv1.2" \| "TLSv1.3"` | `"TLSv1.2"` | Lowest TLS version. Lower it only for legacy OCPP 1.6 charge points                                   |
+| `maxVersion`         | same as `minVersion`                             | `"TLSv1.3"` | Highest TLS version                                                                                   |
+| `ciphers`            | `string`                                         | Node's      | OpenSSL cipher list                                                                                   |
 
 #### Compression
 
 WebSocket compression (RFC 7692 `permessage-deflate`) compresses every message with DEFLATE. It is agreed per connection during the handshake: the client offers it, and it is used only if the server accepts. When either side does not use it, messages go uncompressed and nothing breaks.
 
-| Version | What the spec says |
-| --- | --- |
-| OCPP 1.6J §5.1 | Allowed as part of WebSocket; no other form of compression recommended |
+| Version                    | What the spec says                                                          |
+| -------------------------- | --------------------------------------------------------------------------- |
+| OCPP 1.6J §5.1             | Allowed as part of WebSocket; no other form of compression recommended      |
 | OCPP 2.0.1 §3.3 / 2.1 §3.4 | A CSMS SHALL support it. A charging station may; RECOMMENDED on mobile data |
 
 It is **off by default** on the server and on `OCPPClient`, because it costs memory and CPU on every connection, and Node's zlib can fragment memory under high concurrency. Turn it on with `compression: true`, or pass `CompressionOptions` to tune it:
 
 ```typescript
 // CSMS: accept compression from chargers that offer it (needed for full 2.0.1 / 2.1 compliance)
-const server = new OCPPServer({ protocols: ["ocpp2.0.1"], compression: true });
+const server = new OCPPServer({ protocols: ['ocpp2.0.1'], compression: true });
 
 // Charging station on mobile data: offer it to the CSMS
 const client = new OCPPClient({
-  identity: "CP001",
-  endpoint: "wss://csms.example.com/ocpp",
-  compression: { level: 6 },
+	identity: 'CP001',
+	endpoint: 'wss://csms.example.com/ocpp',
+	compression: { level: 6 },
 });
 ```
 
@@ -381,15 +397,15 @@ The defaults keep the cost low: messages under 1 KB (most OCPP traffic, such as 
 
 #### HealthEndpointOptions
 
-| Option | Type                          | Default | Description                                                                 |
-| :----- | :---------------------------- | :------ | :-------------------------------------------------------------------------- |
-| `auth` | `HealthEndpointAuth`          | —       | Access control. Omit for open access (same as `healthEndpoint: true`). Missing or empty values throw at startup. |
+| Option | Type                 | Default | Description                                                                                                      |
+| :----- | :------------------- | :------ | :--------------------------------------------------------------------------------------------------------------- |
+| `auth` | `HealthEndpointAuth` | —       | Access control. Omit for open access (same as `healthEndpoint: true`). Missing or empty values throw at startup. |
 
 **`HealthEndpointAuth`** — one of:
 
-| Shape | Fields | Description |
-| :---- | :----- | :---------- |
-| Bearer | `{ bearer: string }` | Expects `Authorization: Bearer <token>` header. Compared in constant time. |
+| Shape  | Fields                                   | Description                                                                                     |
+| :----- | :--------------------------------------- | :---------------------------------------------------------------------------------------------- |
+| Bearer | `{ bearer: string }`                     | Expects `Authorization: Bearer <token>` header. Compared in constant time.                      |
 | Basic  | `{ username: string, password: string }` | Expects `Authorization: Basic base64(user:pass)` header. Both fields compared in constant time. |
 
 ```typescript
@@ -447,9 +463,9 @@ Apply CORS rules directly to the server or router levels. This protects endpoint
 
 ```typescript
 server.cors({
-	allowedOrigins: ["https://dashboard.example.com"],
-	allowedIPs: ["192.168.1.0/24", "10.0.0.5"],
-	allowedSchemes: ["wss"],
+	allowedOrigins: ['https://dashboard.example.com'],
+	allowedIPs: ['192.168.1.0/24', '10.0.0.5'],
+	allowedSchemes: ['wss'],
 });
 ```
 
@@ -458,7 +474,7 @@ server.cors({
 Listen for new connections.
 
 ```typescript
-server.on("client", (client) => {
+server.on('client', client => {
 	// client is an OCPPServerClient (extends OCPPClient)
 	console.log(client.session); // Access session data
 });
@@ -471,8 +487,8 @@ Only valid when using `SecurityProfile.TLS_BASIC_AUTH` or `TLS_CLIENT_CERT`.
 
 ```typescript
 server.updateTLS({
-	cert: fs.readFileSync("./certs/server.crt"),
-	key: fs.readFileSync("./certs/server.key"),
+	cert: fs.readFileSync('./certs/server.crt'),
+	key: fs.readFileSync('./certs/server.key'),
 });
 ```
 
@@ -483,7 +499,7 @@ See [TLS Certificate Hot-Reload](/docs/ocpp-ws-io/security#tls-certificate-hot-r
 Emitted for every security-relevant action. Useful for SIEM, alerting, and audit logging.
 
 ```typescript
-server.on("securityEvent", (event) => {
+server.on('securityEvent', event => {
 	// event.type: "AUTH_FAILED" | "CONNECTION_RATE_LIMIT" | "UPGRADE_ABORTED"
 	siem.log(event);
 });
@@ -497,13 +513,13 @@ Helper method to dispatch an outgoing RPC call to a specific connected client by
 
 ```typescript
 const result = await server.sendToClient(
-	"CP-001",
-	"ocpp1.6",
-	"Reset",
+	'CP-001',
+	'ocpp1.6',
+	'Reset',
 	{
-		type: "Soft",
+		type: 'Soft',
 	},
-	{ timeoutMs: 10000 },
+	{ timeoutMs: 10000 }
 );
 ```
 
@@ -513,15 +529,18 @@ Exactly like `sendToClient()`, but catches errors (and disconnected station erro
 
 ```typescript
 const result = await server.safeSendToClient(
-	"CP-001",
-	"ocpp1.6",
-	"UpdateFirmware",
-	{ location: "https://firmware.example.com/v2.bin", retrieveDate: new Date().toISOString() },
-	{ timeoutMs: 30000 },
+	'CP-001',
+	'ocpp1.6',
+	'UpdateFirmware',
+	{
+		location: 'https://firmware.example.com/v2.bin',
+		retrieveDate: new Date().toISOString(),
+	},
+	{ timeoutMs: 30000 }
 );
 
 if (result !== undefined) {
-	console.log("Firmware update accepted");
+	console.log('Firmware update accepted');
 }
 ```
 
@@ -530,10 +549,19 @@ if (result !== undefined) {
 Sends several CALLs to one charger **without waiting for each answer**, for a faster warm-up after a reconnect. This pipelines on purpose and breaks OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out: use it only with chargers known to cope, as with `callConcurrency` above 1. Results come back in the order of `calls`; a call that failed gives `undefined`. In a cluster, a charger connected to another node gets each call through `sendToClient()` instead.
 
 ```typescript
-const [config, , trigger] = await server.sendBatch("CP-101", [
-  { method: "GetConfiguration", params: { key: ["MeterValueSampleInterval"] } },
-  { method: "ChangeAvailability", params: { connectorId: 0, type: "Operative" } },
-  { method: "TriggerMessage", params: { requestedMessage: "StatusNotification" } },
+const [config, , trigger] = await server.sendBatch('CP-101', [
+	{
+		method: 'GetConfiguration',
+		params: { key: ['MeterValueSampleInterval'] },
+	},
+	{
+		method: 'ChangeAvailability',
+		params: { connectorId: 0, type: 'Operative' },
+	},
+	{
+		method: 'TriggerMessage',
+		params: { requestedMessage: 'StatusNotification' },
+	},
 ]);
 ```
 
@@ -544,9 +572,9 @@ Each call is typed by its `method`, and the results by their actions. A call to 
 Broadcast an identical RPC call to many stations concurrently. For clustered architectures, unicast commands are grouped and dispatched in pipeline batches via the adapter's streams, reducing per-message TCP round-trip overhead.
 
 ```typescript
-const targets = ["CP-001", "CP-002", "CP-003", ...thousands];
+const targets = ['CP-001', 'CP-002', 'CP-003', ...thousands];
 
-await server.broadcastBatch(targets, "Reset", { type: "Hard" });
+await server.broadcastBatch(targets, 'Reset', { type: 'Hard' });
 ```
 
 #### `stats()`
@@ -559,7 +587,7 @@ const telemetry = server.stats();
 console.log(`Active Managed Sessions: ${telemetry.activeSessions}`);
 console.log(`Active Raw WebSockets: ${telemetry.webSockets?.total}`);
 console.log(
-	`Pending Network Flushes: ${telemetry.webSockets?.bufferedAmount} bytes`,
+	`Pending Network Flushes: ${telemetry.webSockets?.bufferedAmount} bytes`
 );
 console.log(`Memory Used: ${telemetry.memoryUsage.heapUsed} bytes`);
 console.log(`Uptime: ${telemetry.uptimeSeconds}s`);
@@ -572,7 +600,7 @@ Fetches the clustering adapter's metrics, or `null` without an adapter (or when 
 
 ```typescript
 const metrics = await server.adapterMetrics();
-console.log("Redis backlog:", metrics?.pendingMessages);
+console.log('Redis backlog:', metrics?.pendingMessages);
 ```
 
 ### Properties
@@ -582,7 +610,7 @@ console.log("Redis backlog:", metrics?.pendingMessages);
 The server's logger: the one `logging` configures, with `component: "OCPPServer"` in every message, or a no-op logger when logging is off. The router and the exchange logs use it too.
 
 ```typescript
-server.log.warn("Unrecognized protocol attempted", { requested: "ocpp1.5" });
+server.log.warn('Unrecognized protocol attempted', { requested: 'ocpp1.5' });
 ```
 
 ## Protocol Constants
@@ -592,9 +620,9 @@ server.log.warn("Unrecognized protocol attempted", { requested: "ocpp1.5" });
 Return `NOREPLY` from a handler to suppress the automatic response. This is useful for asynchronous processing where you might send a response later manually, or for specific OCPP flows.
 
 ```typescript
-import { NOREPLY } from "ocpp-ws-io";
+import { NOREPLY } from 'ocpp-ws-io';
 
-client.handle("StatusNotification", ({ params }) => {
+client.handle('StatusNotification', ({ params }) => {
 	// Process the notification but don't send a response immediately
 	return NOREPLY;
 });
@@ -603,7 +631,7 @@ client.handle("StatusNotification", ({ params }) => {
 An async handler can return it too, after its work:
 
 ```typescript
-client.handle("StatusNotification", async ({ params }) => {
+client.handle('StatusNotification', async ({ params }) => {
 	await queue.push(params);
 	return NOREPLY;
 });
@@ -614,10 +642,10 @@ client.handle("StatusNotification", async ({ params }) => {
 Marks an action name the types do not check, for every typed method (`call`, `safeCall`, `callImmediate`, `handle`, `send`, `removeHandler`, `sendToClient`, `safeSendToClient`, `broadcast`, `broadcastBatch`, and a `sendBatch` call's `method`): an undeclared vendor action, a name passed through from the wire, or a test that sends an invalid payload on purpose. Returns the name unchanged.
 
 ```typescript
-import { unchecked } from "ocpp-ws-io";
+import { unchecked } from 'ocpp-ws-io';
 
-const res = await client.call(unchecked("VendorPing"), { n: 1 }); // a JSON object
-client.handle(unchecked("VendorPing"), () => ({ pong: true }));
+const res = await client.call(unchecked('VendorPing'), { n: 1 }); // a JSON object
+client.handle(unchecked('VendorPing'), () => ({ pong: true }));
 ```
 
 Typed methods otherwise take only the actions their protocols define, and reject keys the OCPP schema does not define; see [Type Safety](/docs/ocpp-ws-io/type-safety).
@@ -626,15 +654,15 @@ Typed methods otherwise take only the actions their protocols define, and reject
 
 `MessageType` holds the RPC message type numbers: `CALL` (2), `CALLRESULT` (3), `CALLERROR` (4), and the OCPP 2.1 types `CALLRESULTERROR` (5) and `SEND` (6).
 
-| Received | On `ocpp1.6` / `ocpp2.0.1` | On `ocpp2.1` |
-| --- | --- | --- |
-| SEND (6) | Unknown type (see below) | Delivered to its handler, never answered |
-| CALLRESULTERROR (5) | Unknown type (see below) | `callResultError` event, never answered |
-| Any other unknown number | CALLERROR `MessageTypeNotSupported`, ID `"-1"` | CALLERROR `MessageTypeNotSupported`, ID `"-1"` |
-| Message ID cannot be read (invalid JSON, not an array, type not a number, ID not a string) | CALLERROR `RpcFrameworkError`, ID `"-1"` | CALLERROR `RpcFrameworkError`, ID `"-1"` |
-| Malformed CALL | Answered with CALLERROR | Answered with CALLERROR |
-| Malformed or schema-invalid CALLRESULT | Not answered | Answered with CALLRESULTERROR |
-| Malformed CALLERROR | Not answered | Not answered |
+| Received                                                                                   | On `ocpp1.6` / `ocpp2.0.1`                     | On `ocpp2.1`                                   |
+| ------------------------------------------------------------------------------------------ | ---------------------------------------------- | ---------------------------------------------- |
+| SEND (6)                                                                                   | Unknown type (see below)                       | Delivered to its handler, never answered       |
+| CALLRESULTERROR (5)                                                                        | Unknown type (see below)                       | `callResultError` event, never answered        |
+| Any other unknown number                                                                   | CALLERROR `MessageTypeNotSupported`, ID `"-1"` | CALLERROR `MessageTypeNotSupported`, ID `"-1"` |
+| Message ID cannot be read (invalid JSON, not an array, type not a number, ID not a string) | CALLERROR `RpcFrameworkError`, ID `"-1"`       | CALLERROR `RpcFrameworkError`, ID `"-1"`       |
+| Malformed CALL                                                                             | Answered with CALLERROR                        | Answered with CALLERROR                        |
+| Malformed or schema-invalid CALLRESULT                                                     | Not answered                                   | Answered with CALLRESULTERROR                  |
+| Malformed CALLERROR                                                                        | Not answered                                   | Not answered                                   |
 
 An unknown message type counts as a bad message (emitting `badMessage`), and it is answered with a CALLERROR `MessageTypeNotSupported` under message ID `"-1"`, since the frame's own ID is not read for a type the protocol does not define. A frame whose message ID cannot be read is answered the same way with `RpcFrameworkError`, as 2.0.1 and 2.1 §4.2.3 require ("When also the MessageId cannot be read, the CALLERROR SHALL contain "-1""). A CALLERROR otherwise only answers a CALL, so two peers cannot loop by answering each other's errors.
 
@@ -646,13 +674,13 @@ The error description of an outgoing CALLERROR or CALLRESULTERROR is cut to 255 
 
 A message ID is a string of at most 36 characters, unique for the sender across reconnects (OCPP-J §4.1.4; 2.0.1 errata 2023-12).
 
-| | Behaviour |
-| --- | --- |
-| Outgoing CALL / SEND | The per-call `idempotencyKey` if given, else `idGenerator` if set, else a random UUID (36 characters). A call rejects before sending if the ID is empty or already used by a pending call. |
-| Incoming CALL / SEND, `idValidator` set | `idValidator` decides, with or without `strictMode`. Returning `false` or throwing rejects the ID. |
-| Incoming CALL / SEND, `strictMode` on | IDs over 36 characters are rejected. |
-| Incoming CALL / SEND, otherwise | Any string is accepted. |
-| ID is not a string | CALLERROR `RpcFrameworkError` under ID `"-1"` (see Message types). |
+|                                         | Behaviour                                                                                                                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Outgoing CALL / SEND                    | The per-call `idempotencyKey` if given, else `idGenerator` if set, else a random UUID (36 characters). A call rejects before sending if the ID is empty or already used by a pending call. |
+| Incoming CALL / SEND, `idValidator` set | `idValidator` decides, with or without `strictMode`. Returning `false` or throwing rejects the ID.                                                                                         |
+| Incoming CALL / SEND, `strictMode` on   | IDs over 36 characters are rejected.                                                                                                                                                       |
+| Incoming CALL / SEND, otherwise         | Any string is accepted.                                                                                                                                                                    |
+| ID is not a string                      | CALLERROR `RpcFrameworkError` under ID `"-1"` (see Message types).                                                                                                                         |
 
 A rejected CALL is answered under message ID `"-1"` with `RpcFrameworkError` on OCPP 2.0.1 and 2.1, and `GenericError` on OCPP 1.6, whose error-code table has no `RpcFrameworkError`. A rejected SEND is not answered. Both count as bad messages. The browser client has no `strictMode`, so it checks incoming IDs only through `idValidator`.
 
@@ -661,7 +689,7 @@ A rejected CALL is answered under message ID `"-1"` with `RpcFrameworkError` on 
 ## BrowserOCPPClient
 
 ```typescript
-import { BrowserOCPPClient } from "ocpp-ws-io/browser";
+import { BrowserOCPPClient } from 'ocpp-ws-io/browser';
 ```
 
 A browser-compatible OCPP client with the same typed API as `OCPPClient`. Uses the native browser `WebSocket` API — no Node.js dependencies.
@@ -677,22 +705,22 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 
 #### BrowserClientOptions
 
-| Option                      | Type                     | Default    | Description                           |
-| :-------------------------- | :----------------------- | :--------- | :------------------------------------ |
-| `identity`                  | `string`                 | _required_ | Charging station ID                   |
-| `endpoint`                  | `string`                 | _required_ | WebSocket URL (`ws://` or `wss://`)   |
-| `protocols`                 | `string[]`               | `[]`       | OCPP subprotocols to negotiate        |
-| `query`                     | `Record<string, string> \| string` | —          | URL query parameters, as an object or a query string (`"a=1&b=2"`, leading `?` optional); added after any query in `endpoint` |
-| `reconnect`                 | `boolean`                | `true`     | Auto-reconnect on disconnect          |
-| `maxReconnects`             | `number`                 | `Infinity` | Max reconnection attempts             |
-| `backoffMin`                | `number`                 | `1000`     | First reconnect delay (ms), doubled after each failed attempt; every wait adds up to 25% at random |
-| `backoffMax`                | `number`                 | `30000`    | Where the doubling stops (ms); the random 25% still applies on top |
-| `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)         |
-| `callConcurrency`           | `number`                 | `1`        | Outbound CALLs in flight at once. `1` follows OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out. Above 1 only for a CSMS known to cope |
-| `maxBadMessages`            | `number`                 | `50`       | Close on the Nth bad message in a row; a valid message resets the count. `0` = zero tolerance, `Infinity` = no limit (logs warning). |
-| `badMessageWindowMs`        | `number`                 | —          | Also reset a run of bad messages once it is older than this many ms. |
-| `respondWithDetailedErrors` | `boolean`                | `false`    | Send a handler error's properties (not its stack) in CALLERROR `details`. Logs a warning when on; keep it off in production |
-| `logging`                   | `LoggingConfig`          | `{}`       | Configuration for structured logging. |
+| Option                      | Type                               | Default    | Description                                                                                                                                                                              |
+| :-------------------------- | :--------------------------------- | :--------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `identity`                  | `string`                           | _required_ | Charging station ID                                                                                                                                                                      |
+| `endpoint`                  | `string`                           | _required_ | WebSocket URL (`ws://` or `wss://`)                                                                                                                                                      |
+| `protocols`                 | `string[]`                         | `[]`       | OCPP subprotocols to negotiate                                                                                                                                                           |
+| `query`                     | `Record<string, string> \| string` | —          | URL query parameters, as an object or a query string (`"a=1&b=2"`, leading `?` optional); added after any query in `endpoint`                                                            |
+| `reconnect`                 | `boolean`                          | `true`     | Auto-reconnect on disconnect                                                                                                                                                             |
+| `maxReconnects`             | `number`                           | `Infinity` | Max reconnection attempts                                                                                                                                                                |
+| `backoffMin`                | `number`                           | `1000`     | First reconnect delay (ms), doubled after each failed attempt; every wait adds up to 25% at random                                                                                       |
+| `backoffMax`                | `number`                           | `30000`    | Where the doubling stops (ms); the random 25% still applies on top                                                                                                                       |
+| `callTimeoutMs`             | `number`                           | `30000`    | Default RPC call timeout (ms)                                                                                                                                                            |
+| `callConcurrency`           | `number`                           | `1`        | Outbound CALLs in flight at once. `1` follows OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out. Above 1 only for a CSMS known to cope |
+| `maxBadMessages`            | `number`                           | `50`       | Close on the Nth bad message in a row; a valid message resets the count. `0` = zero tolerance, `Infinity` = no limit (logs warning).                                                     |
+| `badMessageWindowMs`        | `number`                           | —          | Also reset a run of bad messages once it is older than this many ms.                                                                                                                     |
+| `respondWithDetailedErrors` | `boolean`                          | `false`    | Send a handler error's properties (not its stack) in CALLERROR `details`. Logs a warning when on; keep it off in production                                                              |
+| `logging`                   | `LoggingConfig`                    | `{}`       | Configuration for structured logging.                                                                                                                                                    |
 
 ### Methods
 
@@ -708,7 +736,7 @@ const heartbeat = await client.safeCall("ocpp1.6", "Heartbeat", {}); // the resp
 // Register handlers (version-specific, generic, wildcard)
 client.handle("ocpp1.6", "Reset", ({ params }) => { ... });
 client.handle("Reset", ({ params }) => { ... });
-client.handle((method, { params }) => { ... });
+client.handle(({ params ,method}) => { ... });
 
 // Close
 await client.close();
@@ -736,48 +764,48 @@ client.sendRaw(JSON.stringify([2, "uuid", "Heartbeat", {}]));
 The browser client's logger, writing to the browser console, or a no-op logger when logging is off.
 
 ```typescript
-client.log.info("Retrying connection...");
+client.log.info('Retrying connection...');
 ```
 
 ### Events
 
 ```typescript
-client.on("open", (event) => {
+client.on('open', event => {
 	/* connected */
 });
-client.on("close", ({ code, reason }) => {
+client.on('close', ({ code, reason }) => {
 	/* disconnected */
 });
-client.on("closing", () => {
+client.on('closing', () => {
 	/* close() started: no reconnect follows; close fires once the socket has closed */
 });
-client.on("error", (error) => {
+client.on('error', error => {
 	/* error */
 });
-client.on("connecting", ({ url }) => {
+client.on('connecting', ({ url }) => {
 	/* attempting */
 });
-client.on("reconnect", ({ attempt, delay }) => {
+client.on('reconnect', ({ attempt, delay }) => {
 	/* reconnecting */
 });
-client.on("message", ({ message, direction, ctx }) => {
+client.on('message', ({ message, direction, ctx }) => {
 	/* OCPP message */
 	/* message direction */
 	/* ctx context form client */
 });
-client.on("call", (call) => {
+client.on('call', call => {
 	/* incoming call */
 });
-client.on("callResult", (result) => {
+client.on('callResult', result => {
 	/* result received */
 });
-client.on("callError", (error) => {
+client.on('callError', error => {
 	/* error received */
 });
-client.on("callResultError", (frame) => {
+client.on('callResultError', frame => {
 	/* OCPP 2.1: the peer could not process a CALLRESULT we sent */
 });
-client.on("badMessage", ({ message, error }) => {
+client.on('badMessage', ({ message, error }) => {
 	/* malformed */
 });
 ```
@@ -808,5 +836,5 @@ import {
 	RPCFormatViolationError, // 2.0.1 and 2.1 spelling
 	RPCFrameworkError,
 	RPCMessageTypeNotSupportedError,
-} from "ocpp-ws-io";
+} from 'ocpp-ws-io';
 ```

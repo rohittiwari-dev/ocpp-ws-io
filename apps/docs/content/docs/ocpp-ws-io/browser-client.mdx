@@ -3,12 +3,12 @@ title: Browser Client
 description: Use BrowserOCPPClient in browser environments — React, Vue, Next.js, and more.
 ---
 
-import { Mermaid } from "@/components/mermaid";
+import { Mermaid } from '@/components/mermaid';
 
 `BrowserOCPPClient` is a lightweight OCPP WebSocket RPC client designed for **browser environments**. It enables building charge point simulators, testing dashboards, and debugging tools directly in the browser — using the **same typed API** as `OCPPClient`.
 
 ```typescript
-import { BrowserOCPPClient } from "ocpp-ws-io/browser";
+import { BrowserOCPPClient } from 'ocpp-ws-io/browser';
 ```
 
 > [!IMPORTANT]
@@ -37,29 +37,29 @@ import { BrowserOCPPClient } from "ocpp-ws-io/browser";
 ## Quick Start
 
 ```typescript
-import { BrowserOCPPClient } from "ocpp-ws-io/browser";
+import { BrowserOCPPClient } from 'ocpp-ws-io/browser';
 
 const client = new BrowserOCPPClient({
-	endpoint: "wss://csms.example.com/ocpp",
-	identity: "CP001",
-	protocols: ["ocpp1.6"],
+	endpoint: 'wss://csms.example.com/ocpp',
+	identity: 'CP001',
+	protocols: ['ocpp1.6'],
 });
 
 // Register a handler — params are auto-typed for OCPP 1.6 Reset
-client.handle("Reset", ({ params }) => {
-	console.log("Reset type:", params.type);
-	return { status: "Accepted" };
+client.handle('Reset', ({ params }) => {
+	console.log('Reset type:', params.type);
+	return { status: 'Accepted' };
 });
 
 // Connect and send a BootNotification
 await client.connect();
 
-const response = await client.call("ocpp1.6", "BootNotification", {
-	chargePointVendor: "VendorX",
-	chargePointModel: "ModelY",
+const response = await client.call('ocpp1.6', 'BootNotification', {
+	chargePointVendor: 'VendorX',
+	chargePointModel: 'ModelY',
 });
 
-console.log("Status:", response.status); // typed: "Accepted" | "Pending" | "Rejected"
+console.log('Status:', response.status); // typed: "Accepted" | "Pending" | "Rejected"
 ```
 
 ---
@@ -72,23 +72,23 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 
 ### `BrowserClientOptions`
 
-| Option                      | Type                     | Default    | Description                                  |
-| :-------------------------- | :----------------------- | :--------- | :------------------------------------------- |
-| `identity`                  | `string`                 | _required_ | Charging station ID                          |
-| `endpoint`                  | `string`                 | _required_ | WebSocket URL (`ws://` or `wss://`)          |
-| `protocols`                 | `string[]`               | `[]`       | OCPP subprotocols to negotiate               |
-| `query`                     | `Record<string, string> \| string` | —          | URL query parameters, as an object or a query string (`"a=1&b=2"`, leading `?` optional); added after any query in `endpoint` |
-| `reconnect`                 | `boolean`                | `true`     | Auto-reconnect on disconnect                 |
-| `maxReconnects`             | `number`                 | `Infinity` | Max reconnection attempts                    |
-| `backoffMin`                | `number`                 | `1000`     | First reconnect delay (ms), doubled after each failed attempt; every wait adds up to 25% at random |
-| `backoffMax`                | `number`                 | `30000`    | Where the doubling stops (ms); the random 25% still applies on top |
-| `callTimeoutMs`             | `number`                 | `30000`    | Default RPC call timeout (ms)                |
-| `callConcurrency`           | `number`                 | `1`        | Outbound CALLs in flight at once. `1` follows OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out. Above 1 only for a CSMS known to cope |
-| `maxBadMessages`            | `number`                 | `50`       | Close on the Nth bad message in a row; a valid message resets the count and empty frames are ignored. `0` = zero tolerance, `Infinity` = no limit. |
-| `badMessageWindowMs`        | `number`                 | —          | Also reset a run of bad messages once it is older than this many ms. |
-| `respondWithDetailedErrors` | `boolean`                | `false`    | Send a handler error's properties (not its stack) in CALLERROR `details`. Logs a warning when on; keep it off in production |
-| `idGenerator`               | `() => string`           | —          | Creates the message ID of each outgoing CALL and SEND. A per-call `idempotencyKey` wins; without either, a random UUID |
-| `idValidator`               | `(id: string) => boolean` | —         | Checks each incoming CALL / SEND message ID; without it any string is accepted |
+| Option                      | Type                               | Default    | Description                                                                                                                                                                              |
+| :-------------------------- | :--------------------------------- | :--------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `identity`                  | `string`                           | _required_ | Charging station ID                                                                                                                                                                      |
+| `endpoint`                  | `string`                           | _required_ | WebSocket URL (`ws://` or `wss://`)                                                                                                                                                      |
+| `protocols`                 | `string[]`                         | `[]`       | OCPP subprotocols to negotiate                                                                                                                                                           |
+| `query`                     | `Record<string, string> \| string` | —          | URL query parameters, as an object or a query string (`"a=1&b=2"`, leading `?` optional); added after any query in `endpoint`                                                            |
+| `reconnect`                 | `boolean`                          | `true`     | Auto-reconnect on disconnect                                                                                                                                                             |
+| `maxReconnects`             | `number`                           | `Infinity` | Max reconnection attempts                                                                                                                                                                |
+| `backoffMin`                | `number`                           | `1000`     | First reconnect delay (ms), doubled after each failed attempt; every wait adds up to 25% at random                                                                                       |
+| `backoffMax`                | `number`                           | `30000`    | Where the doubling stops (ms); the random 25% still applies on top                                                                                                                       |
+| `callTimeoutMs`             | `number`                           | `30000`    | Default RPC call timeout (ms)                                                                                                                                                            |
+| `callConcurrency`           | `number`                           | `1`        | Outbound CALLs in flight at once. `1` follows OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out. Above 1 only for a CSMS known to cope |
+| `maxBadMessages`            | `number`                           | `50`       | Close on the Nth bad message in a row; a valid message resets the count and empty frames are ignored. `0` = zero tolerance, `Infinity` = no limit.                                       |
+| `badMessageWindowMs`        | `number`                           | —          | Also reset a run of bad messages once it is older than this many ms.                                                                                                                     |
+| `respondWithDetailedErrors` | `boolean`                          | `false`    | Send a handler error's properties (not its stack) in CALLERROR `details`. Logs a warning when on; keep it off in production                                                              |
+| `idGenerator`               | `() => string`                     | —          | Creates the message ID of each outgoing CALL and SEND. A per-call `idempotencyKey` wins; without either, a random UUID                                                                   |
+| `idValidator`               | `(id: string) => boolean`          | —          | Checks each incoming CALL / SEND message ID; without it any string is accepted                                                                                                           |
 
 WebSocket compression is not an option here: the browser negotiates it itself, and all major browsers offer it. It is used only when the server accepts it (`compression` on `OCPPServer`, off by default).
 
@@ -99,12 +99,16 @@ WebSocket compression is not an option here: the browser negotiates it itself, a
 The `BrowserOCPPClient` supports the exact same `MiddlewareStack` execution pattern as the Node.js client. This allows you to attach custom interceptors via `client.use()` directly in the browser:
 
 ```typescript
-import { BrowserOCPPClient, defineRpcMiddleware, createLoggingMiddleware } from "ocpp-ws-io/browser";
+import {
+	BrowserOCPPClient,
+	defineRpcMiddleware,
+	createLoggingMiddleware,
+} from 'ocpp-ws-io/browser';
 
 const client = new BrowserOCPPClient({
-  identity: "CS001",
-  endpoint: "wss://csms.example.com/ocpp",
-  protocols: ["ocpp1.6"],
+	identity: 'CS001',
+	endpoint: 'wss://csms.example.com/ocpp',
+	protocols: ['ocpp1.6'],
 });
 
 // 1. Attach the built-in structured logger (outputs to browser console)
@@ -113,9 +117,11 @@ client.use(createLoggingMiddleware(console, client.identity));
 // 2. Attach your own middleware: here, how long each message takes.
 // Leave the payload as it is: a key its schema does not define fails strict mode.
 const browserInterceptor = defineRpcMiddleware(async (ctx, next) => {
-  const started = performance.now();
-  await next();
-  console.log(`[Browser] ${ctx.method}: ${Math.round(performance.now() - started)} ms`);
+	const started = performance.now();
+	await next();
+	console.log(
+		`[Browser] ${ctx.method}: ${Math.round(performance.now() - started)} ms`
+	);
 });
 
 client.use(browserInterceptor);
@@ -149,7 +155,7 @@ BrowserOCPPClient.CLOSED; // 3
 
 // Check current state
 if (client.state === BrowserOCPPClient.OPEN) {
-	await client.call("Heartbeat", {});
+	await client.call('Heartbeat', {});
 }
 ```
 
@@ -167,30 +173,33 @@ if (client.state === BrowserOCPPClient.OPEN) {
 
 ```typescript
 // Version-aware call — fully typed params and response
-const result = await client.call("ocpp1.6", "BootNotification", {
-	chargePointVendor: "VendorX",
-	chargePointModel: "ModelY",
+const result = await client.call('ocpp1.6', 'BootNotification', {
+	chargePointVendor: 'VendorX',
+	chargePointModel: 'ModelY',
 });
 result.status; // typed: "Accepted" | "Pending" | "Rejected"
 
 // OCPP 2.0.1 — different shape, still fully typed
-const result201 = await client.call("ocpp2.0.1", "BootNotification", {
-	chargingStation: { model: "ModelX", vendorName: "VendorY" },
-	reason: "PowerUp",
+const result201 = await client.call('ocpp2.0.1', 'BootNotification', {
+	chargingStation: { model: 'ModelX', vendorName: 'VendorY' },
+	reason: 'PowerUp',
 });
 
 // Short form: typed for the client's `protocols`
-const res = await client.call("Heartbeat", {});
+const res = await client.call('Heartbeat', {});
 
 // A client configured for several versions: narrow to the negotiated one
-const v201 = client.forProtocol("ocpp2.0.1"); // BrowserOCPPClient<"ocpp2.0.1"> | undefined
+const v201 = client.forProtocol('ocpp2.0.1'); // BrowserOCPPClient<"ocpp2.0.1"> | undefined
 
 // An action the types do not know: unchecked(), with the response type you expect
-import { unchecked } from "ocpp-ws-io/browser";
+import { unchecked } from 'ocpp-ws-io/browser';
 
-const custom = await client.call<{ result: string }>(unchecked("VendorAction"), {
-	data: "hello",
-});
+const custom = await client.call<{ result: string }>(
+	unchecked('VendorAction'),
+	{
+		data: 'hello',
+	}
+);
 ```
 
 ### Call Options
@@ -198,21 +207,21 @@ const custom = await client.call<{ result: string }>(unchecked("VendorAction"), 
 ```typescript
 // Timeout
 const res = await client.call(
-	"Reset",
-	{ type: "Soft" },
+	'Reset',
+	{ type: 'Soft' },
 	{
 		timeoutMs: 5000,
-	},
+	}
 );
 
 // AbortSignal
 const controller = new AbortController();
 const res2 = await client.call(
-	"Heartbeat",
+	'Heartbeat',
 	{},
 	{
 		signal: controller.signal,
-	},
+	}
 );
 
 // Cancel the call
@@ -227,19 +236,19 @@ Register handlers for incoming server-to-client calls. The API is identical to `
 
 ```typescript
 // Version-specific handler — only triggers for ocpp1.6
-client.handle("ocpp1.6", "Reset", ({ params }) => {
+client.handle('ocpp1.6', 'Reset', ({ params }) => {
 	params.type; // typed: "Hard" | "Soft" (OCPP 1.6 shape)
-	return { status: "Accepted" };
+	return { status: 'Accepted' };
 });
 
 // Generic handler — triggers for any negotiated protocol
-client.handle("Reset", ({ params, protocol }) => {
+client.handle('Reset', ({ params, protocol }) => {
 	console.log(`Reset via ${protocol}:`, params.type);
-	return { status: "Accepted" };
+	return { status: 'Accepted' };
 });
 
 // Wildcard handler — catches all unhandled methods
-client.handle((method, { params }) => {
+client.handle(({ params, method }) => {
 	console.log(`Unhandled method: ${method}`);
 	return {};
 });
@@ -258,9 +267,9 @@ When a call arrives, handlers are checked in this order:
 Return `NOREPLY` from a handler to suppress the automatic response:
 
 ```typescript
-import { NOREPLY } from "ocpp-ws-io/browser";
+import { NOREPLY } from 'ocpp-ws-io/browser';
 
-client.handle("StatusNotification", ({ params }) => {
+client.handle('StatusNotification', ({ params }) => {
 	// Process but don't send a response
 	return NOREPLY;
 });
@@ -271,8 +280,8 @@ An async handler can return it too, after its work.
 ### Removing Handlers
 
 ```typescript
-client.removeHandler("Reset"); // remove generic
-client.removeHandler("ocpp1.6", "Reset"); // remove version-specific
+client.removeHandler('Reset'); // remove generic
+client.removeHandler('ocpp1.6', 'Reset'); // remove version-specific
 client.removeHandler(); // remove wildcard
 client.removeAllHandlers(); // remove all
 ```
@@ -282,49 +291,49 @@ client.removeAllHandlers(); // remove all
 ## Events
 
 ```typescript
-client.on("open", (event) => {
+client.on('open', event => {
 	/* WebSocket connected */
 });
 
-client.on("close", ({ code, reason }) => {
+client.on('close', ({ code, reason }) => {
 	/* WebSocket disconnected */
 });
 
-client.on("closing", () => {
+client.on('closing', () => {
 	/* close() started: no reconnect follows; close fires once the socket has closed */
 });
 
-client.on("error", (error) => {
+client.on('error', error => {
 	/* Connection or WebSocket error */
 });
 
-client.on("connecting", ({ url }) => {
+client.on('connecting', ({ url }) => {
 	/* Attempting connection */
 });
 
-client.on("reconnect", ({ attempt, delay }) => {
+client.on('reconnect', ({ attempt, delay }) => {
 	/* Scheduled reconnection */
 });
 
-client.on("message", ({ message, direction, ctx }) => {
+client.on('message', ({ message, direction, ctx }) => {
 	/* OCPP message */
 	/* message direction */
 	/* ctx context form client */
 });
 
-client.on("call", (call) => {
+client.on('call', call => {
 	/* Incoming OCPP Call */
 });
 
-client.on("callResult", (result) => {
+client.on('callResult', result => {
 	/* Received CallResult */
 });
 
-client.on("callError", (error) => {
+client.on('callError', error => {
 	/* Received CallError */
 });
 
-client.on("badMessage", ({ message, error }) => {
+client.on('badMessage', ({ message, error }) => {
 	/* Malformed message received */
 });
 ```
@@ -337,20 +346,20 @@ client.on("badMessage", ({ message, error }) => {
 
 ```typescript
 const client = new BrowserOCPPClient({
-	identity: "CP001",
-	endpoint: "wss://csms.example.com/ocpp",
-	protocols: ["ocpp1.6"],
+	identity: 'CP001',
+	endpoint: 'wss://csms.example.com/ocpp',
+	protocols: ['ocpp1.6'],
 	reconnect: true, // default: true
 	maxReconnects: 10, // default: Infinity
 	backoffMin: 1000, // default: 1000ms
 	backoffMax: 30000, // default: 30000ms
 });
 
-client.on("reconnect", ({ attempt, delay }) => {
+client.on('reconnect', ({ attempt, delay }) => {
 	console.log(`Reconnect attempt ${attempt} in ${delay}ms`);
 });
 
-client.on("close", ({ code, reason }) => {
+client.on('close', ({ code, reason }) => {
 	console.log(`Disconnected: ${code} ${reason}`);
 });
 ```
@@ -384,7 +393,7 @@ Unlike the constructor which creates a new connection, `reconfigure()` allows yo
 await client.close();
 
 // Custom close code and reason
-await client.close({ code: 1000, reason: "User navigated away" });
+await client.close({ code: 1000, reason: 'User navigated away' });
 
 // Force close (immediately terminates)
 await client.close({ force: true });
@@ -458,14 +467,14 @@ function ChargingStation() {
 ### Next.js (Client Component)
 
 ```typescript
-"use client";
-import { BrowserOCPPClient } from "ocpp-ws-io/browser";
+'use client';
+import { BrowserOCPPClient } from 'ocpp-ws-io/browser';
 
 // ✅ Works in client components — no Node.js dependencies
 const client = new BrowserOCPPClient({
-	identity: "CP001",
-	endpoint: "wss://csms.example.com/ocpp",
-	protocols: ["ocpp1.6"],
+	identity: 'CP001',
+	endpoint: 'wss://csms.example.com/ocpp',
+	protocols: ['ocpp1.6'],
 });
 ```
 
@@ -474,8 +483,8 @@ const client = new BrowserOCPPClient({
 ### Vue
 
 ```typescript
-import { ref, onMounted, onUnmounted } from "vue";
-import { BrowserOCPPClient } from "ocpp-ws-io/browser";
+import { ref, onMounted, onUnmounted } from 'vue';
+import { BrowserOCPPClient } from 'ocpp-ws-io/browser';
 
 export function useOCPP(identity: string, endpoint: string) {
 	const client = ref<BrowserOCPPClient | null>(null);
@@ -485,11 +494,11 @@ export function useOCPP(identity: string, endpoint: string) {
 		const c = new BrowserOCPPClient({
 			identity,
 			endpoint,
-			protocols: ["ocpp1.6"],
+			protocols: ['ocpp1.6'],
 		});
 
-		c.on("open", () => (connected.value = true));
-		c.on("close", () => (connected.value = false));
+		c.on('open', () => (connected.value = true));
+		c.on('close', () => (connected.value = false));
 
 		c.connect();
 		client.value = c;
@@ -543,7 +552,7 @@ import {
 	ConnectionState,
 	MessageType,
 	NOREPLY,
-} from "ocpp-ws-io/browser";
+} from 'ocpp-ws-io/browser';
 ```
 
 All types from the main package (`OCPPProtocol`, `AllMethodNames`, `OCPPRequestType`, `OCPPResponseType`, etc.) are re-exported for full type safety.

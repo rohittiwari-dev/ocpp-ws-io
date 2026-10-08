@@ -221,10 +221,10 @@ export class OcppExplorer implements OnModuleInit {
 
           // 4. Wildcard Handlers
           if (Reflect.hasMetadata(OCPP_WILDCARD_EVENT_METADATA, method)) {
-            router.handle((methodName, ctx) =>
+            router.handle((ctx) =>
               this.executeWithParams(instance, method, key, {
                 ...ctx,
-                method: ctx?.method ?? methodName,
+                method: ctx?.method,
               }),
             );
             this.logger.log(`Mapped Wildcard Event -> ${metatype.name}.${key}`);

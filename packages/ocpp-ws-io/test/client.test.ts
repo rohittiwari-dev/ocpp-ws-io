@@ -1,1167 +1,1179 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { OCPPServer } from "../src/server.js";
-import { OCPPClient } from "../src/client.js";
-import { SecurityProfile } from "../src/types.js";
-import { unchecked } from "../src/unchecked.js";
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { OCPPServer } from '../src/server.js';
+import { OCPPClient } from '../src/client.js';
+import { SecurityProfile } from '../src/types.js';
+import { unchecked } from '../src/unchecked.js';
 
 let server: OCPPServer;
 let client: OCPPClient;
 let port: number;
 
-const getPort = (srv: import("node:http").Server): number => {
-  const addr = srv.address();
-  if (addr && typeof addr !== "string") return addr.port;
-  return 0;
+const getPort = (srv: import('node:http').Server): number => {
+	const addr = srv.address();
+	if (addr && typeof addr !== 'string') return addr.port;
+	return 0;
 };
 
-describe("OCPPClient", () => {
-  beforeEach(async () => {
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => {
-      ctx.accept({ protocol: "ocpp1.6" });
-    });
-    const httpServer = await server.listen(0);
-    port = getPort(httpServer);
-  });
+describe('OCPPClient', () => {
+	beforeEach(async () => {
+		server = new OCPPServer({ protocols: ['ocpp1.6'] });
+		server.auth(ctx => {
+			ctx.accept({ protocol: 'ocpp1.6' });
+		});
+		const httpServer = await server.listen(0);
+		port = getPort(httpServer);
+	});
 
-  afterEach(async () => {
-    if (client) await client.close({ force: true }).catch(() => {});
-    await server.close({ force: true });
-  });
+	afterEach(async () => {
+		if (client) await client.close({ force: true }).catch(() => {});
+		await server.close({ force: true });
+	});
 
-  it("should throw if identity is missing", () => {
-    expect(
-      () =>
-        new OCPPClient({
-          identity: "",
-          endpoint: "ws://localhost:9999",
-        }),
-    ).toThrow("identity is required");
-  });
+	it('should throw if identity is missing', () => {
+		expect(
+			() =>
+				new OCPPClient({
+					identity: '',
+					endpoint: 'ws://localhost:9999',
+				})
+		).toThrow('identity is required');
+	});
 
-  it("should be in CLOSED state initially", () => {
-    client = new OCPPClient({
-      identity: "CS001",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
-    expect(client.state).toBe(OCPPClient.CLOSED);
-  });
+	it('should be in CLOSED state initially', () => {
+		client = new OCPPClient({
+			identity: 'CS001',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
+		expect(client.state).toBe(OCPPClient.CLOSED);
+	});
 
-  it("should connect successfully", async () => {
-    client = new OCPPClient({
-      identity: "CS001",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+	it('should connect successfully', async () => {
+		client = new OCPPClient({
+			identity: 'CS001',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    await client.connect();
-    expect(client.state).toBe(OCPPClient.OPEN);
-    expect(client.protocol).toBe("ocpp1.6");
-  });
+		await client.connect();
+		expect(client.state).toBe(OCPPClient.OPEN);
+		expect(client.protocol).toBe('ocpp1.6');
+	});
 
-  it("gives the handshake response on open and from connect() (R17)", async () => {
-    client = new OCPPClient({
-      identity: "CS001",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
-    const opened = new Promise<import("node:http").IncomingMessage>(
-      (resolve) => client.on("open", ({ response }) => resolve(response)),
-    );
+	it('gives the handshake response on open and from connect() (R17)', async () => {
+		client = new OCPPClient({
+			identity: 'CS001',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
+		const opened = new Promise<import('node:http').IncomingMessage>(
+			resolve => client.on('open', ({ response }) => resolve(response))
+		);
 
-    const result = await client.connect();
-    const response = await opened;
+		const result = await client.connect();
+		const response = await opened;
 
-    expect(response?.statusCode).toBe(101);
-    expect(response?.headers["sec-websocket-protocol"]).toBe("ocpp1.6");
-    expect(result.response).toBe(response);
-  });
+		expect(response?.statusCode).toBe(101);
+		expect(response?.headers['sec-websocket-protocol']).toBe('ocpp1.6');
+		expect(result.response).toBe(response);
+	});
 
-  it('should emit "open" event on connect', async () => {
-    client = new OCPPClient({
-      identity: "CS001",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+	it('should emit "open" event on connect', async () => {
+		client = new OCPPClient({
+			identity: 'CS001',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    let opened = false;
-    client.on("open", () => {
-      opened = true;
-    });
-    await client.connect();
-    expect(opened).toBe(true);
-  });
+		let opened = false;
+		client.on('open', () => {
+			opened = true;
+		});
+		await client.connect();
+		expect(opened).toBe(true);
+	});
 
-  it("should reject connect when already connected", async () => {
-    client = new OCPPClient({
-      identity: "CS001",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+	it('should reject connect when already connected', async () => {
+		client = new OCPPClient({
+			identity: 'CS001',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    await client.connect();
-    await expect(client.connect()).rejects.toThrow("Cannot connect");
-  });
+		await client.connect();
+		await expect(client.connect()).rejects.toThrow('Cannot connect');
+	});
 
-  it("should close gracefully", async () => {
-    client = new OCPPClient({
-      identity: "CS001",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+	it('should close gracefully', async () => {
+		client = new OCPPClient({
+			identity: 'CS001',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    await client.connect();
-    const result = await client.close();
-    expect(result.code).toBe(1000);
-    expect(client.state).toBe(OCPPClient.CLOSED);
-  });
+		await client.connect();
+		const result = await client.close();
+		expect(result.code).toBe(1000);
+		expect(client.state).toBe(OCPPClient.CLOSED);
+	});
 
-  it("should handle RPC call and response", async () => {
-    // Set up server handler BEFORE client connects
-    server.on("client", (serverClient) => {
-      serverClient.handle("BootNotification", async () => {
-        return {
-          status: "Accepted",
-          currentTime: new Date().toISOString(),
-          interval: 300,
-        };
-      });
-    });
+	it('should handle RPC call and response', async () => {
+		// Set up server handler BEFORE client connects
+		server.on('client', serverClient => {
+			serverClient.handle('BootNotification', async () => {
+				return {
+					status: 'Accepted',
+					currentTime: new Date().toISOString(),
+					interval: 300,
+				};
+			});
+		});
 
-    client = new OCPPClient({
-      identity: "CS001",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+		client = new OCPPClient({
+			identity: 'CS001',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    await client.connect();
+		await client.connect();
 
-    const result = await client.call("BootNotification", {
-      chargePointModel: "TestModel",
-      chargePointVendor: "TestVendor",
-    });
+		const result = await client.call('BootNotification', {
+			chargePointModel: 'TestModel',
+			chargePointVendor: 'TestVendor',
+		});
 
-    expect(result.status).toBe("Accepted");
-  });
+		expect(result.status).toBe('Accepted');
+	});
 
-  it("should receive NotImplemented for unhandled calls", async () => {
-    // Server has no handler for UnhandledAction, so it returns NotImplemented
-    client = new OCPPClient({
-      identity: "CS001",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-      callTimeoutMs: 2000,
-    });
+	it('should receive NotImplemented for unhandled calls', async () => {
+		// Server has no handler for UnhandledAction, so it returns NotImplemented
+		client = new OCPPClient({
+			identity: 'CS001',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+			callTimeoutMs: 2000,
+		});
 
-    await client.connect();
+		await client.connect();
 
-    await expect(client.call(unchecked("UnhandledAction"), {})).rejects.toThrow(
-      /not known|NotImplemented/,
-    );
-  });
+		await expect(
+			client.call(unchecked('UnhandledAction'), {})
+		).rejects.toThrow(/not known|NotImplemented/);
+	});
 
-  it("should support abort signal on calls", async () => {
-    client = new OCPPClient({
-      identity: "CS001",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+	it('should support abort signal on calls', async () => {
+		client = new OCPPClient({
+			identity: 'CS001',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    await client.connect();
+		await client.connect();
 
-    const ac = new AbortController();
-    const callPromise = client.call(unchecked("SlowAction"), {}, { signal: ac.signal });
-    ac.abort();
+		const ac = new AbortController();
+		const callPromise = client.call(
+			unchecked('SlowAction'),
+			{},
+			{ signal: ac.signal }
+		);
+		ac.abort();
 
-    await expect(callPromise).rejects.toThrow();
-  });
+		await expect(callPromise).rejects.toThrow();
+	});
 
-  it("should receive calls from server", async () => {
-    let receivedMethod = "";
+	it('should receive calls from server', async () => {
+		let receivedMethod = '';
 
-    client = new OCPPClient({
-      identity: "CS001",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+		client = new OCPPClient({
+			identity: 'CS001',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    client.handle("Reset", async (ctx) => {
-      receivedMethod = ctx.method;
-      return { status: "Accepted" };
-    });
+		client.handle('Reset', async ctx => {
+			receivedMethod = ctx.method;
+			return { status: 'Accepted' };
+		});
 
-    // Set up server handler BEFORE connecting
-    const serverCallPromise = new Promise<void>((resolve, reject) => {
-      server.on("client", async (serverClient) => {
-        try {
-          const result = await serverClient.call("Reset", {
-            type: "Hard",
-          });
-          expect(result.status).toBe("Accepted");
-          resolve();
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
+		// Set up server handler BEFORE connecting
+		const serverCallPromise = new Promise<void>((resolve, reject) => {
+			server.on('client', async serverClient => {
+				try {
+					const result = await serverClient.call('Reset', {
+						type: 'Hard',
+					});
+					expect(result.status).toBe('Accepted');
+					resolve();
+				} catch (e) {
+					reject(e);
+				}
+			});
+		});
 
-    await client.connect();
-    await serverCallPromise;
-    expect(receivedMethod).toBe("Reset");
-  });
+		await client.connect();
+		await serverCallPromise;
+		expect(receivedMethod).toBe('Reset');
+	});
 
-  it("should handle wildcard handlers", async () => {
-    let wildcardMethod = "";
+	it('should handle wildcard handlers', async () => {
+		let wildcardMethod = '';
 
-    client = new OCPPClient({
-      identity: "CS002",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+		client = new OCPPClient({
+			identity: 'CS002',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    client.handle((method, _ctx) => {
-      wildcardMethod = method;
-      return { status: "Accepted" };
-    });
+		client.handle(({ method }) => {
+			wildcardMethod = method;
+			return { status: 'Accepted' };
+		});
 
-    const serverCallPromise = new Promise<void>((resolve, reject) => {
-      server.on("client", async (serverClient) => {
-        try {
-          await serverClient.call(unchecked("AnyMethod"), {});
-          resolve();
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
+		const serverCallPromise = new Promise<void>((resolve, reject) => {
+			server.on('client', async serverClient => {
+				try {
+					await serverClient.call(unchecked('AnyMethod'), {});
+					resolve();
+				} catch (e) {
+					reject(e);
+				}
+			});
+		});
 
-    await client.connect();
-    await serverCallPromise;
-    expect(wildcardMethod).toBe("AnyMethod");
-  });
+		await client.connect();
+		await serverCallPromise;
+		expect(wildcardMethod).toBe('AnyMethod');
+	});
 
-  it("should remove specific handlers", async () => {
-    client = new OCPPClient({
-      identity: "CS001",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+	it('should remove specific handlers', async () => {
+		client = new OCPPClient({
+			identity: 'CS001',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    client.handle(unchecked("Test"), async () => ({ result: "ok" }));
-    client.removeHandler(unchecked("Test"));
+		client.handle(unchecked('Test'), async () => ({ result: 'ok' }));
+		client.removeHandler(unchecked('Test'));
 
-    const serverCallPromise = new Promise<void>((resolve, reject) => {
-      server.on("client", async (serverClient) => {
-        try {
-          await serverClient.call(unchecked("Test"), {});
-          reject(new Error("Should have thrown"));
-        } catch {
-          resolve();
-        }
-      });
-    });
+		const serverCallPromise = new Promise<void>((resolve, reject) => {
+			server.on('client', async serverClient => {
+				try {
+					await serverClient.call(unchecked('Test'), {});
+					reject(new Error('Should have thrown'));
+				} catch {
+					resolve();
+				}
+			});
+		});
 
-    await client.connect();
-    await serverCallPromise;
-  });
+		await client.connect();
+		await serverCallPromise;
+	});
 });
 
-describe("OCPPClient - Security Profiles", () => {
-  afterEach(async () => {
-    if (client) await client.close({ force: true }).catch(() => {});
-    if (server) await server.close({ force: true });
-  });
+describe('OCPPClient - Security Profiles', () => {
+	afterEach(async () => {
+		if (client) await client.close({ force: true }).catch(() => {});
+		if (server) await server.close({ force: true });
+	});
 
-  it("should include Basic Auth header for Profile 1", async () => {
-    let receivedPassword: Buffer | undefined;
+	it('should include Basic Auth header for Profile 1', async () => {
+		let receivedPassword: Buffer | undefined;
 
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => {
-      receivedPassword = ctx.handshake.password;
-      ctx.accept({ protocol: "ocpp1.6" });
-    });
-    const httpServer = await server.listen(0);
-    port = getPort(httpServer);
+		server = new OCPPServer({ protocols: ['ocpp1.6'] });
+		server.auth(ctx => {
+			receivedPassword = ctx.handshake.password;
+			ctx.accept({ protocol: 'ocpp1.6' });
+		});
+		const httpServer = await server.listen(0);
+		port = getPort(httpServer);
 
-    client = new OCPPClient({
-      identity: "CS001",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      securityProfile: SecurityProfile.BASIC_AUTH,
-      password: "myPassword123",
-      reconnect: false,
-    });
+		client = new OCPPClient({
+			identity: 'CS001',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			securityProfile: SecurityProfile.BASIC_AUTH,
+			password: 'myPassword123',
+			reconnect: false,
+		});
 
-    await client.connect();
+		await client.connect();
 
-    // Give the server a moment to process
-    await new Promise((r) => setTimeout(r, 100));
+		// Give the server a moment to process
+		await new Promise(r => setTimeout(r, 100));
 
-    expect(receivedPassword).toBeDefined();
-    expect(receivedPassword!.toString()).toBe("myPassword123");
-  });
+		expect(receivedPassword).toBeDefined();
+		expect(receivedPassword!.toString()).toBe('myPassword123');
+	});
 });
 
-describe("Version-Aware Handle", () => {
-  afterEach(async () => {
-    if (client) await client.close({ force: true }).catch(() => {});
-    if (server) await server.close({ force: true }).catch(() => {});
-  });
+describe('Version-Aware Handle', () => {
+	afterEach(async () => {
+		if (client) await client.close({ force: true }).catch(() => {});
+		if (server) await server.close({ force: true }).catch(() => {});
+	});
 
-  it("should support version-specific handler with typed params", async () => {
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const httpServer = await server.listen(0);
-    port = getPort(httpServer);
+	it('should support version-specific handler with typed params', async () => {
+		server = new OCPPServer({ protocols: ['ocpp1.6'] });
+		server.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		const httpServer = await server.listen(0);
+		port = getPort(httpServer);
 
-    let receivedProtocol: string | undefined;
+		let receivedProtocol: string | undefined;
 
-    client = new OCPPClient({
-      identity: "CS_VERSIONED",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+		client = new OCPPClient({
+			identity: 'CS_VERSIONED',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    // Register a version-specific handler
-    client.handle("ocpp1.6", "Reset", async (ctx) => {
-      receivedProtocol = ctx.protocol;
-      return { status: "Accepted" };
-    });
+		// Register a version-specific handler
+		client.handle('ocpp1.6', 'Reset', async ctx => {
+			receivedProtocol = ctx.protocol;
+			return { status: 'Accepted' };
+		});
 
-    const serverCallPromise = new Promise<void>((resolve, reject) => {
-      server.on("client", async (sc) => {
-        try {
-          const result = await sc.call("Reset", {
-            type: "Hard",
-          });
-          expect(result.status).toBe("Accepted");
-          resolve();
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
+		const serverCallPromise = new Promise<void>((resolve, reject) => {
+			server.on('client', async sc => {
+				try {
+					const result = await sc.call('Reset', {
+						type: 'Hard',
+					});
+					expect(result.status).toBe('Accepted');
+					resolve();
+				} catch (e) {
+					reject(e);
+				}
+			});
+		});
 
-    await client.connect();
-    await serverCallPromise;
-    expect(receivedProtocol).toBe("ocpp1.6");
-  });
+		await client.connect();
+		await serverCallPromise;
+		expect(receivedProtocol).toBe('ocpp1.6');
+	});
 
-  it("should expose protocol in HandlerContext for generic handlers", async () => {
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const httpServer = await server.listen(0);
-    port = getPort(httpServer);
+	it('should expose protocol in HandlerContext for generic handlers', async () => {
+		server = new OCPPServer({ protocols: ['ocpp1.6'] });
+		server.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		const httpServer = await server.listen(0);
+		port = getPort(httpServer);
 
-    let contextProtocol: string | undefined;
-    let contextMessageId = "";
-    let contextMethod = "";
+		let contextProtocol: string | undefined;
+		let contextMessageId = '';
+		let contextMethod = '';
 
-    client = new OCPPClient({
-      identity: "CS_CTX",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+		client = new OCPPClient({
+			identity: 'CS_CTX',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    // Generic handler — receives protocol in context
-    client.handle("Reset", async (ctx) => {
-      contextProtocol = ctx.protocol;
-      contextMessageId = ctx.messageId;
-      contextMethod = ctx.method;
-      return { status: "Accepted" };
-    });
+		// Generic handler — receives protocol in context
+		client.handle('Reset', async ctx => {
+			contextProtocol = ctx.protocol;
+			contextMessageId = ctx.messageId;
+			contextMethod = ctx.method;
+			return { status: 'Accepted' };
+		});
 
-    const serverCallPromise = new Promise<void>((resolve, reject) => {
-      server.on("client", async (sc) => {
-        try {
-          await sc.call("Reset", { type: "Soft" });
-          resolve();
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
+		const serverCallPromise = new Promise<void>((resolve, reject) => {
+			server.on('client', async sc => {
+				try {
+					await sc.call('Reset', { type: 'Soft' });
+					resolve();
+				} catch (e) {
+					reject(e);
+				}
+			});
+		});
 
-    await client.connect();
-    await serverCallPromise;
+		await client.connect();
+		await serverCallPromise;
 
-    expect(contextProtocol).toBe("ocpp1.6");
-    expect(contextMessageId).toBeTruthy();
-    expect(contextMethod).toBe("Reset");
-  });
+		expect(contextProtocol).toBe('ocpp1.6');
+		expect(contextMessageId).toBeTruthy();
+		expect(contextMethod).toBe('Reset');
+	});
 
-  it("should prioritize version-specific handler over generic handler", async () => {
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const httpServer = await server.listen(0);
-    port = getPort(httpServer);
+	it('should prioritize version-specific handler over generic handler', async () => {
+		server = new OCPPServer({ protocols: ['ocpp1.6'] });
+		server.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		const httpServer = await server.listen(0);
+		port = getPort(httpServer);
 
-    let handlerUsed = "";
+		let handlerUsed = '';
 
-    client = new OCPPClient({
-      identity: "CS_PRIORITY",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+		client = new OCPPClient({
+			identity: 'CS_PRIORITY',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    // Register BOTH a generic and a version-specific handler
-    client.handle("Reset", async () => {
-      handlerUsed = "generic";
-      return { status: "Accepted" };
-    });
-    client.handle("ocpp1.6", "Reset", async () => {
-      handlerUsed = "version-specific";
-      return { status: "Accepted" };
-    });
+		// Register BOTH a generic and a version-specific handler
+		client.handle('Reset', async () => {
+			handlerUsed = 'generic';
+			return { status: 'Accepted' };
+		});
+		client.handle('ocpp1.6', 'Reset', async () => {
+			handlerUsed = 'version-specific';
+			return { status: 'Accepted' };
+		});
 
-    const serverCallPromise = new Promise<void>((resolve, reject) => {
-      server.on("client", async (sc) => {
-        try {
-          await sc.call("Reset", { type: "Hard" });
-          resolve();
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
+		const serverCallPromise = new Promise<void>((resolve, reject) => {
+			server.on('client', async sc => {
+				try {
+					await sc.call('Reset', { type: 'Hard' });
+					resolve();
+				} catch (e) {
+					reject(e);
+				}
+			});
+		});
 
-    await client.connect();
-    await serverCallPromise;
-    expect(handlerUsed).toBe("version-specific");
-  });
+		await client.connect();
+		await serverCallPromise;
+		expect(handlerUsed).toBe('version-specific');
+	});
 
-  it("should fall back to generic handler when version-specific is removed", async () => {
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const httpServer = await server.listen(0);
-    port = getPort(httpServer);
+	it('should fall back to generic handler when version-specific is removed', async () => {
+		server = new OCPPServer({ protocols: ['ocpp1.6'] });
+		server.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		const httpServer = await server.listen(0);
+		port = getPort(httpServer);
 
-    let handlerUsed = "";
+		let handlerUsed = '';
 
-    client = new OCPPClient({
-      identity: "CS_FALLBACK",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+		client = new OCPPClient({
+			identity: 'CS_FALLBACK',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    client.handle("Reset", async () => {
-      handlerUsed = "generic";
-      return { status: "Accepted" };
-    });
-    client.handle("ocpp1.6", "Reset", async () => {
-      handlerUsed = "version-specific";
-      return { status: "Accepted" };
-    });
+		client.handle('Reset', async () => {
+			handlerUsed = 'generic';
+			return { status: 'Accepted' };
+		});
+		client.handle('ocpp1.6', 'Reset', async () => {
+			handlerUsed = 'version-specific';
+			return { status: 'Accepted' };
+		});
 
-    // Remove the version-specific handler
-    client.removeHandler("ocpp1.6", "Reset");
+		// Remove the version-specific handler
+		client.removeHandler('ocpp1.6', 'Reset');
 
-    const serverCallPromise = new Promise<void>((resolve, reject) => {
-      server.on("client", async (sc) => {
-        try {
-          await sc.call("Reset", { type: "Soft" });
-          resolve();
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
+		const serverCallPromise = new Promise<void>((resolve, reject) => {
+			server.on('client', async sc => {
+				try {
+					await sc.call('Reset', { type: 'Soft' });
+					resolve();
+				} catch (e) {
+					reject(e);
+				}
+			});
+		});
 
-    await client.connect();
-    await serverCallPromise;
-    expect(handlerUsed).toBe("generic");
-  });
+		await client.connect();
+		await serverCallPromise;
+		expect(handlerUsed).toBe('generic');
+	});
 
-  it("should handle wildcard for unknown methods", async () => {
-    server = new OCPPServer({ protocols: ["ocpp1.6"] });
-    server.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const httpServer = await server.listen(0);
-    port = getPort(httpServer);
+	it('should handle wildcard for unknown methods', async () => {
+		server = new OCPPServer({ protocols: ['ocpp1.6'] });
+		server.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		const httpServer = await server.listen(0);
+		port = getPort(httpServer);
 
-    let wildcardCalled = false;
+		let wildcardCalled = false;
 
-    client = new OCPPClient({
-      identity: "CS_WILDCARD",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+		client = new OCPPClient({
+			identity: 'CS_WILDCARD',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    client.handle((_method, _ctx) => {
-      wildcardCalled = true;
-      return { status: "Accepted" };
-    });
+		client.handle(_ctx => {
+			wildcardCalled = true;
+			return { status: 'Accepted' };
+		});
 
-    const serverCallPromise = new Promise<void>((resolve, reject) => {
-      server.on("client", async (sc) => {
-        try {
-          await sc.call(unchecked("UnknownMethod"), {});
-          resolve();
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
+		const serverCallPromise = new Promise<void>((resolve, reject) => {
+			server.on('client', async sc => {
+				try {
+					await sc.call(unchecked('UnknownMethod'), {});
+					resolve();
+				} catch (e) {
+					reject(e);
+				}
+			});
+		});
 
-    await client.connect();
-    await serverCallPromise;
-    expect(wildcardCalled).toBe(true);
-  });
+		await client.connect();
+		await serverCallPromise;
+		expect(wildcardCalled).toBe(true);
+	});
 
-  it("should return securityProfile from options", () => {
-    client = new OCPPClient({
-      identity: "CS_SEC",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-      securityProfile: SecurityProfile.BASIC_AUTH,
-    });
-    expect(client.securityProfile).toBe(SecurityProfile.BASIC_AUTH);
-  });
+	it('should return securityProfile from options', () => {
+		client = new OCPPClient({
+			identity: 'CS_SEC',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+			securityProfile: SecurityProfile.BASIC_AUTH,
+		});
+		expect(client.securityProfile).toBe(SecurityProfile.BASIC_AUTH);
+	});
 
-  it("should default securityProfile to NONE", () => {
-    client = new OCPPClient({
-      identity: "CS_SEC2",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
-    expect(client.securityProfile).toBe(SecurityProfile.NONE);
-  });
+	it('should default securityProfile to NONE', () => {
+		client = new OCPPClient({
+			identity: 'CS_SEC2',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
+		expect(client.securityProfile).toBe(SecurityProfile.NONE);
+	});
 
-  it("should throw when calling sendRaw while not connected", () => {
-    client = new OCPPClient({
-      identity: "CS_RAW2",
-      endpoint: `ws://localhost:${port}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
-    expect(() => client.sendRaw("test")).toThrow("Cannot send");
-  });
+	it('should throw when calling sendRaw while not connected', () => {
+		client = new OCPPClient({
+			identity: 'CS_RAW2',
+			endpoint: `ws://localhost:${port}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
+		expect(() => client.sendRaw('test')).toThrow('Cannot send');
+	});
 });
 
-describe("OCPPClient - Advanced Features", () => {
-  const getPort = (srv: import("node:http").Server): number => {
-    const addr = srv.address();
-    if (addr && typeof addr !== "string") return addr.port;
-    return 0;
-  };
+describe('OCPPClient - Advanced Features', () => {
+	const getPort = (srv: import('node:http').Server): number => {
+		const addr = srv.address();
+		if (addr && typeof addr !== 'string') return addr.port;
+		return 0;
+	};
 
-  it("should remove all handlers with removeAllHandlers", async () => {
-    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const httpServer = await srv.listen(0);
-    const p = getPort(httpServer);
+	it('should remove all handlers with removeAllHandlers', async () => {
+		const srv = new OCPPServer({ protocols: ['ocpp1.6'] });
+		srv.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		const httpServer = await srv.listen(0);
+		const p = getPort(httpServer);
 
-    const cl = new OCPPClient({
-      identity: "CS_RMALL",
-      endpoint: `ws://localhost:${p}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+		const cl = new OCPPClient({
+			identity: 'CS_RMALL',
+			endpoint: `ws://localhost:${p}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    cl.handle("Heartbeat", async () => ({ currentTime: "" }));
-    cl.handle((_method, _ctx) => ({ status: "Accepted" }));
-    cl.removeAllHandlers();
+		cl.handle('Heartbeat', async () => ({ currentTime: '' }));
+		cl.handle(_ctx => ({ status: 'Accepted' }));
+		cl.removeAllHandlers();
 
-    const serverCallPromise = new Promise<void>((resolve, reject) => {
-      srv.on("client", async (sc) => {
-        try {
-          await sc.call("Heartbeat", {});
-          reject(new Error("Should have thrown"));
-        } catch (e: unknown) {
-          expect((e as Error).message).toMatch(/not known|NotImplemented/i);
-          resolve();
-        }
-      });
-    });
+		const serverCallPromise = new Promise<void>((resolve, reject) => {
+			srv.on('client', async sc => {
+				try {
+					await sc.call('Heartbeat', {});
+					reject(new Error('Should have thrown'));
+				} catch (e: unknown) {
+					expect((e as Error).message).toMatch(
+						/not known|NotImplemented/i
+					);
+					resolve();
+				}
+			});
+		});
 
-    await cl.connect();
-    await serverCallPromise;
-    await cl.close({ force: true }).catch(() => {});
-    await srv.close({ force: true });
-  });
+		await cl.connect();
+		await serverCallPromise;
+		await cl.close({ force: true }).catch(() => {});
+		await srv.close({ force: true });
+	});
 
-  it("should send raw message via sendRaw", async () => {
-    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const httpServer = await srv.listen(0);
-    const p = getPort(httpServer);
+	it('should send raw message via sendRaw', async () => {
+		const srv = new OCPPServer({ protocols: ['ocpp1.6'] });
+		srv.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		const httpServer = await srv.listen(0);
+		const p = getPort(httpServer);
 
-    let receivedRaw = false;
-    srv.on("client", (sc) => {
-      sc.on("badMessage", () => {
-        receivedRaw = true;
-      });
-    });
+		let receivedRaw = false;
+		srv.on('client', sc => {
+			sc.on('badMessage', () => {
+				receivedRaw = true;
+			});
+		});
 
-    const cl = new OCPPClient({
-      identity: "CS_RAW",
-      endpoint: `ws://localhost:${p}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+		const cl = new OCPPClient({
+			identity: 'CS_RAW',
+			endpoint: `ws://localhost:${p}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    await cl.connect();
-    await new Promise((r) => setTimeout(r, 100));
-    cl.sendRaw("not-valid-ocpp");
-    await new Promise((r) => setTimeout(r, 200));
+		await cl.connect();
+		await new Promise(r => setTimeout(r, 100));
+		cl.sendRaw('not-valid-ocpp');
+		await new Promise(r => setTimeout(r, 200));
 
-    expect(receivedRaw).toBe(true);
-    await cl.close({ force: true }).catch(() => {});
-    await srv.close({ force: true });
-  });
+		expect(receivedRaw).toBe(true);
+		await cl.close({ force: true }).catch(() => {});
+		await srv.close({ force: true });
+	});
 
-  it("should reconfigure options at runtime", async () => {
-    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const httpServer = await srv.listen(0);
-    const p = getPort(httpServer);
+	it('should reconfigure options at runtime', async () => {
+		const srv = new OCPPServer({ protocols: ['ocpp1.6'] });
+		srv.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		const httpServer = await srv.listen(0);
+		const p = getPort(httpServer);
 
-    const cl = new OCPPClient({
-      identity: "CS_RECONF",
-      endpoint: `ws://localhost:${p}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-      callTimeoutMs: 5000,
-    });
+		const cl = new OCPPClient({
+			identity: 'CS_RECONF',
+			endpoint: `ws://localhost:${p}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+			callTimeoutMs: 5000,
+		});
 
-    await cl.connect();
-    cl.reconfigure({ callTimeoutMs: 10000 });
-    expect(cl.state).toBe(OCPPClient.OPEN);
-    await cl.close({ force: true }).catch(() => {});
-    await srv.close({ force: true });
-  });
+		await cl.connect();
+		cl.reconfigure({ callTimeoutMs: 10000 });
+		expect(cl.state).toBe(OCPPClient.OPEN);
+		await cl.close({ force: true }).catch(() => {});
+		await srv.close({ force: true });
+	});
 
-  it("should reconfigure and re-setup validators when strictMode changes", async () => {
-    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const httpServer = await srv.listen(0);
-    const p = getPort(httpServer);
+	it('should reconfigure and re-setup validators when strictMode changes', async () => {
+		const srv = new OCPPServer({ protocols: ['ocpp1.6'] });
+		srv.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		const httpServer = await srv.listen(0);
+		const p = getPort(httpServer);
 
-    const cl = new OCPPClient({
-      identity: "CS_RECONF_STRICT",
-      endpoint: `ws://localhost:${p}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+		const cl = new OCPPClient({
+			identity: 'CS_RECONF_STRICT',
+			endpoint: `ws://localhost:${p}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    await cl.connect();
-    cl.reconfigure({ strictMode: true });
-    expect(cl.state).toBe(OCPPClient.OPEN);
-    await cl.close({ force: true }).catch(() => {});
-    await srv.close({ force: true });
-  });
+		await cl.connect();
+		cl.reconfigure({ strictMode: true });
+		expect(cl.state).toBe(OCPPClient.OPEN);
+		await cl.close({ force: true }).catch(() => {});
+		await srv.close({ force: true });
+	});
 
-  it("should reconfigure ping interval", async () => {
-    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const httpServer = await srv.listen(0);
-    const p = getPort(httpServer);
+	it('should reconfigure ping interval', async () => {
+		const srv = new OCPPServer({ protocols: ['ocpp1.6'] });
+		srv.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		const httpServer = await srv.listen(0);
+		const p = getPort(httpServer);
 
-    const cl = new OCPPClient({
-      identity: "CS_RECONF_PING",
-      endpoint: `ws://localhost:${p}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-      pingIntervalMs: 0,
-    });
+		const cl = new OCPPClient({
+			identity: 'CS_RECONF_PING',
+			endpoint: `ws://localhost:${p}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+			pingIntervalMs: 0,
+		});
 
-    await cl.connect();
-    cl.reconfigure({ pingIntervalMs: 30000 });
-    expect(cl.state).toBe(OCPPClient.OPEN);
-    await cl.close({ force: true }).catch(() => {});
-    await srv.close({ force: true });
-  });
+		await cl.connect();
+		cl.reconfigure({ pingIntervalMs: 30000 });
+		expect(cl.state).toBe(OCPPClient.OPEN);
+		await cl.close({ force: true }).catch(() => {});
+		await srv.close({ force: true });
+	});
 
-  it("should handle bad messages and emit badMessage event", async () => {
-    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const httpServer = await srv.listen(0);
-    const p = getPort(httpServer);
+	it('should handle bad messages and emit badMessage event', async () => {
+		const srv = new OCPPServer({ protocols: ['ocpp1.6'] });
+		srv.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		const httpServer = await srv.listen(0);
+		const p = getPort(httpServer);
 
-    let badMsgEvent: unknown = null;
-    srv.on("client", (sc) => {
-      sc.on("badMessage", (data) => {
-        badMsgEvent = data;
-      });
-    });
+		let badMsgEvent: unknown = null;
+		srv.on('client', sc => {
+			sc.on('badMessage', data => {
+				badMsgEvent = data;
+			});
+		});
 
-    const cl = new OCPPClient({
-      identity: "CS_BADMSG",
-      endpoint: `ws://localhost:${p}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+		const cl = new OCPPClient({
+			identity: 'CS_BADMSG',
+			endpoint: `ws://localhost:${p}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    await cl.connect();
-    await new Promise((r) => setTimeout(r, 100));
-    cl.sendRaw('[2, "msg1", {broken');
-    await new Promise((r) => setTimeout(r, 200));
+		await cl.connect();
+		await new Promise(r => setTimeout(r, 100));
+		cl.sendRaw('[2, "msg1", {broken');
+		await new Promise(r => setTimeout(r, 200));
 
-    expect(badMsgEvent).toBeDefined();
-    await cl.close({ force: true }).catch(() => {});
-    await srv.close({ force: true });
-  });
+		expect(badMsgEvent).toBeDefined();
+		await cl.close({ force: true }).catch(() => {});
+		await srv.close({ force: true });
+	});
 
-  it("should attempt reconnect on unexpected disconnect", async () => {
-    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const httpServer = await srv.listen(0);
-    const p = getPort(httpServer);
+	it('should attempt reconnect on unexpected disconnect', async () => {
+		const srv = new OCPPServer({ protocols: ['ocpp1.6'] });
+		srv.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		const httpServer = await srv.listen(0);
+		const p = getPort(httpServer);
 
-    let reconnectEmitted = false;
-    const cl = new OCPPClient({
-      identity: "CS_RECONN",
-      endpoint: `ws://localhost:${p}`,
-      protocols: ["ocpp1.6"],
-      reconnect: true,
-      maxReconnects: 1,
-      backoffMin: 100,
-      backoffMax: 200,
-    });
+		let reconnectEmitted = false;
+		const cl = new OCPPClient({
+			identity: 'CS_RECONN',
+			endpoint: `ws://localhost:${p}`,
+			protocols: ['ocpp1.6'],
+			reconnect: true,
+			maxReconnects: 1,
+			backoffMin: 100,
+			backoffMax: 200,
+		});
 
-    cl.on("reconnect", () => {
-      reconnectEmitted = true;
-    });
-    cl.on("error", () => {}); // suppress unhandled errors
+		cl.on('reconnect', () => {
+			reconnectEmitted = true;
+		});
+		cl.on('error', () => {}); // suppress unhandled errors
 
-    await cl.connect();
+		await cl.connect();
 
-    // Force close from server side to trigger reconnect
-    await srv.close({ force: true });
-    await new Promise((r) => setTimeout(r, 500));
+		// Force close from server side to trigger reconnect
+		await srv.close({ force: true });
+		await new Promise(r => setTimeout(r, 500));
 
-    expect(reconnectEmitted).toBe(true);
-    await cl.close({ force: true }).catch(() => {});
-  });
+		expect(reconnectEmitted).toBe(true);
+		await cl.close({ force: true }).catch(() => {});
+	});
 
-  it("should emit error when connecting to non-existent server", async () => {
-    const cl = new OCPPClient({
-      identity: "CS_ERR",
-      endpoint: "ws://localhost:59999",
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
-    cl.on("error", () => {});
+	it('should emit error when connecting to non-existent server', async () => {
+		const cl = new OCPPClient({
+			identity: 'CS_ERR',
+			endpoint: 'ws://localhost:59999',
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
+		cl.on('error', () => {});
 
-    await expect(cl.connect()).rejects.toThrow();
-    expect(cl.state).toBe(OCPPClient.CLOSED);
-  });
+		await expect(cl.connect()).rejects.toThrow();
+		expect(cl.state).toBe(OCPPClient.CLOSED);
+	});
 
-  it("should use ping when pingIntervalMs is set", async () => {
-    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const httpServer = await srv.listen(0);
-    const p = getPort(httpServer);
+	it('should use ping when pingIntervalMs is set', async () => {
+		const srv = new OCPPServer({ protocols: ['ocpp1.6'] });
+		srv.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		const httpServer = await srv.listen(0);
+		const p = getPort(httpServer);
 
-    const cl = new OCPPClient({
-      identity: "CS_PING",
-      endpoint: `ws://localhost:${p}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-      pingIntervalMs: 200,
-    });
+		const cl = new OCPPClient({
+			identity: 'CS_PING',
+			endpoint: `ws://localhost:${p}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+			pingIntervalMs: 200,
+		});
 
-    await cl.connect();
-    await new Promise((r) => setTimeout(r, 350));
-    expect(cl.state).toBe(OCPPClient.OPEN);
-    await cl.close({ force: true }).catch(() => {});
-    await srv.close({ force: true });
-  });
+		await cl.connect();
+		await new Promise(r => setTimeout(r, 350));
+		expect(cl.state).toBe(OCPPClient.OPEN);
+		await cl.close({ force: true }).catch(() => {});
+		await srv.close({ force: true });
+	});
 
-  it("should validate outbound calls in strict mode", async () => {
-    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    srv.on("client", (sc) => {
-      sc.handle("Heartbeat", async () => ({
-        currentTime: new Date().toISOString(),
-      }));
-    });
-    const httpServer = await srv.listen(0);
-    const p = getPort(httpServer);
+	it('should validate outbound calls in strict mode', async () => {
+		const srv = new OCPPServer({ protocols: ['ocpp1.6'] });
+		srv.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		srv.on('client', sc => {
+			sc.handle('Heartbeat', async () => ({
+				currentTime: new Date().toISOString(),
+			}));
+		});
+		const httpServer = await srv.listen(0);
+		const p = getPort(httpServer);
 
-    const cl = new OCPPClient({
-      identity: "CS_STRICT",
-      endpoint: `ws://localhost:${p}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-      strictMode: true,
-    });
+		const cl = new OCPPClient({
+			identity: 'CS_STRICT',
+			endpoint: `ws://localhost:${p}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+			strictMode: true,
+		});
 
-    cl.on("strictValidationFailure", () => {});
+		cl.on('strictValidationFailure', () => {});
 
-    await cl.connect();
+		await cl.connect();
 
-    try {
-      await cl.call("Heartbeat", {} as never);
-    } catch {
-      // May or may not throw depending on validation
-    }
+		try {
+			await cl.call('Heartbeat', {} as never);
+		} catch {
+			// May or may not throw depending on validation
+		}
 
-    expect(cl.state).toBe(OCPPClient.OPEN);
-    await cl.close({ force: true }).catch(() => {});
-    await srv.close({ force: true });
-  });
+		expect(cl.state).toBe(OCPPClient.OPEN);
+		await cl.close({ force: true }).catch(() => {});
+		await srv.close({ force: true });
+	});
 });
 
-describe("OCPPClient - Version-Aware Call", () => {
-  const getPort = (srv: import("node:http").Server): number => {
-    const addr = srv.address();
-    if (addr && typeof addr !== "string") return addr.port;
-    return 0;
-  };
+describe('OCPPClient - Version-Aware Call', () => {
+	const getPort = (srv: import('node:http').Server): number => {
+		const addr = srv.address();
+		if (addr && typeof addr !== 'string') return addr.port;
+		return 0;
+	};
 
-  it("should call with version-specific typed params (ocpp1.6)", async () => {
-    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    srv.on("client", (sc) => {
-      sc.handle("ocpp1.6", "BootNotification", async ({ params }) => {
-        // ocpp1.6 BootNotification has chargePointModel/chargePointVendor
-        expect(params).toHaveProperty("chargePointModel");
-        expect(params).toHaveProperty("chargePointVendor");
-        return {
-          status: "Accepted",
-          currentTime: new Date().toISOString(),
-          interval: 300,
-        };
-      });
-    });
-    const httpServer = await srv.listen(0);
-    const p = getPort(httpServer);
+	it('should call with version-specific typed params (ocpp1.6)', async () => {
+		const srv = new OCPPServer({ protocols: ['ocpp1.6'] });
+		srv.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		srv.on('client', sc => {
+			sc.handle('ocpp1.6', 'BootNotification', async ({ params }) => {
+				// ocpp1.6 BootNotification has chargePointModel/chargePointVendor
+				expect(params).toHaveProperty('chargePointModel');
+				expect(params).toHaveProperty('chargePointVendor');
+				return {
+					status: 'Accepted',
+					currentTime: new Date().toISOString(),
+					interval: 300,
+				};
+			});
+		});
+		const httpServer = await srv.listen(0);
+		const p = getPort(httpServer);
 
-    const cl = new OCPPClient({
-      identity: "CS_VCALL16",
-      endpoint: `ws://localhost:${p}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+		const cl = new OCPPClient({
+			identity: 'CS_VCALL16',
+			endpoint: `ws://localhost:${p}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    await cl.connect();
-    const result = await cl.call("ocpp1.6", "BootNotification", {
-      chargePointModel: "ModelX",
-      chargePointVendor: "VendorY",
-    });
+		await cl.connect();
+		const result = await cl.call('ocpp1.6', 'BootNotification', {
+			chargePointModel: 'ModelX',
+			chargePointVendor: 'VendorY',
+		});
 
-    expect(result).toHaveProperty("status", "Accepted");
-    expect(result).toHaveProperty("interval", 300);
-    await cl.close({ force: true }).catch(() => {});
-    await srv.close({ force: true });
-  });
+		expect(result).toHaveProperty('status', 'Accepted');
+		expect(result).toHaveProperty('interval', 300);
+		await cl.close({ force: true }).catch(() => {});
+		await srv.close({ force: true });
+	});
 
-  it("should call with version-specific typed params (ocpp2.0.1)", async () => {
-    const srv = new OCPPServer({ protocols: ["ocpp2.0.1"] });
-    srv.auth((ctx) => ctx.accept({ protocol: "ocpp2.0.1" }));
-    srv.on("client", (sc) => {
-      sc.handle("ocpp2.0.1", "BootNotification", async ({ params }) => {
-        // ocpp2.0.1 BootNotification has chargingStation/reason
-        expect(params).toHaveProperty("chargingStation");
-        expect(params).toHaveProperty("reason");
-        return {
-          status: "Accepted",
-          currentTime: new Date().toISOString(),
-          interval: 600,
-        };
-      });
-    });
-    const httpServer = await srv.listen(0);
-    const p = getPort(httpServer);
+	it('should call with version-specific typed params (ocpp2.0.1)', async () => {
+		const srv = new OCPPServer({ protocols: ['ocpp2.0.1'] });
+		srv.auth(ctx => ctx.accept({ protocol: 'ocpp2.0.1' }));
+		srv.on('client', sc => {
+			sc.handle('ocpp2.0.1', 'BootNotification', async ({ params }) => {
+				// ocpp2.0.1 BootNotification has chargingStation/reason
+				expect(params).toHaveProperty('chargingStation');
+				expect(params).toHaveProperty('reason');
+				return {
+					status: 'Accepted',
+					currentTime: new Date().toISOString(),
+					interval: 600,
+				};
+			});
+		});
+		const httpServer = await srv.listen(0);
+		const p = getPort(httpServer);
 
-    const cl = new OCPPClient({
-      identity: "CS_VCALL201",
-      endpoint: `ws://localhost:${p}`,
-      protocols: ["ocpp2.0.1"],
-      reconnect: false,
-    });
+		const cl = new OCPPClient({
+			identity: 'CS_VCALL201',
+			endpoint: `ws://localhost:${p}`,
+			protocols: ['ocpp2.0.1'],
+			reconnect: false,
+		});
 
-    await cl.connect();
-    const result = await cl.call("ocpp2.0.1", "BootNotification", {
-      chargingStation: { model: "ModelX", vendorName: "VendorY" },
-      reason: "PowerUp",
-    });
+		await cl.connect();
+		const result = await cl.call('ocpp2.0.1', 'BootNotification', {
+			chargingStation: { model: 'ModelX', vendorName: 'VendorY' },
+			reason: 'PowerUp',
+		});
 
-    expect(result).toHaveProperty("status", "Accepted");
-    expect(result).toHaveProperty("interval", 600);
-    await cl.close({ force: true }).catch(() => {});
-    await srv.close({ force: true });
-  });
+		expect(result).toHaveProperty('status', 'Accepted');
+		expect(result).toHaveProperty('interval', 600);
+		await cl.close({ force: true }).catch(() => {});
+		await srv.close({ force: true });
+	});
 
-  it("should still work with non-versioned call (default protocol)", async () => {
-    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    srv.on("client", (sc) => {
-      sc.handle("Heartbeat", async () => ({
-        currentTime: new Date().toISOString(),
-      }));
-    });
-    const httpServer = await srv.listen(0);
-    const p = getPort(httpServer);
+	it('should still work with non-versioned call (default protocol)', async () => {
+		const srv = new OCPPServer({ protocols: ['ocpp1.6'] });
+		srv.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		srv.on('client', sc => {
+			sc.handle('Heartbeat', async () => ({
+				currentTime: new Date().toISOString(),
+			}));
+		});
+		const httpServer = await srv.listen(0);
+		const p = getPort(httpServer);
 
-    const cl = new OCPPClient({
-      identity: "CS_VCALL_DEF",
-      endpoint: `ws://localhost:${p}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+		const cl = new OCPPClient({
+			identity: 'CS_VCALL_DEF',
+			endpoint: `ws://localhost:${p}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    await cl.connect();
-    // Non-versioned call should still work
-    const result = await cl.call("Heartbeat", {});
-    expect(result).toHaveProperty("currentTime");
-    await cl.close({ force: true }).catch(() => {});
-    await srv.close({ force: true });
-  });
+		await cl.connect();
+		// Non-versioned call should still work
+		const result = await cl.call('Heartbeat', {});
+		expect(result).toHaveProperty('currentTime');
+		await cl.close({ force: true }).catch(() => {});
+		await srv.close({ force: true });
+	});
 
-  it("sends a version-named unchecked call without params as that action", async () => {
-    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
-    const received: { method: string; params: unknown }[] = [];
-    srv.on("client", (sc) => {
-      sc.handle((method, { params }) => {
-        received.push({ method, params });
-        return { pong: true };
-      });
-    });
-    const httpServer = await srv.listen(0);
-    const p = getPort(httpServer);
+	it('sends a version-named unchecked call without params as that action', async () => {
+		const srv = new OCPPServer({ protocols: ['ocpp1.6'] });
+		srv.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
+		const received: { method: string; params: unknown }[] = [];
+		srv.on('client', sc => {
+			sc.handle(({ params, method }) => {
+				received.push({ method, params });
+				return { pong: true };
+			});
+		});
+		const httpServer = await srv.listen(0);
+		const p = getPort(httpServer);
 
-    const cl = new OCPPClient({
-      identity: "CS_VCALL_UNCHECKED",
-      endpoint: `ws://localhost:${p}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
-    const warn = vi.fn();
-    // @ts-ignore - reaching into private
-    cl._logger = { warn, debug() {}, info() {}, error() {} };
+		const cl = new OCPPClient({
+			identity: 'CS_VCALL_UNCHECKED',
+			endpoint: `ws://localhost:${p}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
+		const warn = vi.fn();
+		// @ts-ignore - reaching into private
+		cl._logger = { warn, debug() {}, info() {}, error() {} };
 
-    await cl.connect();
-    try {
-      expect(await cl.call("ocpp1.6", unchecked("VendorPing"))).toEqual({
-        pong: true,
-      });
-      expect(await cl.safeCall("ocpp1.6", unchecked("VendorPing"))).toEqual({
-        pong: true,
-      });
-      expect(received).toEqual([
-        { method: "VendorPing", params: {} },
-        { method: "VendorPing", params: {} },
-      ]);
+		await cl.connect();
+		try {
+			expect(await cl.call('ocpp1.6', unchecked('VendorPing'))).toEqual({
+				pong: true,
+			});
+			expect(
+				await cl.safeCall('ocpp1.6', unchecked('VendorPing'))
+			).toEqual({
+				pong: true,
+			});
+			expect(received).toEqual([
+				{ method: 'VendorPing', params: {} },
+				{ method: 'VendorPing', params: {} },
+			]);
 
-      // A failed one is logged under its action, not its version.
-      await cl.close({ force: true });
-      expect(
-        await cl.safeCall("ocpp1.6", unchecked("VendorPing")),
-      ).toBeUndefined();
-      expect(warn).toHaveBeenCalledWith(
-        "SafeCall failed",
-        expect.objectContaining({ method: "VendorPing" }),
-      );
-    } finally {
-      await cl.close({ force: true }).catch(() => {});
-      await srv.close({ force: true });
-    }
-  });
+			// A failed one is logged under its action, not its version.
+			await cl.close({ force: true });
+			expect(
+				await cl.safeCall('ocpp1.6', unchecked('VendorPing'))
+			).toBeUndefined();
+			expect(warn).toHaveBeenCalledWith(
+				'SafeCall failed',
+				expect.objectContaining({ method: 'VendorPing' })
+			);
+		} finally {
+			await cl.close({ force: true }).catch(() => {});
+			await srv.close({ force: true });
+		}
+	});
 
-  it("should support version-aware call from server to client", async () => {
-    const srv = new OCPPServer({ protocols: ["ocpp1.6"] });
-    srv.auth((ctx) => ctx.accept({ protocol: "ocpp1.6" }));
+	it('should support version-aware call from server to client', async () => {
+		const srv = new OCPPServer({ protocols: ['ocpp1.6'] });
+		srv.auth(ctx => ctx.accept({ protocol: 'ocpp1.6' }));
 
-    const callResult = new Promise<unknown>((resolve) => {
-      srv.on("client", async (sc) => {
-        try {
-          const result = await sc.call("ocpp1.6", "GetConfiguration", {
-            key: ["HeartbeatInterval"],
-          });
-          resolve(result);
-        } catch (e) {
-          resolve(e); // Resolve with error to avoid timeout
-        }
-      });
-    });
+		const callResult = new Promise<unknown>(resolve => {
+			srv.on('client', async sc => {
+				try {
+					const result = await sc.call(
+						'ocpp1.6',
+						'GetConfiguration',
+						{
+							key: ['HeartbeatInterval'],
+						}
+					);
+					resolve(result);
+				} catch (e) {
+					resolve(e); // Resolve with error to avoid timeout
+				}
+			});
+		});
 
-    const httpServer = await srv.listen(0);
-    const p = getPort(httpServer);
+		const httpServer = await srv.listen(0);
+		const p = getPort(httpServer);
 
-    const cl = new OCPPClient({
-      identity: "CS_VCALL_SRV",
-      endpoint: `ws://localhost:${p}`,
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-    });
+		const cl = new OCPPClient({
+			identity: 'CS_VCALL_SRV',
+			endpoint: `ws://localhost:${p}`,
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+		});
 
-    cl.handle("ocpp1.6", "GetConfiguration", async ({ params }) => {
-      expect(params).toHaveProperty("key");
-      return {
-        configurationKey: [
-          { key: "HeartbeatInterval", readonly: false, value: "60" },
-        ],
-        unknownKey: [],
-      };
-    });
+		cl.handle('ocpp1.6', 'GetConfiguration', async ({ params }) => {
+			expect(params).toHaveProperty('key');
+			return {
+				configurationKey: [
+					{ key: 'HeartbeatInterval', readonly: false, value: '60' },
+				],
+				unknownKey: [],
+			};
+		});
 
-    await cl.connect();
-    const result = await callResult;
-    expect(result).toHaveProperty("configurationKey");
-    await cl.close({ force: true }).catch(() => {});
-    await srv.close({ force: true });
-  });
+		await cl.connect();
+		const result = await callResult;
+		expect(result).toHaveProperty('configurationKey');
+		await cl.close({ force: true }).catch(() => {});
+		await srv.close({ force: true });
+	});
 
-  it("should build endpoint correctly with query params", () => {
-    const clientWithQuery = new OCPPClient({
-      identity: "CS_QUERY",
-      endpoint: "ws://localhost:9999/foo",
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-      query: { a: "1", b: "2" },
-    });
-    const url = (clientWithQuery as any)._buildEndpoint();
-    expect(url).toBe("ws://localhost:9999/foo/CS_QUERY?a=1&b=2");
+	it('should build endpoint correctly with query params', () => {
+		const clientWithQuery = new OCPPClient({
+			identity: 'CS_QUERY',
+			endpoint: 'ws://localhost:9999/foo',
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+			query: { a: '1', b: '2' },
+		});
+		const url = (clientWithQuery as any)._buildEndpoint();
+		expect(url).toBe('ws://localhost:9999/foo/CS_QUERY?a=1&b=2');
 
-    const clientWithExistingQuery = new OCPPClient({
-      identity: "CS_Q2",
-      endpoint: "ws://localhost:9999?foo=bar",
-      protocols: ["ocpp1.6"],
-      reconnect: false,
-      query: { baz: "qux" },
-    });
-    const url2 = (clientWithExistingQuery as any)._buildEndpoint();
-    // Identity belongs in the pathname, not appended into the query (low fix)
-    expect(url2).toBe("ws://localhost:9999/CS_Q2?foo=bar&baz=qux");
-  });
+		const clientWithExistingQuery = new OCPPClient({
+			identity: 'CS_Q2',
+			endpoint: 'ws://localhost:9999?foo=bar',
+			protocols: ['ocpp1.6'],
+			reconnect: false,
+			query: { baz: 'qux' },
+		});
+		const url2 = (clientWithExistingQuery as any)._buildEndpoint();
+		// Identity belongs in the pathname, not appended into the query (low fix)
+		expect(url2).toBe('ws://localhost:9999/CS_Q2?foo=bar&baz=qux');
+	});
 
-  it("should build TLS options correctly", () => {
-    const client = new OCPPClient({
-      identity: "CS_TLS",
-      endpoint: "wss://localhost:9999",
-      protocols: ["ocpp1.6"],
-      // @ts-ignore
-      securityProfile: 3, // TLS_CLIENT_CERT
-      tls: {
-        ca: "rootca",
-        cert: "clientcert",
-        key: "clientkey",
-        passphrase: "pass",
-        rejectUnauthorized: false,
-      },
-    });
+	it('should build TLS options correctly', () => {
+		const client = new OCPPClient({
+			identity: 'CS_TLS',
+			endpoint: 'wss://localhost:9999',
+			protocols: ['ocpp1.6'],
+			// @ts-ignore
+			securityProfile: 3, // TLS_CLIENT_CERT
+			tls: {
+				ca: 'rootca',
+				cert: 'clientcert',
+				key: 'clientkey',
+				passphrase: 'pass',
+				rejectUnauthorized: false,
+			},
+		});
 
-    const opts = (client as any)._buildWsOptions();
-    expect(opts.ca).toBe("rootca");
-    expect(opts.cert).toBe("clientcert");
-    expect(opts.key).toBe("clientkey");
-    expect(opts.passphrase).toBe("pass");
-    expect(opts.rejectUnauthorized).toBe(false);
-  });
+		const opts = (client as any)._buildWsOptions();
+		expect(opts.ca).toBe('rootca');
+		expect(opts.cert).toBe('clientcert');
+		expect(opts.key).toBe('clientkey');
+		expect(opts.passphrase).toBe('pass');
+		expect(opts.rejectUnauthorized).toBe(false);
+	});
 
-  it("should emit strictValidationFailure on inbound validation error", () => {
-    const client = new OCPPClient({
-      identity: "CS_VAL_ERR",
-      endpoint: "ws://localhost:9999",
-      protocols: ["ocpp1.6"],
-      strictMode: true,
-      reconnect: false,
-    });
+	it('should emit strictValidationFailure on inbound validation error', () => {
+		const client = new OCPPClient({
+			identity: 'CS_VAL_ERR',
+			endpoint: 'ws://localhost:9999',
+			protocols: ['ocpp1.6'],
+			strictMode: true,
+			reconnect: false,
+		});
 
-    // Inject a mock validator that throws
-    const mockValidator = {
-      subprotocol: "ocpp1.6",
-      validate: vi.fn().mockImplementation(() => {
-        throw new Error("Validation failed");
-      }),
-    };
-    (client as any)._validators = [mockValidator];
-    (client as any)._protocol = "ocpp1.6";
+		// Inject a mock validator that throws
+		const mockValidator = {
+			subprotocol: 'ocpp1.6',
+			validate: vi.fn().mockImplementation(() => {
+				throw new Error('Validation failed');
+			}),
+		};
+		(client as any)._validators = [mockValidator];
+		(client as any)._protocol = 'ocpp1.6';
 
-    const emitSpy = vi.spyOn(client, "emit");
+		const emitSpy = vi.spyOn(client, 'emit');
 
-    // Trigger validation logic via private method
-    expect(() => {
-      (client as any)._validateInbound("Heartbeat", {}, "req");
-    }).toThrow("Validation failed");
+		// Trigger validation logic via private method
+		expect(() => {
+			(client as any)._validateInbound('Heartbeat', {}, 'req');
+		}).toThrow('Validation failed');
 
-    expect(emitSpy).toHaveBeenCalledWith(
-      "strictValidationFailure",
-      expect.objectContaining({
-        error: expect.any(Error),
-      }),
-    );
-  });
+		expect(emitSpy).toHaveBeenCalledWith(
+			'strictValidationFailure',
+			expect.objectContaining({
+				error: expect.any(Error),
+			})
+		);
+	});
 
-  it("should emit strictValidationFailure on outbound validation error", () => {
-    const client = new OCPPClient({
-      identity: "CS_OUT_ERR",
-      endpoint: "ws://localhost:9999",
-      protocols: ["ocpp1.6"],
-      strictMode: true,
-      reconnect: false,
-    });
+	it('should emit strictValidationFailure on outbound validation error', () => {
+		const client = new OCPPClient({
+			identity: 'CS_OUT_ERR',
+			endpoint: 'ws://localhost:9999',
+			protocols: ['ocpp1.6'],
+			strictMode: true,
+			reconnect: false,
+		});
 
-    // Inject a mock validator that throws
-    const mockValidator = {
-      subprotocol: "ocpp1.6",
-      validate: vi.fn().mockImplementation(() => {
-        throw new Error("Outbound validation failed");
-      }),
-    };
-    (client as any)._validators = [mockValidator];
-    (client as any)._protocol = "ocpp1.6";
+		// Inject a mock validator that throws
+		const mockValidator = {
+			subprotocol: 'ocpp1.6',
+			validate: vi.fn().mockImplementation(() => {
+				throw new Error('Outbound validation failed');
+			}),
+		};
+		(client as any)._validators = [mockValidator];
+		(client as any)._protocol = 'ocpp1.6';
 
-    const emitSpy = vi.spyOn(client, "emit");
+		const emitSpy = vi.spyOn(client, 'emit');
 
-    // Trigger validation logic via private method
-    expect(() => {
-      (client as any)._validateOutbound(
-        "BootNotification",
-        { status: "InvalidStatus" },
-        "conf",
-      );
-    }).toThrow("Outbound validation failed");
+		// Trigger validation logic via private method
+		expect(() => {
+			(client as any)._validateOutbound(
+				'BootNotification',
+				{ status: 'InvalidStatus' },
+				'conf'
+			);
+		}).toThrow('Outbound validation failed');
 
-    expect(emitSpy).toHaveBeenCalledWith(
-      "strictValidationFailure",
-      expect.objectContaining({
-        error: expect.any(Error),
-        message: { status: "InvalidStatus" },
-      }),
-    );
-  });
+		expect(emitSpy).toHaveBeenCalledWith(
+			'strictValidationFailure',
+			expect.objectContaining({
+				error: expect.any(Error),
+				message: { status: 'InvalidStatus' },
+			})
+		);
+	});
 });
 
-describe("_buildEndpoint (low)", () => {
-  const build = (endpoint: string, query?: Record<string, string>) =>
-    (
-      new OCPPClient({ identity: "CP/1", endpoint, query }) as any
-    )._buildEndpoint() as string;
+describe('_buildEndpoint (low)', () => {
+	const build = (endpoint: string, query?: Record<string, string>) =>
+		(
+			new OCPPClient({ identity: 'CP/1', endpoint, query }) as any
+		)._buildEndpoint() as string;
 
-  it("identity goes into the path, not the query string", () => {
-    expect(build("ws://h/base?x=1")).toBe("ws://h/base/CP%2F1?x=1");
-  });
+	it('identity goes into the path, not the query string', () => {
+		expect(build('ws://h/base?x=1')).toBe('ws://h/base/CP%2F1?x=1');
+	});
 
-  it("query option merges with endpoint query", () => {
-    expect(build("ws://h/base?x=1", { y: "2" })).toBe(
-      "ws://h/base/CP%2F1?x=1&y=2",
-    );
-  });
+	it('query option merges with endpoint query', () => {
+		expect(build('ws://h/base?x=1', { y: '2' })).toBe(
+			'ws://h/base/CP%2F1?x=1&y=2'
+		);
+	});
 
-  it("plain endpoint unchanged behavior", () => {
-    expect(build("ws://h/base")).toBe("ws://h/base/CP%2F1");
-  });
+	it('plain endpoint unchanged behavior', () => {
+		expect(build('ws://h/base')).toBe('ws://h/base/CP%2F1');
+	});
 });

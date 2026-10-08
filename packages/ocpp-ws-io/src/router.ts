@@ -118,9 +118,9 @@ function forConnection<P extends AnyOCPPProtocol>(
     const [handler] = args;
     return [
       typeof handler === "function"
-        ? (method, context) => {
+        ? (context) => {
             attachClient(context, client);
-            return handler(method, context);
+            return handler(context);
           }
         : handler,
     ];
