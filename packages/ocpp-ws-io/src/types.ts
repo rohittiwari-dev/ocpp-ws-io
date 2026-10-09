@@ -2136,10 +2136,14 @@ type ExtraPathsOfOne<Shape, T, Prefix extends string> =
 /**
  * Paths of keys in T that Shape does not define. When T is a union, such as a
  * handler that returns one of two objects, every member must fit.
+ * Stop at identical nested types before distributing recursive JSON unions.
  */
-type ExtraPaths<Shape, T, Prefix extends string = ""> = T extends unknown
-  ? ExtraPathsOfOne<Shape, T, Prefix>
-  : never;
+type ExtraPaths<Shape, T, Prefix extends string = ""> =
+  true extends IsIdentical<Shape, T>
+    ? never
+    : T extends unknown
+      ? ExtraPathsOfOne<Shape, T, Prefix>
+      : never;
 
 /**
  * `unknown` when T has no key Shape does not define, at any depth; otherwise a
