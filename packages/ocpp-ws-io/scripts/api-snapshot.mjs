@@ -6,14 +6,22 @@
 // Usage (after a build, from the package root):
 //   node scripts/api-snapshot.mjs <out.json>
 //   node scripts/api-snapshot.mjs <out.json> --compare <baseline.json>
+//   node scripts/api-snapshot.mjs <out.json> --root <another package's folder>
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const argv = process.argv.slice(2);
+const option = (name) => {
+  const i = argv.indexOf(name);
+  return i === -1 ? undefined : argv.splice(i, 2)[1];
+};
+const rootArg = option("--root");
+const own = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const root = rootArg ? resolve(rootArg) : own;
 const require = createRequire(join(root, "package.json"));
-const ts = require("typescript");
+const ts = createRequire(join(own, "package.json"))("typescript");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
 /** The types, require and import files of one `exports` entry. */
@@ -73,7 +81,7 @@ for (const [key, entry] of entries) {
   };
 }
 
-const [out, flag, baseline] = process.argv.slice(2);
+const [out, flag, baseline] = argv;
 if (!out) {
   console.error("usage: node scripts/api-snapshot.mjs <out.json> [--compare <baseline.json>]");
   process.exit(2);

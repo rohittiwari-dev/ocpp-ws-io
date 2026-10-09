@@ -11,8 +11,7 @@
   },
   "dependencies": {
     "ocpp-ws-io": "workspace:*",
-    "ocpp-ws-board": "workspace:*",
-    "ocpp-smart-charge-engine": "workspace:*"
+    "ocpp-ws-board": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

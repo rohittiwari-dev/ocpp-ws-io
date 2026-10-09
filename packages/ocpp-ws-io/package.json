@@ -34,6 +34,15 @@
 			],
 			"hono": [
 				"dist/hono.d.ts"
+			],
+			"smart-charge": [
+				"dist/smart-charge.d.ts"
+			],
+			"smart-charge/strategies": [
+				"dist/smart-charge/strategies.d.ts"
+			],
+			"smart-charge/builders": [
+				"dist/smart-charge/builders.d.ts"
 			]
 		}
 	},
@@ -82,6 +91,21 @@
 			"types": "./dist/hono.d.ts",
 			"import": "./dist/hono.mjs",
 			"require": "./dist/hono.js"
+		},
+		"./smart-charge": {
+			"types": "./dist/smart-charge.d.ts",
+			"import": "./dist/smart-charge.mjs",
+			"require": "./dist/smart-charge.js"
+		},
+		"./smart-charge/strategies": {
+			"types": "./dist/smart-charge/strategies.d.ts",
+			"import": "./dist/smart-charge/strategies.mjs",
+			"require": "./dist/smart-charge/strategies.js"
+		},
+		"./smart-charge/builders": {
+			"types": "./dist/smart-charge/builders.d.ts",
+			"import": "./dist/smart-charge/builders.mjs",
+			"require": "./dist/smart-charge/builders.js"
 		}
 	},
 	"scripts": {

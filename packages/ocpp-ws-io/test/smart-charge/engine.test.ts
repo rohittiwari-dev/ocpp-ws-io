@@ -1,14 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   SmartChargingEngine,
-  Strategies,
   DuplicateSessionError,
   SessionNotFoundError,
   SmartChargingConfigError,
   StrategyError,
-} from "../src/index.js";
-import type { ChargingProfileDispatcher, StrategyFn } from "../src/index.js";
-import { buildSessionProfile } from "../src/strategies/utils.js";
+} from "../../src/smart-charge/index.js";
+import type { ChargingProfileDispatcher, StrategyFn } from "../../src/smart-charge/index.js";
+import { buildSessionProfile } from "../../src/smart-charge/strategies/utils.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -259,7 +258,7 @@ describe("SmartChargingEngine — dispatch()", () => {
 
     await engine.dispatch();
 
-    const [payload] = (dispatcher as ReturnType<typeof vi.fn>).mock.calls[0] as [import("../src/index.js").DispatchPayload];
+    const [payload] = (dispatcher as ReturnType<typeof vi.fn>).mock.calls[0] as [import("../../src/smart-charge/index.js").DispatchPayload];
     expect(payload.clientId).toBe("CP-001");
     expect(payload.connectorId).toBe(1);
     expect(payload.transactionId).toBe(10);

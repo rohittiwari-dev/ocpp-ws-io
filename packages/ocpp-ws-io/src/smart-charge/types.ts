@@ -110,8 +110,6 @@ export interface ClearDispatchPayload {
   transactionId: number | string;
 }
 
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Session — the engine's view of an active charging session
 // ─────────────────────────────────────────────────────────────────────────────
@@ -189,7 +187,10 @@ export interface ChargingSession {
 export type ActiveSession = Required<
   Pick<ChargingSession, "transactionId" | "clientId" | "priority" | "phases">
 > &
-  Omit<ChargingSession, "transactionId" | "clientId" | "priority" | "phases"> & {
+  Omit<
+    ChargingSession,
+    "transactionId" | "clientId" | "priority" | "phases"
+  > & {
     connectorId: number;
     addedAt: number; // Date.now()
   };

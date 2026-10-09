@@ -1,6 +1,6 @@
-import { SmartChargingEngine, Strategies } from "ocpp-smart-charge-engine";
-import { buildOcpp16Profile } from "ocpp-smart-charge-engine/builders";
 import type { OCPPServer } from "ocpp-ws-io";
+import { SmartChargingEngine, Strategies } from "ocpp-ws-io/smart-charge";
+import { buildOcpp16Profile } from "ocpp-ws-io/smart-charge/builders";
 
 const clients = new Map();
 

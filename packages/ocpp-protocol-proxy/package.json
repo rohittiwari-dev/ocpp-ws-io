@@ -61,7 +61,7 @@
   },
   "homepage": "https://ocpp-ws-io.rohittiwari.me/docs/protocol-proxy",
   "dependencies": {
-    "ocpp-ws-io": "^3.0.0"
+    "ocpp-ws-io": "workspace:*"
   },
   "files": [
     "dist",

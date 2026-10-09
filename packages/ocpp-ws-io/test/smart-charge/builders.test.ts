@@ -3,8 +3,8 @@ import {
   buildOcpp16Profile,
   buildOcpp201Profile,
   buildOcpp21Profile,
-} from "../src/builders.js";
-import type { SessionProfile } from "../src/types.js";
+} from "../../src/smart-charge/builders.js";
+import type { SessionProfile } from "../../src/smart-charge/types.js";
 
 function profile(overrides: Partial<SessionProfile> = {}): SessionProfile {
   return {

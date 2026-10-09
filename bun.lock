@@ -21,7 +21,6 @@
       "name": "backend",
       "version": "0.1.0",
       "dependencies": {
-        "ocpp-smart-charge-engine": "workspace:*",
         "ocpp-ws-board": "workspace:*",
         "ocpp-ws-io": "workspace:*",
       },
@@ -100,7 +99,7 @@
       "name": "ocpp-protocol-proxy",
       "version": "0.2.1",
       "dependencies": {
-        "ocpp-ws-io": "^3.0.0",
+        "ocpp-ws-io": "workspace:*",
       },
       "devDependencies": {
         "@types/node": "^20.19.43",
@@ -112,12 +111,13 @@
     "packages/ocpp-smart-charge-engine": {
       "name": "ocpp-smart-charge-engine",
       "version": "0.4.1",
+      "dependencies": {
+        "ocpp-ws-io": "workspace:*",
+      },
       "devDependencies": {
         "@types/node": "^20.19.43",
-        "@vitest/coverage-v8": "5.0.3",
         "tsup": "^8.5.1",
         "typescript": "^6.0.3",
-        "vitest": "5.0.3",
       },
     },
     "packages/ocpp-ws-board": {

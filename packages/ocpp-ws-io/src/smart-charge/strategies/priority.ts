@@ -4,8 +4,11 @@ import type {
   StrategyContext,
   StrategyFn,
 } from "../types.js";
-import { buildSessionProfile, computeWaterFill, sessionCapKw } from "./utils.js";
-
+import {
+  buildSessionProfile,
+  computeWaterFill,
+  sessionCapKw,
+} from "./utils.js";
 
 /**
  * PRIORITY strategy.

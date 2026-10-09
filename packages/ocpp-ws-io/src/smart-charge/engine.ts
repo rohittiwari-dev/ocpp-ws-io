@@ -1,27 +1,27 @@
 import { EventEmitter } from "node:events";
-import type {
-  SmartChargingEngineConfig,
-  SmartChargingEngineEvents,
-  ChargingSession,
-  ActiveSession,
-  SessionProfile,
-  Strategy,
-  StrategyFn,
-  DispatchPayload,
-  ClearDispatchPayload,
-  TimeOfUseWindow,
-  SessionUpdate,
-  StarvedSession,
-} from "./types.js";
 import {
-  SmartChargingConfigError,
   DuplicateSessionError,
   SessionNotFoundError,
+  SmartChargingConfigError,
   StrategyError,
 } from "./errors.js";
 import { equalShareStrategy } from "./strategies/equal-share.js";
 import { priorityStrategy } from "./strategies/priority.js";
 import { createTimeOfUseStrategy } from "./strategies/time-of-use.js";
+import type {
+  ActiveSession,
+  ChargingSession,
+  ClearDispatchPayload,
+  DispatchPayload,
+  SessionProfile,
+  SessionUpdate,
+  SmartChargingEngineConfig,
+  SmartChargingEngineEvents,
+  StarvedSession,
+  Strategy,
+  StrategyFn,
+  TimeOfUseWindow,
+} from "./types.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Typed EventEmitter shim
@@ -86,6 +86,7 @@ declare interface SmartChargingEngine {
  * });
  * ```
  */
+// biome-ignore lint/suspicious/noUnsafeDeclarationMerging: the interface above only types EventEmitter's own on/off/once/emit for this class's events
 class SmartChargingEngine extends EventEmitter {
   private readonly siteId: string;
   private gridLimitKw: number;
@@ -190,7 +191,9 @@ class SmartChargingEngine extends EventEmitter {
     };
 
     this.sessions.set(key, active);
-    this.log(`[${this.siteId}] Session added: ${key} (client: ${session.clientId})`);
+    this.log(
+      `[${this.siteId}] Session added: ${key} (client: ${session.clientId})`,
+    );
     // Emit/return copies — listeners and callers must not be able to mutate
     // engine state through the shared reference.
     this.emit("sessionAdded", { ...active });
@@ -512,7 +515,9 @@ class SmartChargingEngine extends EventEmitter {
    */
   async clearDispatch(transactionId?: number | string): Promise<void> {
     if (!this.clearDispatcher) {
-      this.log(`[${this.siteId}] clearDispatch called but no clearDispatcher configured. Skipping.`);
+      this.log(
+        `[${this.siteId}] clearDispatch called but no clearDispatcher configured. Skipping.`,
+      );
       return;
     }
 
@@ -536,7 +541,9 @@ class SmartChargingEngine extends EventEmitter {
           await this.clearDispatcher!(payload);
           this.emit("cleared", payload);
         } catch (err) {
-          this.log(`[${this.siteId}] clearDispatcher error for ${session.clientId}: ${err}`);
+          this.log(
+            `[${this.siteId}] clearDispatcher error for ${session.clientId}: ${err}`,
+          );
           this.emit("clearError", { ...payload, error: err });
         }
       }),
@@ -697,7 +704,9 @@ class SmartChargingEngine extends EventEmitter {
       const aboveFloorTotal = total - floorSum;
       const excess = total - effectiveGridLimitKw;
       const scale =
-        aboveFloorTotal > EPS ? (aboveFloorTotal - excess) / aboveFloorTotal : 0;
+        aboveFloorTotal > EPS
+          ? (aboveFloorTotal - excess) / aboveFloorTotal
+          : 0;
       result = profiles.map((p) => {
         const above = Math.max(0, p.allocatedKw - p.minChargeRateKw);
         return this.rebuildProfileKw(p, p.minChargeRateKw + above * scale);
@@ -705,7 +714,9 @@ class SmartChargingEngine extends EventEmitter {
     } else {
       // Infeasible — floors alone exceed the grid. Scale everything proportionally.
       const scale = effectiveGridLimitKw / total;
-      result = profiles.map((p) => this.rebuildProfileKw(p, p.allocatedKw * scale));
+      result = profiles.map((p) =>
+        this.rebuildProfileKw(p, p.allocatedKw * scale),
+      );
     }
 
     // Per-session starvation detail (only the infeasible branch can starve floors).

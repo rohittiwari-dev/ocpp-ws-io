@@ -5,8 +5,11 @@ import type {
   StrategyFn,
   TimeOfUseWindow,
 } from "../types.js";
-import { buildSessionProfile, computeWaterFill, sessionCapKw } from "./utils.js";
-
+import {
+  buildSessionProfile,
+  computeWaterFill,
+  sessionCapKw,
+} from "./utils.js";
 
 /**
  * TIME_OF_USE strategy.
@@ -63,9 +66,11 @@ export const createTimeOfUseStrategy = (
     for (const window of windows) {
       const inPeak =
         window.peakStartHour <= window.peakEndHour
-          ? currentHour >= window.peakStartHour && currentHour < window.peakEndHour
-          // handles overnight windows like 22:00–06:00
-          : currentHour >= window.peakStartHour || currentHour < window.peakEndHour;
+          ? currentHour >= window.peakStartHour &&
+            currentHour < window.peakEndHour
+          : // handles overnight windows like 22:00–06:00
+            currentHour >= window.peakStartHour ||
+            currentHour < window.peakEndHour;
 
       if (inPeak) {
         gridLimitKw = effectiveGridLimitKw * window.peakPowerMultiplier;

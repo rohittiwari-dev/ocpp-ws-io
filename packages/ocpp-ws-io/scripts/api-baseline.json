@@ -831,5 +831,98 @@
       "createOcppHonoContext",
       "ocppMiddleware"
     ]
+  },
+  "./smart-charge": {
+    "types": [
+      "ActiveSession:type",
+      "ChargingProfileDispatcher:type",
+      "ChargingSession:type",
+      "ClearDispatchPayload:type",
+      "ClearProfileDispatcher:type",
+      "DispatchErrorEvent:type",
+      "DispatchPayload:type",
+      "DuplicateSessionError:value",
+      "GridOverCommitInfo:type",
+      "SessionNotFoundError:value",
+      "SessionProfile:type",
+      "SessionUpdate:type",
+      "SmartChargingConfigError:value",
+      "SmartChargingEngine:value",
+      "SmartChargingEngineConfig:type",
+      "SmartChargingEngineEvents:type",
+      "StarvedSession:type",
+      "Strategies:value",
+      "Strategy:type",
+      "StrategyContext:type",
+      "StrategyError:value",
+      "StrategyFn:type",
+      "TimeOfUseWindow:type"
+    ],
+    "require": [
+      "DuplicateSessionError",
+      "SessionNotFoundError",
+      "SmartChargingConfigError",
+      "SmartChargingEngine",
+      "Strategies",
+      "StrategyError"
+    ],
+    "import": [
+      "DuplicateSessionError",
+      "SessionNotFoundError",
+      "SmartChargingConfigError",
+      "SmartChargingEngine",
+      "Strategies",
+      "StrategyError"
+    ]
+  },
+  "./smart-charge/strategies": {
+    "types": [
+      "buildSessionProfile:value",
+      "createTimeOfUseStrategy:value",
+      "equalShareStrategy:value",
+      "priorityStrategy:value"
+    ],
+    "require": [
+      "buildSessionProfile",
+      "createTimeOfUseStrategy",
+      "equalShareStrategy",
+      "priorityStrategy"
+    ],
+    "import": [
+      "buildSessionProfile",
+      "createTimeOfUseStrategy",
+      "equalShareStrategy",
+      "priorityStrategy"
+    ]
+  },
+  "./smart-charge/builders": {
+    "types": [
+      "ManualSchedulePeriod:type",
+      "Ocpp16ChargingProfile:type",
+      "Ocpp16ChargingSchedule:type",
+      "Ocpp16ChargingSchedulePeriod:type",
+      "Ocpp16ProfileOptions:type",
+      "Ocpp201ChargingProfile:type",
+      "Ocpp201ChargingSchedule:type",
+      "Ocpp201ChargingSchedulePeriod:type",
+      "Ocpp201ProfileOptions:type",
+      "Ocpp21ChargingProfile:type",
+      "Ocpp21ChargingSchedule:type",
+      "Ocpp21ChargingSchedulePeriod:type",
+      "Ocpp21ProfileOptions:type",
+      "buildOcpp16Profile:value",
+      "buildOcpp201Profile:value",
+      "buildOcpp21Profile:value"
+    ],
+    "require": [
+      "buildOcpp16Profile",
+      "buildOcpp201Profile",
+      "buildOcpp21Profile"
+    ],
+    "import": [
+      "buildOcpp16Profile",
+      "buildOcpp201Profile",
+      "buildOcpp21Profile"
+    ]
   }
 }
