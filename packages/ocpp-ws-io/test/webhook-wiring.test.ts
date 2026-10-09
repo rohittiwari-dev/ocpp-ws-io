@@ -1,8 +1,8 @@
 import type { Server } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { OCPPClient } from "../src/client.js";
+import { OCPPClient } from "../src/client/client.js";
 import { webhookPlugin } from "../src/plugins/webhook.js";
-import { OCPPServer } from "../src/server.js";
+import { OCPPServer } from "../src/server/server.js";
 
 /**
  * The "message" event was previously wired to a hook while absent from the

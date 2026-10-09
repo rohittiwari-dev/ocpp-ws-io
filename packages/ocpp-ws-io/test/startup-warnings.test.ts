@@ -2,8 +2,8 @@ import type { Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { BrowserOCPPClient } from "../src/browser/client.js";
-import { OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
+import { OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
 import type { LoggerLike } from "../src/types.js";
 
 /**

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { OCPPServer } from "../src/server.js";
-import { OCPPClient } from "../src/client.js";
-import { unchecked } from "../src/unchecked.js";
+import { OCPPServer } from "../src/server/server.js";
+import { OCPPClient } from "../src/client/client.js";
+import { unchecked } from "../src/core/unchecked.js";
 
 const getPort = (srv: import("node:http").Server): number => {
   const addr = srv.address();

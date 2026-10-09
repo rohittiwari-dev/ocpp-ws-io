@@ -5,10 +5,10 @@ import WebSocket, {
   type ServerOptions as WsLibServerOptions,
   WebSocketServer,
 } from "ws";
-import { OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
+import { OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
 import type { LoggerLike } from "../src/types.js";
-import { unchecked } from "../src/unchecked.js";
+import { unchecked } from "../src/core/unchecked.js";
 
 /**
  * `wssOptions` (gap G3): raw `ws` server options, passed through to

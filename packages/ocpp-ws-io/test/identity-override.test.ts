@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import type { AddressInfo } from "node:net";
-import { OCPPServer } from "../src/server.js";
-import { OCPPClient } from "../src/client.js";
+import { OCPPServer } from "../src/server/server.js";
+import { OCPPClient } from "../src/client/client.js";
 
 // Identity defaults to the last path segment, so two chargers sharing a station
 // id under different prefixes — /tenant-a/CP001 and /tenant-b/CP001 — collided:

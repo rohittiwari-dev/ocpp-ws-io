@@ -12,15 +12,15 @@ import {
   type AnyBrowserOCPPClient,
   BrowserOCPPClient,
 } from "../src/browser/client.js";
-import { type AnyOCPPClient, OCPPClient } from "../src/client.js";
+import { type AnyOCPPClient, OCPPClient } from "../src/client/client.js";
 import {
   piiRedactorPlugin,
   schemaVersioningPlugin,
 } from "../src/plugins/index.js";
-import { OCPPServer } from "../src/server.js";
-import type { OCPPServerClient } from "../src/server-client.js";
+import { OCPPServer } from "../src/server/server.js";
+import type { OCPPServerClient } from "../src/server/server-client.js";
 import type { JsonValue, LoggerLike, OCPPPlugin } from "../src/types.js";
-import { unchecked } from "../src/unchecked.js";
+import { unchecked } from "../src/core/unchecked.js";
 
 /**
  * Strict mode checks an outgoing call after the middleware, as it goes on the

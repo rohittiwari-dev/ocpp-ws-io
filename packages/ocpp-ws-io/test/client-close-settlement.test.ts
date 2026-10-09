@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import type { AddressInfo } from "node:net";
-import { OCPPServer } from "../src/server.js";
-import { OCPPClient } from "../src/client.js";
+import { OCPPServer } from "../src/server/server.js";
+import { OCPPClient } from "../src/client/client.js";
 
 // _cleanup() never touched _offlineQueue or _outboundBuffer:
 //

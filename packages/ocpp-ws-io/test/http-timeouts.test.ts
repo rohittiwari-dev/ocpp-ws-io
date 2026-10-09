@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { OCPPServer } from "../src/server.js";
+import { OCPPServer } from "../src/server/server.js";
 
 describe("HTTP timeouts on servers created by listen()", () => {
   let server: OCPPServer | undefined;

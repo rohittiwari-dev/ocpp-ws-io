@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { MiddlewareStack } from "../src/middleware";
+import { MiddlewareStack } from "../src/core/middleware";
 import { createLoggingMiddleware } from "../src/helpers/index.js";
 import type { MiddlewareContext } from "../src/types";
 

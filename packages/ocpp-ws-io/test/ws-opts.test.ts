@@ -5,9 +5,9 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClientOptions as WsLibClientOptions } from "ws";
-import { OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
-import type { OCPPServerClient } from "../src/server-client.js";
+import { OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
+import type { OCPPServerClient } from "../src/server/server-client.js";
 import {
   type ClientOptions,
   type LoggerLike,

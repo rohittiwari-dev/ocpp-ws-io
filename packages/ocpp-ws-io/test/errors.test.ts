@@ -16,7 +16,7 @@ import {
   TimeoutError,
   UnexpectedHttpResponse,
   WebsocketUpgradeError,
-} from "../src/errors.js";
+} from "../src/core/errors.js";
 
 describe("Error Classes", () => {
   it("TimeoutError should have correct properties", () => {

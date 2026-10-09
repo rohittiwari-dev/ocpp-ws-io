@@ -5,11 +5,11 @@ import {
   type AnyBrowserOCPPClient,
   BrowserOCPPClient,
 } from "../src/browser/client.js";
-import { type AnyOCPPClient, OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
-import type { OCPPServerClient } from "../src/server-client.js";
+import { type AnyOCPPClient, OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
+import type { OCPPServerClient } from "../src/server/server-client.js";
 import type { CallOptions, LoggerLike } from "../src/types.js";
-import { unchecked } from "../src/unchecked.js";
+import { unchecked } from "../src/core/unchecked.js";
 
 /**
  * `call(method, params, { noReply: true })` (gap G1): a

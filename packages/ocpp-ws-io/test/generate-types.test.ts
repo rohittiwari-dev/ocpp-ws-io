@@ -24,10 +24,10 @@ describe("Type Generation Script", () => {
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     // Run main with a custom base dir so it doesn't overwrite real src/generated
-    // The script expects to find schemas at ../src/schemas relative to baseDir
-    // So we need to set baseDir such that ../src/schemas resolves to the real schemas
-    // Real path: packages/ocpp-ws-io/src/schemas
-    // Script default: __dirname (packages/ocpp-ws-io/scripts) -> ../src/schemas OK
+    // The script expects to find schemas at ../src/core/validation/schemas relative to baseDir
+    // So we need to set baseDir such that that path resolves to the real schemas
+    // Real path: packages/ocpp-ws-io/src/core/validation/schemas
+    // Script default: __dirname (packages/ocpp-ws-io/scripts) -> ../src/core/validation/schemas OK
 
     // We want output to go to a temp dir.
     // The script calculates OUT_DIR = path.join(baseDir, "..", "src", "generated")
@@ -36,7 +36,7 @@ describe("Type Generation Script", () => {
     // Let's explicitly pass the scripts dir as baseDir to match default behavior,
     // BUT checking the script again:
     // function main(baseDir = __dirname) {
-    //   const SCHEMA_DIR = path.join(baseDir, "..", "src", "schemas");
+    //   const SCHEMA_DIR = path.join(baseDir, "..", "src", "core", "validation", "schemas");
     //   const OUT_DIR = path.join(baseDir, "..", "src", "generated");
 
     // If I want to test logic without overwriting, I should probably have made OUT_DIR configurable.
@@ -191,7 +191,7 @@ describe("Type Generation Script", () => {
   it("generates 2.0.1's CustomDataType open and every other type closed", () => {
     const read = (file: string) =>
       JSON.parse(
-        fs.readFileSync(path.join(__dirname, "../src/schemas", file), "utf8"),
+        fs.readFileSync(path.join(__dirname, "../src/core/validation/schemas", file), "utf8"),
       );
     const s201 = read("ocpp2_0_1.json");
     const code = generateVersionFile(

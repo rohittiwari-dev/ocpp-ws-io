@@ -1,8 +1,8 @@
 import type { Server } from "node:http";
 import WebSocket from "ws";
 import { afterEach, describe, expect, it } from "vitest";
-import { OCPPServer } from "../src/server.js";
-import { unchecked } from "../src/unchecked.js";
+import { OCPPServer } from "../src/server/server.js";
+import { unchecked } from "../src/core/unchecked.js";
 
 /**
  * What a peer actually receives on the wire when a message is rejected.

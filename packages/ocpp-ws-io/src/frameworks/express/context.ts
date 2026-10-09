@@ -1,4 +1,4 @@
-import type { OCPPServer } from "../../server.js";
+import type { OCPPServer } from "../../server/server.js";
 import { BaseOcppContext } from "../base/context.js";
 import type { OcppExpressContext } from "./types.js";
 

@@ -1,8 +1,8 @@
 import { expectTypeOf } from "vitest";
-import { OCPPClient } from "../../src/client.js";
-import { OCPPServer } from "../../src/server.js";
-import { unchecked } from "../../src/unchecked.js";
-import { createValidator, type Validator } from "../../src/validator.js";
+import { OCPPClient } from "../../src/client/client.js";
+import { OCPPServer } from "../../src/server/server.js";
+import { unchecked } from "../../src/core/unchecked.js";
+import { createValidator, type Validator } from "../../src/core/validation/validator.js";
 
 /**
  * T4a (D8): strict-mode options name only what the server, route or client is

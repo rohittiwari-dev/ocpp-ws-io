@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { Queue } from "../src/queue.js";
+import { Queue } from "../src/core/queue.js";
 
 describe("Queue robustness", () => {
   // `item?.fn()` was called bare. A task that throws synchronously — rather

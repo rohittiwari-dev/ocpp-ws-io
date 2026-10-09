@@ -1,8 +1,8 @@
 import { expectTypeOf } from "vitest";
 import { defineAuth } from "../../src/helpers/index.js";
-import { OCPPServer } from "../../src/server.js";
+import { OCPPServer } from "../../src/server/server.js";
 import type { PersistedSession, SessionValue } from "../../src/types.js";
-import { sessionOf } from "../../src/util.js";
+import { sessionOf } from "../../src/core/util.js";
 
 /**
  * T5e (D14): a session holds JSON values, a `Date` and `undefined` at any

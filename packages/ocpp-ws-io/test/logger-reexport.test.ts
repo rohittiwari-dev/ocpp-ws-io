@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { initLogger } from "../src/init-logger.js";
+import { initLogger } from "../src/core/init-logger.js";
 import type { LoggerLike } from "../src/types.js";
 
 // ─── Re-export Tests ──────────────────────────────────────────────

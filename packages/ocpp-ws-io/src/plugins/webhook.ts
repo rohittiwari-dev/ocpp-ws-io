@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from "node:crypto";
-import { Queue } from "../queue.js";
+import { Queue } from "../core/queue.js";
 import type { OCPPPlugin } from "../types.js";
 
 type WebhookEvent =

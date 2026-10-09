@@ -1,5 +1,10 @@
 /// <reference lib="dom" />
 
+import {
+  type MiddlewareFunction,
+  MiddlewareStack,
+} from "../core/middleware.js";
+import { assertUniqueProtocols, supportsSend } from "../core/protocol-list.js";
 // Type-only. Through the re-exports in ./types.js the compiler rejects the
 // typed send() overload against its implementation once a custom protocol is
 // declared (TS2394); the generated types themselves are accepted.
@@ -7,8 +12,6 @@ import type {
   OCPPSendRequestType,
   SendMethodNames,
 } from "../generated/index.js";
-import { type MiddlewareFunction, MiddlewareStack } from "../middleware.js";
-import { assertUniqueProtocols, supportsSend } from "../protocol-list.js";
 import type {
   CheckedAction,
   CheckedHandler,

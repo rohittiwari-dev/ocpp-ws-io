@@ -5,12 +5,12 @@ import {
   defineAuth,
 } from "../../src/helpers/index.js";
 import { heartbeatPlugin } from "../../src/plugins/index.js";
-import type { OCPPRouter } from "../../src/router.js";
-import { OCPPServer } from "../../src/server.js";
+import type { OCPPRouter } from "../../src/server/router.js";
+import { OCPPServer } from "../../src/server/server.js";
 import {
   type AnyOCPPServerClient,
   OCPPServerClient,
-} from "../../src/server-client.js";
+} from "../../src/server/server-client.js";
 import type {
   AuthCallback,
   ConnectionOf,

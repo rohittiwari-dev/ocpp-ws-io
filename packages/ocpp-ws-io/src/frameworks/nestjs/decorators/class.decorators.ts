@@ -1,5 +1,5 @@
 import { SetMetadata } from "@nestjs/common";
-import type { MiddlewareFunction } from "../../../middleware.js";
+import type { MiddlewareFunction } from "../../../core/middleware.js";
 import type { CORSOptions, MiddlewareContext } from "../../../types.js";
 import {
   OCPP_CORS_METADATA,

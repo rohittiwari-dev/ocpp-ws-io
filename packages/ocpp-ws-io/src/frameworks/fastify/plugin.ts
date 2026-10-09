@@ -2,7 +2,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import fp from "fastify-plugin";
-import type { OCPPServer } from "../../server.js";
+import type { OCPPServer } from "../../server/server.js";
 import { BaseOcppContext } from "../base/context.js";
 import { shouldHandleUpgrade } from "../base/utils.js";
 import type { OcppFastifyContext, OcppFastifyPluginOptions } from "./types.js";

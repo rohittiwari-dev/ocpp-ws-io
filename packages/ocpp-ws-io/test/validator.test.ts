@@ -1,6 +1,6 @@
 import { describe, it, expect, test } from "vitest";
-import { Validator, createValidator } from "../src/validator.js";
-import { getStandardValidators } from "../src/standard-validators.js";
+import { Validator, createValidator } from "../src/core/validation/validator.js";
+import { getStandardValidators } from "../src/core/validation/standard-validators.js";
 
 // Minimal JSON schema for testing
 const testSchemas = [

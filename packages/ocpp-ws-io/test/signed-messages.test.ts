@@ -3,16 +3,16 @@ import { readFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { OCPPClient } from "../src/client.js";
-import { RPCSecurityError } from "../src/errors.js";
+import { OCPPClient } from "../src/client/client.js";
+import { RPCSecurityError } from "../src/core/errors.js";
 import {
   type FlattenedJws,
   type SignedMessagesOptions,
   signedMessagesMiddleware,
   signedMessagesPlugin,
 } from "../src/plugins/index.js";
-import { OCPPServer } from "../src/server.js";
-import { unchecked } from "../src/unchecked.js";
+import { OCPPServer } from "../src/server/server.js";
+import { unchecked } from "../src/core/unchecked.js";
 import type { JsonValue, LoggerLike, OCPPPlugin } from "../src/types.js";
 
 /**

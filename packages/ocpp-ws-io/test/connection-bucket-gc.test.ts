@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { OCPPServer } from "../src/server.js";
+import { OCPPServer } from "../src/server/server.js";
 
 describe("connection bucket GC (H4)", () => {
   let server: OCPPServer;

@@ -1,8 +1,8 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
-import { OCPPServerClient } from "../src/server-client.js";
+import { OCPPServerClient } from "../src/server/server-client.js";
 import { SecurityProfile } from "../src/types.js";
-import type { WorkerPool } from "../src/worker-pool.js";
+import type { WorkerPool } from "../src/server/worker-pool.js";
 
 /**
  * `rateLimit.methods` used to force a main-thread JSON.parse and then return

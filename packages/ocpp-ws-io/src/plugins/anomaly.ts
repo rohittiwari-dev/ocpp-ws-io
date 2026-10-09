@@ -1,4 +1,4 @@
-import type { OCPPServer } from "../server.js";
+import type { OCPPServer } from "../server/server.js";
 import type { OCPPPlugin, SecurityEvent } from "../types.js";
 
 /**

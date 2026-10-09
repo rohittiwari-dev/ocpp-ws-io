@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
+import type { LoggerLikeNotOptional, SessionData } from "../types.js";
 import type { RPCError } from "./errors.js";
 import * as errors from "./errors.js";
-import type { LoggerLikeNotOptional, SessionData } from "./types.js";
 
 // ─── ID Generation ──────────────────────────────────────────────
 

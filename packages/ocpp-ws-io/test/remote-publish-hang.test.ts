@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { OCPPServer } from "../src/server.js";
+import { OCPPServer } from "../src/server/server.js";
 import { InMemoryAdapter } from "../src/adapters/adapter.js";
-import { TimeoutError } from "../src/errors.js";
+import { TimeoutError } from "../src/core/errors.js";
 
 // sendToClient used to `await adapter.publish(...)` before awaiting the pending
 // call's own promise. An adapter whose publish() hangs instead of rejecting — a

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { OCPPServer } from "../src/server.js";
+import { OCPPServer } from "../src/server/server.js";
 import type { OCPPPlugin } from "../src/types.js";
 
 describe("plugin registration", () => {

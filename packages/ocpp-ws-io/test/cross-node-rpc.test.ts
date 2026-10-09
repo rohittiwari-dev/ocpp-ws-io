@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { AddressInfo } from "node:net";
-import { OCPPServer } from "../src/server.js";
-import { OCPPClient } from "../src/client.js";
+import { OCPPServer } from "../src/server/server.js";
+import { OCPPClient } from "../src/client/client.js";
 import { InMemoryAdapter } from "../src/adapters/adapter.js";
-import { TimeoutError } from "../src/errors.js";
+import { TimeoutError } from "../src/core/errors.js";
 
 /**
  * A two-node harness on one InMemoryAdapter: both servers share the adapter, so

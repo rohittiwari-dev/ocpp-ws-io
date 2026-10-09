@@ -1,6 +1,6 @@
 import { BrowserOCPPClient } from "../../src/browser/client.js";
-import { OCPPClient } from "../../src/client.js";
-import { OCPPServer } from "../../src/server.js";
+import { OCPPClient } from "../../src/client/client.js";
+import { OCPPServer } from "../../src/server/server.js";
 
 const endpoint = "ws://localhost:9220";
 

@@ -8,13 +8,7 @@ export {
   type ClusterNode,
 } from "./adapters/redis/cluster-driver.js";
 export { RedisAdapter } from "./adapters/redis/index.js";
-export type {
-  AdaptedEvent,
-  AdaptiveLimiterOptions,
-} from "./adaptive-limiter.js";
-// ─── Adaptive Rate Limiting ──────────────────────────────────────
-export { AdaptiveLimiter } from "./adaptive-limiter.js";
-export { type AnyOCPPClient, OCPPClient } from "./client.js";
+export { type AnyOCPPClient, OCPPClient } from "./client/client.js";
 // ─── Errors ──────────────────────────────────────────────────────
 export {
   type RPCError,
@@ -35,7 +29,24 @@ export {
   TimeoutError,
   UnexpectedHttpResponse,
   WebsocketUpgradeError,
-} from "./errors.js";
+} from "./core/errors.js";
+export { LRUMap } from "./core/lru-map.js";
+export * from "./core/middleware.js";
+// ─── Utilities ───────────────────────────────────────────────────
+export { unchecked } from "./core/unchecked.js";
+export {
+  createRPCError,
+  getErrorPlainObject,
+  getPackageIdent,
+  sessionOf,
+} from "./core/util.js";
+export {
+  getStandardProtocols,
+  getStandardValidator,
+  getStandardValidators,
+} from "./core/validation/standard-validators.js";
+// ─── Validation ──────────────────────────────────────────────────
+export { createValidator, Validator } from "./core/validation/validator.js";
 // ─── Generated OCPP Protocol Types ──────────────────────────────
 export type {
   AllMethodNames,
@@ -67,16 +78,18 @@ export {
   defineMiddleware,
   defineRpcMiddleware,
 } from "./helpers/index.js";
-export { LRUMap } from "./lru-map.js";
-export * from "./middleware.js";
-export { createRouter, OCPPRouter } from "./router.js";
-export { OCPPServer } from "./server.js";
-export { type AnyOCPPServerClient, OCPPServerClient } from "./server-client.js";
+export type {
+  AdaptedEvent,
+  AdaptiveLimiterOptions,
+} from "./server/adaptive-limiter.js";
+// ─── Adaptive Rate Limiting ──────────────────────────────────────
+export { AdaptiveLimiter } from "./server/adaptive-limiter.js";
+export { createRouter, OCPPRouter } from "./server/router.js";
+export { OCPPServer } from "./server/server.js";
 export {
-  getStandardProtocols,
-  getStandardValidator,
-  getStandardValidators,
-} from "./standard-validators.js";
+  type AnyOCPPServerClient,
+  OCPPServerClient,
+} from "./server/server-client.js";
 // ─── Types ───────────────────────────────────────────────────────
 export {
   type AnyOCPPProtocol,
@@ -148,13 +161,3 @@ export {
   type WsClientOptions,
   type WsServerOptions,
 } from "./types.js";
-// ─── Utilities ───────────────────────────────────────────────────
-export { unchecked } from "./unchecked.js";
-export {
-  createRPCError,
-  getErrorPlainObject,
-  getPackageIdent,
-  sessionOf,
-} from "./util.js";
-// ─── Validation ──────────────────────────────────────────────────
-export { createValidator, Validator } from "./validator.js";

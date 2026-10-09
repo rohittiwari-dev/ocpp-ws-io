@@ -1,9 +1,9 @@
 import { getEventListeners } from "node:events";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, test } from "vitest";
-import { OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
-import { unchecked } from "../src/unchecked.js";
+import { OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
+import { unchecked } from "../src/core/unchecked.js";
 
 describe("abort listener cleanup (H8)", () => {
   let server: OCPPServer;

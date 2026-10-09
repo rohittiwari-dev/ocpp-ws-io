@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { AdaptiveLimiter, type AdaptedEvent } from '../src/adaptive-limiter.js';
+import { AdaptiveLimiter, type AdaptedEvent } from '../src/server/adaptive-limiter.js';
 
 describe('AdaptiveLimiter', () => {
 	let limiter: AdaptiveLimiter;

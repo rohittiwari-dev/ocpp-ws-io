@@ -1,8 +1,8 @@
 import type { Server } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryAdapter } from "../src/adapters/adapter.js";
-import { OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
+import { OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
 import type { PersistedSession } from "../src/types.js";
 
 const getPort = (srv: Server): number => {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { OCPPServer } from "../src/server.js";
+import { OCPPServer } from "../src/server/server.js";
 import { InMemoryAdapter } from "../src/adapters/adapter.js";
 
 // The presence heartbeat used to be a bare setInterval at TTL/2 that wrote every

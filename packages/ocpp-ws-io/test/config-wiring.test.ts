@@ -1,8 +1,8 @@
 import type { IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
-import { AdaptiveLimiter } from "../src/adaptive-limiter.js";
-import { OCPPServer } from "../src/server.js";
-import { getClientIp } from "../src/ws-util.js";
+import { AdaptiveLimiter } from "../src/server/adaptive-limiter.js";
+import { OCPPServer } from "../src/server/server.js";
+import { getClientIp } from "../src/core/ws-util.js";
 
 const req = (headers: Record<string, string>, remote = "10.0.0.1") =>
   ({ headers, socket: { remoteAddress: remote } }) as unknown as IncomingMessage;

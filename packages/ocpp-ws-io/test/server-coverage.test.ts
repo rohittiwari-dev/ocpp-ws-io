@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
-import { OCPPServer } from "../src/server";
-import { unchecked } from "../src/unchecked";
+import { OCPPServer } from "../src/server/server";
+import { unchecked } from "../src/core/unchecked";
 
 describe("OCPPServer Coverage", () => {
   let server: OCPPServer;

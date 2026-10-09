@@ -1,6 +1,6 @@
 import { expectTypeOf } from "vitest";
 import { BrowserOCPPClient } from "../../src/browser/client.js";
-import { OCPPClient } from "../../src/client.js";
+import { OCPPClient } from "../../src/client/client.js";
 import type { CallOptions } from "../../src/types.js";
 
 export function optionalCallOptions(options?: CallOptions) {

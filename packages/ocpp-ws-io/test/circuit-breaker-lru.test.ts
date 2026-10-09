@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { MiddlewareFunction } from "../src/middleware.js";
+import type { MiddlewareFunction } from "../src/core/middleware.js";
 import { circuitBreakerPlugin } from "../src/plugins/circuit-breaker.js";
 import type { MiddlewareContext } from "../src/types.js";
 

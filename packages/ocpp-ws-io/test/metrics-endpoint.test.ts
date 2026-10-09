@@ -1,6 +1,6 @@
 import type { Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
-import { OCPPServer } from "../src/server.js";
+import { OCPPServer } from "../src/server/server.js";
 
 /**
  * The scrape handler wrote its 200 header and *then* awaited every plugin's

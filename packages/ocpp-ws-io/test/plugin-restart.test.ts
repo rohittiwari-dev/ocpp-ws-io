@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { OCPPServer } from "../src/server.js";
+import { OCPPServer } from "../src/server/server.js";
 import type { OCPPPlugin } from "../src/types.js";
 
 /**
@@ -80,7 +80,7 @@ describe("plugin lifecycle across a restart", () => {
 
 describe("a plugin registered while clients are already connected", () => {
   let running: OCPPServer | undefined;
-  let conn: import("../src/client.js").OCPPClient | undefined;
+  let conn: import("../src/client/client.js").OCPPClient | undefined;
 
   afterEach(async () => {
     await conn?.close({ force: true }).catch(() => {});
@@ -90,7 +90,7 @@ describe("a plugin registered while clients are already connected", () => {
   });
 
   it("is told about the connections it missed", async () => {
-    const { OCPPClient } = await import("../src/client.js");
+    const { OCPPClient } = await import("../src/client/client.js");
     const seen: string[] = [];
 
     running = new OCPPServer({ protocols: ["ocpp1.6"] });

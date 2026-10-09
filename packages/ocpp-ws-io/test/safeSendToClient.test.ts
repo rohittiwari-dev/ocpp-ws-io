@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from "vitest";
-import { OCPPServer } from "../src/server";
+import { OCPPServer } from "../src/server/server";
 
 class TestServer extends OCPPServer {
   constructor() {

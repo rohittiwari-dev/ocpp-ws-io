@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { OCPPServer } from "../src/server.js";
-import { OCPPClient } from "../src/client.js";
+import { OCPPServer } from "../src/server/server.js";
+import { OCPPClient } from "../src/client/client.js";
 import { ConnectionState } from "../src/types.js";
-import { unchecked } from "../src/unchecked.js";
+import { unchecked } from "../src/core/unchecked.js";
 
 /**
  * Phase 3 Robustness Tests

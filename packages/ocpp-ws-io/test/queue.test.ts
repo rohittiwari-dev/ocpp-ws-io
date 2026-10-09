@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Queue } from "../src/queue.js";
+import { Queue } from "../src/core/queue.js";
 
 describe("Queue", () => {
   it("should initialize with concurrency of 1", () => {

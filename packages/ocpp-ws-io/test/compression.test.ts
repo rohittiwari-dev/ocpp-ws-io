@@ -2,8 +2,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket, { WebSocketServer } from "ws";
-import { OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
+import { OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
 import type { CompressionOptions } from "../src/types.js";
 
 /**

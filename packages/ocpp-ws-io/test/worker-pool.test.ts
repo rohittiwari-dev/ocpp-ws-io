@@ -1,10 +1,10 @@
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import { describe, expect, test } from "vitest";
-import { WorkerPool } from "../src/worker-pool.js";
+import { WorkerPool } from "../src/server/worker-pool.js";
 
 const workerPath = fileURLToPath(
-  new URL("../src/parse-worker.cjs", import.meta.url),
+  new URL("../src/server/parse-worker.cjs", import.meta.url),
 );
 
 describe("WorkerPool", () => {

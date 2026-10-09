@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { OCPPServer } from "../src/server.js";
+import { OCPPServer } from "../src/server/server.js";
 
 /**
  * `close()` stops every periodic task the server owns; `listen()` is what

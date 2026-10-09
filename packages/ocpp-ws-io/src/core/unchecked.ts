@@ -1,4 +1,4 @@
-import type { UncheckedAction } from "./types.js";
+import type { UncheckedAction } from "../types.js";
 
 /**
  * Marks an action name the types do not check: a vendor action not declared

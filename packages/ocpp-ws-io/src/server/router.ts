@@ -1,12 +1,10 @@
-import { EventEmitterBase } from "./emitter-base.js";
+import { assertUniqueProtocols } from "../core/protocol-list.js";
 import type {
   AllMethodNames,
   OCPPRequestType,
   OCPPSendRequestType,
   SendMethodNames,
-} from "./generated/index.js";
-import { assertUniqueProtocols } from "./protocol-list.js";
-import type { AnyOCPPServerClient, OCPPServerClient } from "./server-client.js";
+} from "../generated/index.js";
 import type {
   AnyOCPPProtocol,
   AuthCallback,
@@ -32,7 +30,9 @@ import type {
   UncheckedAction,
   UncheckedHandler,
   WithUniqueProtocols,
-} from "./types.js";
+} from "../types.js";
+import { EventEmitterBase } from "./emitter-base.js";
+import type { AnyOCPPServerClient, OCPPServerClient } from "./server-client.js";
 
 /**
  * Executes a Koa/Express style middleware chain on an incoming WebSocket connection.

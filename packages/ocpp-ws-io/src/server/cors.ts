@@ -1,7 +1,7 @@
 import type { IncomingMessage } from "node:http";
 import { TLSSocket } from "node:tls";
-import type { CORSOptions } from "./types.js";
-import { isIPAllowed } from "./utils/cidr.js";
+import type { CORSOptions } from "../types.js";
+import { isIPAllowed } from "./cidr.js";
 
 /**
  * Validates an incoming WebSocket upgrade request against CORS rules.

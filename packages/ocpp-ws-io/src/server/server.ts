@@ -15,24 +15,32 @@ import type {
   Server as TlsServer,
 } from "node:tls";
 import { WebSocketServer, type ServerOptions as WsLibServerOptions } from "ws";
-import { AdaptiveLimiter } from "./adaptive-limiter.js";
-import { checkCORS } from "./cors.js";
-import { EventEmitterBase } from "./emitter-base.js";
-import { HandshakeRejection, type RPCError, TimeoutError } from "./errors.js";
-import { initLogger } from "./init-logger.js";
-import { LRUMap } from "./lru-map.js";
-import { assertUniqueProtocols } from "./protocol-list.js";
-import { RadixTrie } from "./radix-trie.js";
 import {
-  type AnyOCPPRouter,
-  executeMiddlewareChain,
-  OCPPRouter,
-} from "./router.js";
-import { OCPPServerClient } from "./server-client.js";
+  HandshakeRejection,
+  type RPCError,
+  TimeoutError,
+} from "../core/errors.js";
+import { initLogger } from "../core/init-logger.js";
+import { LRUMap } from "../core/lru-map.js";
+import { assertUniqueProtocols } from "../core/protocol-list.js";
+import { unchecked } from "../core/unchecked.js";
+import {
+  createId,
+  createRPCError,
+  endpointOf,
+  NOOP_LOGGER,
+  safeDecodeURIComponent,
+} from "../core/util.js";
 import {
   assertStrictValidators,
   getStandardValidator,
-} from "./standard-validators.js";
+} from "../core/validation/standard-validators.js";
+import {
+  abortHandshake,
+  getClientIp,
+  parseBasicAuth,
+  parseSubprotocols,
+} from "../core/ws-util.js";
 import {
   type AllMethodNames,
   type AnyOCPPProtocol,
@@ -72,22 +80,18 @@ import {
   type UncheckedAction,
   type VersionNamedSendArgs,
   type WithUniqueProtocols,
-} from "./types.js";
-import { unchecked } from "./unchecked.js";
+} from "../types.js";
+import { AdaptiveLimiter } from "./adaptive-limiter.js";
+import { checkCORS } from "./cors.js";
+import { EventEmitterBase } from "./emitter-base.js";
+import { RadixTrie } from "./radix-trie.js";
 import {
-  createId,
-  createRPCError,
-  endpointOf,
-  NOOP_LOGGER,
-  safeDecodeURIComponent,
-} from "./util.js";
+  type AnyOCPPRouter,
+  executeMiddlewareChain,
+  OCPPRouter,
+} from "./router.js";
+import { OCPPServerClient } from "./server-client.js";
 import { createWorkerPool, type WorkerPool } from "./worker-pool.js";
-import {
-  abortHandshake,
-  getClientIp,
-  parseBasicAuth,
-  parseSubprotocols,
-} from "./ws-util.js";
 
 /** RFC 9110 §15.5.2: every 401 carries a challenge; OCPP uses Basic Auth. */
 const BASIC_AUTH_CHALLENGE = 'Basic realm="ocpp-ws-io", charset="UTF-8"';
@@ -651,7 +655,7 @@ export class OCPPServer<
 
   /** The certificate and protocol settings of a TLS context, from TLSOptions. */
   private static _secureContextOptions(
-    tlsOpts: import("./types.js").TLSOptions,
+    tlsOpts: import("../types.js").TLSOptions,
   ): SecureContextOptions {
     const options: SecureContextOptions = {};
     if (tlsOpts.cert) options.cert = tlsOpts.cert;
@@ -792,7 +796,7 @@ export class OCPPServer<
    * (e.g. connected socket count, tracked memory sessions, and process CPU/Memory usage).
    * Fully compatible with Loki/Prometheus node metric ingestion.
    */
-  stats(): import("./types.js").OCPPServerStats {
+  stats(): import("../types.js").OCPPServerStats {
     let bufferedAmount = 0;
     if (this._wss) {
       for (const ws of this._wss.clients) {
@@ -1426,7 +1430,7 @@ export class OCPPServer<
    *
    * @throws If the server is not using a TLS Security Profile.
    */
-  updateTLS(tlsOpts: import("./types.js").TLSOptions): void {
+  updateTLS(tlsOpts: import("../types.js").TLSOptions): void {
     const profile = this._options.securityProfile ?? SecurityProfile.NONE;
     if (
       profile !== SecurityProfile.TLS_BASIC_AUTH &&
@@ -1731,7 +1735,7 @@ export class OCPPServer<
     let hasTerminalRoute = false;
     const hasPatternRouters =
       this._trie.size > 0 || this._regexRouters.length > 0;
-    let matchedRouterConfig: import("./types.js").RouterConfig | undefined;
+    let matchedRouterConfig: import("../types.js").RouterConfig | undefined;
 
     // ── Freeze trie on first match for V8 JIT optimization ──
     if (!this._trie.frozen && this._trie.size > 0) {
@@ -1985,8 +1989,8 @@ export class OCPPServer<
     }
 
     // Auth callback with AbortController + timeout
-    let ctx: import("./types.js").ConnectionContext | undefined;
-    let acceptOptions: import("./types.js").AuthAccept | undefined;
+    let ctx: import("../types.js").ConnectionContext | undefined;
+    let acceptOptions: import("../types.js").AuthAccept | undefined;
 
     const isKnownIdentity = this._options.isKnownIdentity;
     if (matchedHandler || matchedMiddlewares.length > 0 || isKnownIdentity) {
@@ -2116,7 +2120,7 @@ export class OCPPServer<
                   pathname,
                 });
 
-                const authCtx: import("./types.js").AuthContext = {
+                const authCtx: import("../types.js").AuthContext = {
                   handshake,
                   state: c.state,
                   reject: rejectAuth,
@@ -3974,18 +3978,18 @@ export class OCPPServer<
   >(
     method: CheckedAction<M, RequestOf<KnownProtocol<P>, M>, T>,
     params: T,
-  ): Promise<import("./types.js").BroadcastResult>;
+  ): Promise<import("../types.js").BroadcastResult>;
 
   /** Broadcast an action the types do not check — `broadcast(unchecked("VendorPing"), params)`. */
   async broadcast(
     method: UncheckedAction,
     params?: object,
-  ): Promise<import("./types.js").BroadcastResult>;
+  ): Promise<import("../types.js").BroadcastResult>;
 
   async broadcast(
     method: string,
     params?: object,
-  ): Promise<import("./types.js").BroadcastResult> {
+  ): Promise<import("../types.js").BroadcastResult> {
     // Every local failure used to be swallowed by `.catch(() => {})` behind a
     // `Promise<void>`, so a caller could not tell a clean fan-out from one
     // where every charger rejected. The result reports what is knowable.

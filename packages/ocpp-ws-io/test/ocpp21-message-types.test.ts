@@ -1,12 +1,12 @@
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
-import type { OCPPServerClient } from "../src/server-client.js";
+import { OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
+import type { OCPPServerClient } from "../src/server/server-client.js";
 import { NOREPLY } from "../src/types.js";
-import { unchecked } from "../src/unchecked.js";
-import { createValidator } from "../src/validator.js";
+import { unchecked } from "../src/core/unchecked.js";
+import { createValidator } from "../src/core/validation/validator.js";
 
 // "vendor-proto": a custom protocol, which may use SEND like OCPP 2.1 (B17).
 type Protocol = "ocpp1.6" | "ocpp2.0.1" | "ocpp2.1" | "vendor-proto";

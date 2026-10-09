@@ -1,8 +1,8 @@
 import { expectTypeOf } from "vitest";
-import { OCPPServer } from "../../src/server.js";
+import { OCPPServer } from "../../src/server/server.js";
 import type { JsonObject } from "../../src/types.js";
 import { NOREPLY } from "../../src/types.js";
-import { unchecked } from "../../src/unchecked.js";
+import { unchecked } from "../../src/core/unchecked.js";
 
 /**
  * T3b: on the server, sendToClient, safeSendToClient, broadcast,

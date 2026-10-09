@@ -7,7 +7,7 @@ import type {
   RedisAdapterMetrics,
 } from "../../src/adapters/redis/index.js";
 import { createLoggingMiddleware } from "../../src/helpers/index.js";
-import { type MiddlewareFunction, MiddlewareStack } from "../../src/middleware.js";
+import { type MiddlewareFunction, MiddlewareStack } from "../../src/core/middleware.js";
 import type {
   CloseOptions,
   LoggerLike,

@@ -1,9 +1,9 @@
 import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { DiscoveryService, MetadataScanner } from "@nestjs/core";
 import type { InstanceWrapper } from "@nestjs/core/injector/instance-wrapper.js";
-import type { MiddlewareFunction } from "../../middleware.js";
-import type { OCPPServer } from "../../server.js";
-import type { OCPPServerClient } from "../../server-client.js";
+import type { MiddlewareFunction } from "../../core/middleware.js";
+import type { OCPPServer } from "../../server/server.js";
+import type { OCPPServerClient } from "../../server/server-client.js";
 import type {
   CORSOptions,
   HandshakeInfo,

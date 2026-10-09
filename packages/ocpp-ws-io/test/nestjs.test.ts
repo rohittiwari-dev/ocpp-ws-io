@@ -4,8 +4,8 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import http, { type Server as HttpServer } from "node:http";
 import "reflect-metadata";
 import { WebSocket, WebSocketServer } from "ws";
-import { OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
+import { OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
 import {
   Context,
   Identity,
@@ -25,7 +25,7 @@ import {
   Session,
 } from "../src/frameworks/nestjs/index.js";
 import type { AuthContext } from "../src/index.js";
-import { unchecked } from "../src/unchecked.js";
+import { unchecked } from "../src/core/unchecked.js";
 
 const getPort = (server: HttpServer): number => {
   const address = server.address();

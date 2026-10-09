@@ -1,4 +1,4 @@
-import type { MiddlewareFunction } from "../middleware.js";
+import type { MiddlewareFunction } from "../core/middleware.js";
 import type { MiddlewareContext, OCPPPlugin } from "../types.js";
 
 /**

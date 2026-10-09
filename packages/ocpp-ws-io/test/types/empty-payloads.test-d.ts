@@ -1,5 +1,5 @@
 import { BrowserOCPPClient } from "../../src/browser/client.js";
-import { OCPPClient } from "../../src/client.js";
+import { OCPPClient } from "../../src/client/client.js";
 import { NOREPLY } from "../../src/types.js";
 
 export async function emptyPayloadsMustBeObjects() {

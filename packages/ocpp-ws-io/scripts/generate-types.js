@@ -40,7 +40,14 @@ const VERSIONS = [
 
 // Allow overriding base dir for testing
 function main(baseDir = __dirname) {
-  const SCHEMA_DIR = path.join(baseDir, "..", "src", "schemas");
+  const SCHEMA_DIR = path.join(
+    baseDir,
+    "..",
+    "src",
+    "core",
+    "validation",
+    "schemas",
+  );
   const OUT_DIR = path.join(baseDir, "..", "src", "generated");
 
   if (!fs.existsSync(SCHEMA_DIR)) {

@@ -1,7 +1,7 @@
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import { describe, expect, it } from "vitest";
-import { createValidator, isISODateTime } from "../src/validator.js";
+import { createValidator, isISODateTime } from "../src/core/validation/validator.js";
 
 /**
  * The date-time format is hand-written for speed, so the thing worth testing

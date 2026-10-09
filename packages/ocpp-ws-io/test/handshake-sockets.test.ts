@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { AddressInfo } from "node:net";
 import { createServer } from "node:http";
-import { OCPPServer } from "../src/server.js";
-import { OCPPClient } from "../src/client.js";
-import { getClientIp } from "../src/ws-util.js";
+import { OCPPServer } from "../src/server/server.js";
+import { OCPPClient } from "../src/client/client.js";
+import { getClientIp } from "../src/core/ws-util.js";
 import { attachOcppExpress } from "../src/frameworks/express/adapter.js";
 
 describe("handshake & sockets", () => {

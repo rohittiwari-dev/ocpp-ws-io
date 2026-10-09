@@ -2,9 +2,9 @@ import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { BrowserOCPPClient } from "../src/browser/client.js";
-import { OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
-import type { OCPPServerClient } from "../src/server-client.js";
+import { OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
+import type { OCPPServerClient } from "../src/server/server-client.js";
 import type {
   MessageIdGenerator,
   MessageIdValidator,

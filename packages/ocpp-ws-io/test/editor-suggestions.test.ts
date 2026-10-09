@@ -16,9 +16,9 @@ import { beforeAll, describe, expect, it } from "vitest";
  */
 const source = `
 import { BrowserOCPPClient } from "../src/browser/client.js";
-import { OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
-import { createValidator } from "../src/validator.js";
+import { OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
+import { createValidator } from "../src/core/validation/validator.js";
 
 void createValidator("", []);
 

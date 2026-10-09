@@ -4,7 +4,7 @@ import {
   getErrorPlainObject,
   getPackageIdent,
   sessionOf,
-} from "../src/util.js";
+} from "../src/core/util.js";
 import {
   RPCGenericError,
   RPCNotImplementedError,
@@ -12,7 +12,7 @@ import {
   RPCInternalError,
   RPCSecurityError,
   RPCFrameworkError,
-} from "../src/errors.js";
+} from "../src/core/errors.js";
 
 describe("createRPCError", () => {
   it('should create RPCGenericError for "GenericError" code', () => {

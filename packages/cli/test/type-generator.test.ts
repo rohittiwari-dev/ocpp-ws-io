@@ -14,7 +14,10 @@ const libraryDir = fileURLToPath(new URL("../../ocpp-ws-io/", import.meta.url));
 
 function readSchema(file: string): SchemaEntry[] {
   return JSON.parse(
-    readFileSync(join(libraryDir, "src", "schemas", file), "utf8"),
+    readFileSync(
+      join(libraryDir, "src", "core", "validation", "schemas", file),
+      "utf8",
+    ),
   ) as SchemaEntry[];
 }
 

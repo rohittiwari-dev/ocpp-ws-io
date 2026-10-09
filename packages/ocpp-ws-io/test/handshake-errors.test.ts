@@ -7,7 +7,7 @@ import {
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { combineAuth } from "../src/helpers/index.js";
-import { OCPPServer } from "../src/server.js";
+import { OCPPServer } from "../src/server/server.js";
 import type { LoggerLike, SecurityEvent } from "../src/types.js";
 
 /**

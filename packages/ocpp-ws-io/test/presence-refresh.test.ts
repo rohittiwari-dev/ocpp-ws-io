@@ -1,8 +1,8 @@
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { InMemoryAdapter } from "../src/adapters/adapter.js";
-import { OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
+import { OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
 
 class SpyAdapter extends InMemoryAdapter {
   setPresenceBatch = vi.fn<InMemoryAdapter["setPresenceBatch"]>(

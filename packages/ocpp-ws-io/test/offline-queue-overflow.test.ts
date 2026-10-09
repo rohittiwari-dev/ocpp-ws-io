@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { OCPPClient } from "../src/client.js";
-import { unchecked } from "../src/unchecked.js";
+import { OCPPClient } from "../src/client/client.js";
+import { unchecked } from "../src/core/unchecked.js";
 
 describe("offline queue overflow (H2)", () => {
   test("oldest queued call is rejected, not stranded", async () => {

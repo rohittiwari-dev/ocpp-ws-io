@@ -17,15 +17,15 @@ import {
 	afterAll,
 } from 'vitest';
 import WebSocketModule from 'ws';
-import { OCPPServer } from '../src/server.js';
+import { OCPPServer } from '../src/server/server.js';
 import {
 	type AnyBrowserOCPPClient,
 	BrowserOCPPClient,
 } from '../src/browser/client.js';
 import { ConnectionState, MessageType, NOREPLY } from '../src/browser/types.js';
 import { createRPCError } from '../src/browser/util.js';
-import type { OCPPServerClient } from '../src/server-client.js';
-import { unchecked } from '../src/unchecked.js';
+import type { OCPPServerClient } from '../src/server/server-client.js';
+import { unchecked } from '../src/core/unchecked.js';
 
 // ─── Mock WebSocket shim ──────────────────────────────────────────
 

@@ -3,8 +3,8 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import tls, { type SecureVersion } from "node:tls";
 import { afterEach, describe, expect, it } from "vitest";
-import { OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
+import { OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
 import { SecurityProfile, type TLSOptions } from "../src/types.js";
 
 /**

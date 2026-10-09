@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import type { AddressInfo } from "node:net";
-import { OCPPServer } from "../src/server.js";
-import { OCPPClient } from "../src/client.js";
+import { OCPPServer } from "../src/server/server.js";
+import { OCPPClient } from "../src/client/client.js";
 
 // Backpressure protection covered outbound CALLs only. Replies to inbound CALLs
 // — CALLRESULT and CALLERROR — went out with a raw ws.send(), so a peer that

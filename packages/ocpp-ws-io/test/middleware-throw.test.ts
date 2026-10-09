@@ -12,11 +12,11 @@ import {
   type AnyBrowserOCPPClient,
   BrowserOCPPClient,
 } from "../src/browser/client.js";
-import { type AnyOCPPClient, OCPPClient } from "../src/client.js";
-import { RPCInternalError, RPCSecurityError } from "../src/errors.js";
-import { OCPPServer } from "../src/server.js";
-import type { OCPPServerClient } from "../src/server-client.js";
-import { createRPCError } from "../src/util.js";
+import { type AnyOCPPClient, OCPPClient } from "../src/client/client.js";
+import { RPCInternalError, RPCSecurityError } from "../src/core/errors.js";
+import { OCPPServer } from "../src/server/server.js";
+import type { OCPPServerClient } from "../src/server/server-client.js";
+import { createRPCError } from "../src/core/util.js";
 
 /**
  * A middleware that throws before calling next(). On a received CALL the peer

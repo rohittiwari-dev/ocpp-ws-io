@@ -4,7 +4,7 @@ import {
   BrowserOCPPClient,
 } from "../../src/browser/client.js";
 import type { OCPPCallError } from "../../src/browser/types.js";
-import { type AnyOCPPClient, OCPPClient } from "../../src/client.js";
+import { type AnyOCPPClient, OCPPClient } from "../../src/client/client.js";
 import type { ClientOptions } from "../../src/types.js";
 
 /**

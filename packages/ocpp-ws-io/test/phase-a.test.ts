@@ -1,8 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { OCPPServer } from "../src/server.js";
-import { OCPPClient } from "../src/client.js";
-import { LRUMap } from "../src/lru-map.js";
-import type { OCPPServerClient } from "../src/server-client.js";
+import { OCPPServer } from "../src/server/server.js";
+import { OCPPClient } from "../src/client/client.js";
+import { LRUMap } from "../src/core/lru-map.js";
+import type { OCPPServerClient } from "../src/server/server-client.js";
 
 const getPort = (srv: import("node:http").Server): number => {
   const addr = srv.address();

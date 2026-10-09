@@ -5,11 +5,11 @@ import {
   type AnyBrowserOCPPClient,
   BrowserOCPPClient,
 } from "../src/browser/client.js";
-import { type AnyOCPPClient, OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
-import type { OCPPServerClient } from "../src/server-client.js";
+import { type AnyOCPPClient, OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
+import type { OCPPServerClient } from "../src/server/server-client.js";
 import type { ClientOptions } from "../src/types.js";
-import { unchecked } from "../src/unchecked.js";
+import { unchecked } from "../src/core/unchecked.js";
 
 /**
  * The client's `closing` event (gap G5): emitted when close() starts shutting

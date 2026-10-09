@@ -1,9 +1,9 @@
 import { createServer, request, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
-import { unchecked } from "../src/unchecked.js";
+import { OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
+import { unchecked } from "../src/core/unchecked.js";
 
 /**
  * A middleware that calls next() without awaiting or returning it used to

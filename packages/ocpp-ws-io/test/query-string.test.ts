@@ -5,8 +5,8 @@ import {
   type AnyBrowserOCPPClient,
   BrowserOCPPClient,
 } from "../src/browser/client.js";
-import { type AnyOCPPClient, OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
+import { type AnyOCPPClient, OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
 
 /**
  * `query` as a string (gap G6): the client options take the connection URL's

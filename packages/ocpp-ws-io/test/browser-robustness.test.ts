@@ -21,10 +21,10 @@ import {
 	afterAll,
 } from 'vitest';
 import WebSocketModule from 'ws';
-import { OCPPServer } from '../src/server.js';
+import { OCPPServer } from '../src/server/server.js';
 import { BrowserOCPPClient } from '../src/browser/client.js';
 import { ConnectionState } from '../src/browser/types.js';
-import { unchecked } from "../src/unchecked.js";
+import { unchecked } from "../src/core/unchecked.js";
 
 // ─── Mock WebSocket shim ──────────────────────────────────────────
 const OriginalWebSocket = (globalThis as any).WebSocket;

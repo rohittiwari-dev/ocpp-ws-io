@@ -1,8 +1,8 @@
 import { expectTypeOf } from "vitest";
 import { BrowserOCPPClient } from "../../src/browser/client.js";
-import { OCPPClient } from "../../src/client.js";
-import { OCPPServer } from "../../src/server.js";
-import type { OCPPServerClient } from "../../src/server-client.js";
+import { OCPPClient } from "../../src/client/client.js";
+import { OCPPServer } from "../../src/server/server.js";
+import type { OCPPServerClient } from "../../src/server/server-client.js";
 import type { ConnectionOf } from "../../src/types.js";
 
 /**
@@ -76,7 +76,7 @@ export function everythingElseAsBefore() {
   const heldClient: OCPPClient<"ocpp1.6"> = client;
   const route = csms.route("/v16").config({ protocols: ["ocpp1.6"] });
   expectTypeOf(route).toEqualTypeOf<
-    import("../../src/router.js").OCPPRouter<"ocpp1.6">
+    import("../../src/server/router.js").OCPPRouter<"ocpp1.6">
   >();
   return [annotated, plain, heldClient];
 }

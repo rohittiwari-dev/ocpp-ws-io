@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
-import { OCPPClient } from "../src/client";
+import { OCPPClient } from "../src/client/client";
 import { SecurityProfile, ConnectionState } from "../src/types";
 
 // Mock WebSocket

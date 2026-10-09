@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { isIPAllowed } from "../src/utils/cidr.js";
-import { checkCORS } from "../src/cors.js";
+import { isIPAllowed } from "../src/server/cidr.js";
+import { checkCORS } from "../src/server/cors.js";
 import type { IncomingMessage } from "node:http";
 import { TLSSocket } from "node:tls";
 

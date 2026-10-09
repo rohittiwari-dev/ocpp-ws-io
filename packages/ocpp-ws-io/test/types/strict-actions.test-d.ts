@@ -1,10 +1,10 @@
 import { expectTypeOf } from "vitest";
 import { BrowserOCPPClient } from "../../src/browser/client.js";
-import { OCPPClient } from "../../src/client.js";
-import { OCPPServer } from "../../src/server.js";
+import { OCPPClient } from "../../src/client/client.js";
+import { OCPPServer } from "../../src/server/server.js";
 import type { ExactKeys, JsonObject } from "../../src/types.js";
 import { NOREPLY } from "../../src/types.js";
-import { unchecked } from "../../src/unchecked.js";
+import { unchecked } from "../../src/core/unchecked.js";
 
 /**
  * T3a: on clients and connections, typed methods take only the actions their

@@ -1,5 +1,5 @@
 import { OcppMessageEvent } from "../../src/frameworks/nestjs/decorators/method.decorators.js";
-import { unchecked } from "../../src/unchecked.js";
+import { unchecked } from "../../src/core/unchecked.js";
 
 /**
  * T3c: @OcppMessageEvent names an action that exists, in the protocol given

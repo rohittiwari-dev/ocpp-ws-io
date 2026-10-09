@@ -1,5 +1,5 @@
 import { describe, expect, it, afterEach, vi } from "vitest";
-import { OCPPServer } from "../src/server.js";
+import { OCPPServer } from "../src/server/server.js";
 import http from "node:http";
 import { WebSocket } from "ws";
 import type { HandshakeInfo } from "../src/types.js";
@@ -304,8 +304,8 @@ describe("OCPPServer - Express-like Routing", () => {
   });
 });
 
-import { RadixTrie } from "../src/radix-trie.js";
-import { OCPPRouter } from "../src/router.js";
+import { RadixTrie } from "../src/server/radix-trie.js";
+import { OCPPRouter } from "../src/server/router.js";
 
 describe("malformed percent-encoding (M14)", () => {
   it("trie match does not throw on bad %-sequences", () => {
@@ -320,7 +320,7 @@ describe("malformed percent-encoding (M14)", () => {
   });
 });
 
-import { OCPPClient } from "../src/client.js";
+import { OCPPClient } from "../src/client/client.js";
 
 describe("late route() registration (low)", () => {
   it("patterns added after attachment still match", async () => {

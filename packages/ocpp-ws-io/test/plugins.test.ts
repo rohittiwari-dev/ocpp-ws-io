@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
-import { OCPPServer } from "../src/server.js";
+import { OCPPServer } from "../src/server/server.js";
 import type { OCPPPlugin } from "../src/types.js";
-import { OCPPClient } from "../src/client.js";
+import { OCPPClient } from "../src/client/client.js";
 import {
   sessionLogPlugin,
   heartbeatPlugin,

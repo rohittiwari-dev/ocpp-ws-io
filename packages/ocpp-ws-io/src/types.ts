@@ -3,6 +3,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import type { SecureVersion, TLSSocket } from "node:tls";
 import type { LogEntry } from "voltlog-io";
+import type { Validator } from "./core/validation/validator.js";
 import type {
   AllMethodNames,
   OCPPMethodMap,
@@ -13,7 +14,6 @@ import type {
   OCPPSendRequestType,
   SendMethodNames,
 } from "./generated/index.js";
-import type { Validator } from "./validator.js";
 
 export type {
   AllMethodNames,
@@ -130,12 +130,14 @@ export type StrictModeMethodsFor<P extends AnyOCPPProtocol> = {
  * The connection type of a server or route, for storing its connections:
  * `new Map<string, ConnectionOf<typeof server>>()`.
  */
-export type ConnectionOf<S> = S extends import("./server.js").OCPPServer<
+export type ConnectionOf<S> = S extends import("./server/server.js").OCPPServer<
   infer P extends AnyOCPPProtocol
 >
-  ? import("./server-client.js").OCPPServerClient<P>
-  : S extends import("./router.js").OCPPRouter<infer P extends AnyOCPPProtocol>
-    ? import("./server-client.js").OCPPServerClient<P>
+  ? import("./server/server-client.js").OCPPServerClient<P>
+  : S extends import("./server/router.js").OCPPRouter<
+        infer P extends AnyOCPPProtocol
+      >
+    ? import("./server/server-client.js").OCPPServerClient<P>
     : never;
 
 // ─── Connection State ────────────────────────────────────────────
@@ -335,7 +337,7 @@ export interface RouterHandlerContext<
   P extends AnyOCPPProtocol = AnyOCPPProtocol,
 > extends HandlerContext<T> {
   /** The specific server client that issued the message. */
-  client: import("./server-client.js").OCPPServerClient<P>;
+  client: import("./server/server-client.js").OCPPServerClient<P>;
 }
 
 /** A route's wildcard handler: its context has the connection, typed for P. */
@@ -975,7 +977,7 @@ export interface RateLimitOptions {
     | "disconnect"
     | "ignore"
     | ((
-        client: import("./server-client.js").OCPPServerClient,
+        client: import("./server/server-client.js").OCPPServerClient,
         rawData: unknown,
       ) => void | Promise<void>);
   /**
@@ -1656,7 +1658,7 @@ export interface ClientEvents {
   strictValidationFailure: [{ message: unknown; error: Error }];
 }
 
-import type { OCPPServerClient } from "./server-client.js";
+import type { OCPPServerClient } from "./server/server-client.js";
 
 /**
  * I3: Structured security event for SIEM integration.
@@ -1717,7 +1719,7 @@ export interface ServerEvents<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
   listening: [];
   headers: [headers: string[], request: import("node:http").IncomingMessage];
   /** The adaptive rate limiter changed its multiplier. */
-  "rateLimit:adapted": [import("./adaptive-limiter.js").AdaptedEvent];
+  "rateLimit:adapted": [import("./server/adaptive-limiter.js").AdaptedEvent];
 }
 
 /**
@@ -1887,7 +1889,9 @@ export interface OCPPPlugin<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
    * Treat it as "set up now", and expect it to be paired with an `onClose`
    * that may itself be followed by another `onInit`.
    */
-  onInit?(server: import("./server.js").OCPPServer<P>): void | Promise<void>;
+  onInit?(
+    server: import("./server/server.js").OCPPServer<P>,
+  ): void | Promise<void>;
   /**
    * Called for each new client connection after auth succeeds.
    *
@@ -1901,11 +1905,11 @@ export interface OCPPPlugin<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
    * socket's late disconnect will delete the replacement's entry.
    */
   onConnection?(
-    client: import("./server-client.js").OCPPServerClient<P>,
+    client: import("./server/server-client.js").OCPPServerClient<P>,
   ): void | Promise<void>;
   /** Called when a client disconnects */
   onDisconnect?(
-    client: import("./server-client.js").OCPPServerClient<P>,
+    client: import("./server/server-client.js").OCPPServerClient<P>,
     code: number,
     reason: string,
   ): void;
@@ -1925,7 +1929,7 @@ export interface OCPPPlugin<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
    * queued frames, which costs more than the trailing observations are worth.
    */
   onMessage?(
-    client: import("./server-client.js").OCPPServerClient<P>,
+    client: import("./server/server-client.js").OCPPServerClient<P>,
     payload: MessageEventPayload,
   ): void | Promise<void>;
 
@@ -1936,7 +1940,7 @@ export interface OCPPPlugin<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
    * Return `false` to silently drop the message.
    */
   onBeforeReceive?(
-    client: import("./server-client.js").OCPPServerClient<P>,
+    client: import("./server/server-client.js").OCPPServerClient<P>,
     rawData: unknown,
   ): undefined | boolean | Promise<undefined | boolean>;
   /**
@@ -1944,7 +1948,7 @@ export interface OCPPPlugin<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
    * Return `false` to suppress the send.
    */
   onBeforeSend?(
-    client: import("./server-client.js").OCPPServerClient<P>,
+    client: import("./server/server-client.js").OCPPServerClient<P>,
     message: OCPPMessage,
   ): undefined | boolean | Promise<undefined | boolean>;
 
@@ -1952,29 +1956,29 @@ export interface OCPPPlugin<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
 
   /** WebSocket-level or protocol-level error */
   onError?(
-    client: import("./server-client.js").OCPPServerClient<P>,
+    client: import("./server/server-client.js").OCPPServerClient<P>,
     error: Error,
   ): void | Promise<void>;
   /** Malformed / unparseable message received */
   onBadMessage?(
-    client: import("./server-client.js").OCPPServerClient<P>,
+    client: import("./server/server-client.js").OCPPServerClient<P>,
     rawMessage: string,
     error: Error,
   ): void | Promise<void>;
   /** Schema validation failure (strictMode) */
   onValidationFailure?(
-    client: import("./server-client.js").OCPPServerClient<P>,
+    client: import("./server/server-client.js").OCPPServerClient<P>,
     message: unknown,
     error: Error,
   ): void | Promise<void>;
   /** Message dropped or client disconnected due to rate limiting */
   onRateLimitExceeded?(
-    client: import("./server-client.js").OCPPServerClient<P>,
+    client: import("./server/server-client.js").OCPPServerClient<P>,
     rawData: unknown,
   ): void | Promise<void>;
   /** User handler threw an error during CALL processing */
   onHandlerError?(
-    client: import("./server-client.js").OCPPServerClient<P>,
+    client: import("./server/server-client.js").OCPPServerClient<P>,
     method: string,
     error: Error,
   ): void | Promise<void>;
@@ -1994,17 +1998,17 @@ export interface OCPPPlugin<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
 
   /** Existing client with same identity was evicted by a new connection */
   onEviction?(
-    evictedClient: import("./server-client.js").OCPPServerClient<P>,
-    newClient: import("./server-client.js").OCPPServerClient<P>,
+    evictedClient: import("./server/server-client.js").OCPPServerClient<P>,
+    newClient: import("./server/server-client.js").OCPPServerClient<P>,
   ): void | Promise<void>;
   /** Send buffer exceeded backpressure threshold (512KB — slow client) */
   onBackpressure?(
-    client: import("./server-client.js").OCPPServerClient<P>,
+    client: import("./server/server-client.js").OCPPServerClient<P>,
     bufferedAmount: number,
   ): void | Promise<void>;
   /** Pong not received within timeout — dead peer detected */
   onPongTimeout?(
-    client: import("./server-client.js").OCPPServerClient<P>,
+    client: import("./server/server-client.js").OCPPServerClient<P>,
   ): void | Promise<void>;
 
   // ─── Telemetry & Metrics ───────────────────────────────────────
@@ -2480,7 +2484,7 @@ export interface WireCall {
   params: JsonValue;
 }
 
-export type { MiddlewareFunction, MiddlewareNext } from "./middleware.js";
+export type { MiddlewareFunction, MiddlewareNext } from "./core/middleware.js";
 
 // ─── Router Component Types ──────────────────────────────────────────
 

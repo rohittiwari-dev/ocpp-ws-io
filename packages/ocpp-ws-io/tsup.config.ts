@@ -34,7 +34,7 @@ export default defineConfig([
     treeshake: true,
     onSuccess: async () => {
       const { copyFileSync } = await import("node:fs");
-      copyFileSync("src/parse-worker.cjs", "dist/parse-worker.cjs");
+      copyFileSync("src/server/parse-worker.cjs", "dist/parse-worker.cjs");
     },
   },
   // Browser entry (no Node.js dependencies)

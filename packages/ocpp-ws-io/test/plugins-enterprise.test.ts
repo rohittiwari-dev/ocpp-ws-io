@@ -897,7 +897,7 @@ describe("metricsPlugin — new counters", () => {
 
 describe("Plugin Integration — all new plugins register", () => {
   it("should register new plugins via server.plugin()", async () => {
-    const { OCPPServer } = await import("../src/server.js");
+    const { OCPPServer } = await import("../src/server/server.js");
     const server = new OCPPServer();
 
     const mockRedis = {

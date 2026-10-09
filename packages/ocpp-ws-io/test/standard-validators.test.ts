@@ -3,7 +3,7 @@ import {
   getStandardProtocols,
   getStandardValidator,
   getStandardValidators,
-} from "../src/standard-validators.js";
+} from "../src/core/validation/standard-validators.js";
 
 describe("standard validators", () => {
   it("returns every bundled protocol when none are named", () => {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { OCPPServer } from "../src/server.js";
-import { OCPPClient } from "../src/client.js";
+import { OCPPServer } from "../src/server/server.js";
+import { OCPPClient } from "../src/client/client.js";
 
 // A global `server.use()` middleware must not make unmatched paths reachable.
 //

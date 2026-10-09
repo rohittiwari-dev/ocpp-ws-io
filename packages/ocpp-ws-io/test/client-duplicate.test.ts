@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OCPPClient } from "../src/client.js";
+import { OCPPClient } from "../src/client/client.js";
 
 describe("OCPPServerClient - Duplicate Handler Protection", () => {
   it("should throw when registering the same protocol-agnostic handler twice", () => {

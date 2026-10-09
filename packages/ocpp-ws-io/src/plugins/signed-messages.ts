@@ -7,15 +7,15 @@ import {
   type KeyObject,
   X509Certificate,
 } from "node:crypto";
-import type { OCPPClient } from "../client.js";
-import type { MiddlewareFunction } from "../middleware.js";
+import type { OCPPClient } from "../client/client.js";
+import type { MiddlewareFunction } from "../core/middleware.js";
+import { createRPCError } from "../core/util.js";
 import {
   type JsonValue,
   MessageType,
   type MiddlewareContext,
   type OCPPPlugin,
 } from "../types.js";
-import { createRPCError } from "../util.js";
 
 /** The JWS algorithms OCPP allows for signed messages (Part 4 §7.3). */
 export type SignedMessageAlgorithm = "ES256" | "RS256" | "RS384";

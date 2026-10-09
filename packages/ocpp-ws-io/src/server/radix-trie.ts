@@ -1,5 +1,5 @@
+import { safeDecodeURIComponent } from "../core/util.js";
 import type { AnyOCPPRouter } from "./router.js";
-import { safeDecodeURIComponent } from "./util.js";
 
 /**
  * Result of a successful trie match.

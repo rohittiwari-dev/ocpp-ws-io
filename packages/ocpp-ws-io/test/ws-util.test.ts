@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSubprotocols, isValidStatusCode } from "../src/ws-util.js";
+import { parseSubprotocols, isValidStatusCode } from "../src/core/ws-util.js";
 
 describe("parseSubprotocols", () => {
   it("should parse a single subprotocol", () => {

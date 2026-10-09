@@ -1,4 +1,4 @@
-import { HandshakeRejection } from "../errors.js";
+import { HandshakeRejection } from "../core/errors.js";
 import type {
   AnyOCPPProtocol,
   AuthAccept,

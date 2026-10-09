@@ -1,8 +1,8 @@
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { OCPPServer } from "../src/server.js";
-import { createRPCError } from "../src/util.js";
+import { OCPPServer } from "../src/server/server.js";
+import { createRPCError } from "../src/core/util.js";
 
 type Protocol = "ocpp1.6" | "ocpp2.0.1" | "ocpp2.1";
 

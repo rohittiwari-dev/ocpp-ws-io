@@ -1,13 +1,16 @@
 // ─── Core ────────────────────────────────────────────────────────
 
+export * from "../core/middleware.js";
+export { unchecked } from "../core/unchecked.js";
+export type {
+  Validator,
+  ValidatorSchema,
+} from "../core/validation/validator.js";
 // Only export browser-safe helpers (server-only: defineMiddleware, createPlugin, defineAuth, combineAuth)
 export {
   createLoggingMiddleware,
   defineRpcMiddleware,
 } from "../helpers/index.js";
-export * from "../middleware.js";
-export { unchecked } from "../unchecked.js";
-export type { Validator, ValidatorSchema } from "../validator.js";
 export { type AnyBrowserOCPPClient, BrowserOCPPClient } from "./client.js";
 // ─── Errors ──────────────────────────────────────────────────────
 export {

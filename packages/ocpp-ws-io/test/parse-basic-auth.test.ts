@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseBasicAuth } from "../src/ws-util";
+import { parseBasicAuth } from "../src/core/ws-util";
 
 describe("parseBasicAuth", () => {
   const encode = (s: string) => "Basic " + Buffer.from(s).toString("base64");

@@ -8,21 +8,30 @@ import {
   RPCNotImplementedError,
   TimeoutError,
   UnexpectedHttpResponse,
-} from "./errors.js";
+} from "../core/errors.js";
+import { initLogger } from "../core/init-logger.js";
+import { type MiddlewareFunction, MiddlewareStack } from "../core/middleware";
+import { assertUniqueProtocols, supportsSend } from "../core/protocol-list.js";
+import { Queue } from "../core/queue.js";
+import {
+  createId,
+  createRPCError,
+  getErrorPlainObject,
+  getPackageIdent,
+  NOOP_LOGGER,
+} from "../core/util.js";
+import {
+  assertStrictValidators,
+  getStandardValidator,
+} from "../core/validation/standard-validators.js";
+import type { Validator } from "../core/validation/validator.js";
+import { isEmptyFrame, isValidStatusCode } from "../core/ws-util.js";
 import type {
   AllMethodNames,
   OCPPRequestType,
   OCPPResponseType,
-} from "./generated/index.js";
-import { createLoggingMiddleware } from "./helpers/index.js";
-import { initLogger } from "./init-logger.js";
-import { type MiddlewareFunction, MiddlewareStack } from "./middleware";
-import { assertUniqueProtocols, supportsSend } from "./protocol-list.js";
-import { Queue } from "./queue.js";
-import {
-  assertStrictValidators,
-  getStandardValidator,
-} from "./standard-validators.js";
+} from "../generated/index.js";
+import { createLoggingMiddleware } from "../helpers/index.js";
 import {
   type AnyOCPPProtocol,
   type CallHandler,
@@ -69,16 +78,7 @@ import {
   type WildcardHandler,
   type WireCall,
   type WithUniqueProtocols,
-} from "./types.js";
-import {
-  createId,
-  createRPCError,
-  getErrorPlainObject,
-  getPackageIdent,
-  NOOP_LOGGER,
-} from "./util.js";
-import type { Validator } from "./validator.js";
-import { isEmptyFrame, isValidStatusCode } from "./ws-util.js";
+} from "../types.js";
 
 const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
 

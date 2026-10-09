@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { resolve } from "node:path";
-import { WorkerPool } from "../src/worker-pool.js";
-import { cpuLimit, memoryUsage } from "../src/adaptive-limiter.js";
+import { WorkerPool } from "../src/server/worker-pool.js";
+import { cpuLimit, memoryUsage } from "../src/server/adaptive-limiter.js";
 
-const WORKER_PATH = resolve(__dirname, "../src/parse-worker.cjs");
+const WORKER_PATH = resolve(__dirname, "../src/server/parse-worker.cjs");
 
 describe("worker pool robustness", () => {
   const pools: WorkerPool[] = [];

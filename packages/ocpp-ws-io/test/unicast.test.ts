@@ -1,6 +1,6 @@
 import { describe, expect, test, vi, type Mock } from "vitest";
 import { InMemoryAdapter } from "../src/adapters/adapter";
-import { OCPPServer } from "../src/server";
+import { OCPPServer } from "../src/server/server";
 import { WebSocket } from "ws";
 
 describe("Unicast Routing (Phase 1)", () => {

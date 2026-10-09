@@ -1,5 +1,5 @@
 import { Injectable, type NestMiddleware } from "@nestjs/common";
-import type { OCPPServer } from "../../server.js";
+import type { OCPPServer } from "../../server/server.js";
 import type { OcppService } from "./ocpp.service.js";
 
 export interface OcppRequest {

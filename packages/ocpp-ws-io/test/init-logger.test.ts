@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { initLogger } from "../src/init-logger";
+import { initLogger } from "../src/core/init-logger";
 import { type LogEntry, type LogMiddleware } from "voltlog-io";
 
 // Mock voltlog-io

@@ -2,15 +2,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import express from "express";
 import http, { type Server as HttpServer } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
-import { OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
+import { OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
 import {
   attachOcppExpress,
   createOcppExpressContext,
   ocppMiddleware,
   type OcppExpressBinding,
 } from "../src/frameworks/express/index.js";
-import { unchecked } from "../src/unchecked.js";
+import { unchecked } from "../src/core/unchecked.js";
 
 const getPort = (server: HttpServer): number => {
   const address = server.address();

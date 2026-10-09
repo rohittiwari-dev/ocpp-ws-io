@@ -5,8 +5,8 @@ import {
   type AnyBrowserOCPPClient,
   BrowserOCPPClient,
 } from "../src/browser/client.js";
-import { type AnyOCPPClient, OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
+import { type AnyOCPPClient, OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
 
 /**
  * forProtocol(): the same client, typed for the protocol it negotiated, or

@@ -1,6 +1,6 @@
 import { describe, test, expect, vi } from "vitest";
-import { OCPPClient } from "../src/client";
-import { unchecked } from "../src/unchecked.js";
+import { OCPPClient } from "../src/client/client";
+import { unchecked } from "../src/core/unchecked.js";
 
 class TestClient extends OCPPClient {
   constructor() {

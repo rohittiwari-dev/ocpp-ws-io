@@ -1,5 +1,5 @@
 import type { IncomingMessage } from "node:http";
-import type { OCPPServer } from "../../server.js";
+import type { OCPPServer } from "../../server/server.js";
 import type { BaseOcppContext } from "../base/context.js";
 
 export interface OcppFastifyContext extends BaseOcppContext {}

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
-import { OCPPServer } from "../src/server.js";
+import { OCPPServer } from "../src/server/server.js";
 import { ocppMiddleware, attachOcppHonoNode } from "../src/frameworks/hono/index.js";
 import http from "node:http";
 

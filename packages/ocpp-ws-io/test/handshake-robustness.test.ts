@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { describe, it, expect, afterEach } from "vitest";
 import WebSocket from "ws";
-import { OCPPServer } from "../src/server";
+import { OCPPServer } from "../src/server/server";
 import { SecurityProfile } from "../src/types";
 
 describe("OCPPServer - Handshake Robustness", () => {

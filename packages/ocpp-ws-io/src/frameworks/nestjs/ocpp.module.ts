@@ -9,7 +9,7 @@ import {
   DiscoveryService,
   MetadataScanner,
 } from "@nestjs/core";
-import { OCPPServer } from "../../server.js";
+import { OCPPServer } from "../../server/server.js";
 import { OCPP_SERVER_INSTANCE, OCPP_SERVER_OPTIONS } from "./constants.js";
 import type {
   OcppModuleAsyncOptions,

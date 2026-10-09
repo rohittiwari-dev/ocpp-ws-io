@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { OCPPClient } from "../src/client.js";
+import { OCPPClient } from "../src/client/client.js";
 
 describe("shared backpressure drain (M10)", () => {
   beforeEach(() => vi.useFakeTimers());

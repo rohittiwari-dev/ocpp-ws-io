@@ -10,8 +10,8 @@ import {
 } from "vitest";
 import WebSocketModule from "ws";
 import { BrowserOCPPClient } from "../src/browser/client.js";
-import { OCPPClient } from "../src/client.js";
-import { OCPPServer } from "../src/server.js";
+import { OCPPClient } from "../src/client/client.js";
+import { OCPPServer } from "../src/server/server.js";
 
 /**
  * OCPP-J 2.0.1 / 2.1 §5.3: the first reconnection waits the minimum plus a
