@@ -178,6 +178,11 @@ function jsonSchemaToTS(
   }
 
   if (type === "object") {
+    // A closed object with no fields takes only `{}`: an empty object type
+    // would take any value but null and undefined, a number included.
+    if (!isOpen(schema) && Object.keys(schema.properties || {}).length === 0) {
+      return "Record<string, never>";
+    }
     if (schema.properties) {
       const required = new Set(schema.required || []);
       const props = Object.entries(schema.properties).map(([name, ps]) => {
@@ -229,7 +234,11 @@ function generateInterface(
   definitions: Map<string, SchemaEntry>,
 ): string[] {
   const lines: string[] = [];
-  lines.push(`export interface ${name} {`);
+  // As in jsonSchemaToTS: a closed interface with no fields takes only `{}`.
+  const emptyClosed =
+    !isOpen(schema) && Object.keys(schema.properties || {}).length === 0;
+  const base = emptyClosed ? " extends Record<string, never>" : "";
+  lines.push(`export interface ${name}${base} {`);
 
   if (schema.properties) {
     const required = new Set(schema.required || []);

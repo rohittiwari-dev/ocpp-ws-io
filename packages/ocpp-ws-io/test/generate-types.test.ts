@@ -179,6 +179,9 @@ describe("Type Generation Script", () => {
     expect(
       jsonSchemaToTS({ type: "object", additionalProperties: false }, defs),
     ).toBe("Record<string, never>");
+    expect(
+      jsonSchemaToTS({ type: "object", properties: {}, additionalProperties: false }, defs),
+    ).toBe("Record<string, never>");
     // An untyped field such as DataTransfer's data takes any JSON value.
     expect(
       jsonSchemaToTS({ description: "Open to implementation" }, defs),
@@ -225,6 +228,8 @@ describe("Type Generation Script", () => {
     );
     // Every 1.6 object is closed.
     expect(code16).not.toContain("[key: string]");
+    expect(code16).toContain("export interface HeartbeatRequest extends Record<string, never>");
+    expect(code16).toContain("export interface StatusNotificationResponse extends Record<string, never>");
   });
 
   // OCPP 2.1 SEND messages have one schema with no Request/Response suffix.

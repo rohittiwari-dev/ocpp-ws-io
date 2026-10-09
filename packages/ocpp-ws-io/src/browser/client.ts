@@ -617,7 +617,7 @@ export class BrowserOCPPClient<
   >(
     method: CheckedAction<M, RequestOf<KnownProtocol<P>, M>, T>,
     params: T,
-    options: CallOptions,
+    options: CallOptions | undefined,
   ): Promise<OCPPResponseType<KnownProtocol<P>, M>>;
 
   /** Call an action the types do not check without waiting for its answer. */

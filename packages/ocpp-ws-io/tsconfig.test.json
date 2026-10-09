@@ -8,5 +8,5 @@
 		"allowJs": true
 	},
 	"include": ["src", "test"],
-	"exclude": ["node_modules", "dist", "test/types-augmented"]
+	"exclude": ["node_modules", "dist", "test/types-augmented", "test/types-published"]
 }

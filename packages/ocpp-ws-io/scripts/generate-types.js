@@ -235,7 +235,9 @@ function generateNamedType(name, schema, definitions) {
 
 function generateInterface(name, schema, definitions) {
   const lines = [];
-  lines.push(`export interface ${name} {`);
+  const emptyClosed = !isOpen(schema) && Object.keys(schema.properties || {}).length === 0;
+  const base = emptyClosed ? " extends Record<string, never>" : "";
+  lines.push(`export interface ${name}${base} {`);
 
   if (schema.properties) {
     const required = new Set(schema.required || []);
@@ -326,6 +328,9 @@ function jsonSchemaToTS(schema, definitions) {
   }
 
   if (type === "object") {
+    if (!isOpen(schema) && Object.keys(schema.properties || {}).length === 0) {
+      return "Record<string, never>";
+    }
     if (schema.properties) {
       const required = new Set(schema.required || []);
       const props = Object.entries(schema.properties).map(([name, ps]) => {

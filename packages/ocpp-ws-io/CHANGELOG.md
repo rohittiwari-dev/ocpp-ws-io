@@ -1,5 +1,24 @@
 # ocpp-ws-io
 
+## v3.0.5-beta.1 - Handler and frontend event typing (2026-10-09)
+
+### Changed
+
+- **Wildcard handlers receive one context argument.** Node and browser clients and router wildcard handlers now call `handler(context)` instead of `handler(method, context)`. Read the action from `context.method`; router contexts still include `context.client`. NestJS wildcard dispatch and the protocol proxy have been updated to use this signature. This is a breaking callback-signature change from 3.0.4: migrate `client.handle((method, ctx) => ...)` to `client.handle((ctx) => ...)`, using `ctx.method` for the former first argument. Named-action handlers keep their existing signature. (`61ed387`)
+- **Empty OCPP 1.6 payloads must be objects.** Generated empty request and response interfaces now extend `Record<string, never>`. `{}` remains valid; numbers, strings, arrays, and additional fields are rejected at compile time. Asynchronous empty responses and `NOREPLY` remain supported.
+
+### Fixed
+
+- **`DataTransfer` handler inference no longer exceeds TypeScript's instantiation limit.** Exact-field checking stops at identical nested types before expanding recursive JSON unions. Async handlers can return an accepted status or echo JSON data without the "Type instantiation is excessively deep and possibly infinite" error; invalid response fields remain rejected. (`97a7768`)
+- **Custom protocol declarations are shared by the main and browser entry points.** Augmenting `OCPPMethodMap` or `OCPPSendMethodMap` now supplies the same custom action names, request payloads, and response types to Node and browser clients in the built package.
+- **`unchecked()` shares one declaration brand across entry points.** A helper imported from `ocpp-ws-io` or `ocpp-ws-io/browser` is accepted by either client's overloads.
+- **Short typed calls accept optional options.** `client.call(method, params, options)` accepts `CallOptions | undefined` on Node and browser clients, matching the version-specific form while preserving response inference and the literal `noReply: true` overload.
+- **Wildcard type-test fixtures match the context-only signature**, restoring the core package's typecheck command.
+
+### Tests
+
+- Added regression checks for empty payloads, optional call options, and published frontend event declarations, including role-based server connection maps. The package build now checks its published declarations so source-only checks cannot hide declaration-bundling regressions.
+
 ## v3.0.4 - Handshake now has more options
 
 ### Added

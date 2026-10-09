@@ -78,7 +78,7 @@ export function routesNarrowTheServer() {
     return { currentTime: "", interval: 300, status: "Accepted" as const };
   });
   // A wildcard handler's connection is the route's too (B23).
-  v16.handle((_method, ctx) => {
+  v16.handle((ctx) => {
     expectTypeOf(ctx.client).toEqualTypeOf<OCPPServerClient<"ocpp1.6">>();
     // @ts-expect-error 2.0.1 is not one of this route's protocols
     void ctx.client.call("ocpp2.0.1", "Heartbeat", {});
@@ -141,7 +141,7 @@ export function typedFitsThePlainTypeAsIn2x() {
   };
   csms.route("/boot/:id").handle("BootNotification", boot);
   // And a wildcard handler written on its own (B23 types the route's own).
-  const wildcard = (_method: string, ctx: RouterHandlerContext) => {
+  const wildcard = (ctx: RouterHandlerContext) => {
     void ctx.client.identity;
     return {};
   };

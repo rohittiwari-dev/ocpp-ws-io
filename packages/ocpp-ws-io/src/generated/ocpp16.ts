@@ -114,7 +114,7 @@ export interface ChangeConfigurationResponse {
   status: "Accepted" | "Rejected" | "RebootRequired" | "NotSupported";
 }
 
-export interface ClearCacheRequest {
+export interface ClearCacheRequest extends Record<string, never> {
 }
 
 export interface ClearCacheResponse {
@@ -155,7 +155,7 @@ export interface DiagnosticsStatusNotificationRequest {
   status: "Idle" | "Uploaded" | "UploadFailed" | "Uploading";
 }
 
-export interface DiagnosticsStatusNotificationResponse {
+export interface DiagnosticsStatusNotificationResponse extends Record<string, never> {
 }
 
 export interface ExtendedTriggerMessageRequest {
@@ -171,7 +171,7 @@ export interface FirmwareStatusNotificationRequest {
   status: "Downloaded" | "DownloadFailed" | "Downloading" | "Idle" | "InstallationFailed" | "Installing" | "Installed";
 }
 
-export interface FirmwareStatusNotificationResponse {
+export interface FirmwareStatusNotificationResponse extends Record<string, never> {
 }
 
 export interface GetCompositeScheduleRequest {
@@ -217,7 +217,7 @@ export interface GetInstalledCertificateIdsResponse {
   status: GetInstalledCertificateStatusEnumType;
 }
 
-export interface GetLocalListVersionRequest {
+export interface GetLocalListVersionRequest extends Record<string, never> {
 }
 
 export interface GetLocalListVersionResponse {
@@ -237,7 +237,7 @@ export interface GetLogResponse {
   filename?: string;
 }
 
-export interface HeartbeatRequest {
+export interface HeartbeatRequest extends Record<string, never> {
 }
 
 export interface HeartbeatResponse {
@@ -258,7 +258,7 @@ export interface LogStatusNotificationRequest {
   requestId?: number;
 }
 
-export interface LogStatusNotificationResponse {
+export interface LogStatusNotificationResponse extends Record<string, never> {
 }
 
 export interface MeterValuesRequest {
@@ -267,7 +267,7 @@ export interface MeterValuesRequest {
   meterValue: ({ timestamp: string; sampledValue: ({ value: string; context?: "Interruption.Begin" | "Interruption.End" | "Sample.Clock" | "Sample.Periodic" | "Transaction.Begin" | "Transaction.End" | "Trigger" | "Other"; format?: "Raw" | "SignedData"; measurand?: "Energy.Active.Export.Register" | "Energy.Active.Import.Register" | "Energy.Reactive.Export.Register" | "Energy.Reactive.Import.Register" | "Energy.Active.Export.Interval" | "Energy.Active.Import.Interval" | "Energy.Reactive.Export.Interval" | "Energy.Reactive.Import.Interval" | "Power.Active.Export" | "Power.Active.Import" | "Power.Offered" | "Power.Reactive.Export" | "Power.Reactive.Import" | "Power.Factor" | "Current.Import" | "Current.Export" | "Current.Offered" | "Voltage" | "Frequency" | "Temperature" | "SoC" | "RPM"; phase?: "L1" | "L2" | "L3" | "N" | "L1-N" | "L2-N" | "L3-N" | "L1-L2" | "L2-L3" | "L3-L1"; location?: "Cable" | "EV" | "Inlet" | "Outlet" | "Body"; unit?: "Wh" | "kWh" | "varh" | "kvarh" | "W" | "kW" | "VA" | "kVA" | "var" | "kvar" | "A" | "V" | "K" | "Celcius" | "Celsius" | "Fahrenheit" | "Percent" })[] })[];
 }
 
-export interface MeterValuesResponse {
+export interface MeterValuesResponse extends Record<string, never> {
 }
 
 export interface RemoteStartTransactionRequest {
@@ -314,7 +314,7 @@ export interface SecurityEventNotificationRequest {
   techInfo?: string;
 }
 
-export interface SecurityEventNotificationResponse {
+export interface SecurityEventNotificationResponse extends Record<string, never> {
 }
 
 export interface SendLocalListRequest {
@@ -349,7 +349,7 @@ export interface SignedFirmwareStatusNotificationRequest {
   requestId?: number;
 }
 
-export interface SignedFirmwareStatusNotificationResponse {
+export interface SignedFirmwareStatusNotificationResponse extends Record<string, never> {
 }
 
 export interface SignedUpdateFirmwareRequest {
@@ -386,7 +386,7 @@ export interface StatusNotificationRequest {
   vendorErrorCode?: string;
 }
 
-export interface StatusNotificationResponse {
+export interface StatusNotificationResponse extends Record<string, never> {
 }
 
 export interface StopTransactionRequest {
@@ -426,7 +426,7 @@ export interface UpdateFirmwareRequest {
   retryInterval?: number;
 }
 
-export interface UpdateFirmwareResponse {
+export interface UpdateFirmwareResponse extends Record<string, never> {
 }
 
 // ═══ Method Map ═══

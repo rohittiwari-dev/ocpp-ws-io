@@ -11,3 +11,4 @@ uses.ts
 package-lock.json
 /Microsoft
 .env
+/artifacts

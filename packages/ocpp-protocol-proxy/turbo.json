@@ -1,0 +1,12 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build", "ocpp-ws-io#build"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build", "ocpp-ws-io#build"]
+    }
+  }
+}

@@ -1007,7 +1007,7 @@ export class OCPPClient<
   >(
     method: CheckedAction<M, RequestOf<KnownProtocol<P>, M>, T>,
     params: T,
-    options: CallOptions,
+    options: CallOptions | undefined,
   ): Promise<OCPPResponseType<KnownProtocol<P>, M>>;
 
   /**

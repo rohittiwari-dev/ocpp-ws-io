@@ -5,21 +5,25 @@ import { defineConfig } from "tsup";
 // still type-checks without it.
 const dts = { compilerOptions: { ignoreDeprecations: "6.0" } };
 
+const nodeEntries = {
+  index: "src/index.ts",
+  "adapters/redis": "src/adapters/redis/index.ts",
+  logger: "src/logger/index.ts",
+  plugins: "src/plugins/index.ts",
+  express: "src/frameworks/express/index.ts",
+  nestjs: "src/frameworks/nestjs/index.ts",
+  fastify: "src/frameworks/fastify/index.ts",
+  hono: "src/frameworks/hono/index.ts",
+};
+
 export default defineConfig([
-  // Node.js entries (server, client, adapters)
   {
-    entry: {
-      index: "src/index.ts",
-      "adapters/redis": "src/adapters/redis/index.ts",
-      logger: "src/logger/index.ts",
-      plugins: "src/plugins/index.ts",
-      express: "src/frameworks/express/index.ts",
-      nestjs: "src/frameworks/nestjs/index.ts",
-      fastify: "src/frameworks/fastify/index.ts",
-      hono: "src/frameworks/hono/index.ts",
-    },
+    entry: nodeEntries,
     format: ["cjs", "esm"],
-    dts,
+    dts: {
+      ...dts,
+      entry: { ...nodeEntries, browser: "src/browser/index.ts" },
+    },
     splitting: false,
     sourcemap: false,
     clean: false,
@@ -39,7 +43,7 @@ export default defineConfig([
       browser: "src/browser/index.ts",
     },
     format: ["cjs", "esm"],
-    dts,
+    dts: false,
     splitting: false,
     sourcemap: false,
     clean: false,

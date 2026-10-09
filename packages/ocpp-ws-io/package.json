@@ -1,6 +1,6 @@
 {
 	"name": "ocpp-ws-io",
-	"version": "3.0.4",
+	"version": "3.0.5-beta.1",
 	"description": "Type-safe OCPP 1.6J, 2.0.1, and 2.1 WebSocket RPC client & server toolkit for Node.js, TypeScript, and NestJS. OCA schema-validated, Redis clustering, and EV charging infrastructure support.",
 	"repository": {
 		"type": "git",
@@ -86,7 +86,7 @@
 	},
 	"scripts": {
 		"clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-		"build": "npm run clean && tsup && node scripts/verify-dist.js",
+		"build": "npm run clean && tsup && node scripts/verify-dist.js && tsc -p test/types-published/tsconfig.json",
 		"generate": "node scripts/generate-types.js",
 		"test": "vitest run",
 		"test:watch": "vitest",
