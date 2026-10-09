@@ -1,9 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { OCPPServer } from "../src/server/server.js";
 import { OCPPClient } from "../src/client/client.js";
-import { SecurityProfile } from "../src/types.js";
+import { SecurityProfile } from "../src/types/index.js";
 import WebSocket from "ws";
-import type { SecurityEvent } from "../src/types.js";
+import type { SecurityEvent } from "../src/types/index.js";
 
 const getPort = (srv: import("node:http").Server): number => {
   const addr = srv.address();

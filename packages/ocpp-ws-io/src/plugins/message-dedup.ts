@@ -1,4 +1,4 @@
-import type { OCPPPlugin } from "../types.js";
+import type { OCPPPlugin } from "../types/index.js";
 
 /**
  * Minimal Redis interface for the Deduplication plugin.

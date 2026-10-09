@@ -16,7 +16,7 @@ import type {
   ConnectionOf,
   OCPPPlugin,
   RouterHandlerContext,
-} from "../../src/types.js";
+} from "../../src/types/index.js";
 
 /**
  * T2b: a server, its connections and its routes are typed for the server's

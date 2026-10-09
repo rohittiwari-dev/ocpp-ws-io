@@ -3,7 +3,7 @@ import type { OcppExpressContext } from "../../src/frameworks/express/types.js";
 import type { OcppFastifyContext } from "../../src/frameworks/fastify/types.js";
 import type { OcppHonoContext } from "../../src/frameworks/hono/types.js";
 import type { OcppService } from "../../src/frameworks/nestjs/ocpp.service.js";
-import type { JsonObject, OCPPResponseType } from "../../src/types.js";
+import type { JsonObject, OCPPResponseType } from "../../src/types/index.js";
 import { unchecked } from "../../src/core/unchecked.js";
 
 /**

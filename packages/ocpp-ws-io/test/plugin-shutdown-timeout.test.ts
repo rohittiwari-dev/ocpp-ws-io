@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { OCPPServer } from "../src/server/server.js";
-import type { OCPPPlugin } from "../src/types.js";
+import type { OCPPPlugin } from "../src/types/index.js";
 
 /**
  * close() awaits every plugin's onClosing and then every onClose. Unbounded, a

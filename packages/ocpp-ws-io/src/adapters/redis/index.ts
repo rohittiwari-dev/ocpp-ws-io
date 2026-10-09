@@ -2,7 +2,7 @@ import type {
   EventAdapterInterface,
   JsonValue,
   PersistedSession,
-} from "../../types.js";
+} from "../../types/index.js";
 import {
   createDriver,
   type RedisLikeClient,

@@ -9,7 +9,7 @@ import type {
   HandshakeInfo,
   MiddlewareContext,
   RoutesByArgs,
-} from "../../types.js";
+} from "../../types/index.js";
 import {
   OCPP_AUTH_METADATA,
   OCPP_CONNECTION_MIDDLEWARE_METADATA,

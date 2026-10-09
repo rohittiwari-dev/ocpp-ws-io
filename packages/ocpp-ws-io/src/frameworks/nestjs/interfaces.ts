@@ -1,7 +1,7 @@
 import type { IncomingMessage } from "node:http";
 import type { FactoryProvider, ModuleMetadata, Type } from "@nestjs/common";
 import type { OCPPServerClient } from "../../server/server-client.js";
-import type { RouterConfig, ServerOptions } from "../../types.js";
+import type { RouterConfig, ServerOptions } from "../../types/index.js";
 
 export interface OcppGatewayOptions extends RouterConfig {
   path?: string;

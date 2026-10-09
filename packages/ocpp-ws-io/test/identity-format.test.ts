@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { OCPPServer } from "../src/server/server.js";
-import type { OCPPProtocol } from "../src/types.js";
+import type { OCPPProtocol } from "../src/types/index.js";
 
 /**
  * Charging station identity rules (OCPP-J §3.1.1). 2.0.1 and 2.1: an

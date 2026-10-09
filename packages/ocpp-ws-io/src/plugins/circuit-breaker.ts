@@ -1,5 +1,5 @@
 import { LRUMap } from "../core/lru-map.js";
-import type { OCPPPlugin } from "../types.js";
+import type { OCPPPlugin } from "../types/index.js";
 
 /**
  * Options for the circuit-breaker plugin.

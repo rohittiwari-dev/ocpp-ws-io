@@ -2,7 +2,7 @@ import { describe, expect, it, afterEach, vi } from "vitest";
 import { OCPPServer } from "../src/server/server.js";
 import http from "node:http";
 import { WebSocket } from "ws";
-import type { HandshakeInfo } from "../src/types.js";
+import type { HandshakeInfo } from "../src/types/index.js";
 
 describe("OCPPServer - Express-like Routing", () => {
   let server: OCPPServer;

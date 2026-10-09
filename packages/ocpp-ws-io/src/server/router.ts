@@ -30,7 +30,7 @@ import type {
   UncheckedAction,
   UncheckedHandler,
   WithUniqueProtocols,
-} from "../types.js";
+} from "../types/index.js";
 import { EventEmitterBase } from "./emitter-base.js";
 import type { AnyOCPPServerClient, OCPPServerClient } from "./server-client.js";
 

@@ -1,4 +1,4 @@
-import type { EventAdapterInterface } from "../types.js";
+import type { EventAdapterInterface } from "../types/index.js";
 
 /**
  * In-memory event adapter for single-process use.

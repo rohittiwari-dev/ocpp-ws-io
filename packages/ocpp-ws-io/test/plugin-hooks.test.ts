@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { OCPPServer } from "../src/server/server.js";
 import { OCPPClient } from "../src/client/client.js";
-import type { OCPPPlugin, OCPPServerStats } from "../src/types.js";
+import type { OCPPPlugin, OCPPServerStats } from "../src/types/index.js";
 import type { OCPPServerClient } from "../src/server/server-client.js";
 
 const getPort = (srv: import("node:http").Server): number => {

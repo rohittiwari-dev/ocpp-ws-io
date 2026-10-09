@@ -1,6 +1,6 @@
 import type { IncomingMessage } from "node:http";
 import { TLSSocket } from "node:tls";
-import type { CORSOptions } from "../types.js";
+import type { CORSOptions } from "../types/index.js";
 import { isIPAllowed } from "./cidr.js";
 
 /**

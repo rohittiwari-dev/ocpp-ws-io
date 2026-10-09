@@ -1,5 +1,5 @@
 import type { MiddlewareFunction } from "../core/middleware.js";
-import type { MiddlewareContext, OCPPPlugin } from "../types.js";
+import type { MiddlewareContext, OCPPPlugin } from "../types/index.js";
 
 export interface ReplayRedisLike {
   rpush(key: string, ...values: string[]): Promise<number>;

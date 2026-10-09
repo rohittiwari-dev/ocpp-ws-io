@@ -5,7 +5,7 @@ import tls, { type SecureVersion } from "node:tls";
 import { afterEach, describe, expect, it } from "vitest";
 import { OCPPClient } from "../src/client/client.js";
 import { OCPPServer } from "../src/server/server.js";
-import { SecurityProfile, type TLSOptions } from "../src/types.js";
+import { SecurityProfile, type TLSOptions } from "../src/types/index.js";
 
 /**
  * TLS for security profiles 2 and 3. A CSMS "SHALL support at least the

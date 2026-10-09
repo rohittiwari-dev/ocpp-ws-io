@@ -11,7 +11,7 @@ import type {
   MiddlewareFunction,
   OCPPPlugin,
   SessionData,
-} from "../types.js";
+} from "../types/index.js";
 
 // ─── Middleware Definition ───────────────────────────────────────
 

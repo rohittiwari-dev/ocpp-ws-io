@@ -19,7 +19,7 @@ import {
 } from "../src/plugins/index.js";
 import { OCPPServer } from "../src/server/server.js";
 import type { OCPPServerClient } from "../src/server/server-client.js";
-import type { JsonValue, LoggerLike, OCPPPlugin } from "../src/types.js";
+import type { JsonValue, LoggerLike, OCPPPlugin } from "../src/types/index.js";
 import { unchecked } from "../src/core/unchecked.js";
 
 /**

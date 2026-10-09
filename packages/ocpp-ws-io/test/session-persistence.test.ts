@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryAdapter } from "../src/adapters/adapter.js";
 import { OCPPClient } from "../src/client/client.js";
 import { OCPPServer } from "../src/server/server.js";
-import type { PersistedSession } from "../src/types.js";
+import type { PersistedSession } from "../src/types/index.js";
 
 const getPort = (srv: Server): number => {
   const addr = srv.address();

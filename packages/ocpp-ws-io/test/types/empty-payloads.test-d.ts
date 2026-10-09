@@ -1,6 +1,6 @@
 import { BrowserOCPPClient } from "../../src/browser/client.js";
 import { OCPPClient } from "../../src/client/client.js";
-import { NOREPLY } from "../../src/types.js";
+import { NOREPLY } from "../../src/types/index.js";
 
 export async function emptyPayloadsMustBeObjects() {
   const options = {

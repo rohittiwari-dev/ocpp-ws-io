@@ -160,4 +160,4 @@ export {
   type WireCall,
   type WsClientOptions,
   type WsServerOptions,
-} from "./types.js";
+} from "./types/index.js";

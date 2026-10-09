@@ -1,4 +1,4 @@
-import type { OCPPPlugin, OCPPServerStats } from "../types.js";
+import type { OCPPPlugin, OCPPServerStats } from "../types/index.js";
 
 /**
  * Options for the OpenTelemetry plugin.

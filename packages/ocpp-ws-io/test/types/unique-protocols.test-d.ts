@@ -3,7 +3,7 @@ import { BrowserOCPPClient } from "../../src/browser/client.js";
 import { OCPPClient } from "../../src/client/client.js";
 import { OCPPServer } from "../../src/server/server.js";
 import type { OCPPServerClient } from "../../src/server/server-client.js";
-import type { ConnectionOf } from "../../src/types.js";
+import type { ConnectionOf } from "../../src/types/index.js";
 
 /**
  * T3c (B6): a protocol listed twice is a type error at the repeat, as well as

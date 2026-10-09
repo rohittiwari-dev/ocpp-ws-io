@@ -218,7 +218,7 @@ function generateVersionFile(version, methods, sendMethods = new Map()) {
   return [
     first,
     second,
-    'import type { JsonValue } from "../types.js";',
+    'import type { JsonValue } from "../types/index.js";',
     ...rest,
   ].join("\n");
 }

@@ -28,7 +28,7 @@ import type {
   UncheckedHandler,
   WireCall,
   WithUniqueProtocols,
-} from "../types.js";
+} from "../types/index.js";
 import { EventEmitter } from "./emitter.js";
 import {
   type RPCError,

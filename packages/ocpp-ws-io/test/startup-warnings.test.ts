@@ -4,7 +4,7 @@ import WebSocket from "ws";
 import { BrowserOCPPClient } from "../src/browser/client.js";
 import { OCPPClient } from "../src/client/client.js";
 import { OCPPServer } from "../src/server/server.js";
-import type { LoggerLike } from "../src/types.js";
+import type { LoggerLike } from "../src/types/index.js";
 
 /**
  * Two settings that are fine in development and unsafe in production each log

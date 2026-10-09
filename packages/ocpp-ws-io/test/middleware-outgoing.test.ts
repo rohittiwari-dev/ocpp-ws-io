@@ -7,7 +7,7 @@ import type {
   MessageEventContext,
   MessageEventPayload,
   OCPPPlugin,
-} from "../src/types.js";
+} from "../src/types/index.js";
 
 /**
  * `MiddlewareContext` declares six context types. Four of them ran through the

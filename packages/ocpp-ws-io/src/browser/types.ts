@@ -38,7 +38,7 @@ import type {
   UncheckedHandler as _UncheckedHandler,
   WildcardHandler as _WildcardHandler,
   WireCall as _WireCall,
-} from "../types.js";
+} from "../types/index.js";
 
 // Re-export shared types
 export type OCPPProtocol = _OCPPProtocol;
@@ -87,7 +87,7 @@ export type OCPPSendRequestType<
 > = _OCPPSendRequestType<V, M>;
 
 // Re-export value types from the main package (these are browser-safe constants)
-export { ConnectionState, MessageType, NOREPLY } from "../types.js";
+export { ConnectionState, MessageType, NOREPLY } from "../types/index.js";
 
 // ─── Browser Client Options ─────────────────────────────────────
 

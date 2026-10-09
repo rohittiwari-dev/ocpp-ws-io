@@ -1,4 +1,4 @@
-import type { OCPPPlugin } from "../types.js";
+import type { OCPPPlugin } from "../types/index.js";
 
 /**
  * Options for the async worker plugin.

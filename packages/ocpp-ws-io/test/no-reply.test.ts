@@ -8,7 +8,7 @@ import {
 import { type AnyOCPPClient, OCPPClient } from "../src/client/client.js";
 import { OCPPServer } from "../src/server/server.js";
 import type { OCPPServerClient } from "../src/server/server-client.js";
-import type { CallOptions, LoggerLike } from "../src/types.js";
+import type { CallOptions, LoggerLike } from "../src/types/index.js";
 import { unchecked } from "../src/core/unchecked.js";
 
 /**

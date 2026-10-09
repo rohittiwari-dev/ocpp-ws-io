@@ -7,7 +7,7 @@ import {
   type LoggerLike,
   type SecurityEvent,
   SecurityProfile,
-} from "../src/types.js";
+} from "../src/types/index.js";
 
 /**
  * Under security profile 1 and 2 the charging station SHALL send a username

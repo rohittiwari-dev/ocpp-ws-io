@@ -9,7 +9,7 @@ import type {
   MessageIdGenerator,
   MessageIdValidator,
   OCPPCallError,
-} from "../src/types.js";
+} from "../src/types/index.js";
 
 type Protocol = "ocpp1.6" | "ocpp2.0.1" | "ocpp2.1";
 type Frame = Array<string | number | object>;

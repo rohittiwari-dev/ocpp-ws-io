@@ -12,7 +12,7 @@ import type {
   CloseOptions,
   LoggerLike,
   MiddlewareContext,
-} from "../../src/types.js";
+} from "../../src/types/index.js";
 
 /**
  * T5b: published declarations that took `any` take their exact types.

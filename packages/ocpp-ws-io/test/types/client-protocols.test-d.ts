@@ -5,7 +5,7 @@ import {
 } from "../../src/browser/client.js";
 import type { OCPPCallError } from "../../src/browser/types.js";
 import { type AnyOCPPClient, OCPPClient } from "../../src/client/client.js";
-import type { ClientOptions } from "../../src/types.js";
+import type { ClientOptions } from "../../src/types/index.js";
 
 /**
  * T2: a client is typed for the protocols it is configured with. Compiled by

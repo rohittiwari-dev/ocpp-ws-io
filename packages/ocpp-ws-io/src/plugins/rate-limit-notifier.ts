@@ -1,5 +1,5 @@
 import { LRUMap } from "../core/lru-map.js";
-import type { OCPPPlugin, SecurityEvent } from "../types.js";
+import type { OCPPPlugin, SecurityEvent } from "../types/index.js";
 
 /**
  * Destination for rate-limit alerts.

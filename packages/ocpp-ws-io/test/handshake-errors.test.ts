@@ -8,7 +8,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { combineAuth } from "../src/helpers/index.js";
 import { OCPPServer } from "../src/server/server.js";
-import type { LoggerLike, SecurityEvent } from "../src/types.js";
+import type { LoggerLike, SecurityEvent } from "../src/types/index.js";
 
 /**
  * A rejection the developer chose (`ctx.reject(code, message)`) answers with

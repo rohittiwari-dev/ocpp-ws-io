@@ -24,7 +24,7 @@ import type {
   SendsToClientByArgs,
   SendToClientArgs,
   UncheckedAction,
-} from "../../types.js";
+} from "../../types/index.js";
 import { matchesPrefix } from "../base/utils.js";
 import { OCPP_SERVER_INSTANCE, OCPP_SERVER_OPTIONS } from "./constants.js";
 import type { OcppModuleOptions } from "./interfaces.js";

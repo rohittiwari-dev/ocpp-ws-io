@@ -6,7 +6,7 @@ import { mqttPlugin } from "../src/plugins/mqtt.js";
 import { otelPlugin } from "../src/plugins/otel.js";
 import { redisPubSubPlugin } from "../src/plugins/redis-pubsub.js";
 import { sessionLogPlugin } from "../src/plugins/session-log.js";
-import type { OCPPPlugin } from "../src/types.js";
+import type { OCPPPlugin } from "../src/types/index.js";
 
 /**
  * A duplicate identity evicts the older connection, and the observed order is:

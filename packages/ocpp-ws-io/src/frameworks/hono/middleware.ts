@@ -2,7 +2,7 @@ import type { Server as HttpServer, IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import type { MiddlewareHandler } from "hono";
 import type { OCPPServer } from "../../server/server.js";
-import type { CloseOptions } from "../../types.js";
+import type { CloseOptions } from "../../types/index.js";
 import { BaseOcppContext } from "../base/context.js";
 import { shouldHandleUpgrade } from "../base/utils.js";
 import type { AttachOcppHonoOptions, OcppHonoContext } from "./types.js";

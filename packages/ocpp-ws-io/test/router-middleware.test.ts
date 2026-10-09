@@ -2,7 +2,7 @@ import { describe, expect, it, afterEach, vi } from "vitest";
 import { OCPPServer } from "../src/server/server.js";
 import { OCPPClient } from "../src/client/client.js";
 import http from "node:http";
-import type { ConnectionContext } from "../src/types.js";
+import type { ConnectionContext } from "../src/types/index.js";
 
 describe("OCPPRouter - Middleware & Multiplexing", () => {
   let server: OCPPServer;

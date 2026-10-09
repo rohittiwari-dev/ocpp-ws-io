@@ -14,7 +14,7 @@ import {
   type LogMiddleware,
   prettyTransport,
 } from "voltlog-io";
-import type { LoggerLike, LoggingConfig } from "../types.js";
+import type { LoggerLike, LoggingConfig } from "../types/index.js";
 
 // ─── Display middleware ─────────────────────────────────────────
 

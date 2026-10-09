@@ -5,7 +5,7 @@ import {
   defineMiddleware,
   defineRpcMiddleware,
 } from "../src/helpers/index.js";
-import type { HandshakeInfo } from "../src/types.js";
+import type { HandshakeInfo } from "../src/types/index.js";
 
 describe("Auth and Middleware Utilities", () => {
   const mockHandshake = {} as HandshakeInfo;

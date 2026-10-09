@@ -235,13 +235,13 @@ describe("OCPPServer Compression", () => {
     // We can test the config builder indirectly through constructor behavior
     // by importing the server and checking the wss is created without deflate
     // For now, test the type contract
-    expect(typeof {} as import("../src/types").CompressionOptions).toBe(
+    expect(typeof {} as import("../src/types/index").CompressionOptions).toBe(
       "object",
     );
   });
 
   test("CompressionOptions type has expected fields", () => {
-    const opts: import("../src/types").CompressionOptions = {
+    const opts: import("../src/types/index").CompressionOptions = {
       threshold: 512,
       level: 9,
       memLevel: 4,

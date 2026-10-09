@@ -7,7 +7,7 @@ import type {
   AnyOCPPProtocol,
   OCPPProtocol,
   UncheckedAction,
-} from "../../../types.js";
+} from "../../../types/index.js";
 import {
   OCPP_AUTH_METADATA,
   OCPP_CONNECTION_MIDDLEWARE_METADATA,

@@ -2,7 +2,7 @@ import type { Server } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OCPPClient } from "../src/client/client.js";
 import { OCPPServer } from "../src/server/server.js";
-import type { OCPPPlugin } from "../src/types.js";
+import type { OCPPPlugin } from "../src/types/index.js";
 
 /**
  * Most plugin hooks are declared `void | Promise<void>`, so a plugin may

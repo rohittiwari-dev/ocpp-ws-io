@@ -1,7 +1,7 @@
 import { expectTypeOf } from "vitest";
 import { defineAuth } from "../../src/helpers/index.js";
 import { OCPPServer } from "../../src/server/server.js";
-import type { PersistedSession, SessionValue } from "../../src/types.js";
+import type { PersistedSession, SessionValue } from "../../src/types/index.js";
 import { sessionOf } from "../../src/core/util.js";
 
 /**

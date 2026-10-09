@@ -12,7 +12,7 @@ import {
   type ClientOptions,
   type LoggerLike,
   SecurityProfile,
-} from "../src/types.js";
+} from "../src/types/index.js";
 
 /**
  * `wsOpts` (gap G2): raw `ws` client options, passed through

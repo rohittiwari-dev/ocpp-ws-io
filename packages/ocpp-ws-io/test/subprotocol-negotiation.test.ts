@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { OCPPServer } from "../src/server/server.js";
-import { SecurityProfile } from "../src/types.js";
+import { SecurityProfile } from "../src/types/index.js";
 
 /**
  * Subprotocol negotiation (OCPP-J §3.2, RFC 6455 §4.2.2). The server picks the

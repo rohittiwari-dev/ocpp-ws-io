@@ -8,7 +8,7 @@ import {
   type OCPPPlugin,
   type SessionData,
   type StrictModeMethodsFor,
-} from "../types.js";
+} from "../types/index.js";
 import type { WorkerPool } from "./worker-pool.js";
 
 /**
@@ -181,7 +181,7 @@ export class OCPPServerClient<
   }
 
   protected override _invokeBeforeSend(
-    message: import("../types.js").OCPPMessage,
+    message: import("../types/index.js").OCPPMessage,
   ): boolean | Promise<boolean> {
     if (this._serverPlugins.length === 0) return true;
 
@@ -488,7 +488,7 @@ export class OCPPServerClient<
    * await client.close({ code: 1000, reason: "Admin revocation" });
    */
   override close(
-    options: import("../types.js").CloseOptions = {},
+    options: import("../types/index.js").CloseOptions = {},
   ): Promise<{ code: number; reason: string }> {
     return super.close(options);
   }

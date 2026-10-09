@@ -4,7 +4,7 @@ import WebSocket from "ws";
 import { OCPPClient } from "../src/client/client.js";
 import { OCPPServer } from "../src/server/server.js";
 import type { OCPPServerClient } from "../src/server/server-client.js";
-import { NOREPLY } from "../src/types.js";
+import { NOREPLY } from "../src/types/index.js";
 import { unchecked } from "../src/core/unchecked.js";
 import { createValidator } from "../src/core/validation/validator.js";
 

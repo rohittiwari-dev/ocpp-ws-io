@@ -14,7 +14,7 @@ import type {
   SendsToClientByArgs,
   SendToClientArgs,
   UncheckedAction,
-} from "../../types.js";
+} from "../../types/index.js";
 
 export abstract class BaseOcppContext {
   constructor(public readonly server: OCPPServer) {}

@@ -10,7 +10,7 @@ import {
   type HandshakeInfo,
   SecurityProfile,
   type TLSOptions,
-} from "../src/types.js";
+} from "../src/types/index.js";
 
 const fixture = (name: string) =>
   readFileSync(join(__dirname, "fixtures", "tls", name));

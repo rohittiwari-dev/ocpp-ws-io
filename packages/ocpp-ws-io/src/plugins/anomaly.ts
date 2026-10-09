@@ -1,5 +1,5 @@
 import type { OCPPServer } from "../server/server.js";
-import type { OCPPPlugin, SecurityEvent } from "../types.js";
+import type { OCPPPlugin, SecurityEvent } from "../types/index.js";
 
 /**
  * Options for the anomaly detection plugin.

@@ -208,7 +208,7 @@ describe("Type Generation Script", () => {
     expect(code).toContain(
       "export interface CustomDataType {\n  vendorId: string;\n  [key: string]: JsonValue | undefined;\n}",
     );
-    expect(code).toContain('import type { JsonValue } from "../types.js";');
+    expect(code).toContain('import type { JsonValue } from "../types/index.js";');
     // CustomDataType is the only open object in 2.0.1, on purpose.
     expect(code.match(/\[key: string\]/g)).toHaveLength(1);
     expect(code).toMatch(/data\?: JsonValue;/);

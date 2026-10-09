@@ -78,7 +78,7 @@ import {
   type WildcardHandler,
   type WireCall,
   type WithUniqueProtocols,
-} from "../types.js";
+} from "../types/index.js";
 
 const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
 

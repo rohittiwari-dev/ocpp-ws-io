@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MiddlewareStack } from "../src/core/middleware";
 import { createLoggingMiddleware } from "../src/helpers/index.js";
-import type { MiddlewareContext } from "../src/types";
+import type { MiddlewareContext } from "../src/types/index";
 
 describe("MiddlewareStack", () => {
   it("should execute middleware in order", async () => {

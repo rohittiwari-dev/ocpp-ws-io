@@ -15,7 +15,7 @@ import {
   MessageType,
   type MiddlewareContext,
   type OCPPPlugin,
-} from "../types.js";
+} from "../types/index.js";
 
 /** The JWS algorithms OCPP allows for signed messages (Part 4 §7.3). */
 export type SignedMessageAlgorithm = "ES256" | "RS256" | "RS384";

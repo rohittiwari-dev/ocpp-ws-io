@@ -1,4 +1,4 @@
-import type { OCPPPlugin } from "../types.js";
+import type { OCPPPlugin } from "../types/index.js";
 
 /**
  * Snapshot of tracked server metrics at a point in time.

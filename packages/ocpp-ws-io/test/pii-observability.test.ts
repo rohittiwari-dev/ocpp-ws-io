@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { OCPPClient } from "../src/client/client.js";
 import { piiRedactorPlugin } from "../src/plugins/pii-redactor.js";
 import { OCPPServer } from "../src/server/server.js";
-import type { MessageEventPayload } from "../src/types.js";
+import type { MessageEventPayload } from "../src/types/index.js";
 
 /**
  * The redactor replaces the context payload with a redacted deep clone rather

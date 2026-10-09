@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { initLogger } from "../src/core/init-logger.js";
-import type { LoggerLike } from "../src/types.js";
+import type { LoggerLike } from "../src/types/index.js";
 
 // ─── Re-export Tests ──────────────────────────────────────────────
 describe("ocpp-ws-io/logger re-export", () => {

@@ -1,4 +1,4 @@
-import type { OCPPPlugin } from "../types.js";
+import type { OCPPPlugin } from "../types/index.js";
 
 /**
  * Auto-responds to `Heartbeat` OCPP calls with `{ currentTime }`.

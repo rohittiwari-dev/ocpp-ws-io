@@ -7,7 +7,7 @@ import WebSocket, {
 } from "ws";
 import { OCPPClient } from "../src/client/client.js";
 import { OCPPServer } from "../src/server/server.js";
-import type { LoggerLike } from "../src/types.js";
+import type { LoggerLike } from "../src/types/index.js";
 import { unchecked } from "../src/core/unchecked.js";
 
 /**

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import WebSocket, { WebSocketServer } from "ws";
 import { OCPPClient } from "../src/client/client.js";
 import { OCPPServer } from "../src/server/server.js";
-import type { CompressionOptions } from "../src/types.js";
+import type { CompressionOptions } from "../src/types/index.js";
 
 /**
  * WebSocket compression (RFC 7692 permessage-deflate) is off by default on

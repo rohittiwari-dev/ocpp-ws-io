@@ -7,7 +7,7 @@ import {
   type HandshakeInfo,
   type SecurityEvent,
   SecurityProfile,
-} from "../src/types.js";
+} from "../src/types/index.js";
 
 /**
  * Who may connect, by charging station identity.

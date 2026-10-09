@@ -86,7 +86,7 @@ describe("type generator", () => {
       version,
       extractMethods(schema),
       extractSendMethods(schema),
-      { typesModule: "../types.js" },
+      { typesModule: "../types/index.js" },
     );
     const library = readFileSync(
       join(libraryDir, "src", "generated", `${version.key}.ts`),

@@ -13,7 +13,7 @@ import {
 } from "../src/plugins/index.js";
 import { OCPPServer } from "../src/server/server.js";
 import { unchecked } from "../src/core/unchecked.js";
-import type { JsonValue, LoggerLike, OCPPPlugin } from "../src/types.js";
+import type { JsonValue, LoggerLike, OCPPPlugin } from "../src/types/index.js";
 
 /**
  * Signed messages (OCPP 2.0.1 Part 4 chapter 7, R13): `<Action>-Signed` with

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { OCPPServer } from '../src/server/server.js';
 import { OCPPClient } from '../src/client/client.js';
-import { SecurityProfile } from '../src/types.js';
+import { SecurityProfile } from '../src/types/index.js';
 import { unchecked } from '../src/core/unchecked.js';
 
 let server: OCPPServer;

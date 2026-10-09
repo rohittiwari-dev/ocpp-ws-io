@@ -1,7 +1,7 @@
 import type { Server as HttpServer, IncomingMessage } from "node:http";
 import type { OCPPServer } from "../../server/server.js";
 import type { OCPPServerClient } from "../../server/server-client.js";
-import type { CloseOptions, OCPPServerStats } from "../../types.js";
+import type { CloseOptions, OCPPServerStats } from "../../types/index.js";
 
 export interface OcppExpressContext {
   readonly server: OCPPServer;
