@@ -6,6 +6,22 @@
 Library-agnostic OCPP smart charging constraint solver for EV charge point operators.
 </p>
 
+> **⚠️ Deprecated: the smart-charge engine now ships in [`ocpp-ws-io`](https://www.npmjs.com/package/ocpp-ws-io), as `ocpp-ws-io/smart-charge`.**
+> This package's last release only re-exports it, so existing imports keep working, but new features and fixes ship in `ocpp-ws-io`. Move to:
+>
+> ```bash
+> npm uninstall ocpp-smart-charge-engine
+> npm install ocpp-ws-io
+> ```
+>
+> | Before | Now |
+> |:---|:---|
+> | `from "ocpp-smart-charge-engine"` | `from "ocpp-ws-io/smart-charge"` |
+> | `from "ocpp-smart-charge-engine/strategies"` | `from "ocpp-ws-io/smart-charge/strategies"` |
+> | `from "ocpp-smart-charge-engine/builders"` | `from "ocpp-ws-io/smart-charge/builders"` |
+>
+> The API is the same, and the engine stays library-agnostic: your dispatcher can send profiles with any OCPP library. The examples below use the new imports.
+
 <p align="center">
   <a href="https://www.npmjs.com/package/ocpp-smart-charge-engine">
     <img src="https://img.shields.io/npm/v/ocpp-smart-charge-engine.svg?style=flat-square&color=cb3837" alt="npm version" />
@@ -44,7 +60,7 @@ It is **completely library-agnostic**. It does not care whether you use `ocpp-ws
 ## Install
 
 ```bash
-npm install ocpp-smart-charge-engine
+npm install ocpp-ws-io
 ```
 
 ---
@@ -52,8 +68,8 @@ npm install ocpp-smart-charge-engine
 ## Quick Start
 
 ```typescript
-import { SmartChargingEngine, Strategies } from "ocpp-smart-charge-engine";
-import { buildOcpp16Profile } from "ocpp-smart-charge-engine/builders";
+import { SmartChargingEngine, Strategies } from "ocpp-ws-io/smart-charge";
+import { buildOcpp16Profile } from "ocpp-ws-io/smart-charge/builders";
 
 const engine = new SmartChargingEngine({
   siteId: "SITE-HQ-001",
@@ -112,14 +128,14 @@ await engine.dispatch(); // Redistribute power to remaining sessions
 ## Library-Agnostic Dispatcher Examples
 
 The dispatcher receives a `sessionProfile` with raw calculated numbers.
-Use the builder helpers from `ocpp-smart-charge-engine/builders` to convert to
+Use the builder helpers from `ocpp-ws-io/smart-charge/builders` to convert to
 the correct OCPP version-specific shape. **Schemas differ between versions** —
 that's exactly why the engine doesn't build the profile itself.
 
 ### With `ocpp-ws-io` — OCPP 1.6
 
 ```typescript
-import { buildOcpp16Profile } from "ocpp-smart-charge-engine/builders";
+import { buildOcpp16Profile } from "ocpp-ws-io/smart-charge/builders";
 
 dispatcher: async ({
   clientId,
@@ -143,7 +159,7 @@ dispatcher: async ({
 ### With `ocpp-ws-io` — OCPP 2.0.1 / 2.1
 
 ```typescript
-import { buildOcpp201Profile } from "ocpp-smart-charge-engine/builders";
+import { buildOcpp201Profile } from "ocpp-ws-io/smart-charge/builders";
 
 dispatcher: async ({
   clientId,
@@ -170,7 +186,7 @@ dispatcher: async ({
 import {
   buildOcpp16Profile,
   buildOcpp201Profile,
-} from "ocpp-smart-charge-engine/builders";
+} from "ocpp-ws-io/smart-charge/builders";
 
 const protocolMap = new Map<string, "ocpp1.6" | "ocpp2.0.1">(); // populated on connect
 
@@ -199,7 +215,7 @@ dispatcher: async ({
 ### With raw WebSocket
 
 ```typescript
-import { buildOcpp16Profile } from "ocpp-smart-charge-engine/builders";
+import { buildOcpp16Profile } from "ocpp-ws-io/smart-charge/builders";
 
 dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
   const ws = wsMap.get(clientId);
@@ -357,9 +373,9 @@ It receives the active sessions, the effective grid limit, and a context with th
 configured voltage. Use the `buildSessionProfile` helper to produce results.
 
 ```typescript
-import { SmartChargingEngine } from "ocpp-smart-charge-engine";
-import { buildSessionProfile } from "ocpp-smart-charge-engine/strategies";
-import type { StrategyFn } from "ocpp-smart-charge-engine";
+import { SmartChargingEngine } from "ocpp-ws-io/smart-charge";
+import { buildSessionProfile } from "ocpp-ws-io/smart-charge/strategies";
+import type { StrategyFn } from "ocpp-ws-io/smart-charge";
 
 // Give the longest-waiting session priority (FIFO).
 const fifo: StrategyFn = (sessions, grid, ctx) => {
@@ -432,7 +448,7 @@ await engine.dispatch();
 
 ---
 
-## Builders — `ocpp-smart-charge-engine/builders`
+## Builders — `ocpp-ws-io/smart-charge/builders`
 
 Version-specific helpers to convert raw `SessionProfile` numbers into the correct OCPP `SetChargingProfile` payload.
 
@@ -464,7 +480,7 @@ buildOcpp16Profile(sessionProfile, {
 ### OCPP 2.1 — V2G Discharge
 
 ```typescript
-import { buildOcpp21Profile } from "ocpp-smart-charge-engine/builders";
+import { buildOcpp21Profile } from "ocpp-ws-io/smart-charge/builders";
 
 dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
   await server.safeSendToClient(clientId, "ocpp2.1", "SetChargingProfile", {

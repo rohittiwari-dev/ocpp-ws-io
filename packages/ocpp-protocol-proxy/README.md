@@ -10,6 +10,22 @@
 
 Part of the [ocpp-ws-io](https://ocpp-ws-io.rohittiwari.me) ecosystem.
 
+> **⚠️ Deprecated: the protocol proxy now ships in [`ocpp-ws-io`](https://www.npmjs.com/package/ocpp-ws-io), as `ocpp-ws-io/proxy`.**
+> This package's last release only re-exports it, so existing imports keep working, but new features and fixes ship in `ocpp-ws-io`. Move to:
+>
+> ```bash
+> npm uninstall ocpp-protocol-proxy
+> npm install ocpp-ws-io
+> ```
+>
+> | Before | Now |
+> |:---|:---|
+> | `from "ocpp-protocol-proxy"` | `from "ocpp-ws-io/proxy"` |
+> | `from "ocpp-protocol-proxy/presets"` | `from "ocpp-ws-io/proxy/presets"` |
+> | `from "ocpp-protocol-proxy/adapters"` | `from "ocpp-ws-io/proxy/adapters"` |
+>
+> The API is the same, with stricter types: a translation map is keyed by `protocol:Action`, so a misspelt key or a wrong field is a compile error. The examples below use the new imports.
+
 ---
 
 ## Why?
@@ -36,7 +52,7 @@ Legacy OCPP 1.6 charge points can't speak to modern OCPP 2.1 central systems. In
 ## Install
 
 ```bash
-npm install ocpp-protocol-proxy
+npm install ocpp-ws-io
 ```
 
 ## Quick Start
@@ -44,7 +60,7 @@ npm install ocpp-protocol-proxy
 ### Basic Usage with Presets
 
 ```typescript
-import { OCPPProtocolProxy, presets, OcppWsIoAdapter } from "ocpp-protocol-proxy";
+import { OCPPProtocolProxy, presets, OcppWsIoAdapter } from "ocpp-ws-io/proxy";
 
 const proxy = new OCPPProtocolProxy({
   upstreamEndpoint: "ws://your-csms:9000",
@@ -97,7 +113,7 @@ import {
   firmwarePreset,
   reservationPreset,
   localAuthPreset,
-} from "ocpp-protocol-proxy";
+} from "ocpp-ws-io/proxy";
 ```
 
 | Preset | Profile | Messages |
@@ -113,7 +129,7 @@ import {
 Intercept messages before or after translation:
 
 ```typescript
-import type { ProxyMiddleware } from "ocpp-protocol-proxy";
+import type { ProxyMiddleware } from "ocpp-ws-io/proxy";
 
 const logger: ProxyMiddleware = async (message, context, direction, phase) => {
   console.log(`[${phase}] ${direction} — ${context.identity}`, message);
@@ -140,11 +156,11 @@ Middleware runs at 4 lifecycle points:
 The default `InMemorySessionStore` works for single-instance deployments. For clustered setups, implement `ISessionStore`:
 
 ```typescript
-import type { ISessionStore } from "ocpp-protocol-proxy";
+import type { ISessionStore, ProxyValue } from "ocpp-ws-io/proxy";
 
 class RedisSessionStore implements ISessionStore {
-  async set(identity: string, key: string, value: any) { /* ... */ }
-  async get<T>(identity: string, key: string): Promise<T | undefined> { /* ... */ }
+  async set(identity: string, key: string, value: ProxyValue) { /* ... */ }
+  async get<T extends ProxyValue = ProxyValue>(identity: string, key: string): Promise<T | undefined> { /* ... */ }
   async delete(identity: string, key: string) { /* ... */ }
   async clear(identity: string) { /* ... */ }
 }
@@ -161,8 +177,10 @@ proxy.on("middlewareError", (err, msg, ctx) => { /* middleware threw */ });
 
 ## Architecture
 
+In [`ocpp-ws-io`](https://github.com/rohittiwari-dev/ocpp-ws-io/tree/main/packages/ocpp-ws-io/src/proxy):
+
 ```
-src/
+src/proxy/
 ├── core/
 │   ├── types.ts          # OCPPMessage, TranslationMap, ITransportAdapter
 │   ├── translator.ts     # Pure translation engine
@@ -187,8 +205,8 @@ src/
 
 | Package | Description |
 |:---|:---|
-| [ocpp-ws-io](https://npmjs.com/ocpp-ws-io) | Core OCPP WebSocket RPC client & server |
-| [ocpp-ws-cli](https://npmjs.com/ocpp-ws-cli) | CLI for simulation & testing |
+| [ocpp-ws-io](https://npmjs.com/ocpp-ws-io) | Core OCPP WebSocket RPC client & server, and this proxy as `ocpp-ws-io/proxy` |
+| [ocpp-ws-io CLI](https://ocpp-ws-io.rohittiwari.me/docs/cli) | The `ocpp` command for simulation & testing, in `ocpp-ws-io` |
 | [voltlog-io](https://npmjs.com/voltlog-io) | Structured logger |
 
 ## License

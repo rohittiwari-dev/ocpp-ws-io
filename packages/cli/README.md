@@ -9,6 +9,20 @@
   <p>A breathtakingly fast, immensely powerful suite of CLI tools that completely transform how you build, test, and run OCPP 1.6 / 2.0.1 / 2.1 charge point management systems.</p>
 </div>
 
+> **⚠️ Deprecated: the CLI now ships in [`ocpp-ws-io`](https://www.npmjs.com/package/ocpp-ws-io), as its `ocpp` command.**
+> This package's last release only runs that one, so existing scripts keep working, but new commands and fixes ship in `ocpp-ws-io`. Commands and options are the same. Move to:
+>
+> ```bash
+> npm uninstall -g ocpp-ws-cli   # both packages install the `ocpp` command
+> npm install -g ocpp-ws-io
+> ```
+>
+> | Before | Now |
+> |:---|:---|
+> | `npm install -g ocpp-ws-cli` | `npm install -g ocpp-ws-io` |
+> | `npx ocpp-ws-cli …` | `npx ocpp-ws-io …` |
+> | `ocpp …`, `ocpp-ws-cli …` | the same: `ocpp-ws-io` installs both commands |
+
 ---
 
 ## 🚀 Quick Start
@@ -16,13 +30,13 @@
 **Global Installation:**
 
 ```bash
-npm install -g ocpp-ws-cli
+npm install -g ocpp-ws-io
 ```
 
 **Run instantly via npx:**
 
 ```bash
-npx ocpp-ws-cli
+npx ocpp-ws-io
 ```
 
 _Running without arguments launches the **Interactive Main Menu**._
