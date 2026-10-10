@@ -2,9 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
+import type { SchemaEntry } from "../../codegen/generator.js";
 import { generateProtocolFiles } from "../lib/protocol-files.js";
 import { fetchSchema } from "../lib/schema-fetcher.js";
-import type { SchemaEntry } from "../lib/type-generator.js";
 
 const EXAMPLE_SCHEMA_URL =
   "https://ocpp-ws-io.rohittiwari.me/schema-example.json";

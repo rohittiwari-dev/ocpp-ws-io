@@ -5,7 +5,7 @@ import {
   type MethodSchemas,
   type SchemaEntry,
   type VersionConfig,
-} from "./type-generator.js";
+} from "../../codegen/generator.js";
 
 /** What `ocpp generate` writes for one protocol. */
 export interface ProtocolFiles {
@@ -55,7 +55,9 @@ export function generateProtocolFiles(
   const files = new Map<string, string>();
   files.set(
     `${version.key}.ts`,
-    generateVersionFile(version, methods, sendMethods),
+    generateVersionFile(version, methods, sendMethods, {
+      typesModule: "ocpp-ws-io",
+    }),
   );
 
   // A protocol without SEND messages needs no OCPPSendMethodMap entry.

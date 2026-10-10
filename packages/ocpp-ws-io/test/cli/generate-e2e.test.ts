@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { generateProtocolFiles } from "../../src/cli/lib/protocol-files.js";
-import type { SchemaEntry } from "../../src/cli/lib/type-generator.js";
+import type { SchemaEntry } from "../../src/codegen/generator.js";
 
 /**
  * `ocpp generate` end to end: the files it writes for a vendor protocol must

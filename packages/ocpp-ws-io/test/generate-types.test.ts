@@ -1,14 +1,13 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-// @ts-ignore
 import {
   extractMethods,
   extractSendMethods,
   generateVersionFile,
   jsonSchemaToTS,
-  main,
-} from "../scripts/generate-types.js";
+} from "../src/codegen/generator.js";
+import { generateLibraryTypes } from "../src/codegen/library.js";
 
 describe("Type Generation Script", () => {
   const outDir = path.join(__dirname, "generated-test-output");
@@ -19,31 +18,13 @@ describe("Type Generation Script", () => {
     }
   });
 
-  it("should generate files using main() function", () => {
+  it("writes src/generated through generateLibraryTypes()", () => {
     // Override console.log to keep test output clean
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    // Run main with a custom base dir so it doesn't overwrite real src/generated
-    // The script expects to find schemas at ../src/core/validation/schemas relative to baseDir
-    // So we need to set baseDir such that that path resolves to the real schemas
-    // Real path: packages/ocpp-ws-io/src/core/validation/schemas
-    // Script default: __dirname (packages/ocpp-ws-io/scripts) -> ../src/core/validation/schemas OK
-
-    // We want output to go to a temp dir.
-    // The script calculates OUT_DIR = path.join(baseDir, "..", "src", "generated")
-    // If we want OUT_DIR to be our temp dir, we have to hack the baseDir or the script.
-    // The script allows passing baseDir.
-    // Let's explicitly pass the scripts dir as baseDir to match default behavior,
-    // BUT checking the script again:
-    // function main(baseDir = __dirname) {
-    //   const SCHEMA_DIR = path.join(baseDir, "..", "src", "core", "validation", "schemas");
-    //   const OUT_DIR = path.join(baseDir, "..", "src", "generated");
-
-    // If I want to test logic without overwriting, I should probably have made OUT_DIR configurable.
-    // However, for coverage, running it against the real directory is also fine as long as it's idempotent.
-    // But let's verify logic with unit tests on the helper functions too.
-
-    main(path.join(__dirname, "../scripts"));
+    // Writes the real src/generated, as `npm run generate` does; the files
+    // come out the same (test/codegen checks they are what it writes).
+    generateLibraryTypes(path.join(__dirname, ".."));
 
     expect(consoleSpy).toHaveBeenCalledWith("✓ index.ts");
     expect(
@@ -54,7 +35,7 @@ describe("Type Generation Script", () => {
   });
 
   it("should convert JSON schema to TS", () => {
-    const definitions = {};
+    const definitions = new Map();
     expect(jsonSchemaToTS({ type: "string" }, definitions)).toBe("string");
     expect(jsonSchemaToTS({ type: "integer" }, definitions)).toBe("number");
     expect(
@@ -66,7 +47,7 @@ describe("Type Generation Script", () => {
   });
 
   it("should convert complex schema structures to TS branches", () => {
-    const definitions = {};
+    const definitions = new Map();
 
     // Enums
     expect(jsonSchemaToTS({ enum: ["A", "B", "C"] }, definitions)).toBe(
@@ -126,7 +107,7 @@ describe("Type Generation Script", () => {
     expect(jsonSchemaToTS({ type: "unknownCustom" }, definitions)).toBe(
       "JsonValue",
     );
-    expect(jsonSchemaToTS(null, definitions)).toBe("JsonValue");
+    expect(jsonSchemaToTS(undefined, definitions)).toBe("JsonValue");
     expect(jsonSchemaToTS({ type: "array" }, definitions)).toBe("JsonValue[]");
     expect(jsonSchemaToTS({ type: "object" }, definitions)).toBe(
       "{ [key: string]: JsonValue | undefined }",
@@ -146,7 +127,7 @@ describe("Type Generation Script", () => {
   // schema leaves open (additionalProperties absent or true, JSON Schema's
   // default) must take any key, and a closed one none.
   it("gives an object the schema leaves open an index signature, and a closed one none", () => {
-    const defs = {};
+    const defs = new Map();
     const props = { id: { type: "string" } };
     expect(
       jsonSchemaToTS(

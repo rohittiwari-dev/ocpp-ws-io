@@ -8,7 +8,8 @@ import {
   generateVersionFile,
   type SchemaEntry,
   type VersionConfig,
-} from "../../src/cli/lib/type-generator.js";
+} from "../../src/codegen/generator.js";
+import { generateIndex, LIBRARY_VERSIONS } from "../../src/codegen/library.js";
 
 const libraryDir = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -20,31 +21,6 @@ function readSchema(file: string): SchemaEntry[] {
     ),
   ) as SchemaEntry[];
 }
-
-/** The OCPP versions, named as the library's own generator names them. */
-const VERSIONS: VersionConfig[] = [
-  {
-    key: "ocpp16",
-    file: "ocpp1_6.json",
-    mapName: "OCPP16Methods",
-    sendMapName: "OCPP16SendMethods",
-    protocol: "ocpp1.6",
-  },
-  {
-    key: "ocpp201",
-    file: "ocpp2_0_1.json",
-    mapName: "OCPP201Methods",
-    sendMapName: "OCPP201SendMethods",
-    protocol: "ocpp2.0.1",
-  },
-  {
-    key: "ocpp21",
-    file: "ocpp2_1.json",
-    mapName: "OCPP21Methods",
-    sendMapName: "OCPP21SendMethods",
-    protocol: "ocpp2.1",
-  },
-];
 
 const vendor: VersionConfig = {
   key: "vendor",
@@ -78,22 +54,28 @@ describe("type generator", () => {
     expect(extractSendMethods(readSchema("ocpp1_6.json")).size).toBe(0);
   });
 
-  // The CLI follows the library's rules: on the OCPP schemas both write the
-  // same types, so a rule changed in one and not the other fails here.
-  it.each(VERSIONS)("writes $key as the library's generator does", (version) => {
+  // src/generated is what the generator writes from the schemas: a rule
+  // changed without `npm run generate` fails here.
+  it.each(LIBRARY_VERSIONS)("src/generated holds what it writes for $key", (version) => {
     const schema = readSchema(version.file);
     const code = generateVersionFile(
       version,
       extractMethods(schema),
       extractSendMethods(schema),
-      { typesModule: "../types/index.js" },
     );
-    const library = readFileSync(
+    const committed = readFileSync(
       join(libraryDir, "src", "generated", `${version.key}.ts`),
       "utf8",
     ).replace(/\r\n/g, "\n");
-    // Only the first line, naming the generator, differs.
-    expect(code.split("\n").slice(1)).toEqual(library.split("\n").slice(1));
+    expect(code).toBe(committed);
+  });
+
+  it("src/generated holds the index it writes", () => {
+    const committed = readFileSync(
+      join(libraryDir, "src", "generated", "index.ts"),
+      "utf8",
+    ).replace(/\r\n/g, "\n");
+    expect(generateIndex()).toBe(committed);
   });
 
   it("gives an open object an index signature and an untyped field JsonValue", () => {
@@ -110,10 +92,12 @@ describe("type generator", () => {
       },
       { $id: "urn:VendorConfig.conf", type: "object", properties: {} },
     ];
+    // As `ocpp generate` writes it, for a project outside the library.
     const code = generateVersionFile(
       vendor,
       extractMethods(schema),
       extractSendMethods(schema),
+      { typesModule: "ocpp-ws-io" },
     );
     expect(code).toContain('import type { JsonValue } from "ocpp-ws-io";');
     expect(code).toContain(

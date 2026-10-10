@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { SchemaEntry } from "./type-generator.js";
+import type { SchemaEntry } from "../../codegen/generator.js";
 
 /**
  * Fetch an OCPP JSON schema from a URL or local file path.
