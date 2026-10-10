@@ -1,13 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { InMemorySessionStore } from "../../src/core/session.js";
-import type { TranslationContext } from "../../src/core/types.js";
-import { corePreset } from "../../src/presets/core.js";
+import { calls, errors, responses } from "../helpers.js";
+import { InMemorySessionStore } from "../../../src/proxy/core/session.js";
+import { OCPPTranslator } from "../../../src/proxy/core/translator.js";
+import {
+  MessageType,
+  type TranslationContext,
+} from "../../../src/proxy/core/types.js";
+import { corePreset } from "../../../src/proxy/presets/core.js";
+import type {
+  OCPPRequestType,
+  OCPPResponseType,
+} from "../../../src/types/index.js";
 import {
   availabilityMap16to21,
   availabilityMap21to16,
   statusMap16to21,
   statusMap21to16,
-} from "../../src/presets/status-enums.js";
+} from "../../../src/proxy/presets/status-enums.js";
 
 function makeCtx(overrides?: Partial<TranslationContext>): TranslationContext {
   return {
@@ -49,7 +58,7 @@ describe("Status Enum Mappings", () => {
 });
 
 describe("Core Preset — Upstream", () => {
-  const up = corePreset.upstream!;
+  const up = calls(corePreset.upstream);
 
   it("BootNotification: maps chargePoint fields to chargingStation", async () => {
     const result = await up["ocpp1.6:BootNotification"](
@@ -110,7 +119,9 @@ describe("Core Preset — Upstream", () => {
 
   it("StartTransaction: generates UUID and stores in session", async () => {
     const ctx = makeCtx();
-    const result = await up["ocpp1.6:StartTransaction"](
+    const result = await up["ocpp1.6:StartTransaction"]<
+      OCPPRequestType<"ocpp2.1", "TransactionEvent">
+    >(
       {
         connectorId: 1,
         idTag: "TAG1",
@@ -126,16 +137,21 @@ describe("Core Preset — Upstream", () => {
       /^[0-9a-f]{8}-/,
     );
 
-    const pending = await ctx.session.get(ctx.identity, "pendingStartTx");
+    const pending = await ctx.session.get<{ uuid: string }>(
+      ctx.identity,
+      "pendingStartTx",
+    );
     expect(pending).toBeDefined();
-    expect(pending.uuid).toBe(result.payload.transactionInfo.transactionId);
+    expect(pending?.uuid).toBe(result.payload.transactionInfo.transactionId);
   });
 
   it("StopTransaction: looks up UUID from session", async () => {
     const ctx = makeCtx();
     await ctx.session.set(ctx.identity, "txId_int2uuid_42", "some-uuid-123");
 
-    const result = await up["ocpp1.6:StopTransaction"](
+    const result = await up["ocpp1.6:StopTransaction"]<
+      OCPPRequestType<"ocpp2.1", "TransactionEvent">
+    >(
       {
         transactionId: 42,
         meterStop: 500,
@@ -155,7 +171,9 @@ describe("Core Preset — Upstream", () => {
     const ctx = makeCtx();
     await ctx.session.set(ctx.identity, "txId_int2uuid_10", "tx-uuid-abc");
 
-    const result = await up["ocpp1.6:MeterValues"](
+    const result = await up["ocpp1.6:MeterValues"]<
+      OCPPRequestType<"ocpp2.1", "TransactionEvent">
+    >(
       {
         connectorId: 1,
         transactionId: 10,
@@ -172,15 +190,15 @@ describe("Core Preset — Upstream", () => {
     expect(result.action).toBe("TransactionEvent");
     expect(result.payload.eventType).toBe("Updated");
     expect(result.payload.transactionInfo.transactionId).toBe("tx-uuid-abc");
-    expect(result.payload.meterValue[0].sampledValue[0].value).toBe(250);
-    expect(result.payload.meterValue[0].sampledValue[0].measurand).toBe(
+    expect(result.payload.meterValue?.[0].sampledValue[0].value).toBe(250);
+    expect(result.payload.meterValue?.[0].sampledValue[0].measurand).toBe(
       "Power.Active.Import",
     );
   });
 });
 
 describe("Core Preset — Downstream", () => {
-  const down = corePreset.downstream!;
+  const down = calls(corePreset.downstream);
 
   it("ChangeAvailability: maps operationalStatus to type", async () => {
     const result = await down["ocpp2.1:ChangeAvailability"](
@@ -224,19 +242,19 @@ describe("Core Preset — Downstream", () => {
     expect(result.payload.connectorId).toBe(3);
   });
 
-  it("RemoteStopTransaction: looks up UUID→int from session", async () => {
+  it("RequestStopTransaction: looks up UUID→int from session", async () => {
     const ctx = makeCtx();
     await ctx.session.set(ctx.identity, "txId_uuid2int_my-uuid", 42);
 
-    const result = await down["ocpp2.1:RemoteStopTransaction"](
+    const result = await down["ocpp2.1:RequestStopTransaction"](
       { transactionId: "my-uuid" },
       ctx,
     );
     expect(result.payload.transactionId).toBe(42);
   });
 
-  it("RemoteStopTransaction: returns 0 for unknown UUID", async () => {
-    const result = await down["ocpp2.1:RemoteStopTransaction"](
+  it("RequestStopTransaction: returns 0 for unknown UUID", async () => {
+    const result = await down["ocpp2.1:RequestStopTransaction"](
       { transactionId: "unknown-uuid" },
       makeCtx(),
     );
@@ -244,8 +262,53 @@ describe("Core Preset — Downstream", () => {
   });
 });
 
+describe("Core Preset — Downstream routing", () => {
+  // A 2.x CSMS starts and stops remotely with RequestStart/StopTransaction
+  // (OCPP 2.0.1 and 2.1 have no RemoteStart/StopTransaction): the translator
+  // must find the mapper by that action and send 1.6's names to the charger.
+  function translator() {
+    const t = new OCPPTranslator({ upstream: {}, downstream: {} });
+    t.updateMap(corePreset);
+    return t;
+  }
+
+  it("RequestStartTransaction becomes RemoteStartTransaction", async () => {
+    const result = await translator().translateDownstreamCall(
+      {
+        type: MessageType.CALL,
+        messageId: "m1",
+        action: "RequestStartTransaction",
+        payload: {
+          evseId: 2,
+          remoteStartId: 7,
+          idToken: { idToken: "TAG1", type: "ISO14443" },
+        },
+      },
+      makeCtx(),
+    );
+    expect(result.action).toBe("RemoteStartTransaction");
+    expect(result.payload).toEqual({ connectorId: 2, idTag: "TAG1" });
+  });
+
+  it("RequestStopTransaction becomes RemoteStopTransaction", async () => {
+    const ctx = makeCtx();
+    await ctx.session.set(ctx.identity, "txId_uuid2int_my-uuid", 42);
+    const result = await translator().translateDownstreamCall(
+      {
+        type: MessageType.CALL,
+        messageId: "m2",
+        action: "RequestStopTransaction",
+        payload: { transactionId: "my-uuid" },
+      },
+      ctx,
+    );
+    expect(result.action).toBe("RemoteStopTransaction");
+    expect(result.payload).toEqual({ transactionId: 42 });
+  });
+});
+
 describe("Core Preset — Responses", () => {
-  const res = corePreset.responses!;
+  const res = responses(corePreset.responses);
 
   it("BootNotificationResponse: passes through all fields", async () => {
     const result = await res["ocpp2.1:BootNotificationResponse"](
@@ -260,10 +323,9 @@ describe("Core Preset — Responses", () => {
   });
 
   it("AuthorizeResponse: maps idTokenInfo to idTagInfo", async () => {
-    const result = await res["ocpp2.1:AuthorizeResponse"](
-      { idTokenInfo: { status: "Accepted" } },
-      makeCtx(),
-    );
+    const result = await res["ocpp2.1:AuthorizeResponse"]<
+      OCPPResponseType<"ocpp1.6", "Authorize">
+    >({ idTokenInfo: { status: "Accepted" } }, makeCtx());
     expect(result.idTagInfo.status).toBe("Accepted");
   });
 
@@ -274,10 +336,9 @@ describe("Core Preset — Responses", () => {
       connectorId: 1,
     });
 
-    const result = await res["ocpp2.1:TransactionEventResponse"](
-      { idTokenInfo: { status: "Accepted" } },
-      ctx,
-    );
+    const result = await res["ocpp2.1:TransactionEventResponse"]<
+      OCPPResponseType<"ocpp1.6", "StartTransaction">
+    >({ idTokenInfo: { status: "Accepted" } }, ctx);
 
     expect(result.idTagInfo.status).toBe("Accepted");
     expect(typeof result.transactionId).toBe("number");
@@ -299,31 +360,31 @@ describe("Core Preset — Responses", () => {
 });
 
 describe("Core Preset — Error Mapping", () => {
-  const errors = corePreset.errors!;
+  const errorMappers = errors(corePreset.errors);
 
   it("maps SecurityError to InternalError", async () => {
-    const result = await errors["ocpp2.1:Error"](
+    const result = await errorMappers["ocpp2.1:Error"](
       "SecurityError", "desc", {}, makeCtx(),
     );
     expect(result.errorCode).toBe("InternalError");
   });
 
   it("maps FormatViolation to FormationViolation", async () => {
-    const result = await errors["ocpp2.1:Error"](
+    const result = await errorMappers["ocpp2.1:Error"](
       "FormatViolation", "desc", {}, makeCtx(),
     );
     expect(result.errorCode).toBe("FormationViolation");
   });
 
   it("maps RpcFrameworkError to InternalError", async () => {
-    const result = await errors["ocpp2.1:Error"](
+    const result = await errorMappers["ocpp2.1:Error"](
       "RpcFrameworkError", "desc", {}, makeCtx(),
     );
     expect(result.errorCode).toBe("InternalError");
   });
 
   it("falls back to InternalError for unknown codes", async () => {
-    const result = await errors["ocpp2.1:Error"](
+    const result = await errorMappers["ocpp2.1:Error"](
       "CompletelyUnknown", "desc", {}, makeCtx(),
     );
     expect(result.errorCode).toBe("InternalError");

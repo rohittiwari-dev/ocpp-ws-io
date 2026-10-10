@@ -28,12 +28,11 @@ export const TelemetryMiddleware: ProxyMiddleware = async (
       `telemetryStart_${message.messageId}`,
     );
     if (startTime) {
-      const _latency = Date.now() - startTime;
       await context.session.delete(
         context.identity,
         `telemetryStart_${message.messageId}`,
       );
-      // Emit or log: console.log(`[TELEMETRY] ${_latency}ms`);
+      // Emit or log the latency here: Date.now() - startTime.
     }
   }
   return undefined;

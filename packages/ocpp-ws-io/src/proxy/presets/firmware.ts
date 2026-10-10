@@ -25,8 +25,8 @@ export const firmwarePreset: Partial<TranslationMap> = {
     "ocpp2.1:UpdateFirmware": (params) => ({
       action: "UpdateFirmware",
       payload: {
-        location: params.firmware?.location || params.location,
-        retrieveDate: params.firmware?.retrieveDateTime || params.retrieveDate,
+        location: params.firmware?.location,
+        retrieveDate: params.firmware?.retrieveDateTime,
         retries: params.retries,
         retryInterval: params.retryInterval,
       },

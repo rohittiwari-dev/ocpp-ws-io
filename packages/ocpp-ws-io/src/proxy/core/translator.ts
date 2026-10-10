@@ -1,9 +1,20 @@
 import {
+  type CallMapper,
+  type ErrorMapper,
   MessageType,
   type OCPPMessage,
+  type ProxyPayload,
+  type ResponseMapper,
   type TranslationContext,
   type TranslationMap,
 } from "./types.js";
+
+/**
+ * A translation map read by a key built at runtime from a message's protocol
+ * and action. Every typed function fits here, taking `never`; the key names
+ * the message it is given, so its payload is the one that function expects.
+ */
+type ByKey<F> = Record<string, F | undefined>;
 
 export class OCPPTranslator {
   constructor(private translationMap: TranslationMap) {}
@@ -36,19 +47,21 @@ export class OCPPTranslator {
     context: TranslationContext,
   ): Promise<Extract<OCPPMessage, { type: MessageType.CALL }>> {
     const key = `${context.sourceProtocol}:${message.action}`;
-    const mapper = this.translationMap.upstream[key];
+    const mappers: ByKey<CallMapper<never>> = this.translationMap.upstream;
+    const mapper = mappers[key];
 
     if (!mapper) {
       // Passthrough if no mapper exists — don't crash on unknown actions
       return message;
     }
 
-    const translated = await mapper(message.payload, context);
+    const translated = await mapper(message.payload as never, context);
     return {
       type: MessageType.CALL,
       messageId: message.messageId,
       action: translated.action || message.action,
-      payload: translated.payload,
+      // A mapper builds a JSON object; the message carries it as one.
+      payload: translated.payload as ProxyPayload,
     };
   }
 
@@ -57,19 +70,21 @@ export class OCPPTranslator {
     context: TranslationContext,
   ): Promise<Extract<OCPPMessage, { type: MessageType.CALL }>> {
     const key = `${context.targetProtocol}:${message.action}`;
-    const mapper = this.translationMap.downstream[key];
+    const mappers: ByKey<CallMapper<never>> = this.translationMap.downstream;
+    const mapper = mappers[key];
 
     if (!mapper) {
       // Passthrough if no mapper exists
       return message;
     }
 
-    const translated = await mapper(message.payload, context);
+    const translated = await mapper(message.payload as never, context);
     return {
       type: MessageType.CALL,
       messageId: message.messageId,
       action: translated.action || message.action,
-      payload: translated.payload,
+      // A mapper builds a JSON object; the message carries it as one.
+      payload: translated.payload as ProxyPayload,
     };
   }
 
@@ -79,14 +94,19 @@ export class OCPPTranslator {
     context: TranslationContext,
   ): Promise<Extract<OCPPMessage, { type: MessageType.CALLRESULT }>> {
     const responseKey = `${context.targetProtocol}:${originalAction}Response`;
-    const responseMapper = this.translationMap.responses?.[responseKey];
+    const responses: ByKey<ResponseMapper<never>> | undefined =
+      this.translationMap.responses;
+    const responseMapper = responses?.[responseKey];
 
     if (responseMapper) {
-      const translatedPayload = await responseMapper(message.payload, context);
+      const translatedPayload = await responseMapper(
+        message.payload as never,
+        context,
+      );
       return {
         type: MessageType.CALLRESULT,
         messageId: message.messageId,
-        payload: translatedPayload,
+        payload: translatedPayload as ProxyPayload,
       };
     }
 
@@ -99,7 +119,8 @@ export class OCPPTranslator {
     context: TranslationContext,
   ): Promise<Extract<OCPPMessage, { type: MessageType.CALLERROR }>> {
     const errorKey = `${context.sourceProtocol}:Error`;
-    const errorMapper = this.translationMap.errors?.[errorKey];
+    const errors: ByKey<ErrorMapper> | undefined = this.translationMap.errors;
+    const errorMapper = errors?.[errorKey];
 
     if (errorMapper) {
       const translated = await errorMapper(

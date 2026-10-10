@@ -146,9 +146,9 @@ export const corePreset: Partial<TranslationMap> = {
             id: params.connectorId,
             connectorId: params.connectorId,
           },
-          meterValue: (params.meterValue || []).map((mv: any) => ({
+          meterValue: (params.meterValue || []).map((mv) => ({
             timestamp: mv.timestamp,
-            sampledValue: (mv.sampledValue || []).map((sv: any) => ({
+            sampledValue: (mv.sampledValue || []).map((sv) => ({
               value: sv.value,
               measurand: sv.measurand || "Energy.Active.Import.Register",
               unit: sv.unit,
@@ -161,14 +161,14 @@ export const corePreset: Partial<TranslationMap> = {
     },
   },
   downstream: {
-    "ocpp2.1:RemoteStartTransaction": (params) => ({
+    "ocpp2.1:RequestStartTransaction": (params) => ({
       action: "RemoteStartTransaction",
       payload: {
         connectorId: params.evseId || 1,
         idTag: params.idToken?.idToken,
       },
     }),
-    "ocpp2.1:RemoteStopTransaction": async (params, ctx) => {
+    "ocpp2.1:RequestStopTransaction": async (params, ctx) => {
       const uuid = params.transactionId;
       const numericId = uuid
         ? await ctx.session.get<number>(ctx.identity, `txId_uuid2int_${uuid}`)
@@ -212,22 +212,25 @@ export const corePreset: Partial<TranslationMap> = {
     }),
   },
   responses: {
-    "ocpp2.1:BootNotificationResponse": (params: any) => ({
+    "ocpp2.1:BootNotificationResponse": (params) => ({
       currentTime: params.currentTime,
       interval: params.interval,
       status: params.status,
     }),
-    "ocpp2.1:HeartbeatResponse": (params: any) => ({
+    "ocpp2.1:HeartbeatResponse": (params) => ({
       currentTime: params.currentTime,
     }),
     "ocpp2.1:StatusNotificationResponse": () => ({}),
-    "ocpp2.1:AuthorizeResponse": (params: any) => ({
+    "ocpp2.1:AuthorizeResponse": (params) => ({
       idTagInfo: {
         status: params.idTokenInfo?.status || "Accepted",
       },
     }),
-    "ocpp2.1:TransactionEventResponse": async (params: any, ctx: any) => {
-      const pending = await ctx.session.get(ctx.identity, "pendingStartTx");
+    "ocpp2.1:TransactionEventResponse": async (params, ctx) => {
+      const pending = await ctx.session.get<{ uuid: string }>(
+        ctx.identity,
+        "pendingStartTx",
+      );
       const numericTxId = txIdCounter++;
 
       if (pending) {
@@ -256,7 +259,7 @@ export const corePreset: Partial<TranslationMap> = {
     "ocpp2.1:Error": (
       errorCode: string,
       errorDescription: string,
-      errorDetails: any,
+      errorDetails,
     ) => {
       const errorMap: Record<string, string> = {
         SecurityError: "InternalError",

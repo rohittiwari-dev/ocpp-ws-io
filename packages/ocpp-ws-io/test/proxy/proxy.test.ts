@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { OCPPServer, OCPPClient } from "ocpp-ws-io";
-import { OCPPProtocolProxy } from "../src/proxy.js";
-import { OcppWsIoAdapter } from "../src/adapters/ocpp-ws-io.adapter.js";
-import { presets } from "../src/presets/index.js";
+import { OCPPServer, OCPPClient } from "../../src/index.js";
+import { OCPPProtocolProxy } from "../../src/proxy/proxy.js";
+import { OcppWsIoAdapter } from "../../src/proxy/adapters/ocpp-ws-io.adapter.js";
+import { presets } from "../../src/proxy/presets/index.js";
 
 // Utility to get dynamic port
 const getPort = (srv: import("node:http").Server): number => {
@@ -62,6 +62,7 @@ describe("OCPPProtocolProxy Integration", () => {
     
     // Get dynamic port
     const proxyHttp = adapter.httpServer;
+    if (!proxyHttp) throw new Error("the adapter is not listening");
     proxyPort = getPort(proxyHttp);
 
     // 3. Connect 1.6 Charger to Proxy
@@ -122,11 +123,9 @@ describe("OCPPProtocolProxy Integration", () => {
       status: "Accepted",
     }));
 
-    // 2. We need the upstream proxy client that connected to the CSMS
-    // To grab it, let's just cheat and find the proxy's client connection
-    const proxyClient = Array.from(
-      (csmsServer as any).clients.values(),
-    )[0] as any;
+    // 2. The upstream client the proxy opened is the CSMS's only client
+    const [proxyClient] = csmsServer.clients;
+    if (!proxyClient) throw new Error("the proxy has not connected");
 
     // 3. Fire the CALL from CSMS to the Proxy
     const res = await proxyClient.call("SetChargingProfile", {
@@ -135,6 +134,7 @@ describe("OCPPProtocolProxy Integration", () => {
         id: 1,
         stackLevel: 0,
         chargingProfilePurpose: "TxDefaultProfile",
+        chargingProfileKind: "Absolute",
         transactionId: "tx-1234",
         chargingSchedule: [],
       },

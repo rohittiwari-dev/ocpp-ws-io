@@ -43,6 +43,15 @@
 			],
 			"smart-charge/builders": [
 				"dist/smart-charge/builders.d.ts"
+			],
+			"proxy": [
+				"dist/proxy.d.ts"
+			],
+			"proxy/presets": [
+				"dist/proxy/presets.d.ts"
+			],
+			"proxy/adapters": [
+				"dist/proxy/adapters.d.ts"
 			]
 		}
 	},
@@ -106,6 +115,21 @@
 			"types": "./dist/smart-charge/builders.d.ts",
 			"import": "./dist/smart-charge/builders.mjs",
 			"require": "./dist/smart-charge/builders.js"
+		},
+		"./proxy": {
+			"types": "./dist/proxy.d.ts",
+			"import": "./dist/proxy.mjs",
+			"require": "./dist/proxy.js"
+		},
+		"./proxy/presets": {
+			"types": "./dist/proxy/presets.d.ts",
+			"import": "./dist/proxy/presets.mjs",
+			"require": "./dist/proxy/presets.js"
+		},
+		"./proxy/adapters": {
+			"types": "./dist/proxy/adapters.d.ts",
+			"import": "./dist/proxy/adapters.mjs",
+			"require": "./dist/proxy/adapters.js"
 		}
 	},
 	"scripts": {

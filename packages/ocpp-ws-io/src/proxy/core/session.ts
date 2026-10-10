@@ -1,3 +1,5 @@
+import type { ProxyValue } from "./types.js";
+
 /**
  * A generic interface for storing session state per connection/identity
  * across asynchronous OCPP messages.
@@ -7,12 +9,15 @@ export interface ISessionStore {
   /**
    * Set a key-value pair tied to a specific identity's session.
    */
-  set(identity: string, key: string, value: any): Promise<void>;
+  set(identity: string, key: string, value: ProxyValue): Promise<void>;
 
   /**
    * Retrieve a value tied to a specific identity's session.
    */
-  get<T = any>(identity: string, key: string): Promise<T | undefined>;
+  get<T extends ProxyValue = ProxyValue>(
+    identity: string,
+    key: string,
+  ): Promise<T | undefined>;
 
   /**
    * Delete a key tied to a specific identity's session.
@@ -27,16 +32,20 @@ export interface ISessionStore {
 
 export class InMemorySessionStore implements ISessionStore {
   // Map<identity, Map<key, value>>
-  private store: Map<string, Map<string, any>> = new Map();
+  private store: Map<string, Map<string, ProxyValue>> = new Map();
 
-  public async set(identity: string, key: string, value: any): Promise<void> {
+  public async set(
+    identity: string,
+    key: string,
+    value: ProxyValue,
+  ): Promise<void> {
     if (!this.store.has(identity)) {
       this.store.set(identity, new Map());
     }
     this.store.get(identity)!.set(key, value);
   }
 
-  public async get<T = any>(
+  public async get<T extends ProxyValue = ProxyValue>(
     identity: string,
     key: string,
   ): Promise<T | undefined> {

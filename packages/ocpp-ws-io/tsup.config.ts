@@ -19,6 +19,9 @@ const nodeEntries = {
   "smart-charge": "src/smart-charge/index.ts",
   "smart-charge/strategies": "src/smart-charge/strategies/index.ts",
   "smart-charge/builders": "src/smart-charge/builders.ts",
+  proxy: "src/proxy/index.ts",
+  "proxy/presets": "src/proxy/presets/index.ts",
+  "proxy/adapters": "src/proxy/adapters/ocpp-ws-io.adapter.ts",
 };
 
 export default defineConfig([

@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { InMemorySessionStore } from "../../src/core/session.js";
-import type { TranslationContext } from "../../src/core/types.js";
-import { firmwarePreset } from "../../src/presets/firmware.js";
+import { calls } from "../helpers.js";
+import { InMemorySessionStore } from "../../../src/proxy/core/session.js";
+import type { TranslationContext } from "../../../src/proxy/core/types.js";
+import { firmwarePreset } from "../../../src/proxy/presets/firmware.js";
 
 function makeCtx(): TranslationContext {
   return {
@@ -13,7 +14,7 @@ function makeCtx(): TranslationContext {
 }
 
 describe("Firmware Preset — Upstream", () => {
-  const up = firmwarePreset.upstream!;
+  const up = calls(firmwarePreset.upstream);
 
   it("FirmwareStatusNotification: passes status", async () => {
     const result = await up["ocpp1.6:FirmwareStatusNotification"](
@@ -35,7 +36,7 @@ describe("Firmware Preset — Upstream", () => {
 });
 
 describe("Firmware Preset — Downstream", () => {
-  const down = firmwarePreset.downstream!;
+  const down = calls(firmwarePreset.downstream);
 
   it("UpdateFirmware: extracts from firmware object", async () => {
     const result = await down["ocpp2.1:UpdateFirmware"](

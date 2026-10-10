@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import type { OCPPClient } from "../client/client.js";
+import { unchecked } from "../core/unchecked.js";
 import type { ISessionStore } from "./core/session.js";
 import { InMemorySessionStore } from "./core/session.js";
 import { OCPPTranslator } from "./core/translator.js";
@@ -10,9 +12,13 @@ import {
   type MiddlewarePhase,
   type OCPPMessage,
   type ProxyMiddleware,
+  type ProxyPayload,
   type TranslationContext,
   type TranslationMap,
 } from "./core/types.js";
+
+type CallMessage = Extract<OCPPMessage, { type: MessageType.CALL }>;
+type ResultMessage = Extract<OCPPMessage, { type: MessageType.CALLRESULT }>;
 
 export interface OCPPProtocolProxyOptions {
   upstreamEndpoint: string;
@@ -23,7 +29,7 @@ export interface OCPPProtocolProxyOptions {
 
 export class OCPPProtocolProxy extends EventEmitter {
   private translator: OCPPTranslator;
-  private clients: Map<string, any> = new Map();
+  private clients: Map<string, OCPPClient> = new Map();
   private sessionStore: ISessionStore;
   private adapters: ITransportAdapter[] = [];
 
@@ -82,7 +88,7 @@ export class OCPPProtocolProxy extends EventEmitter {
 
     this.emit("connection", identity, sourceProtocol);
 
-    import("ocpp-ws-io").then(({ OCPPClient }) => {
+    import("../client/client.js").then(({ OCPPClient }) => {
       const upstreamClient = new OCPPClient({
         endpoint: this.options.upstreamEndpoint,
         protocols: [targetProtocol],
@@ -122,9 +128,10 @@ export class OCPPProtocolProxy extends EventEmitter {
             );
 
             // Forward to CSMS
+            // Forwarded as translated: the action is not checked by type.
             const rawResponse = await upstreamClient.call(
-              (postMsg as any).action,
-              (postMsg as any).payload,
+              unchecked((postMsg as CallMessage).action),
+              (postMsg as CallMessage).payload,
             );
 
             const responseMsg: Extract<
@@ -162,15 +169,16 @@ export class OCPPProtocolProxy extends EventEmitter {
               "response",
               "post",
             );
-          } catch (err: any) {
+          } catch (err) {
             const errMessage: Extract<
               OCPPMessage,
               { type: MessageType.CALLERROR }
             > = {
               type: MessageType.CALLERROR,
               messageId: msg.messageId,
-              errorCode: err.code || "InternalError",
-              errorDescription: err.message,
+              errorCode:
+                (err as Error & { code?: string }).code || "InternalError",
+              errorDescription: (err as Error).message,
               errorDetails: {},
             };
 
@@ -193,7 +201,8 @@ export class OCPPProtocolProxy extends EventEmitter {
             type: MessageType.CALL,
             messageId: ctx.messageId || `csms-${Date.now()}`,
             action: ctx.method,
-            payload: ctx.params,
+            // The library hands every handler a JSON object (OCPP-J §4.2).
+            payload: ctx.params as ProxyPayload,
           };
 
         try {
@@ -241,12 +250,14 @@ export class OCPPProtocolProxy extends EventEmitter {
               "response",
               "post",
             );
-            return (postResMsg as any).payload;
+            return (postResMsg as ResultMessage).payload;
           }
         } catch (err) {
           this.emit("translationError", err, downstreamCall, context);
           throw err;
         }
+        // No answer from the charger to pass back.
+        return undefined;
       });
 
       // ─── Cleanup on disconnect ───

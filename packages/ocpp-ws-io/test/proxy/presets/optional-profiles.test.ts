@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { InMemorySessionStore } from "../../src/core/session.js";
-import type { TranslationContext } from "../../src/core/types.js";
-import { localAuthPreset } from "../../src/presets/local-auth.js";
-import { reservationPreset } from "../../src/presets/reservation.js";
+import { calls } from "../helpers.js";
+import { InMemorySessionStore } from "../../../src/proxy/core/session.js";
+import type { TranslationContext } from "../../../src/proxy/core/types.js";
+import { localAuthPreset } from "../../../src/proxy/presets/local-auth.js";
+import type { OCPPRequestType } from "../../../src/types/index.js";
+import { reservationPreset } from "../../../src/proxy/presets/reservation.js";
 
 function makeCtx(): TranslationContext {
   return {
@@ -14,7 +16,7 @@ function makeCtx(): TranslationContext {
 }
 
 describe("Reservation Preset", () => {
-  const down = reservationPreset.downstream!;
+  const down = calls(reservationPreset.downstream);
 
   it("ReserveNow: maps evseId, idToken, expiryDateTime", async () => {
     const result = await down["ocpp2.1:ReserveNow"](
@@ -42,7 +44,7 @@ describe("Reservation Preset", () => {
 });
 
 describe("Local Auth List Preset", () => {
-  const down = localAuthPreset.downstream!;
+  const down = calls(localAuthPreset.downstream);
 
   it("GetLocalListVersion: returns empty payload", async () => {
     const result = await down["ocpp2.1:GetLocalListVersion"]({}, makeCtx());
@@ -50,7 +52,9 @@ describe("Local Auth List Preset", () => {
   });
 
   it("SendLocalList: maps idToken objects to idTag strings", async () => {
-    const result = await down["ocpp2.1:SendLocalList"](
+    const result = await down["ocpp2.1:SendLocalList"]<
+      OCPPRequestType<"ocpp1.6", "SendLocalList">
+    >(
       {
         versionNumber: 5,
         updateType: "Full",
@@ -72,11 +76,13 @@ describe("Local Auth List Preset", () => {
     expect(result.payload.listVersion).toBe(5);
     expect(result.payload.updateType).toBe("Full");
     expect(result.payload.localAuthorizationList).toHaveLength(2);
-    expect(result.payload.localAuthorizationList[0].idTag).toBe("TAG-A");
-    expect(result.payload.localAuthorizationList[0].idTagInfo.status).toBe(
+    expect(result.payload.localAuthorizationList?.[0].idTag).toBe("TAG-A");
+    expect(result.payload.localAuthorizationList?.[0].idTagInfo?.status).toBe(
       "Accepted",
     );
-    expect(result.payload.localAuthorizationList[1].idTag).toBe("TAG-B");
-    expect(result.payload.localAuthorizationList[1].idTagInfo).toBeUndefined();
+    expect(result.payload.localAuthorizationList?.[1].idTag).toBe("TAG-B");
+    expect(
+      result.payload.localAuthorizationList?.[1].idTagInfo,
+    ).toBeUndefined();
   });
 });

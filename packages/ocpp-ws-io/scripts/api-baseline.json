@@ -924,5 +924,140 @@
       "buildOcpp201Profile",
       "buildOcpp21Profile"
     ]
+  },
+  "./proxy": {
+    "types": [
+      "ActionKey:type",
+      "CallMapper:type",
+      "ErrorKey:type",
+      "ErrorMapper:type",
+      "IConnection:type",
+      "ISessionStore:type",
+      "ITransportAdapter:type",
+      "InMemorySessionStore:value",
+      "MessageType:value",
+      "MiddlewareDirection:type",
+      "MiddlewarePhase:type",
+      "OCPPMessage:type",
+      "OCPPProtocolProxy:value",
+      "OCPPProtocolProxyOptions:type",
+      "OCPPTranslator:value",
+      "OcppWsIoAdapter:value",
+      "OcppWsIoConnection:value",
+      "ProxyMiddleware:type",
+      "ProxyPayload:type",
+      "ProxyValue:type",
+      "RequestAt:type",
+      "ResponseAt:type",
+      "ResponseKey:type",
+      "ResponseMapper:type",
+      "TelemetryMiddleware:value",
+      "TranslatedError:type",
+      "TranslationContext:type",
+      "TranslationMap:type",
+      "TranslationResult:type",
+      "WsAdapterOptions:type",
+      "availabilityMap16to21:value",
+      "availabilityMap21to16:value",
+      "corePreset:value",
+      "firmwarePreset:value",
+      "localAuthPreset:value",
+      "presets:value",
+      "reservationPreset:value",
+      "smartChargingPreset:value",
+      "statusMap16to21:value",
+      "statusMap21to16:value"
+    ],
+    "require": [
+      "InMemorySessionStore",
+      "MessageType",
+      "OCPPProtocolProxy",
+      "OCPPTranslator",
+      "OcppWsIoAdapter",
+      "OcppWsIoConnection",
+      "TelemetryMiddleware",
+      "availabilityMap16to21",
+      "availabilityMap21to16",
+      "corePreset",
+      "firmwarePreset",
+      "localAuthPreset",
+      "presets",
+      "reservationPreset",
+      "smartChargingPreset",
+      "statusMap16to21",
+      "statusMap21to16"
+    ],
+    "import": [
+      "InMemorySessionStore",
+      "MessageType",
+      "OCPPProtocolProxy",
+      "OCPPTranslator",
+      "OcppWsIoAdapter",
+      "OcppWsIoConnection",
+      "TelemetryMiddleware",
+      "availabilityMap16to21",
+      "availabilityMap21to16",
+      "corePreset",
+      "firmwarePreset",
+      "localAuthPreset",
+      "presets",
+      "reservationPreset",
+      "smartChargingPreset",
+      "statusMap16to21",
+      "statusMap21to16"
+    ]
+  },
+  "./proxy/presets": {
+    "types": [
+      "availabilityMap16to21:value",
+      "availabilityMap21to16:value",
+      "corePreset:value",
+      "firmwarePreset:value",
+      "localAuthPreset:value",
+      "presets:value",
+      "reservationPreset:value",
+      "smartChargingPreset:value",
+      "statusMap16to21:value",
+      "statusMap21to16:value"
+    ],
+    "require": [
+      "availabilityMap16to21",
+      "availabilityMap21to16",
+      "corePreset",
+      "firmwarePreset",
+      "localAuthPreset",
+      "presets",
+      "reservationPreset",
+      "smartChargingPreset",
+      "statusMap16to21",
+      "statusMap21to16"
+    ],
+    "import": [
+      "availabilityMap16to21",
+      "availabilityMap21to16",
+      "corePreset",
+      "firmwarePreset",
+      "localAuthPreset",
+      "presets",
+      "reservationPreset",
+      "smartChargingPreset",
+      "statusMap16to21",
+      "statusMap21to16"
+    ]
+  },
+  "./proxy/adapters": {
+    "types": [
+      "OcppWsIoAdapter:value",
+      "OcppWsIoConnection:value",
+      "WsAdapterOptions:type"
+    ],
+    "require": [
+      "OcppWsIoAdapter",
+      "OcppWsIoConnection"
+    ],
+    "import": [
+      "OcppWsIoAdapter",
+      "OcppWsIoConnection"
+    ]
   }
 }

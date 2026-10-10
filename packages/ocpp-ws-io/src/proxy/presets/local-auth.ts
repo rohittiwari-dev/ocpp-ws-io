@@ -15,7 +15,7 @@ export const localAuthPreset: Partial<TranslationMap> = {
         listVersion: params.versionNumber,
         updateType: params.updateType,
         localAuthorizationList: (params.localAuthorizationList || []).map(
-          (entry: any) => ({
+          (entry) => ({
             idTag: entry.idToken?.idToken,
             idTagInfo: entry.idTokenInfo
               ? {

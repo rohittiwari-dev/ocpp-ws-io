@@ -1,7 +1,3 @@
-export * from "./adapters/ocpp-ws-io.adapter.js";
-export * from "./core/session.js";
-export * from "./core/translator.js";
-export * from "./core/types.js";
-export * from "./middlewares/telemetry.js";
-export * from "./presets/index.js";
-export * from "./proxy.js";
+// The proxy now ships in ocpp-ws-io as "ocpp-ws-io/proxy". This package only
+// re-exports it, so existing imports keep working.
+export * from "ocpp-ws-io/proxy";

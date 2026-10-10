@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { InMemorySessionStore } from "../../src/core/session.js";
-import type { TranslationContext } from "../../src/core/types.js";
-import { smartChargingPreset } from "../../src/presets/smart-charging.js";
+import { calls } from "../helpers.js";
+import { InMemorySessionStore } from "../../../src/proxy/core/session.js";
+import type { TranslationContext } from "../../../src/proxy/core/types.js";
+import { smartChargingPreset } from "../../../src/proxy/presets/smart-charging.js";
 
 function makeCtx(): TranslationContext {
   return {
@@ -13,7 +14,7 @@ function makeCtx(): TranslationContext {
 }
 
 describe("Smart Charging Preset", () => {
-  const down = smartChargingPreset.downstream!;
+  const down = calls(smartChargingPreset.downstream);
 
   it("SetChargingProfile: maps evseId to connectorId", async () => {
     const result = await down["ocpp2.1:SetChargingProfile"](
@@ -28,7 +29,8 @@ describe("Smart Charging Preset", () => {
       makeCtx(),
     );
     expect(result.payload.connectorId).toBe(2);
-    expect(result.payload.csChargingProfiles.id).toBe(1);
+    // The 2.x profile is passed on as it is, not converted to a 1.6 one.
+    expect(result.payload.csChargingProfiles).toMatchObject({ id: 1 });
   });
 
   it("ClearChargingProfile: maps criteria fields", async () => {
