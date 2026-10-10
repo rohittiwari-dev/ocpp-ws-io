@@ -11,10 +11,19 @@ import { Mermaid } from "@/components/mermaid";
 
 # Protocol Proxy
 
-**`ocpp-protocol-proxy`** is a standalone package that translates OCPP messages between any two protocol versions — 1.6, 2.0.1, and 2.1 — in both directions. It sits between your charging station (EVSE) and central system (CSMS), rewriting message payloads, action names, and data types on the fly.
+**The protocol proxy** (`ocpp-ws-io/proxy`) translates OCPP messages between any two protocol versions — 1.6, 2.0.1, and 2.1 — in both directions. It sits between your charging station (EVSE) and central system (CSMS), rewriting message payloads, action names, and data types on the fly.
 
 <Callout type="info">
-  This package is **transport-agnostic**. The core translation engine has zero
+  **Now part of `ocpp-ws-io`.** The proxy ships in `ocpp-ws-io` from 3.1.0,
+  as `ocpp-ws-io/proxy`, `ocpp-ws-io/proxy/presets` and
+  `ocpp-ws-io/proxy/adapters`. Until 3.1.0 is released it is on npm's `beta`
+  tag, so install `ocpp-ws-io@beta`. The separate `ocpp-protocol-proxy`
+  package is deprecated: its last release (0.3.0) only re-exports this one. See
+  [Moving from ocpp-protocol-proxy](#moving-from-ocpp-protocol-proxy).
+</Callout>
+
+<Callout type="info">
+  The proxy is **transport-agnostic**. The core translation engine has zero
   dependency on WebSockets, HTTP, or Node.js. You bring the transport — we
   handle the protocol semantics.
 </Callout>
@@ -29,7 +38,7 @@ graph LR
         CP[Charge Point]
     end
 
-    subgraph Proxy["ocpp-protocol-proxy"]
+    subgraph Proxy["ocpp-ws-io/proxy"]
         direction TB
         MW1["Pre Middleware"] --> TR["Translation Engine"] --> MW2["Post Middleware"]
         TR --> SS["Session Store"]
@@ -57,23 +66,32 @@ The proxy intercepts every OCPP message and runs it through a **translation pipe
 ## Installation
 
 <Tabs items={["npm", "pnpm", "yarn", "bun"]}>
-  <Tab value="npm">```bash npm install ocpp-protocol-proxy ```</Tab>
-  <Tab value="pnpm">```bash pnpm add ocpp-protocol-proxy ```</Tab>
-  <Tab value="yarn">```bash yarn add ocpp-protocol-proxy ```</Tab>
-  <Tab value="bun">```bash bun add ocpp-protocol-proxy ```</Tab>
+  <Tab value="npm">```bash npm install ocpp-ws-io@beta ```</Tab>
+  <Tab value="pnpm">```bash pnpm add ocpp-ws-io@beta ```</Tab>
+  <Tab value="yarn">```bash yarn add ocpp-ws-io@beta ```</Tab>
+  <Tab value="bun">```bash bun add ocpp-ws-io@beta ```</Tab>
 </Tabs>
 
-### Peer Dependencies
+The proxy is part of `ocpp-ws-io` from 3.1.0, which is on npm's `beta` tag until it is released. Its WebSocket adapter uses `ocpp-ws-io`'s own server and client, so there is nothing else to install.
 
-`ocpp-protocol-proxy` uses [`ocpp-ws-io`](https://npmjs.com/ocpp-ws-io) for the built-in WebSocket transport adapter. If you only use the core translation engine with a custom transport, `ocpp-ws-io` is not required at runtime.
+### Moving from ocpp-protocol-proxy
 
 ```bash
-npm install ocpp-ws-io ocpp-protocol-proxy
+npm uninstall ocpp-protocol-proxy
+npm install ocpp-ws-io@beta
 ```
+
+| Before | Now |
+| :--- | :--- |
+| `from "ocpp-protocol-proxy"` | `from "ocpp-ws-io/proxy"` |
+| `from "ocpp-protocol-proxy/presets"` | `from "ocpp-ws-io/proxy/presets"` |
+| `from "ocpp-protocol-proxy/adapters"` | `from "ocpp-ws-io/proxy/adapters"` |
+
+The API is the same, with stricter types: a translation map is keyed by `protocol:Action`, so a misspelt key or a wrong field is a compile error (see [Writing a Translation Mapper](#writing-a-translation-mapper)), and the session store holds `ProxyValue`s. Two presets changed: remote start and stop from a 2.x CSMS (`RequestStartTransaction`, `RequestStopTransaction`) are now translated, and the firmware preset reads only 2.x fields.
 
 ### Requirements
 
-- **Node.js** ≥ 18.0.0
+- **Node.js** ≥ 20.0.0
 - **TypeScript** ≥ 5.0 (recommended)
 
 ---
@@ -87,7 +105,7 @@ npm install ocpp-ws-io ocpp-protocol-proxy
 ### Create the Proxy Instance
 
 ```typescript title="proxy.ts"
-import { OCPPProtocolProxy } from "ocpp-protocol-proxy";
+import { OCPPProtocolProxy } from "ocpp-ws-io/proxy";
 
 const proxy = new OCPPProtocolProxy({
   // The CSMS WebSocket endpoint you're forwarding to
@@ -114,7 +132,7 @@ The `OCPPProtocolProxy` is an `EventEmitter`. It manages the lifecycle of connec
 ### Load Translation Presets
 
 ```typescript title="proxy.ts"
-import { presets } from "ocpp-protocol-proxy";
+import { presets } from "ocpp-ws-io/proxy";
 
 // Load all OCPP 1.6 → 2.1 mappings (all 28 messages, all 6 profiles)
 proxy.translate(presets.ocpp16_to_ocpp21);
@@ -133,7 +151,7 @@ The `presets.ocpp16_to_ocpp21` object includes translation mappings for:
 ### Attach a Transport Adapter
 
 ```typescript title="proxy.ts"
-import { OcppWsIoAdapter } from "ocpp-protocol-proxy";
+import { OcppWsIoAdapter } from "ocpp-ws-io/proxy";
 
 const adapter = new OcppWsIoAdapter({
   port: 9001,
@@ -186,7 +204,7 @@ import {
   OCPPProtocolProxy,
   OcppWsIoAdapter,
   presets,
-} from "ocpp-protocol-proxy";
+} from "ocpp-ws-io/proxy";
 
 async function main() {
   // 1. Create the proxy targeting your 2.1 CSMS
@@ -244,7 +262,7 @@ import {
   firmwarePreset,      // Firmware Management — 4 messages
   reservationPreset,   // Reservation — 2 messages
   localAuthPreset,     // Local Auth List — 2 messages
-} from "ocpp-protocol-proxy";
+} from "ocpp-ws-io/proxy";
 
 // Register only the profiles you need
 proxy.translate(corePreset);
@@ -303,11 +321,11 @@ proxy.translate({
 
 ### Writing a Translation Mapper
 
-Every mapper function receives two arguments:
+A key names a protocol and an action the types know, such as `"ocpp1.6:StartTransaction"` (a custom protocol counts once it is declared on `OCPPMethodMap`), so a misspelt key is a compile error. Every mapper function receives two arguments:
 
 | Argument | Type | Description |
 | :--- | :--- | :--- |
-| `params` | `any` | The source message payload (e.g., OCPP 1.6 `StartTransaction` fields) |
+| `params` | the request of the action the key names | The source message payload, typed: `OCPPRequestType<"ocpp1.6", "StartTransaction">` for `"ocpp1.6:StartTransaction"`; a response mapper gets that action's response |
 | `ctx` | `TranslationContext` | Context with `identity`, `sourceProtocol`, `targetProtocol`, and `session` |
 
 And returns a `TranslationResult`:
@@ -315,7 +333,7 @@ And returns a `TranslationResult`:
 ```typescript
 type TranslationResult = {
   action?: string; // Target action name (optional — keeps original if omitted)
-  payload: any;    // Translated payload
+  payload: object; // Translated payload, sent as JSON
 };
 ```
 
@@ -362,7 +380,7 @@ sequenceDiagram
 ### Example: Logging Middleware
 
 ```typescript
-import type { ProxyMiddleware } from "ocpp-protocol-proxy";
+import type { ProxyMiddleware } from "ocpp-ws-io/proxy";
 
 const loggingMiddleware: ProxyMiddleware = async (
   message,
@@ -413,7 +431,7 @@ const validationMiddleware: ProxyMiddleware = async (
 The package includes a `TelemetryMiddleware` that tracks translation latency via the session store:
 
 ```typescript
-import { TelemetryMiddleware } from "ocpp-protocol-proxy";
+import { TelemetryMiddleware } from "ocpp-ws-io/proxy";
 
 const proxy = new OCPPProtocolProxy({
   upstreamEndpoint: "ws://csms:9000",
@@ -436,19 +454,21 @@ The proxy uses an `ISessionStore` to maintain state across correlated messages. 
 
 ```typescript
 interface ISessionStore {
-  set(identity: string, key: string, value: any): Promise<void>;
-  get<T = any>(identity: string, key: string): Promise<T | undefined>;
+  set(identity: string, key: string, value: ProxyValue): Promise<void>;
+  get<T extends ProxyValue = ProxyValue>(identity: string, key: string): Promise<T | undefined>;
   delete(identity: string, key: string): Promise<void>;
   clear(identity: string): Promise<void>;
 }
 ```
+
+`ProxyValue` is a JSON value, or `undefined` for a field left out.
 
 ### Default: InMemorySessionStore
 
 Works out of the box for single-instance deployments. Data is lost on restart.
 
 ```typescript
-import { InMemorySessionStore } from "ocpp-protocol-proxy";
+import { InMemorySessionStore } from "ocpp-ws-io/proxy";
 
 // This is the default — you don't need to pass it explicitly
 const proxy = new OCPPProtocolProxy({
@@ -463,7 +483,7 @@ const proxy = new OCPPProtocolProxy({
 For clustered/multi-instance deployments, implement `ISessionStore` with Redis:
 
 ```typescript
-import type { ISessionStore } from "ocpp-protocol-proxy";
+import type { ISessionStore, ProxyValue } from "ocpp-ws-io/proxy";
 import Redis from "ioredis";
 
 class RedisSessionStore implements ISessionStore {
@@ -473,11 +493,11 @@ class RedisSessionStore implements ISessionStore {
     return `ocpp-proxy:${identity}:${key}`;
   }
 
-  async set(identity: string, key: string, value: any): Promise<void> {
+  async set(identity: string, key: string, value: ProxyValue): Promise<void> {
     await this.redis.set(this.key(identity, key), JSON.stringify(value));
   }
 
-  async get<T = any>(identity: string, key: string): Promise<T | undefined> {
+  async get<T extends ProxyValue = ProxyValue>(identity: string, key: string): Promise<T | undefined> {
     const raw = await this.redis.get(this.key(identity, key));
     return raw ? JSON.parse(raw) as T : undefined;
   }
@@ -500,7 +520,7 @@ class RedisSessionStore implements ISessionStore {
 The proxy doesn't care how messages arrive. Implement `ITransportAdapter` and `IConnection` to use any transport:
 
 ```typescript
-import type { ITransportAdapter, IConnection, OCPPMessage } from "ocpp-protocol-proxy";
+import type { ITransportAdapter, IConnection, OCPPMessage } from "ocpp-ws-io/proxy";
 
 class MyCustomAdapter implements ITransportAdapter {
   async listen(onConnection: (connection: IConnection) => void): Promise<void> {
@@ -573,9 +593,11 @@ The `close()` method:
 
 ## Architecture
 
+In [`ocpp-ws-io`](https://github.com/rohittiwari-dev/ocpp-ws-io/tree/main/packages/ocpp-ws-io/src/proxy):
+
 ```
-ocpp-protocol-proxy/
-├── src/
+ocpp-ws-io/
+├── src/proxy/
 │   ├── core/
 │   │   ├── types.ts          # OCPPMessage, TranslationMap, ITransportAdapter, IConnection
 │   │   ├── translator.ts     # Pure translation engine (no side effects)
@@ -593,8 +615,8 @@ ocpp-protocol-proxy/
 │   ├── middlewares/
 │   │   └── telemetry.ts      # Latency tracking middleware
 │   ├── proxy.ts              # OCPPProtocolProxy orchestrator
-│   └── index.ts              # Public API exports
-└── test/
+│   └── index.ts              # Public API exports (ocpp-ws-io/proxy)
+└── test/proxy/
     ├── proxy.test.ts         # Integration tests
     └── presets/              # Unit tests for every preset module
 ```

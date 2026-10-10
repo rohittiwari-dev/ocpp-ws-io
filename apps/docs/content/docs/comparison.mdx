@@ -1,5 +1,5 @@
 ---
-title: Architectural Comparison & Technical Approaches
+title: Comparison & Approaches
 description: "Technical breakdown of how ocpp-ws-io approaches EV charging architecture, clustering, typing, and protocol validation alongside other Node.js solutions and platforms."
 keywords:
   - "OCPP comparison"
@@ -31,8 +31,8 @@ The **ocpp-ws-io ecosystem** was engineered from the ground up to solve these ch
 | **NestJS First-Class Module** | ✅ Native `@OcppGateway` | ❌ Manual boilerplate | ❌ No | ❌ No | ❌ No (Fastify stack) |
 | **TypeScript Type Safety** | ✅ Zero `any`, OCA schemas | ✅ Good OOP types | ❌ Legacy JS | ❌ Community defs | ✅ TypeScript |
 | **Redis Multi-Pod Clustering** | ✅ Built-in `RedisAdapter` | ❌ Memory-only | ❌ No | ❌ No | ⚠️ RabbitMQ based |
-| **Smart Charging Engine** | ✅ `ocpp-smart-charge-engine` | ❌ No | ❌ No | ❌ No | ⚠️ Module based |
-| **Live Protocol Translation** | ✅ `ocpp-protocol-proxy` | ❌ No | ❌ No | ❌ No | ❌ No |
+| **Smart Charging Engine** | ✅ `ocpp-ws-io/smart-charge` | ❌ No | ❌ No | ❌ No | ⚠️ Module based |
+| **Live Protocol Translation** | ✅ `ocpp-ws-io/proxy` | ❌ No | ❌ No | ❌ No | ❌ No |
 | **Architecture Footprint** | ⚡ Embeddable & Lightweight | ⚡ Lightweight | ⚡ Lightweight | ⚡ Lightweight | 🏢 Platform Stack (RabbitMQ, Hasura, Postgres) |
 
 ---
@@ -50,7 +50,7 @@ The **ocpp-ws-io ecosystem** was engineered from the ground up to solve these ch
 - **Embeddable Toolkit**: Built as an unopinionated, modular library suite. You install `npm install ocpp-ws-io` into your existing application or microservice architecture.
 - **Framework Integration**: Native `@OcppGateway` decorators for NestJS, Express, Fastify, and Hono, allowing WebSocket upgrade routes to live directly alongside your existing REST APIs on the same port.
 - **Database Freedom**: Zero mandated database schema or external message brokers; works with Prisma, Drizzle, TypeORM, MongoDB, or pure in-memory stores.
-- **Protocol Translation Layer**: `ocpp-protocol-proxy` bridges legacy OCPP 1.6 stations to OCPP 2.1 systems dynamically on the wire.
+- **Protocol Translation Layer**: `ocpp-ws-io/proxy` bridges legacy OCPP 1.6 stations to OCPP 2.1 systems dynamically on the wire.
 
 ---
 
@@ -104,7 +104,7 @@ Early Node.js projects often relied on packages titled `ocpp-rpc` or `node-ocpp`
 | Architectural Goal | Recommended Approach |
 | :--- | :--- |
 | Build an embeddable, type-safe OCPP 1.6/2.0.1/2.1 backend in NestJS or Express | **`ocpp-ws-io`** |
-| Dynamic grid load balancing & smart charging math across chargers | **`ocpp-smart-charge-engine`** |
-| Translate legacy 1.6 chargers to a 2.1 central backend on the wire | **`ocpp-protocol-proxy`** |
+| Dynamic grid load balancing & smart charging math across chargers | **`ocpp-ws-io/smart-charge`** |
+| Translate legacy 1.6 chargers to a 2.1 central backend on the wire | **`ocpp-ws-io/proxy`** |
 | Deploy a standalone platform CSMS with RabbitMQ and PostgreSQL | **`CitrineOS`** |
-| Interactive terminal simulator for QA and stress-testing | **`ocpp-ws-cli`** |
+| Interactive terminal simulator for QA and stress-testing | **`ocpp` CLI (`ocpp-ws-io`)** |

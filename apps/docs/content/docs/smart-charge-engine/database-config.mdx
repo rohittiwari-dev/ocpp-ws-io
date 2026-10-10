@@ -103,7 +103,7 @@ export interface ChargerConfig {
 All DB data is loaded once and cached here. Zero DB access in the hot path.
 
 ```typescript title="grid/registry.ts"
-import { SmartChargingEngine } from "ocpp-smart-charge-engine";
+import { SmartChargingEngine } from "ocpp-ws-io/smart-charge";
 import type { ChargerConfig, PanelConfig } from "../types/grid.js";
 import type { OCPPServerClient } from "ocpp-ws-io";
 import { makeDispatcher, makeClearDispatcher } from "./dispatchers.js";

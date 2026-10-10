@@ -1,5 +1,5 @@
 ---
-title: Introduction to ocpp-ws-io Ecosystem
+title: Introduction to Ecosystem
 description: The complete, type-safe OCPP 1.6/2.0.1/2.1 ecosystem for Node.js & NestJS — RPC, Smart Charging, Protocol Translation, and Simulation.
 keywords:
   - "OCPP"
@@ -45,17 +45,17 @@ Building a Charge Point Management System (CSMS) or Simulator shouldn't require 
     description="The foundational WebSocket RPC library. End-to-end type safety, JSON schema validation, Security Profiles 0-3 (mTLS), and Redis clustering."
   />
   <Card
-    title="2. Protocol Proxy (ocpp-protocol-proxy)"
+    title="2. Protocol Proxy (ocpp-ws-io/proxy)"
     href="/docs/protocol-proxy"
     description="Seamlessly translate legacy OCPP 1.6 chargers to modern 2.1 central systems using transport-agnostic middleware pipelines."
   />
   <Card
-    title="3. Smart Charge Engine (ocpp-smart-charge-engine)"
+    title="3. Smart Charge Engine (ocpp-ws-io/smart-charge)"
     href="/docs/smart-charge-engine"
     description="A library-agnostic mathematical solver that distributes constraint-limited grid power safely among active EV charging sessions."
   />
   <Card
-    title="4. Terminal & Testing (ocpp-ws-cli)"
+    title="4. Terminal & Testing (the ocpp CLI)"
     href="/docs/cli"
     description="The ultimate developer tooling. Boot virtual charge points in your terminal, generate local certs, and hurl load-test spikes at your server."
   />
@@ -85,13 +85,13 @@ graph TB
         SIM["ocpp-ws-simulator"]
     end
 
-    subgraph Translation ["ocpp-protocol-proxy"]
+    subgraph Translation ["ocpp-ws-io/proxy"]
         PROXY["1.6 to 2.1 Translation Layer"]
     end
 
     subgraph Backend ["CSMS Backend (ocpp-ws-io)"]
         RPC["OCPPServer RPC Routes"]
-        MATH["ocpp-smart-charge-engine"]
+        MATH["ocpp-ws-io/smart-charge"]
     end
 
     subgraph Scale ["Infrastructure"]
@@ -144,11 +144,11 @@ Choose the package you want to explore first:
     Distribute 100kW of grid power fairly across multiple cars without tripping the breaker.
 
     ```bash
-    npm install ocpp-smart-charge-engine
+    npm install ocpp-ws-io@beta
     ```
 
     ```typescript
-    import { SmartChargingEngine, Strategies } from "ocpp-smart-charge-engine";
+    import { SmartChargingEngine, Strategies } from "ocpp-ws-io/smart-charge";
 
     const engine = new SmartChargingEngine({
       siteId: "SITE-001",
@@ -170,11 +170,11 @@ Choose the package you want to explore first:
     Let legacy OCPP 1.6 hardware communicate with a purely OCPP 2.1 backend.
 
     ```bash
-    npm install ocpp-protocol-proxy
+    npm install ocpp-ws-io@beta
     ```
 
     ```typescript
-    import { OCPPProtocolProxy, presets } from "ocpp-protocol-proxy";
+    import { OCPPProtocolProxy, presets } from "ocpp-ws-io/proxy";
 
     const proxy = new OCPPProtocolProxy({
       upstreamEndpoint: "wss://modern-csms:9000",

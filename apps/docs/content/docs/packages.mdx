@@ -18,6 +18,10 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 The **ocpp-ws-io** ecosystem is a modular suite of TypeScript packages, each solving a distinct challenge in EV charging infrastructure. Every package is designed to work independently _or_ seamlessly together.
 
+<Callout type="info">
+  **The proxy, the smart charge engine and the CLI are part of `ocpp-ws-io`** from 3.1.0 (on npm's `beta` tag until it is released): import `ocpp-ws-io/proxy` and `ocpp-ws-io/smart-charge`, and run the `ocpp` command. The separate packages `ocpp-protocol-proxy`, `ocpp-smart-charge-engine` and `ocpp-ws-cli` are deprecated; their last releases only re-export or run `ocpp-ws-io`.
+</Callout>
+
 ---
 
 ## Core Packages
@@ -34,14 +38,14 @@ The **ocpp-ws-io** ecosystem is a modular suite of TypeScript packages, each sol
     description="Real-time telemetry dashboard with live message inspection, server logs, connection monitoring, and performance metrics. Ships with Express, Hono, and NestJS adapters."
   />
   <Card
-    title="ocpp-protocol-proxy"
+    title="ocpp-ws-io/proxy"
     href="/docs/protocol-proxy"
-    description="Transport-agnostic OCPP version translation proxy. Bridge legacy OCPP 1.6 chargers to modern 2.1 backends using pluggable middleware pipelines and pre-built translation presets."
+    description="Transport-agnostic OCPP version translation proxy. Bridge legacy OCPP 1.6 chargers to modern 2.1 backends using pluggable middleware pipelines and pre-built translation presets. Formerly ocpp-protocol-proxy."
   />
   <Card
-    title="ocpp-smart-charge-engine"
+    title="ocpp-ws-io/smart-charge"
     href="/docs/smart-charge-engine"
-    description="Library-agnostic mathematical solver that distributes constraint-limited grid power fairly across active EV charging sessions. Supports equal-share, priority, and TOU pricing strategies."
+    description="Library-agnostic mathematical solver that distributes constraint-limited grid power fairly across active EV charging sessions. Supports equal-share, priority, and TOU pricing strategies. Formerly ocpp-smart-charge-engine."
   />
 </Cards>
 
@@ -51,9 +55,9 @@ The **ocpp-ws-io** ecosystem is a modular suite of TypeScript packages, each sol
 
 <Cards>
   <Card
-    title="ocpp-ws-cli"
+    title="ocpp CLI"
     href="/docs/cli"
-    description="Command-line toolbox for OCPP development. Scaffold projects, spin up mock CSMS servers, send test messages, generate TLS certificates, and run load tests — all from your terminal."
+    description="The ocpp command of ocpp-ws-io (formerly ocpp-ws-cli): a command-line toolbox for OCPP development. Scaffold projects, spin up mock CSMS servers, send test messages, generate TLS certificates, and run load tests — all from your terminal."
   />
   <Card
     title="ocpp-ws-simulator"
@@ -78,14 +82,12 @@ npm install ocpp-ws-io
 # Real-time dashboard & monitoring
 npm install ocpp-ws-board
 
-# Version translation proxy
-npm install ocpp-protocol-proxy
-
-# Smart charging math
-npm install ocpp-smart-charge-engine
+# Version translation proxy and smart charging math, in ocpp-ws-io from 3.1.0 (beta):
+# import "ocpp-ws-io/proxy" and "ocpp-ws-io/smart-charge"
+npm install ocpp-ws-io@beta
 
 # CLI tools (no install required)
-npx ocpp-ws-cli --help
+npx ocpp-ws-io@beta --help
 
 # Logging
 npm install voltlog-io
@@ -99,14 +101,14 @@ npm install voltlog-io
 |------|---------|
 | Build a CSMS or charge point in Node.js | `ocpp-ws-io` |
 | Monitor & inspect OCPP traffic in real-time | `ocpp-ws-board` |
-| Support legacy 1.6 hardware on a 2.1 backend | `ocpp-protocol-proxy` |
-| Distribute grid power across multiple chargers | `ocpp-smart-charge-engine` |
-| Test, mock, or debug OCPP traffic locally | `ocpp-ws-cli` |
+| Support legacy 1.6 hardware on a 2.1 backend | `ocpp-ws-io/proxy` |
+| Distribute grid power across multiple chargers | `ocpp-ws-io/smart-charge` |
+| Test, mock, or debug OCPP traffic locally | the `ocpp` CLI (`ocpp-ws-io`) |
 | Visualize OCPP sessions in the browser | `ocpp-ws-simulator` |
 | Structured, performant logging | `voltlog-io` |
 
 <Callout type="info">
-All packages are independently installable. You don't need the full ecosystem — pick only what your project requires.
+Each package installs on its own; the proxy, the smart charge engine and the CLI come with `ocpp-ws-io`. You don't need the full ecosystem — pick only what your project requires.
 </Callout>
 
 ---

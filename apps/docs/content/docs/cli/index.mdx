@@ -13,7 +13,10 @@ The **ocpp-ws-io** ecosystem includes CLI tools for building, testing, and debug
 
 <Callout type="info">
   **Installation**  
-  You can install the CLI globally via `npm install -g ocpp-ws-cli`, or run it on the fly using `npx ocpp-ws-cli <command>`.
+  The CLI is the `ocpp` command of `ocpp-ws-io`, from 3.1.0 (on npm's `beta` tag until it is released). Install it globally with `npm install -g ocpp-ws-io@beta`, or run it on the fly with `npx ocpp-ws-io@beta <command>`. It also answers to `ocpp-ws-cli`, for old scripts.
+
+  **Moving from `ocpp-ws-cli`**  
+  The separate `ocpp-ws-cli` package is deprecated: its last release (1.3.0) only runs this one. Both packages install the `ocpp` command, so remove the old one first: `npm uninstall -g ocpp-ws-cli`. Commands and options are the same.
 </Callout>
 
 <Callout type="warn">

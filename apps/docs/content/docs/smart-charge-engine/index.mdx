@@ -11,10 +11,20 @@ import { Mermaid } from "@/components/mermaid";
 
 # Smart Charge Engine
 
-**`ocpp-smart-charge-engine`** solves one problem: **how to distribute your site's grid power fairly and safely among EV chargers** using OCPP's `SetChargingProfile` command.
+**The smart charge engine** (`ocpp-ws-io/smart-charge`) solves one problem: **how to distribute your site's grid power fairly and safely among EV chargers** using OCPP's `SetChargingProfile` command.
 
 <Callout type="info">
-  This package is **completely library-agnostic**. It does not care whether you
+  **Now part of `ocpp-ws-io`.** The engine ships in `ocpp-ws-io` from 3.1.0,
+  as `ocpp-ws-io/smart-charge`, `ocpp-ws-io/smart-charge/strategies` and
+  `ocpp-ws-io/smart-charge/builders`. Until 3.1.0 is released it is on npm's
+  `beta` tag, so install `ocpp-ws-io@beta`. The separate
+  `ocpp-smart-charge-engine` package is deprecated: its last release (0.5.0)
+  only re-exports this one. See
+  [Moving from ocpp-smart-charge-engine](#moving-from-ocpp-smart-charge-engine).
+</Callout>
+
+<Callout type="info">
+  The engine is **completely library-agnostic**. It does not care whether you
   use `ocpp-ws-io`, raw WebSockets, or any other OCPP implementation. You
   supply a `dispatcher` callback — what you do inside it is entirely up to you.
 </Callout>
@@ -85,11 +95,28 @@ The engine:
 ## Install
 
 <Tabs items={["npm", "pnpm", "yarn", "bun"]}>
-  <Tab value="npm">```bash npm install ocpp-smart-charge-engine ```</Tab>
-  <Tab value="pnpm">```bash pnpm add ocpp-smart-charge-engine ```</Tab>
-  <Tab value="yarn">```bash yarn add ocpp-smart-charge-engine ```</Tab>
-  <Tab value="bun">```bash bun add ocpp-smart-charge-engine ```</Tab>
+  <Tab value="npm">```bash npm install ocpp-ws-io@beta ```</Tab>
+  <Tab value="pnpm">```bash pnpm add ocpp-ws-io@beta ```</Tab>
+  <Tab value="yarn">```bash yarn add ocpp-ws-io@beta ```</Tab>
+  <Tab value="bun">```bash bun add ocpp-ws-io@beta ```</Tab>
 </Tabs>
+
+The engine is part of `ocpp-ws-io` from 3.1.0, which is on npm's `beta` tag until it is released.
+
+### Moving from ocpp-smart-charge-engine
+
+```bash
+npm uninstall ocpp-smart-charge-engine
+npm install ocpp-ws-io@beta
+```
+
+| Before | Now |
+| :--- | :--- |
+| `from "ocpp-smart-charge-engine"` | `from "ocpp-ws-io/smart-charge"` |
+| `from "ocpp-smart-charge-engine/strategies"` | `from "ocpp-ws-io/smart-charge/strategies"` |
+| `from "ocpp-smart-charge-engine/builders"` | `from "ocpp-ws-io/smart-charge/builders"` |
+
+The engine's code and API are unchanged. Your dispatcher can still send profiles with any OCPP library.
 
 <Callout type="warn">
   **Charger Compatibility:** `SetChargingProfile` is part of the OCPP 1.6 Smart
@@ -109,8 +136,8 @@ The engine:
 ### Create the Engine
 
 ```typescript title="engine.ts"
-import { SmartChargingEngine, Strategies } from "ocpp-smart-charge-engine";
-import { buildOcpp16Profile } from "ocpp-smart-charge-engine/builders";
+import { SmartChargingEngine, Strategies } from "ocpp-ws-io/smart-charge";
+import { buildOcpp16Profile } from "ocpp-ws-io/smart-charge/builders";
 
 const engine = new SmartChargingEngine({
   siteId: "SITE-HQ-001",
@@ -181,8 +208,8 @@ engine.startAutoDispatch(60_000);
 
 ```typescript title="main.ts"
 import { OCPPServer } from "ocpp-ws-io";
-import { SmartChargingEngine, Strategies } from "ocpp-smart-charge-engine";
-import { buildOcpp16Profile } from "ocpp-smart-charge-engine/builders";
+import { SmartChargingEngine, Strategies } from "ocpp-ws-io/smart-charge";
+import { buildOcpp16Profile } from "ocpp-ws-io/smart-charge/builders";
 
 const server = new OCPPServer({ protocols: ["ocpp1.6"] });
 const clients = new Map();
@@ -259,7 +286,7 @@ The dispatcher is library-agnostic. Here's how to use it with different setups:
 ### With `ocpp-ws-io` — OCPP 2.0.1
 
 ```typescript
-import { buildOcpp201Profile } from "ocpp-smart-charge-engine/builders";
+import { buildOcpp201Profile } from "ocpp-ws-io/smart-charge/builders";
 
 dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
   await client.call("SetChargingProfile", {
@@ -272,7 +299,7 @@ dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
 ### Mixed Fleet (1.6 + 2.0.1)
 
 ```typescript
-import { buildOcpp16Profile, buildOcpp201Profile } from "ocpp-smart-charge-engine/builders";
+import { buildOcpp16Profile, buildOcpp201Profile } from "ocpp-ws-io/smart-charge/builders";
 
 dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
   const client = clients.get(clientId);
@@ -295,7 +322,7 @@ dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
 ### Raw WebSocket
 
 ```typescript
-import { buildOcpp16Profile } from "ocpp-smart-charge-engine/builders";
+import { buildOcpp16Profile } from "ocpp-ws-io/smart-charge/builders";
 
 dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
   const ws = wsMap.get(clientId);
@@ -420,7 +447,7 @@ buildOcpp16Profile(sessionProfile, {
 ### OCPP 2.1 V2G Discharge
 
 ```typescript
-import { buildOcpp21Profile } from "ocpp-smart-charge-engine/builders";
+import { buildOcpp21Profile } from "ocpp-ws-io/smart-charge/builders";
 
 buildOcpp21Profile(sessionProfile, {
   dischargeLimitW: 7400, // Allow 7.4kW V2G discharge (ISO 15118-20)

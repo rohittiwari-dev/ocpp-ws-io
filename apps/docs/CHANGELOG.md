@@ -1,5 +1,13 @@
 # docs
 
+## 2.3.0
+
+### Minor Changes
+
+- **The proxy, the smart charge engine and the CLI as part of `ocpp-ws-io`**: their pages install `ocpp-ws-io@beta` (3.1.0) and import `ocpp-ws-io/proxy` and `ocpp-ws-io/smart-charge`; each opens with a note on the move and has a "Moving from …" section with the old-to-new imports or commands. The overview, packages and comparison pages name the new paths, and the CLI page the `ocpp` command of `ocpp-ws-io`.
+- **Protocol proxy reference**: translation maps typed by `protocol:Action` key, with typed mapper params; `TranslationResult.payload` as `object`; the session store's `ProxyValue`; Node.js 20; the source layout in `ocpp-ws-io`.
+- **Type generation**: `ocpp generate` uses the same generator as the library's own types.
+
 ## 2.2.0
 
 ### Minor Changes

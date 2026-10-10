@@ -19,7 +19,7 @@ A complete CSMS example with:
 ## Installation
 
 ```bash
-npm install ocpp-ws-io ocpp-smart-charge-engine express
+npm install ocpp-ws-io@beta express
 npm install -D @types/express
 ```
 
@@ -31,11 +31,11 @@ npm install -D @types/express
 import express from "express";
 import { createServer } from "node:http";
 import { OCPPServer } from "ocpp-ws-io";
-import { SmartChargingEngine, Strategies } from "ocpp-smart-charge-engine";
+import { SmartChargingEngine, Strategies } from "ocpp-ws-io/smart-charge";
 import {
   buildOcpp16Profile,
   buildOcpp201Profile,
-} from "ocpp-smart-charge-engine/builders";
+} from "ocpp-ws-io/smart-charge/builders";
 
 // ─────────────────────────────────────────
 // 1. Site layout

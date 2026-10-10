@@ -173,9 +173,9 @@ with the configured voltage. Use the `buildSessionProfile` helper to produce the
 kW/W/A numbers correctly.
 
 ```typescript
-import { SmartChargingEngine } from "ocpp-smart-charge-engine";
-import { buildSessionProfile } from "ocpp-smart-charge-engine/strategies";
-import type { StrategyFn } from "ocpp-smart-charge-engine";
+import { SmartChargingEngine } from "ocpp-ws-io/smart-charge";
+import { buildSessionProfile } from "ocpp-ws-io/smart-charge/strategies";
+import type { StrategyFn } from "ocpp-ws-io/smart-charge";
 
 // FIFO: the longest-waiting session charges first.
 const fifo: StrategyFn = (sessions, effectiveGridKw, ctx) => {
