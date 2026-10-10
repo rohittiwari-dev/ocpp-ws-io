@@ -30,55 +30,60 @@ import type {
   AllMethodNames,
   OCPPRequestType,
   OCPPResponseType,
+  OCPPSendRequestType,
+  SendMethodNames,
 } from "../generated/index.js";
 import { createLoggingMiddleware } from "../helpers/index.js";
+import type {
+  CallOptions,
+  CloseOptions,
+  NoReplyCallOptions,
+} from "../types/calls.js";
+import type { ClientOptions } from "../types/client.js";
+import type {
+  ClientEvents,
+  MessageDirection,
+  MessageEventContext,
+  MessageEventPayload,
+  TypedEventEmitter,
+} from "../types/events.js";
+import type {
+  CheckedAction,
+  CheckedHandler,
+  HandlerResult,
+  HandlerReturn,
+} from "../types/exact-keys.js";
+import type {
+  CallHandler,
+  HandleArgs,
+  HandlerContext,
+  WildcardHandler,
+} from "../types/handlers.js";
+import type { JsonObject, JsonValue } from "../types/json.js";
+import type { LoggerLike, LoggerLikeNotOptional } from "../types/logger.js";
+import type { MiddlewareContext, WireCall } from "../types/middleware.js";
 import {
   type AnyOCPPProtocol,
-  type CallHandler,
-  type CallOptions,
-  type CheckedAction,
-  type CheckedHandler,
-  type ClientEvents,
-  type ClientOptions,
-  type CloseOptions,
   ConnectionState,
-  type HandleArgs,
-  type HandlerContext,
-  type HandlerResult,
-  type HandlerReturn,
-  type JsonObject,
-  type JsonValue,
   type KnownProtocol,
-  type LoggerLike,
-  type LoggerLikeNotOptional,
-  type ManagedWsClientOption,
-  type MessageDirection,
-  type MessageEventContext,
-  type MessageEventPayload,
   MessageType,
-  type MiddlewareContext,
   NOREPLY,
-  type NoReplyCallOptions,
   type OCPPCall,
   type OCPPCallError,
   type OCPPCallResult,
   type OCPPCallResultError,
   type OCPPMessage,
   type OCPPSend,
-  type OCPPSendRequestType,
   type RequestOf,
   type ResponseOf,
   SecurityProfile,
-  type SendMethodNames,
   type SendRequestOf,
   type StrictModeMethodsFor,
-  type TypedEventEmitter,
   type UncheckedAction,
   type UncheckedHandler,
-  type WildcardHandler,
-  type WireCall,
   type WithUniqueProtocols,
-} from "../types/index.js";
+} from "../types/protocol.js";
+import type { ManagedWsClientOption } from "../types/transport.js";
 
 const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
 

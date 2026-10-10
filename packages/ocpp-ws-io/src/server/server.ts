@@ -41,46 +41,48 @@ import {
   parseBasicAuth,
   parseSubprotocols,
 } from "../core/ws-util.js";
+import type { AllMethodNames, OCPPResponseType } from "../generated/index.js";
+import type { EventAdapterInterface } from "../types/adapter.js";
+import type {
+  AuthAccept,
+  AuthCallback,
+  ConnectionMiddleware,
+} from "../types/auth.js";
+import type { CallOptions, CloseOptions } from "../types/calls.js";
+import type { ClientOptions } from "../types/client.js";
+import type { ServerEvents, TypedEventEmitter } from "../types/events.js";
+import type {
+  BatchCall,
+  BatchExactKeys,
+  BatchResult,
+  CheckedAction,
+} from "../types/exact-keys.js";
+import type {
+  SendToClientArgs,
+  VersionNamedSendArgs,
+} from "../types/handlers.js";
+import type { HandshakeInfo } from "../types/handshake.js";
+import type { JsonObject } from "../types/json.js";
+import type { LoggerLike, LoggerLikeNotOptional } from "../types/logger.js";
+import type { OCPPPlugin, PluginHookResult } from "../types/plugins.js";
 import {
-  type AllMethodNames,
   type AnyOCPPProtocol,
-  type AuthAccept,
-  type AuthCallback,
-  type BatchCall,
-  type BatchExactKeys,
-  type BatchResult,
-  type CallOptions,
-  type CheckedAction,
-  type ClientOptions,
-  type CloseOptions,
-  type CORSOptions,
-  type ConnectionMiddleware,
-  type EventAdapterInterface,
-  type HandshakeInfo,
-  type HealthEndpointAuth,
-  type HealthEndpointOptions,
-  type JsonObject,
   type KnownProtocol,
-  type ListenOptions,
-  type LoggerLike,
-  type LoggerLikeNotOptional,
-  type ManagedWsServerOption,
-  type OCPPPlugin,
-  type OCPPResponseType,
-  type PersistedSession,
-  type PluginHookResult,
   type RequestOf,
   SecurityProfile,
-  type SendToClientArgs,
-  type ServerEvents,
-  type ServerOptions,
-  type SessionData,
   type StrictModeMethodsFor,
-  type TypedEventEmitter,
   type UncheckedAction,
-  type VersionNamedSendArgs,
   type WithUniqueProtocols,
-} from "../types/index.js";
+} from "../types/protocol.js";
+import type {
+  CORSOptions,
+  HealthEndpointAuth,
+  HealthEndpointOptions,
+  ListenOptions,
+  ServerOptions,
+} from "../types/server.js";
+import type { PersistedSession, SessionData } from "../types/session.js";
+import type { ManagedWsServerOption } from "../types/transport.js";
 import { AdaptiveLimiter } from "./adaptive-limiter.js";
 import { checkCORS } from "./cors.js";
 import { EventEmitterBase } from "./emitter-base.js";

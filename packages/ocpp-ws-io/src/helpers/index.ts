@@ -1,17 +1,16 @@
 import { HandshakeRejection } from "../core/errors.js";
+import type { MiddlewareFunction } from "../core/middleware.js";
 import type {
-  AnyOCPPProtocol,
   AuthAccept,
   AuthCallback,
   AuthContext,
   ConnectionMiddleware,
-  LoggerLike,
-  LoggingConfig,
-  MiddlewareContext,
-  MiddlewareFunction,
-  OCPPPlugin,
-  SessionData,
-} from "../types/index.js";
+} from "../types/auth.js";
+import type { LoggerLike, LoggingConfig } from "../types/logger.js";
+import type { MiddlewareContext } from "../types/middleware.js";
+import type { OCPPPlugin } from "../types/plugins.js";
+import type { AnyOCPPProtocol } from "../types/protocol.js";
+import type { SessionData } from "../types/session.js";
 
 // ─── Middleware Definition ───────────────────────────────────────
 

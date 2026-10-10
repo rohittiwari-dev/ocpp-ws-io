@@ -1,20 +1,23 @@
-import type { OCPPServer } from "../../server/server.js";
-import type { OCPPServerClient } from "../../server/server-client.js";
 import type {
   AllMethodNames,
-  AnyOCPPProtocol,
-  CallOptions,
-  CheckedAction,
-  CloseOptions,
-  JsonObject,
-  OCPPProtocol,
   OCPPResponseType,
-  OCPPServerStats,
-  RequestOf,
+} from "../../generated/index.js";
+import type { OCPPServer } from "../../server/server.js";
+import type { OCPPServerClient } from "../../server/server-client.js";
+import type { CallOptions, CloseOptions } from "../../types/calls.js";
+import type { CheckedAction } from "../../types/exact-keys.js";
+import type {
   SendsToClientByArgs,
   SendToClientArgs,
+} from "../../types/handlers.js";
+import type { JsonObject } from "../../types/json.js";
+import type {
+  AnyOCPPProtocol,
+  OCPPProtocol,
+  RequestOf,
   UncheckedAction,
-} from "../../types/index.js";
+} from "../../types/protocol.js";
+import type { OCPPServerStats } from "../../types/server.js";
 
 export abstract class BaseOcppContext {
   constructor(public readonly server: OCPPServer) {}

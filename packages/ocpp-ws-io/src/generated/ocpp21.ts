@@ -1,6 +1,6 @@
 // Auto-generated from ocpp2_1.json — DO NOT EDIT
 /* eslint-disable */
-import type { JsonValue } from "../types/index.js";
+import type { JsonValue } from "../types/json.js";
 
 // ═══ Shared Types ═══
 

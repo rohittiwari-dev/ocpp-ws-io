@@ -44,8 +44,9 @@ export interface MethodSchemas {
 export interface GenerateOptions {
   /**
    * The module the types file imports `JsonValue` from. The default is the
-   * library's own types, for its src/generated; a project outside it names
-   * "ocpp-ws-io".
+   * library's module that declares it, for its src/generated: not the types
+   * index, which re-exports src/generated and would make the two a cycle. A
+   * project outside the library names "ocpp-ws-io".
    */
   typesModule?: string;
 }
@@ -366,7 +367,7 @@ export function generateVersionFile(
   const body = lines.join("\n");
   if (!/\bJsonValue\b/.test(body)) return body;
   const [first, second, ...rest] = lines;
-  const typesModule = options.typesModule ?? "../types/index.js";
+  const typesModule = options.typesModule ?? "../types/json.js";
   return [
     first,
     second,

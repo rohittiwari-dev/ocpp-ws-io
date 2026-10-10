@@ -15,20 +15,20 @@ import type {
 import type {
   CheckedAction,
   CheckedHandler,
-  HandleArgs,
   HandlerResult,
   HandlerReturn,
-  JsonObject,
-  JsonValue,
-  MiddlewareContext,
+} from "../types/exact-keys.js";
+import type { HandleArgs } from "../types/handlers.js";
+import type { JsonObject, JsonValue } from "../types/json.js";
+import type { MiddlewareContext, WireCall } from "../types/middleware.js";
+import type {
   RequestOf,
   ResponseOf,
   SendRequestOf,
   UncheckedAction,
   UncheckedHandler,
-  WireCall,
   WithUniqueProtocols,
-} from "../types/index.js";
+} from "../types/protocol.js";
 import { EventEmitter } from "./emitter.js";
 import {
   type RPCError,

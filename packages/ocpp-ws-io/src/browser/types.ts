@@ -7,6 +7,23 @@ import type {
   OCPPSendRequestType as _OCPPSendRequestType,
   SendMethodNames as _SendMethodNames,
 } from "../generated/index.js";
+import type {
+  CallOptions as _CallOptions,
+  CloseOptions as _CloseOptions,
+  NoReplyCallOptions as _NoReplyCallOptions,
+} from "../types/calls.js";
+import type {
+  CallHandler as _CallHandler,
+  HandlerContext as _HandlerContext,
+  WildcardHandler as _WildcardHandler,
+} from "../types/handlers.js";
+import type { JsonObject as _JsonObject } from "../types/json.js";
+import type {
+  LoggerLike as _LoggerLike,
+  LoggerLikeNotOptional as _LoggerLikeNotOptional,
+  LoggingConfig as _LoggingConfig,
+} from "../types/logger.js";
+import type { WireCall as _WireCall } from "../types/middleware.js";
 /**
  * Browser-compatible types for ocpp-ws-io/browser.
  *
@@ -15,18 +32,9 @@ import type {
  */
 import type {
   AnyOCPPProtocol as _AnyOCPPProtocol,
-  CallHandler as _CallHandler,
-  CallOptions as _CallOptions,
-  CloseOptions as _CloseOptions,
-  HandlerContext as _HandlerContext,
-  JsonObject as _JsonObject,
   KnownProtocol as _KnownProtocol,
-  LoggerLike as _LoggerLike,
-  LoggerLikeNotOptional as _LoggerLikeNotOptional,
-  LoggingConfig as _LoggingConfig,
   MessageIdGenerator as _MessageIdGenerator,
   MessageIdValidator as _MessageIdValidator,
-  NoReplyCallOptions as _NoReplyCallOptions,
   OCPPCall as _OCPPCall,
   OCPPCallError as _OCPPCallError,
   OCPPCallResult as _OCPPCallResult,
@@ -36,9 +44,7 @@ import type {
   OCPPSend as _OCPPSend,
   UncheckedAction as _UncheckedAction,
   UncheckedHandler as _UncheckedHandler,
-  WildcardHandler as _WildcardHandler,
-  WireCall as _WireCall,
-} from "../types/index.js";
+} from "../types/protocol.js";
 
 // Re-export shared types
 export type OCPPProtocol = _OCPPProtocol;
@@ -87,7 +93,7 @@ export type OCPPSendRequestType<
 > = _OCPPSendRequestType<V, M>;
 
 // Re-export value types from the main package (these are browser-safe constants)
-export { ConnectionState, MessageType, NOREPLY } from "../types/index.js";
+export { ConnectionState, MessageType, NOREPLY } from "../types/protocol.js";
 
 // ─── Browser Client Options ─────────────────────────────────────
 

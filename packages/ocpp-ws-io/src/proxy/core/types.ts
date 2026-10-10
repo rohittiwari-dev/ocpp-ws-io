@@ -3,7 +3,7 @@ import type {
   OCPPProtocolKey,
   OCPPRequestType,
   OCPPResponseType,
-} from "../../types/index.js";
+} from "../../generated/index.js";
 import type { ISessionStore } from "./session.js";
 
 export enum MessageType {

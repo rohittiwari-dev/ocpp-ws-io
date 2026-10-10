@@ -60,7 +60,6 @@ export default defineConfig([
     target: "node20",
     platform: "node",
     minify: true,
-    treeshake: true,
   },
   // Browser entry (no Node.js dependencies)
   {
