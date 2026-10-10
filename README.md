@@ -30,12 +30,14 @@ Historically, building an OCPP-compliant network has been an infrastructure nigh
 
 ### The Packages at a Glance
 
+From 3.1.0 (on npm's `beta` tag until it is released: `npm install ocpp-ws-io@beta`), the protocol proxy, the smart charge engine and the CLI ship in `ocpp-ws-io`. Their old packages, `ocpp-protocol-proxy`, `ocpp-smart-charge-engine` and `ocpp-ws-cli`, are deprecated: their last releases only re-export or run `ocpp-ws-io`.
+
 | Package | Description | Status |
 |---------|-------------|--------|
 | [**`ocpp-ws-io`**](packages/ocpp-ws-io) | **Core WebSocket RPC client & server.** Call framing, Type Safety, Security Profiles, DDoS protection, Redis clustering. | [![npm](https://img.shields.io/npm/v/ocpp-ws-io.svg?style=flat-square&color=cb3837)](https://www.npmjs.com/package/ocpp-ws-io) |
-| [**`ocpp-smart-charge-engine`**](packages/ocpp-smart-charge-engine) | **Library-agnostic load balancing.** Distributes grid power safely among EVs using advanced mathematical constraint solvers. | [![npm](https://img.shields.io/npm/v/ocpp-smart-charge-engine.svg?style=flat-square&color=cb3837)](https://www.npmjs.com/package/ocpp-smart-charge-engine) |
-| [**`ocpp-protocol-proxy`**](packages/ocpp-protocol-proxy) | **Version translation proxy.** Translates OCPP versions seamlessly (e.g., 1.6 ↔ 2.1) without touching charger firmware. | [![npm](https://img.shields.io/npm/v/ocpp-protocol-proxy.svg?style=flat-square&color=cb3837)](https://www.npmjs.com/package/ocpp-protocol-proxy) |
-| [**`ocpp-ws-cli`**](packages/cli) | **Terminal tooling ecosystem.** Code generation, CLI Simulation, Distributed Load Testing, Fuzzing, and Cert Generation. | [![npm](https://img.shields.io/npm/v/ocpp-ws-cli.svg?style=flat-square&color=cb3837)](https://www.npmjs.com/package/ocpp-ws-cli) |
+| [**`ocpp-ws-io/smart-charge`**](packages/ocpp-ws-io/src/smart-charge) | **Library-agnostic load balancing.** Distributes grid power safely among EVs using advanced mathematical constraint solvers. Formerly `ocpp-smart-charge-engine`. | In `ocpp-ws-io` 3.1.0 ([beta](https://www.npmjs.com/package/ocpp-ws-io?activeTab=versions)) |
+| [**`ocpp-ws-io/proxy`**](packages/ocpp-ws-io/src/proxy) | **Version translation proxy.** Translates OCPP versions seamlessly (e.g., 1.6 ↔ 2.1) without touching charger firmware. Formerly `ocpp-protocol-proxy`. | In `ocpp-ws-io` 3.1.0 ([beta](https://www.npmjs.com/package/ocpp-ws-io?activeTab=versions)) |
+| [**`ocpp` CLI**](packages/ocpp-ws-io/src/cli) | **Terminal tooling ecosystem.** Code generation, CLI Simulation, Distributed Load Testing, Fuzzing, and Cert Generation. Formerly `ocpp-ws-cli`. | In `ocpp-ws-io` 3.1.0 ([beta](https://www.npmjs.com/package/ocpp-ws-io?activeTab=versions)) |
 | [**`ocpp-ws-simulator`**](https://ocpp.rohittiwari.me) | **Visual Web UI Simulator.** A full-featured Next.js browser-based charge point emulator. Live at [ocpp.rohittiwari.me](https://ocpp.rohittiwari.me). | ✅ Available |
 | [**`voltlog-io`**](https://npmjs.com/package/voltlog-io) | **Structured Logger.** High-performance structured logging layer powering the ecosystem's network diagnostics. | ✅ Published |
 
@@ -82,7 +84,7 @@ await server.listen(3000);
 
 ---
 
-## ⚡ 2. Protocol Translation: `ocpp-protocol-proxy`
+## ⚡ 2. Protocol Translation: `ocpp-ws-io/proxy`
 
 Legacy OCPP 1.6 charge points can't natively speak to modern OCPP 2.1 central systems. Instead of maintaining dual-protocol backends, put the Protocol Proxy in between.
 
@@ -95,7 +97,7 @@ Legacy OCPP 1.6 charge points can't natively speak to modern OCPP 2.1 central sy
 **Example: Translating 1.6 to 2.1**
 
 ```typescript
-import { OCPPProtocolProxy, presets, OcppWsIoAdapter } from "ocpp-protocol-proxy";
+import { OCPPProtocolProxy, presets, OcppWsIoAdapter } from "ocpp-ws-io/proxy";
 
 // Connect to upstream CSMS running OCPP 2.1
 const proxy = new OCPPProtocolProxy({
@@ -117,7 +119,7 @@ await proxy.listenOnAdapter(adapter);
 
 ---
 
-## ⚡ 3. Load Balancing: `ocpp-smart-charge-engine`
+## ⚡ 3. Load Balancing: `ocpp-ws-io/smart-charge`
 
 How do you safely distribute 100kW of physical grid power across 5 cars without tripping the breaker? Use the Smart Charge Engine.
 
@@ -130,8 +132,8 @@ How do you safely distribute 100kW of physical grid power across 5 cars without 
 **Example: Distributing Power**
 
 ```typescript
-import { SmartChargingEngine, Strategies } from "ocpp-smart-charge-engine";
-import { buildOcpp16Profile } from "ocpp-smart-charge-engine/builders";
+import { SmartChargingEngine, Strategies } from "ocpp-ws-io/smart-charge";
+import { buildOcpp16Profile } from "ocpp-ws-io/smart-charge/builders";
 
 const engine = new SmartChargingEngine({
   siteId: "SITE-001",
@@ -161,11 +163,11 @@ await engine.dispatch();
 
 ---
 
-## ⚡ 4. Testing & Simulators: `ocpp-ws-cli` & Web UI
+## ⚡ 4. Testing & Simulators: the `ocpp` CLI & Web UI
 
 Testing physical chargers is expensive. We built tools to let you test immediately in software.
 
-### Terminal Tooling (`ocpp-ws-cli`)
+### Terminal Tooling (the `ocpp` command of `ocpp-ws-io`)
 
 **Features:**
 
@@ -177,8 +179,8 @@ Testing physical chargers is expensive. We built tools to let you test immediate
 **Example:**
 
 ```bash
-# Install globally
-npm i -g ocpp-ws-cli
+# Install globally (or run once: npx ocpp-ws-io@beta simulate)
+npm i -g ocpp-ws-io@beta
 
 # Start an interactive CLI Simulator
 ocpp simulate

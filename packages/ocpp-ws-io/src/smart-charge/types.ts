@@ -1,5 +1,5 @@
 /**
- * ocpp-smart-charge-engine — Public Types
+ * ocpp-ws-io/smart-charge — Public Types
  *
  * Library-agnostic. No imports from ocpp-ws-io, ws, or any other OCPP library.
  */
@@ -18,7 +18,7 @@
  *   - `buildOcpp201Profile(sessionProfile)` → OCPP 2.0.1/2.1 `ChargingProfile`
  *
  * @example Using with ocpp-ws-io (OCPP 1.6):
- *   import { buildOcpp16Profile } from 'ocpp-smart-charge-engine/builders';
+ *   import { buildOcpp16Profile } from 'ocpp-ws-io/smart-charge/builders';
  *
  *   dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
  *     await server.safeSendToClient(clientId, 'ocpp1.6', 'SetChargingProfile', {
@@ -28,7 +28,7 @@
  *   }
  *
  * @example Using with ocpp-ws-io (OCPP 2.0.1):
- *   import { buildOcpp201Profile } from 'ocpp-smart-charge-engine/builders';
+ *   import { buildOcpp201Profile } from 'ocpp-ws-io/smart-charge/builders';
  *
  *   dispatcher: async ({ clientId, connectorId, sessionProfile }) => {
  *     await server.safeSendToClient(clientId, 'ocpp2.0.1', 'SetChargingProfile', {
@@ -63,7 +63,7 @@ export interface DispatchPayload {
   /**
    * Raw calculated session profile (kW, W, A numbers).
    * Use `buildOcpp16Profile` or `buildOcpp201Profile` from
-   * `'ocpp-smart-charge-engine/builders'` to convert to version-specific shapes.
+   * `'ocpp-ws-io/smart-charge/builders'` to convert to version-specific shapes.
    */
   sessionProfile: SessionProfile;
 }

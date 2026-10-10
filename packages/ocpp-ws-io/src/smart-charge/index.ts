@@ -1,5 +1,5 @@
 /**
- * ocpp-smart-charge-engine — Public API
+ * ocpp-ws-io/smart-charge — Public API
  *
  * Library-agnostic OCPP Smart Charging constraint solver.
  * Works with ocpp-ws-io, raw WebSocket, or any OCPP implementation.
@@ -52,5 +52,5 @@ export type {
   TimeOfUseWindow,
 } from "./types.js";
 
-// OCPP version-specific ChargingProfile types & builders are in 'ocpp-smart-charge-engine/builders'
-// import { buildOcpp16Profile, buildOcpp201Profile, buildOcpp21Profile } from 'ocpp-smart-charge-engine/builders'
+// OCPP version-specific ChargingProfile types & builders are in 'ocpp-ws-io/smart-charge/builders'
+// import { buildOcpp16Profile, buildOcpp201Profile, buildOcpp21Profile } from 'ocpp-ws-io/smart-charge/builders'

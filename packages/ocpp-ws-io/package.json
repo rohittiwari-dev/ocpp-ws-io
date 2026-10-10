@@ -139,7 +139,7 @@
 	},
 	"scripts": {
 		"clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-		"build": "npm run clean && tsup && node scripts/verify-dist.js && tsc -p test/types-published/tsconfig.json",
+		"build": "npm run clean && tsup && node scripts/third-party-notices.js && node scripts/verify-dist.js && tsc -p test/types-published/tsconfig.json",
 		"generate": "node scripts/generate-types.js",
 		"test": "vitest run",
 		"test:watch": "vitest",

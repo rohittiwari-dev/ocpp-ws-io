@@ -34,7 +34,7 @@
     },
     "apps/docs": {
       "name": "docs",
-      "version": "2.2.0",
+      "version": "2.3.0",
       "dependencies": {
         "@fuma-translate/react": "^1.0.2",
         "@radix-ui/react-collapsible": "^1.1.20",
@@ -70,46 +70,6 @@
         "@types/react-dom": "^19.3.0",
         "postcss": "^8.5.28",
         "tailwindcss": "^4.3.3",
-        "typescript": "^6.0.3",
-      },
-    },
-    "packages/cli": {
-      "name": "ocpp-ws-cli",
-      "version": "1.3.0",
-      "bin": {
-        "ocpp": "./dist/index.js",
-        "ocpp-ws-cli": "./dist/index.js",
-      },
-      "dependencies": {
-        "ocpp-ws-io": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/node": "^20.19.43",
-        "tsup": "^8.5.1",
-        "typescript": "^6.0.3",
-      },
-    },
-    "packages/ocpp-protocol-proxy": {
-      "name": "ocpp-protocol-proxy",
-      "version": "0.3.0",
-      "dependencies": {
-        "ocpp-ws-io": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/node": "^20.19.43",
-        "tsup": "^8.5.1",
-        "typescript": "^6.0.3",
-      },
-    },
-    "packages/ocpp-smart-charge-engine": {
-      "name": "ocpp-smart-charge-engine",
-      "version": "0.5.0",
-      "dependencies": {
-        "ocpp-ws-io": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/node": "^20.19.43",
-        "tsup": "^8.5.1",
         "typescript": "^6.0.3",
       },
     },
@@ -1996,13 +1956,7 @@
 
     "obug": ["obug@2.2.1", "", {}, "sha512-XrsrhT5sybtKI6wakr2SPOlGZWWYbUXZ7a0jT8/QOeAPau+1X/bSegNe5YR75oJmEZQbKningirmGOEJCIk61Q=="],
 
-    "ocpp-protocol-proxy": ["ocpp-protocol-proxy@workspace:packages/ocpp-protocol-proxy"],
-
-    "ocpp-smart-charge-engine": ["ocpp-smart-charge-engine@workspace:packages/ocpp-smart-charge-engine"],
-
     "ocpp-ws-board": ["ocpp-ws-board@workspace:packages/ocpp-ws-board"],
-
-    "ocpp-ws-cli": ["ocpp-ws-cli@workspace:packages/cli"],
 
     "ocpp-ws-io": ["ocpp-ws-io@workspace:packages/ocpp-ws-io"],
 

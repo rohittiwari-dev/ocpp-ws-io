@@ -60,6 +60,8 @@ export default defineConfig([
     target: "node20",
     platform: "node",
     minify: true,
+    // Lists the bundled packages, for scripts/third-party-notices.js.
+    metafile: true,
   },
   // Browser entry (no Node.js dependencies)
   {

@@ -60,8 +60,8 @@ declare interface SmartChargingEngine {
  *
  * @example
  * ```typescript
- * import { SmartChargingEngine, Strategies } from 'ocpp-smart-charge-engine';
- * import { buildOcpp16Profile } from 'ocpp-smart-charge-engine/builders';
+ * import { SmartChargingEngine, Strategies } from 'ocpp-ws-io/smart-charge';
+ * import { buildOcpp16Profile } from 'ocpp-ws-io/smart-charge/builders';
  *
  * const engine = new SmartChargingEngine({
  *   siteId: 'SITE-001',
@@ -902,7 +902,7 @@ class SmartChargingEngine extends EventEmitter {
       this.emit("error", error);
     } else {
       // Always leave a trace even when debug logging is off.
-      console.error(`[${this.siteId}] [ocpp-smart-charge-engine]`, error);
+      console.error(`[${this.siteId}] [ocpp-ws-io/smart-charge]`, error);
     }
   }
 

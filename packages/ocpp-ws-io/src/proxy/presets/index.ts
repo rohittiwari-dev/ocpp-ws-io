@@ -39,7 +39,7 @@ function mergePresets(...maps: Partial<TranslationMap>[]): TranslationMap {
  *
  * For selective use, import individual presets:
  * ```ts
- * import { corePreset, smartChargingPreset } from "ocpp-protocol-proxy";
+ * import { corePreset, smartChargingPreset } from "ocpp-ws-io/proxy/presets";
  * proxy.translate(corePreset);
  * proxy.translate(smartChargingPreset);
  * ```

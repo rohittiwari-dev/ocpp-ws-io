@@ -25,7 +25,9 @@ The library provides enterprise-grade features for building OCPP-compliant EV ch
 - 📐 **Strict Schema Validation** — Optional JSON schema validation with AJV for data integrity
 - 📡 **Redis Clustering & Pub/Sub** — Built-in Redis adapter for distributed CSMS deployments
 - 🌐 **Browser-Ready Client** — Zero-dependency WebSocket client for EV charging simulators
-- ⚡ **CLI Toolkit** — `ocpp-ws-cli` for type generation, load testing, fuzzing, and virtual charge point simulation
+- ⚡ **CLI Toolkit** — the `ocpp` command (`npx ocpp-ws-io`) for type generation, load testing, fuzzing, and virtual charge point simulation (3.1.0+, formerly `ocpp-ws-cli`)
+- 🔁 **Protocol Proxy** — `ocpp-ws-io/proxy` translates OCPP versions (1.6 ↔ 2.0.1 ↔ 2.1) between chargers and a CSMS (3.1.0+, formerly `ocpp-protocol-proxy`)
+- 🔋 **Smart Charging** — `ocpp-ws-io/smart-charge` shares a site's grid power among charging sessions with `SetChargingProfile` (3.1.0+, formerly `ocpp-smart-charge-engine`)
 - 🛡️ **DDoS & Rate Limiting** — Token bucket rate limiting and adaptive throttling for charging station protection
 - 🧩 **19 Built-in Plugins** — PII redaction, circuit breakers, deduplication, Kafka streaming, OpenTelemetry, and more
 
