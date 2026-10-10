@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+### Minor Changes
+
+- **Deprecated: the proxy now ships in `ocpp-ws-io` as `ocpp-ws-io/proxy`**, with `/proxy/presets` and `/proxy/adapters`. This release only re-exports them from `ocpp-ws-io` (`^3.1.0-beta.1`), so existing imports keep working; new features and fixes ship in `ocpp-ws-io`. Move with `npm install ocpp-ws-io@beta` and the new import paths (see the README).
+- **`import` and the `./presets` and `./adapters` subpaths work.** 0.2.1 built only an ESM `dist/index.js`, so `import "ocpp-protocol-proxy"` and both subpaths failed with `ERR_MODULE_NOT_FOUND`; this release ships CJS and ESM for all three.
+- **Typed translation maps.** A key names a protocol and an action the types know (`"ocpp1.6:BootNotification"`), so a misspelt key is a compile error, and each mapper's params are that action's request or response. A payload is a `ProxyPayload` (a JSON object); a session store holds `ProxyValue`s instead of `any`.
+- **Remote start and stop from a 2.x CSMS are translated.** The core preset kept them under `ocpp2.1:RemoteStartTransaction` and `ocpp2.1:RemoteStopTransaction`, but 2.x names them `RequestStartTransaction` and `RequestStopTransaction`, so they reached the charger untranslated.
+- The firmware preset no longer falls back to a top-level `location` or `retrieveDate`, which a 2.x `UpdateFirmware` request does not have.
+
 ## 0.2.1
 
 ### Patch Changes

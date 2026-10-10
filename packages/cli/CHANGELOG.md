@@ -1,5 +1,13 @@
 # ocpp-ws-cli
 
+## 1.3.0
+
+### Minor Changes
+
+- **Deprecated: the CLI now ships in `ocpp-ws-io` as its `ocpp` command** (also named `ocpp-ws-cli`, and `ocpp-ws-io` for `npx ocpp-ws-io`). This release's binary only runs that one, from `ocpp-ws-io` (`^3.1.0-beta.1`), so existing scripts keep working; new commands and fixes ship in `ocpp-ws-io`. Move with `npm uninstall -g ocpp-ws-cli` and `npm install -g ocpp-ws-io@beta`, as both install the `ocpp` command.
+- Commands and options are unchanged. `--version` reports `ocpp-ws-io`'s version, and a types file `ocpp generate` writes starts with `// Auto-generated from <schema> — DO NOT EDIT`, as `ocpp-ws-io`'s own do.
+- The package's only dependency is `ocpp-ws-io`.
+
 ## 1.2.1
 
 ### Patch Changes

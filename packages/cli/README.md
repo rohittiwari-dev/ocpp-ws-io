@@ -14,13 +14,15 @@
 >
 > ```bash
 > npm uninstall -g ocpp-ws-cli   # both packages install the `ocpp` command
-> npm install -g ocpp-ws-io
+> npm install -g ocpp-ws-io@beta
 > ```
+>
+> It ships in `ocpp-ws-io` from 3.1.0, on npm's `beta` tag until 3.1.0 is released, hence `@beta`.
 >
 > | Before | Now |
 > |:---|:---|
-> | `npm install -g ocpp-ws-cli` | `npm install -g ocpp-ws-io` |
-> | `npx ocpp-ws-cli …` | `npx ocpp-ws-io …` |
+> | `npm install -g ocpp-ws-cli` | `npm install -g ocpp-ws-io@beta` |
+> | `npx ocpp-ws-cli …` | `npx ocpp-ws-io@beta …` |
 > | `ocpp …`, `ocpp-ws-cli …` | the same: `ocpp-ws-io` installs both commands |
 
 ---
@@ -30,13 +32,13 @@
 **Global Installation:**
 
 ```bash
-npm install -g ocpp-ws-io
+npm install -g ocpp-ws-io@beta
 ```
 
 **Run instantly via npx:**
 
 ```bash
-npx ocpp-ws-io
+npx ocpp-ws-io@beta
 ```
 
 _Running without arguments launches the **Interactive Main Menu**._

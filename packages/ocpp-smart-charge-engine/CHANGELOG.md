@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.5.0] — 2026-10-10
+
+- **Deprecated: the engine now ships in `ocpp-ws-io` as `ocpp-ws-io/smart-charge`**, with `/smart-charge/strategies` and `/smart-charge/builders`. This release only re-exports them from `ocpp-ws-io` (`^3.1.0-beta.1`), so existing imports keep working; new features and fixes ship in `ocpp-ws-io`. Move with `npm install ocpp-ws-io@beta` and the new import paths (see the README).
+- The engine's code and API are unchanged. The 2.1 builder's options accept a period's own `dischargeLimit` (types only), which it already honoured.
+
 ## [0.4.1] — 2026-10-04
 
 - **Requires Node.js 20 or later** (`engines` was `>=18.0.0`), the same floor as `ocpp-ws-io` 3.0.0; Node 18 reached end of life in April 2025. The build now targets Node 20.

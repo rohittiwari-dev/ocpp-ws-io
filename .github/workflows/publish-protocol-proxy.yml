@@ -45,9 +45,6 @@ jobs:
       - name: Build ocpp-ws-io dependency
         run: cd packages/ocpp-ws-io && bun run build
 
-      - name: Run tests
-        run: cd packages/ocpp-protocol-proxy && bun run test
-
       - name: Build
         run: cd packages/ocpp-protocol-proxy && bun run build
 

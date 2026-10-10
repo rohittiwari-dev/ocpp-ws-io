@@ -1,14 +1,31 @@
 # ocpp-ws-io
 
-## v3.0.5-beta.1 - Handler and frontend event typing (2026-10-09)
+## v3.1.0-beta.1 - One package: the proxy, smart charging and the CLI (2026-10-10)
+
+`ocpp-protocol-proxy`, `ocpp-smart-charge-engine` and `ocpp-ws-cli` are now part of this package. Their last releases (0.3.0, 0.5.0 and 1.3.0) only re-export or run it, and are deprecated.
+
+| Before | Now |
+|:---|:---|
+| `ocpp-protocol-proxy`, `/presets`, `/adapters` | `ocpp-ws-io/proxy`, `/proxy/presets`, `/proxy/adapters` |
+| `ocpp-smart-charge-engine`, `/strategies`, `/builders` | `ocpp-ws-io/smart-charge`, `/smart-charge/strategies`, `/smart-charge/builders` |
+| `ocpp-ws-cli` (the `ocpp` command) | the `ocpp` command of `ocpp-ws-io`, or `npx ocpp-ws-io` |
+
+### Added
+
+- **`ocpp-ws-io/proxy`**, the OCPP version translation proxy from `ocpp-protocol-proxy`, with `ocpp-ws-io/proxy/presets` and `ocpp-ws-io/proxy/adapters`, as CJS and ESM. Its translation maps are typed: a key names a protocol and an action the types know (`"ocpp1.6:BootNotification"`), so a misspelt key is a compile error, and each mapper's params are that action's request or response. A payload is a `ProxyPayload` (a JSON object); a session store holds `ProxyValue`s.
+- **`ocpp-ws-io/smart-charge`**, the smart charging engine from `ocpp-smart-charge-engine`, with `ocpp-ws-io/smart-charge/strategies` and `ocpp-ws-io/smart-charge/builders`. Its API is unchanged; the 2.1 builder's options accept a period's own `dischargeLimit` (types only), which it already honoured.
+- **The CLI, as this package's `ocpp` command**, also named `ocpp-ws-cli` for old scripts and `ocpp-ws-io` for `npx ocpp-ws-io`. Its commands and options are those of `ocpp-ws-cli` 1.2.1, and `--version` reports this package's version. Its dependencies are bundled into `dist/cli.mjs`, so the package's runtime dependencies stay `ajv`, `ajv-formats`, `voltlog-io` and `ws`.
 
 ### Changed
 
+- **One type generator.** `npm run generate` and `ocpp generate` use the same generator; a types file `ocpp generate` writes now starts as the library's own do, `// Auto-generated from <schema> — DO NOT EDIT` (was `… by ocpp-ws-cli from …`). The rest of what it writes is unchanged.
+- **The proxy's firmware preset reads only 2.x fields:** it no longer falls back to a top-level `location` or `retrieveDate`, which a 2.x `UpdateFirmware` request does not have.
 - **Wildcard handlers receive one context argument.** Node and browser clients and router wildcard handlers now call `handler(context)` instead of `handler(method, context)`. Read the action from `context.method`; router contexts still include `context.client`. NestJS wildcard dispatch and the protocol proxy have been updated to use this signature. This is a breaking callback-signature change from 3.0.4: migrate `client.handle((method, ctx) => ...)` to `client.handle((ctx) => ...)`, using `ctx.method` for the former first argument. Named-action handlers keep their existing signature. (`61ed387`)
 - **Empty OCPP 1.6 payloads must be objects.** Generated empty request and response interfaces now extend `Record<string, never>`. `{}` remains valid; numbers, strings, arrays, and additional fields are rejected at compile time. Asynchronous empty responses and `NOREPLY` remain supported.
 
 ### Fixed
 
+- **The proxy translates remote start and stop from a 2.x CSMS.** The core preset kept them under `ocpp2.1:RemoteStartTransaction` and `ocpp2.1:RemoteStopTransaction`, but 2.x names them `RequestStartTransaction` and `RequestStopTransaction`, so they reached the charger untranslated.
 - **`DataTransfer` handler inference no longer exceeds TypeScript's instantiation limit.** Exact-field checking stops at identical nested types before expanding recursive JSON unions. Async handlers can return an accepted status or echo JSON data without the "Type instantiation is excessively deep and possibly infinite" error; invalid response fields remain rejected. (`97a7768`)
 - **Custom protocol declarations are shared by the main and browser entry points.** Augmenting `OCPPMethodMap` or `OCPPSendMethodMap` now supplies the same custom action names, request payloads, and response types to Node and browser clients in the built package.
 - **`unchecked()` shares one declaration brand across entry points.** A helper imported from `ocpp-ws-io` or `ocpp-ws-io/browser` is accepted by either client's overloads.
@@ -17,6 +34,7 @@
 
 ### Tests
 
+- The proxy's, the engine's and the CLI's tests run in this package (1557 tests in all), and `src/generated` is checked against what the generator writes.
 - Added regression checks for empty payloads, optional call options, and published frontend event declarations, including role-based server connection maps. The package build now checks its published declarations so source-only checks cannot hide declaration-bundling regressions.
 
 ## v3.0.4 - Handshake now has more options

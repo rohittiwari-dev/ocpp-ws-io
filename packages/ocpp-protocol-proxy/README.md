@@ -15,8 +15,10 @@ Part of the [ocpp-ws-io](https://ocpp-ws-io.rohittiwari.me) ecosystem.
 >
 > ```bash
 > npm uninstall ocpp-protocol-proxy
-> npm install ocpp-ws-io
+> npm install ocpp-ws-io@beta
 > ```
+>
+> It ships in `ocpp-ws-io` from 3.1.0, on npm's `beta` tag until 3.1.0 is released, hence `@beta`.
 >
 > | Before | Now |
 > |:---|:---|
@@ -52,7 +54,7 @@ Legacy OCPP 1.6 charge points can't speak to modern OCPP 2.1 central systems. In
 ## Install
 
 ```bash
-npm install ocpp-ws-io
+npm install ocpp-ws-io@beta
 ```
 
 ## Quick Start

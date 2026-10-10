@@ -11,8 +11,10 @@ Library-agnostic OCPP smart charging constraint solver for EV charge point opera
 >
 > ```bash
 > npm uninstall ocpp-smart-charge-engine
-> npm install ocpp-ws-io
+> npm install ocpp-ws-io@beta
 > ```
+>
+> It ships in `ocpp-ws-io` from 3.1.0, on npm's `beta` tag until 3.1.0 is released, hence `@beta`.
 >
 > | Before | Now |
 > |:---|:---|
@@ -60,7 +62,7 @@ It is **completely library-agnostic**. It does not care whether you use `ocpp-ws
 ## Install
 
 ```bash
-npm install ocpp-ws-io
+npm install ocpp-ws-io@beta
 ```
 
 ---
