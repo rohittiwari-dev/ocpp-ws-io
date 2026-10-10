@@ -45,6 +45,23 @@ export default defineConfig([
       copyFileSync("src/server/parse-worker.cjs", "dist/parse-worker.cjs");
     },
   },
+  // The CLI (bin "ocpp"): one ESM file with its own dependencies bundled in,
+  // so the library gains none at runtime. `ws` stays out, being one already.
+  {
+    entry: {
+      cli: "src/cli/index.ts",
+    },
+    format: ["esm"],
+    dts: false,
+    splitting: false,
+    sourcemap: false,
+    clean: false,
+    outDir: "dist",
+    target: "node20",
+    platform: "node",
+    minify: true,
+    treeshake: true,
+  },
   // Browser entry (no Node.js dependencies)
   {
     entry: {

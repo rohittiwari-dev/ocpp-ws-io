@@ -35,6 +35,7 @@ export async function runGenerate(options: GenerateOptions): Promise<void> {
       initialValue: EXAMPLE_SCHEMA_URL,
       validate: (val) => {
         if (!val?.trim()) return "Schema source is required";
+        return undefined;
       },
     });
 
@@ -63,6 +64,7 @@ export async function runGenerate(options: GenerateOptions): Promise<void> {
       initialValue: "my-custom-protocol",
       validate: (val) => {
         if (!val?.trim()) return "Subprotocol name is required";
+        return undefined;
       },
     });
 
@@ -86,6 +88,7 @@ export async function runGenerate(options: GenerateOptions): Promise<void> {
       initialValue: "./@types/ocpp-ws-io",
       validate: (val) => {
         if (!val?.trim()) return "Directory path is required";
+        return undefined;
       },
     });
 

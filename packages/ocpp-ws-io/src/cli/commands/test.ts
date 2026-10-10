@@ -44,6 +44,7 @@ export async function runTest(options: TestOptions): Promise<void> {
         if (!val?.trim()) return "Endpoint is required";
         if (!val.startsWith("ws://") && !val.startsWith("wss://"))
           return "Must start with ws:// or wss://";
+        return undefined;
       },
     });
     if (p.isCancel(result)) {
@@ -62,6 +63,7 @@ export async function runTest(options: TestOptions): Promise<void> {
       initialValue: "CP001",
       validate: (val) => {
         if (!val?.trim()) return "Identity is required";
+        return undefined;
       },
     });
     if (p.isCancel(result)) {
@@ -80,6 +82,7 @@ export async function runTest(options: TestOptions): Promise<void> {
       initialValue: "ocpp1.6",
       validate: (val) => {
         if (!val?.trim()) return "Protocol is required";
+        return undefined;
       },
     });
     if (p.isCancel(result)) {

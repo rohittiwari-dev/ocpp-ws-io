@@ -4,6 +4,7 @@ import logUpdate from "log-update";
 import pc from "picocolors";
 import WebSocket from "ws";
 import { generateReport } from "../lib/reporter.js";
+import type { OutgoingPayload } from "../types.js";
 
 export interface FuzzOptions {
   endpoint?: string;
@@ -25,6 +26,7 @@ export async function runFuzz(options: FuzzOptions = {}): Promise<void> {
             if (!val?.trim()) return "Endpoint is required";
             if (!val.startsWith("ws://") && !val.startsWith("wss://"))
               return "Must start with ws:// or wss://";
+            return undefined;
           },
         });
         if (p.isCancel(result)) {
@@ -42,6 +44,7 @@ export async function runFuzz(options: FuzzOptions = {}): Promise<void> {
           validate: (val) => {
             if (!val?.trim() || Number.isNaN(Number(val)))
               return "Valid number is required";
+            return undefined;
           },
         });
         if (p.isCancel(result)) {
@@ -170,7 +173,7 @@ ${pc.dim("Press Ctrl+C to terminate the chaos engine...")}
         (id: string) => JSON.stringify([4, id, "NotImplemented", "Whoops", {}]), // Sending CallError as client randomly
         // 4. Targeted Payload Scrambling
         (id: string) => {
-          const payload: Record<string, unknown> = {
+          const payload: OutgoingPayload = {
             connectorId: 1,
             idTag: "DEADBEEF",
             meterStart: 0,
@@ -203,7 +206,7 @@ ${pc.dim("Press Ctrl+C to terminate the chaos engine...")}
         (id: string) => JSON.stringify([2, id, "Authorize"]),
       ];
 
-      const messageLog: unknown[] = [];
+      const messageLog: string[] = [];
 
       const spawnWorker = (workerId: number) => {
         const identity = `Fuzzer-${workerId}`;

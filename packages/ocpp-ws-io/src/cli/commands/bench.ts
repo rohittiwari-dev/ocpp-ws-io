@@ -49,6 +49,7 @@ export async function runBench(options: BenchOptions = {}): Promise<void> {
             if (!val?.trim()) return "Endpoint is required";
             if (!val.startsWith("ws://") && !val.startsWith("wss://"))
               return "Must start with ws:// or wss://";
+            return undefined;
           },
         });
         if (p.isCancel(result)) {
@@ -66,6 +67,7 @@ export async function runBench(options: BenchOptions = {}): Promise<void> {
           validate: (val) => {
             if (!val?.trim() || Number.isNaN(Number(val)))
               return "Valid number is required";
+            return undefined;
           },
         });
         if (p.isCancel(result)) {
@@ -85,6 +87,7 @@ export async function runBench(options: BenchOptions = {}): Promise<void> {
           validate: (val) => {
             if (!val?.trim() || Number.isNaN(Number(val)))
               return "Valid number is required";
+            return undefined;
           },
         });
         if (p.isCancel(result)) {

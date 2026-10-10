@@ -4,15 +4,15 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { generateProtocolFiles } from "../src/lib/protocol-files.js";
-import type { SchemaEntry } from "../src/lib/type-generator.js";
+import { generateProtocolFiles } from "../../src/cli/lib/protocol-files.js";
+import type { SchemaEntry } from "../../src/cli/lib/type-generator.js";
 
 /**
  * `ocpp generate` end to end: the files it writes for a vendor protocol must
  * compile against the library and type a server and a client using it, and
  * its validator must validate what the types describe.
  */
-const libraryDir = fileURLToPath(new URL("../../ocpp-ws-io/", import.meta.url));
+const libraryDir = fileURLToPath(new URL("../../", import.meta.url));
 
 const schema: SchemaEntry[] = [
   {

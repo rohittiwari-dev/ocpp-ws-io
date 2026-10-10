@@ -33,6 +33,7 @@ export async function runSimulate(
         if (!val?.trim()) return "Endpoint is required";
         if (!val.startsWith("ws://") && !val.startsWith("wss://"))
           return "Must start with ws:// or wss://";
+        return undefined;
       },
     });
     if (p.isCancel(result)) {
@@ -51,6 +52,7 @@ export async function runSimulate(
       initialValue: "Simulator001",
       validate: (val) => {
         if (!val?.trim()) return "Identity is required";
+        return undefined;
       },
     });
     if (p.isCancel(result)) {
@@ -69,6 +71,7 @@ export async function runSimulate(
       initialValue: "ocpp1.6",
       validate: (val) => {
         if (!val?.trim()) return "Protocol is required";
+        return undefined;
       },
     });
     if (p.isCancel(result)) {
@@ -87,6 +90,7 @@ export async function runSimulate(
       initialValue: "SIM-USER-001",
       validate: (val) => {
         if (!val?.trim()) return "ID Tag is required";
+        return undefined;
       },
     });
     if (p.isCancel(result)) {
@@ -356,7 +360,7 @@ ${logs
             ],
           });
           if (!p.isCancel(pStatus) && pStatus) {
-            await engine.updateConnectorState(pStatus as any);
+            await engine.updateConnectorState(pStatus);
           }
           resumeDashboard();
         } else if (lower === "d") {

@@ -55,6 +55,7 @@ export async function runCerts(options: CertsOptions = {}): Promise<void> {
       initialValue: defaultId,
       validate: (val) => {
         if (!val?.trim()) return "Identity is required";
+        return undefined;
       },
     });
     if (p.isCancel(result)) {

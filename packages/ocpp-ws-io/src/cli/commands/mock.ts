@@ -20,6 +20,7 @@ export async function runMock(options: MockOptions = {}): Promise<void> {
         const parsed = parseInt(val, 10);
         if (Number.isNaN(parsed) || parsed <= 0 || parsed > 65535)
           return "Port must be a number between 1 and 65535";
+        return undefined;
       },
     });
     if (p.isCancel(result)) {
@@ -39,6 +40,7 @@ export async function runMock(options: MockOptions = {}): Promise<void> {
         const parsed = parseInt(val, 10);
         if (Number.isNaN(parsed) || parsed < 10)
           return "Rate must be a number >= 10";
+        return undefined;
       },
     });
     if (p.isCancel(result)) {

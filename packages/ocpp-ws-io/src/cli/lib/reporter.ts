@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import pc from "picocolors";
+import type { ReportMessage, ReportValue } from "../types.js";
 
 export interface ReportConfig {
   format?: "json" | "md" | "txt";
@@ -10,9 +11,9 @@ export interface ReportConfig {
 export interface ReportData {
   command: "bench" | "load-test" | "fuzz" | "simulate" | "test";
   elapsedMs: number;
-  metrics: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
-  messages?: unknown[];
+  metrics: Record<string, ReportValue>;
+  metadata?: Record<string, ReportValue>;
+  messages?: ReportMessage[];
   testResults?: {
     passed: boolean;
     name: string;

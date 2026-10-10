@@ -4,6 +4,7 @@ import logUpdate from "log-update";
 import pc from "picocolors";
 import WebSocket from "ws";
 import { generateReport } from "../lib/reporter.js";
+import type { CallFrame, OutgoingPayload } from "../types.js";
 
 export interface LoadTestOptions {
   endpoint?: string;
@@ -29,6 +30,7 @@ export async function runLoadTest(
             if (!val?.trim()) return "Endpoint is required";
             if (!val.startsWith("ws://") && !val.startsWith("wss://"))
               return "Must start with ws:// or wss://";
+            return undefined;
           },
         });
         if (p.isCancel(result)) {
@@ -46,6 +48,7 @@ export async function runLoadTest(
           validate: (val) => {
             if (!val?.trim() || Number.isNaN(Number(val)))
               return "Valid number is required";
+            return undefined;
           },
         });
         if (p.isCancel(result)) {
@@ -63,6 +66,7 @@ export async function runLoadTest(
           validate: (val) => {
             if (!val?.trim() || Number.isNaN(Number(val)))
               return "Valid number is required";
+            return undefined;
           },
         });
         if (p.isCancel(result)) {
@@ -125,7 +129,7 @@ export async function runLoadTest(
       };
 
       const startTime = Date.now();
-      const messageLog: unknown[] = [];
+      const messageLog: CallFrame[] = [];
 
       const renderDashboard = () => {
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -164,10 +168,10 @@ ${pc.dim("Press Ctrl+C to terminate the load test...")}
         let actionTimer: NodeJS.Timeout;
 
         // We don't use real promises here to avoid massive memory heap overhead
-        const sendMessage = (action: string, payload: unknown) => {
+        const sendMessage = (action: string, payload: OutgoingPayload) => {
           if (ws.readyState === WebSocket.OPEN) {
             const msgId = crypto.randomUUID();
-            const rawMsg = [2, msgId, action, payload];
+            const rawMsg: CallFrame = [2, msgId, action, payload];
             ws.send(JSON.stringify(rawMsg));
 
             if (options.report) {

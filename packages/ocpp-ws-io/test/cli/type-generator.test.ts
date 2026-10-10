@@ -8,9 +8,9 @@ import {
   generateVersionFile,
   type SchemaEntry,
   type VersionConfig,
-} from "../src/lib/type-generator.js";
+} from "../../src/cli/lib/type-generator.js";
 
-const libraryDir = fileURLToPath(new URL("../../ocpp-ws-io/", import.meta.url));
+const libraryDir = fileURLToPath(new URL("../../", import.meta.url));
 
 function readSchema(file: string): SchemaEntry[] {
   return JSON.parse(

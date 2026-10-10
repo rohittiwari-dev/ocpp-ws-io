@@ -2,7 +2,7 @@
 /**
  * verify-dist.js
  *
- * Fails the build if any file referenced by package.json "exports",
+ * Fails the build if any file referenced by package.json "exports", "bin",
  * "main", "module" or "types" is missing from dist/.
  *
  * Guards against silent publishes of an incomplete dist (e.g. a missing
@@ -28,6 +28,7 @@ const collect = (value) => {
 };
 
 collect(pkg.exports);
+collect(pkg.bin);
 for (const field of ["main", "module", "types"]) {
   if (pkg[field]) expected.add(pkg[field].replace(/^\.\//, ""));
 }

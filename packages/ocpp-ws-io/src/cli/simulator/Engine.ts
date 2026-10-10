@@ -1,6 +1,15 @@
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import WebSocket from "ws";
+import type { OCPPResponseType } from "../../types/index.js";
+import type { JsonObject } from "../../types/json.js";
+import type {
+  AuthorizeResponse,
+  ConnectorStatus,
+  CsmsRequest,
+  EitherResponse,
+  OutgoingPayload,
+} from "../types.js";
 
 export interface EngineConfig {
   endpoint: string;
@@ -15,8 +24,8 @@ export class SimulatorEngine extends EventEmitter {
   private pendingRequests = new Map<
     string,
     {
-      resolve: (value?: any) => void;
-      reject: (reason?: any) => void;
+      resolve: (value: JsonObject) => void;
+      reject: (reason: Error) => void;
       timer: NodeJS.Timeout;
     }
   >();
@@ -26,13 +35,7 @@ export class SimulatorEngine extends EventEmitter {
   private hardwareLoopTrigger: NodeJS.Timeout | null = null;
 
   // Basic Connector State
-  public connectorState:
-    | "Available"
-    | "Preparing"
-    | "Charging"
-    | "Finishing"
-    | "Unavailable"
-    | "Faulted" = "Available";
+  public connectorState: ConnectorStatus = "Available";
   public activeTransactionId: number | null = null;
   public activeIdTag: string | null = null;
   private reservationId: number | null = null;
@@ -131,12 +134,15 @@ export class SimulatorEngine extends EventEmitter {
     this.emit("log", "Sending BootNotification...", "info");
 
     try {
-      const response = await this.sendCall("BootNotification", {
-        chargePointVendor: "OCPP-WS-IO CLI",
-        chargePointModel: "VirtualSimulator-v1",
-        chargePointSerialNumber: "SIM-001",
-        firmwareVersion: "1.0.0-alpha",
-      });
+      const response = await this.sendCall<EitherResponse<"BootNotification">>(
+        "BootNotification",
+        {
+          chargePointVendor: "OCPP-WS-IO CLI",
+          chargePointModel: "VirtualSimulator-v1",
+          chargePointSerialNumber: "SIM-001",
+          firmwareVersion: "1.0.0-alpha",
+        },
+      );
 
       if (response.status === "Accepted") {
         this.emit("log", "BootNotification Accepted.", "success");
@@ -232,7 +238,7 @@ export class SimulatorEngine extends EventEmitter {
   private handleCSMSCall(
     messageId: string,
     action: string,
-    payload: Record<string, string>,
+    payload: CsmsRequest,
   ) {
     this.emit("log", `[CSMS Request] ${action}`, "info");
 
@@ -258,7 +264,7 @@ export class SimulatorEngine extends EventEmitter {
           this.connectorState === "Preparing"
         ) {
           this.sendCallResult(messageId, { status: "Accepted" });
-          this.activeIdTag = payload.idTag;
+          this.activeIdTag = payload.idTag!;
           this.startTransaction().catch((e) =>
             this.emit("log", e.message, "error"),
           );
@@ -322,7 +328,7 @@ export class SimulatorEngine extends EventEmitter {
           `CSMS requested ChangeConfiguration: ${payload.key} = ${payload.value}`,
           "info",
         );
-        this.configurations.set(payload.key, payload.value);
+        this.configurations.set(payload.key as string, payload.value!);
         this.sendCallResult(messageId, { status: "Accepted" });
         break;
 
@@ -482,11 +488,7 @@ export class SimulatorEngine extends EventEmitter {
 
       // ── OCPP 2.0.1 specific CSMS requests ──────────────────────
       case "RequestStartTransaction": {
-        const p2payload = payload as unknown as {
-          idToken?: { idToken: string };
-          idTag?: string;
-        };
-        const remoteIdTag = p2payload.idToken?.idToken || p2payload.idTag;
+        const remoteIdTag = payload.idToken?.idToken || payload.idTag;
         const canStart =
           this.connectorState === "Available" ||
           this.connectorState === "Preparing";
@@ -523,12 +525,9 @@ export class SimulatorEngine extends EventEmitter {
 
       case "GetVariables": {
         this.emit("log", "CSMS requested GetVariables (OCPP 2.0.1)", "info");
-        const getResults = (
-          (payload as unknown as { getVariableData?: any[] }).getVariableData ||
-          []
-        ).map((req: any) => {
+        const getResults = (payload.getVariableData || []).map((req) => {
           const key = req.variable?.name || req.key;
-          const val = this.configurations.get(key);
+          const val = this.configurations.get(key!);
           return {
             attributeStatus: val !== undefined ? "Accepted" : "UnknownVariable",
             component: req.component,
@@ -542,12 +541,9 @@ export class SimulatorEngine extends EventEmitter {
 
       case "SetVariables": {
         this.emit("log", "CSMS requested SetVariables (OCPP 2.0.1)", "info");
-        const setResults = (
-          (payload as unknown as { setVariableData?: any[] }).setVariableData ||
-          []
-        ).map((req: any) => {
+        const setResults = (payload.setVariableData || []).map((req) => {
           const key = req.variable?.name || req.key;
-          this.configurations.set(key, req.attributeValue);
+          this.configurations.set(key!, req.attributeValue!);
           return {
             attributeStatus: "Accepted",
             component: req.component,
@@ -588,15 +584,7 @@ export class SimulatorEngine extends EventEmitter {
 
   // ── Dispatch Methods (Interactive UI hooks) ────────────────
 
-  public async updateConnectorState(
-    status:
-      | "Available"
-      | "Preparing"
-      | "Charging"
-      | "Finishing"
-      | "Unavailable"
-      | "Faulted",
-  ): Promise<void> {
+  public async updateConnectorState(status: ConnectorStatus): Promise<void> {
     this.connectorState = status;
     try {
       if (this.config.protocol.startsWith("ocpp2")) {
@@ -621,8 +609,12 @@ export class SimulatorEngine extends EventEmitter {
         });
       }
       this.emit("log", `StatusNotification (${status}) Accepted.`, "success");
-    } catch (err: any) {
-      this.emit("log", `StatusNotification failed: ${err.message}`, "error");
+    } catch (err) {
+      this.emit(
+        "log",
+        `StatusNotification failed: ${(err as Error).message}`,
+        "error",
+      );
     }
   }
 
@@ -635,27 +627,34 @@ export class SimulatorEngine extends EventEmitter {
         `Heartbeat Response: ${response.currentTime}`,
         "success",
       );
-    } catch (err: any) {
-      this.emit("log", `Heartbeat failed: ${err.message}`, "error");
+    } catch (err) {
+      this.emit("log", `Heartbeat failed: ${(err as Error).message}`, "error");
     }
   }
 
   public async sendBootNotification(): Promise<void> {
     this.emit("log", "Sending manual BootNotification...", "info");
     try {
-      const response = await this.sendCall("BootNotification", {
-        chargePointVendor: "OCPP-WS-IO CLI",
-        chargePointModel: "VirtualSimulator-v1",
-        chargePointSerialNumber: "SIM-001",
-        firmwareVersion: "1.0.0-alpha",
-      });
+      const response = await this.sendCall<EitherResponse<"BootNotification">>(
+        "BootNotification",
+        {
+          chargePointVendor: "OCPP-WS-IO CLI",
+          chargePointModel: "VirtualSimulator-v1",
+          chargePointSerialNumber: "SIM-001",
+          firmwareVersion: "1.0.0-alpha",
+        },
+      );
       this.emit(
         "log",
         `BootNotification Response: ${response.status}`,
         "success",
       );
-    } catch (err: any) {
-      this.emit("log", `BootNotification failed: ${err.message}`, "error");
+    } catch (err) {
+      this.emit(
+        "log",
+        `BootNotification failed: ${(err as Error).message}`,
+        "error",
+      );
     }
   }
 
@@ -666,14 +665,18 @@ export class SimulatorEngine extends EventEmitter {
   ): Promise<void> {
     this.emit("log", `Sending DataTransfer (Vendor: ${vendorId})...`, "info");
     try {
-      const payload: Record<string, unknown> = { vendorId };
+      const payload: OutgoingPayload = { vendorId };
       if (messageId) payload.messageId = messageId;
       if (data) payload.data = data;
 
       const response = await this.sendCall("DataTransfer", payload);
       this.emit("log", `DataTransfer Response: ${response.status}`, "success");
-    } catch (err: any) {
-      this.emit("log", `DataTransfer failed: ${err.message}`, "error");
+    } catch (err) {
+      this.emit(
+        "log",
+        `DataTransfer failed: ${(err as Error).message}`,
+        "error",
+      );
     }
   }
 
@@ -690,10 +693,10 @@ export class SimulatorEngine extends EventEmitter {
         await this.sendCall("FirmwareStatusNotification", { status });
       }
       this.emit("log", "FirmwareStatusNotification Accepted.", "success");
-    } catch (err: any) {
+    } catch (err) {
       this.emit(
         "log",
-        `FirmwareStatusNotification failed: ${err.message}`,
+        `FirmwareStatusNotification failed: ${(err as Error).message}`,
         "error",
       );
     }
@@ -719,10 +722,10 @@ export class SimulatorEngine extends EventEmitter {
         "Diagnostics/Log Status Notification Accepted.",
         "success",
       );
-    } catch (err: any) {
+    } catch (err) {
       this.emit(
         "log",
-        `DiagnosticsStatusNotification failed: ${err.message}`,
+        `DiagnosticsStatusNotification failed: ${(err as Error).message}`,
         "error",
       );
     }
@@ -809,8 +812,12 @@ export class SimulatorEngine extends EventEmitter {
         });
       }
       this.emit("log", "Custom MeterValues transmitted", "info");
-    } catch (err: any) {
-      this.emit("log", `Custom MeterValues failed: ${err.message}`, "error");
+    } catch (err) {
+      this.emit(
+        "log",
+        `Custom MeterValues failed: ${(err as Error).message}`,
+        "error",
+      );
     }
   }
 
@@ -839,8 +846,12 @@ export class SimulatorEngine extends EventEmitter {
         ],
       });
       this.emit("log", "NotifyEvent Accepted.", "success");
-    } catch (err: any) {
-      this.emit("log", `NotifyEvent failed: ${err.message}`, "error");
+    } catch (err) {
+      this.emit(
+        "log",
+        `NotifyEvent failed: ${(err as Error).message}`,
+        "error",
+      );
     }
   }
 
@@ -872,8 +883,12 @@ export class SimulatorEngine extends EventEmitter {
         ],
       });
       this.emit("log", "NotifyReport Accepted.", "success");
-    } catch (err: any) {
-      this.emit("log", `NotifyReport failed: ${err.message}`, "error");
+    } catch (err) {
+      this.emit(
+        "log",
+        `NotifyReport failed: ${(err as Error).message}`,
+        "error",
+      );
     }
   }
 
@@ -903,8 +918,12 @@ export class SimulatorEngine extends EventEmitter {
         ],
       });
       this.emit("log", "NotifyDisplayMessages Accepted.", "success");
-    } catch (err: any) {
-      this.emit("log", `NotifyDisplayMessages failed: ${err.message}`, "error");
+    } catch (err) {
+      this.emit(
+        "log",
+        `NotifyDisplayMessages failed: ${(err as Error).message}`,
+        "error",
+      );
     }
   }
 
@@ -938,8 +957,12 @@ export class SimulatorEngine extends EventEmitter {
         `NotifyEVChargingNeeds Response: ${response.status}`,
         "success",
       );
-    } catch (err: any) {
-      this.emit("log", `NotifyEVChargingNeeds failed: ${err.message}`, "error");
+    } catch (err) {
+      this.emit(
+        "log",
+        `NotifyEVChargingNeeds failed: ${(err as Error).message}`,
+        "error",
+      );
     }
   }
 
@@ -950,7 +973,10 @@ export class SimulatorEngine extends EventEmitter {
         ? { idToken: { idToken: idTag, type: "ISO14443" } }
         : { idTag };
 
-      const response = await this.sendCall("Authorize", payload);
+      const response = await this.sendCall<AuthorizeResponse>(
+        "Authorize",
+        payload,
+      );
 
       const status = this.config.protocol.startsWith("ocpp2")
         ? response.idTokenInfo?.status
@@ -987,7 +1013,9 @@ export class SimulatorEngine extends EventEmitter {
       this.txSeqNo = 0; // reset sequence counter for new transaction
       if (this.config.protocol.startsWith("ocpp2")) {
         const tempTxId = Math.floor(Math.random() * 1000000);
-        const response = await this.sendCall("TransactionEvent", {
+        const response = await this.sendCall<
+          OCPPResponseType<"ocpp2.0.1", "TransactionEvent">
+        >("TransactionEvent", {
           eventType: "Started",
           timestamp: new Date().toISOString(),
           triggerReason: "CablePluggedIn",
@@ -1035,7 +1063,9 @@ export class SimulatorEngine extends EventEmitter {
         }
         this.activeTransactionId = tempTxId;
       } else {
-        const response = await this.sendCall("StartTransaction", {
+        const response = await this.sendCall<
+          OCPPResponseType<"ocpp1.6", "StartTransaction">
+        >("StartTransaction", {
           connectorId: 1,
           idTag,
           meterStart: this.meterWh,
@@ -1159,8 +1189,12 @@ export class SimulatorEngine extends EventEmitter {
         });
       }
       this.emit("log", "MeterValues transmitted", "info");
-    } catch (err: any) {
-      this.emit("log", `MeterValues failed: ${err.message}`, "error");
+    } catch (err) {
+      this.emit(
+        "log",
+        `MeterValues failed: ${(err as Error).message}`,
+        "error",
+      );
     }
   }
 
@@ -1237,11 +1271,11 @@ export class SimulatorEngine extends EventEmitter {
   // ── Network Layer ────────────────────────────────────────────────
 
   // Helper for sending 2-CALL messages
-  private sendCall(
+  private sendCall<R extends object = JsonObject>(
     action: string,
-    payload: Record<string, unknown>,
-  ): Promise<any> {
-    return new Promise((resolve, reject) => {
+    payload: OutgoingPayload,
+  ): Promise<R> {
+    return new Promise<R>((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
         return reject(new Error("WebSocket not open"));
       }
@@ -1256,7 +1290,12 @@ export class SimulatorEngine extends EventEmitter {
         );
       }, 15000);
 
-      this.pendingRequests.set(messageId, { resolve, reject, timer });
+      this.pendingRequests.set(messageId, {
+        // The answer to this action, which the caller names as R.
+        resolve: resolve as (value: JsonObject) => void,
+        reject,
+        timer,
+      });
 
       // Log outbound message
       if (action !== "Heartbeat") {
@@ -1267,7 +1306,7 @@ export class SimulatorEngine extends EventEmitter {
     });
   }
 
-  private sendCallResult(messageId: string, payload: Record<string, unknown>) {
+  private sendCallResult(messageId: string, payload: OutgoingPayload) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     const message = [3, messageId, payload];
     this.ws.send(JSON.stringify(message));
