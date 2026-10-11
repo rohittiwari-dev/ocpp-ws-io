@@ -955,7 +955,7 @@ export default function TelemetryPage() {
                         className="expanded-row"
                       >
                         <td colSpan={8} className="expanded-cell">
-                          <div className="telemetry-sample-expanded-card !m-0 !mt-2">
+                          <div className="telemetry-sample-expanded-card m-0! mt-2!">
                             <div className="telemetry-sample-expanded-header">
                               <div className="flex items-center gap-2">
                                 <IconSparkles size={16} className="text-blue" />
