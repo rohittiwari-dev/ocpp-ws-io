@@ -63,7 +63,7 @@ import type {
 import type { HandshakeInfo } from "../types/handshake.js";
 import type { JsonObject } from "../types/json.js";
 import type { LoggerLike, LoggerLikeNotOptional } from "../types/logger.js";
-import type { OCPPPlugin, PluginHookResult } from "../types/plugins.js";
+import type { OCPPPlugin } from "../types/plugins.js";
 import {
   type AnyOCPPProtocol,
   type KnownProtocol,
@@ -85,6 +85,25 @@ import { checkCORS } from "./cors.js";
 import { EventEmitterBase } from "./emitter-base.js";
 import { assertHealthEndpointAuth, checkHealthAuth } from "./health-auth.js";
 import { assertMaxIdentityLength, identityRefusal } from "./identity.js";
+import {
+  awaitShutdownHook,
+  guardPluginHook,
+  METRICS_PLUGIN_TIMEOUT_MS,
+  reportPluginError,
+  withTimeout,
+} from "./plugin-hooks.js";
+import {
+  canRoutePresence,
+  isNodeAlive,
+  lookupPresence,
+  nodeKey,
+  type PresenceContext,
+  refreshPresence,
+  removePresenceFenced,
+  startPresenceRefresh,
+  stopPresenceRefresh,
+  sweepNodeLiveness,
+} from "./presence.js";
 import { RadixTrie } from "./radix-trie.js";
 import {
   type AnyOCPPRouter,
@@ -183,8 +202,8 @@ export class OCPPServer<
   private _nodeLiveness = new Map<string, { alive: boolean; at: number }>();
   /** Nodes observed advertising liveness; only these can be judged dead. */
   private _nodeLivenessSeen = new Set<string>();
-  private static readonly _NODE_LIVENESS_TTL_MS = 5000;
-
+  /** The presence fields, as server/presence.ts reads and writes them. */
+  private readonly _presence: PresenceContext = this._createPresenceContext();
   /** Subprotocol chosen per upgrade, read back by ws's handleProtocols. */
   /** The protocol to answer with; `false` answers with none (OCPP-J §3.2). */
   private _negotiatedProtocols = new WeakMap<IncomingMessage, string | false>();
@@ -406,126 +425,9 @@ export class OCPPServer<
   private _initPlugin(plugin: OCPPPlugin<P>): void {
     if (!plugin.onInit) return;
     try {
-      this._guardPluginHook(plugin.onInit(this), plugin.name, "onInit");
+      guardPluginHook(this._logger, plugin.onInit(this), plugin.name, "onInit");
     } catch (err) {
-      this._reportPluginError(plugin.name, "onInit", err);
-    }
-  }
-
-  /**
-   * How long a plugin gets to contribute to a `/metrics` scrape.
-   *
-   * A metrics plugin reads counters it already holds, so this is generous.
-   * The point is that a scrape cannot be held open by one slow plugin.
-   */
-  private static readonly _METRICS_PLUGIN_TIMEOUT_MS = 2000;
-
-  /** Reject if a promise has not settled within `timeoutMs`. */
-  private _withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error(`timed out after ${timeoutMs}ms`)),
-        timeoutMs,
-      );
-      timer.unref?.();
-      promise.then(
-        (value) => {
-          clearTimeout(timer);
-          resolve(value);
-        },
-        (err) => {
-          clearTimeout(timer);
-          reject(err);
-        },
-      );
-    });
-  }
-
-  /**
-   * Await a shutdown hook, but not forever.
-   *
-   * `close()` awaits every plugin's `onClosing` and then every `onClose`. With
-   * no bound, one plugin whose promise never settles — a broker call with no
-   * timeout of its own is enough — hangs the shutdown indefinitely. That is
-   * not a graceful shutdown that takes a while; it is one that never ends, so
-   * the supervisor eventually sends SIGKILL and the sockets die unclean.
-   *
-   * A hook that overruns is abandoned and logged, and shutdown continues.
-   */
-  private async _awaitShutdownHook(
-    result: PluginHookResult,
-    pluginName: string,
-    hook: "onClosing" | "onClose",
-  ): Promise<void> {
-    if (!(result instanceof Promise)) return;
-
-    const timeoutMs = this._options.pluginShutdownTimeoutMs ?? 5000;
-    if (timeoutMs <= 0) {
-      // Explicitly opted out of the bound.
-      await result;
-      return;
-    }
-
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const overran = new Promise<"overran">((resolve) => {
-      timer = setTimeout(() => resolve("overran"), timeoutMs);
-      timer.unref?.();
-    });
-
-    try {
-      const outcome = await Promise.race([
-        result.then(() => "settled" as const),
-        overran,
-      ]);
-      if (outcome === "overran") {
-        // Abandoned, so its eventual rejection would otherwise be unhandled.
-        result.catch(() => {});
-        this._logger?.warn?.(`Plugin ${hook} exceeded the shutdown budget`, {
-          name: pluginName,
-          timeoutMs,
-          note: "shutdown continued without it",
-        });
-      }
-    } catch (err) {
-      this._reportPluginError(pluginName, hook, err);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  }
-
-  /**
-   * Report a plugin hook failure without letting it escape.
-   *
-   * Most hooks are declared `void | Promise<void>`, so a plugin may legitimately
-   * be async — but a `try`/`catch` around the call only ever sees a synchronous
-   * throw. An async hook that rejects escapes it entirely and becomes an
-   * unhandled rejection, which since Node 15 terminates the process by default:
-   * one plugin whose backend is briefly unreachable takes down the CSMS.
-   *
-   * Every dispatch passes its return value through {@link _guardPluginHook} so
-   * a rejection lands here instead.
-   */
-  private _reportPluginError(
-    pluginName: string,
-    hook: string,
-    err: unknown,
-  ): void {
-    this._logger?.error?.(`Plugin ${hook} error`, {
-      name: pluginName,
-      error: (err as Error)?.message ?? String(err),
-    });
-  }
-
-  /** Attach a rejection handler when a hook returned a promise. */
-  private _guardPluginHook(
-    result: PluginHookResult,
-    pluginName: string,
-    hook: string,
-  ): void {
-    if (result instanceof Promise) {
-      result.catch((err: unknown) =>
-        this._reportPluginError(pluginName, hook, err),
-      );
+      reportPluginError(this._logger, plugin.name, "onInit", err);
     }
   }
 
@@ -565,22 +467,24 @@ export class OCPPServer<
     // Plugin: onSecurityEvent + onAuthFailed
     for (const plugin of this._plugins) {
       try {
-        this._guardPluginHook(
+        guardPluginHook(
+          this._logger,
           plugin.onSecurityEvent?.(secEvtAuth),
           plugin.name,
           "onSecurityEvent",
         );
       } catch (err) {
-        this._reportPluginError(plugin.name, "onSecurityEvent", err);
+        reportPluginError(this._logger, plugin.name, "onSecurityEvent", err);
       }
       try {
-        this._guardPluginHook(
+        guardPluginHook(
+          this._logger,
           plugin.onAuthFailed?.(handshake, code, message),
           plugin.name,
           "onAuthFailed",
         );
       } catch (err) {
-        this._reportPluginError(plugin.name, "onAuthFailed", err);
+        reportPluginError(this._logger, plugin.name, "onAuthFailed", err);
       }
     }
   }
@@ -617,13 +521,14 @@ export class OCPPServer<
     this.emit("securityEvent", secEvt);
     for (const plugin of this._plugins) {
       try {
-        this._guardPluginHook(
+        guardPluginHook(
+          this._logger,
           plugin.onSecurityEvent?.(secEvt),
           plugin.name,
           "onSecurityEvent",
         );
       } catch (err) {
-        this._reportPluginError(plugin.name, "onSecurityEvent", err);
+        reportPluginError(this._logger, plugin.name, "onSecurityEvent", err);
       }
     }
   }
@@ -723,8 +628,8 @@ export class OCPPServer<
       return true;
     }
 
-    if (this._canRoutePresence) {
-      const nodeId = await this._lookupPresence(identity);
+    if (canRoutePresence(this._presence)) {
+      const nodeId = await lookupPresence(this._presence, identity);
       return nodeId !== null;
     }
 
@@ -811,13 +716,14 @@ export class OCPPServer<
       // unaffected.
       for (const client of this._clients) {
         try {
-          this._guardPluginHook(
+          guardPluginHook(
+            this._logger,
             plugin.onConnection?.(client),
             plugin.name,
             "onConnection",
           );
         } catch (err) {
-          this._reportPluginError(plugin.name, "onConnection", err);
+          reportPluginError(this._logger, plugin.name, "onConnection", err);
         }
       }
     }
@@ -1164,9 +1070,9 @@ export class OCPPServer<
             if (plugin.getCustomMetrics) {
               try {
                 // The hook may be sync or async; normalise before bounding it.
-                const custom = await this._withTimeout(
+                const custom = await withTimeout(
                   Promise.resolve(plugin.getCustomMetrics()),
-                  OCPPServer._METRICS_PLUGIN_TIMEOUT_MS,
+                  METRICS_PLUGIN_TIMEOUT_MS,
                 );
                 if (custom?.length) {
                   lines.push("");
@@ -1175,7 +1081,12 @@ export class OCPPServer<
               } catch (err) {
                 // A plugin that is slow or broken costs its own metrics, not
                 // the scrape — the rest of the output still goes out.
-                this._reportPluginError(plugin.name, "getCustomMetrics", err);
+                reportPluginError(
+                  this._logger,
+                  plugin.name,
+                  "getCustomMetrics",
+                  err,
+                );
               }
             }
           }
@@ -1319,7 +1230,8 @@ export class OCPPServer<
     // Plugin: onTLSUpdate
     for (const plugin of this._plugins) {
       try {
-        this._guardPluginHook(
+        guardPluginHook(
+          this._logger,
           plugin.onTLSUpdate?.(tlsOpts),
           plugin.name,
           "onTLSUpdate",
@@ -1455,13 +1367,14 @@ export class OCPPServer<
       this.emit("securityEvent", secEvt);
       for (const plugin of this._plugins) {
         try {
-          this._guardPluginHook(
+          guardPluginHook(
+            this._logger,
             plugin.onSecurityEvent?.(secEvt),
             plugin.name,
             "onSecurityEvent",
           );
         } catch (err) {
-          this._reportPluginError(plugin.name, "onSecurityEvent", err);
+          reportPluginError(this._logger, plugin.name, "onSecurityEvent", err);
         }
       }
       abortHandshake(socket, 503, "Connection limit reached");
@@ -1535,13 +1448,19 @@ export class OCPPServer<
         // Plugin: onSecurityEvent
         for (const plugin of this._plugins) {
           try {
-            this._guardPluginHook(
+            guardPluginHook(
+              this._logger,
               plugin.onSecurityEvent?.(secEvt),
               plugin.name,
               "onSecurityEvent",
             );
           } catch (err) {
-            this._reportPluginError(plugin.name, "onSecurityEvent", err);
+            reportPluginError(
+              this._logger,
+              plugin.name,
+              "onSecurityEvent",
+              err,
+            );
           }
         }
         abortHandshake(socket, 429, "Too Many Requests");
@@ -2043,13 +1962,19 @@ export class OCPPServer<
           // Plugin: onSecurityEvent
           for (const plugin of this._plugins) {
             try {
-              this._guardPluginHook(
+              guardPluginHook(
+                this._logger,
                 plugin.onSecurityEvent?.(secEvtAbort),
                 plugin.name,
                 "onSecurityEvent",
               );
             } catch (err) {
-              this._reportPluginError(plugin.name, "onSecurityEvent", err);
+              reportPluginError(
+                this._logger,
+                plugin.name,
+                "onSecurityEvent",
+                err,
+              );
             }
           }
           this.emit("upgradeAborted", {
@@ -2136,7 +2061,7 @@ export class OCPPServer<
       !this._clientsByIdentity.has(sessionIdentity)
     ) {
       try {
-        storedSession = await this._withTimeout(
+        storedSession = await withTimeout(
           this._adapter.getSession(sessionIdentity),
           OCPPServer._SESSION_FETCH_TIMEOUT_MS,
         );
@@ -2287,13 +2212,14 @@ export class OCPPServer<
         // Plugin: onEviction
         for (const plugin of this._plugins) {
           try {
-            this._guardPluginHook(
+            guardPluginHook(
+              this._logger,
               plugin.onEviction?.(existingClient, client),
               plugin.name,
               "onEviction",
             );
           } catch (err) {
-            this._reportPluginError(plugin.name, "onEviction", err);
+            reportPluginError(this._logger, plugin.name, "onEviction", err);
           }
         }
         // Fire-and-forget force close — don't await, don't block the new connection
@@ -2312,7 +2238,7 @@ export class OCPPServer<
       this._clientsByIdentity.set(identity, client);
 
       // Register presence (TTL refreshed by the presence heartbeat — see
-      // _startPresenceRefresh).
+      // startPresenceRefresh).
       if (this._adapter?.setPresence) {
         const ttlSec = this._options.presenceTtlSeconds ?? 300;
         this._adapter
@@ -2353,12 +2279,13 @@ export class OCPPServer<
             // node owns the registry entry. An unconditional DEL here wiped
             // the new owner's entry and left the charger unroutable until the
             // next heartbeat.
-            this._removePresenceFenced(identity);
+            removePresenceFenced(this._presence, identity);
           }
           // Plugin: onDisconnect
           for (const plugin of this._plugins) {
             try {
-              this._guardPluginHook(
+              guardPluginHook(
+                this._logger,
                 plugin.onDisconnect?.(client, code, reason),
                 plugin.name,
                 "onDisconnect",
@@ -2399,13 +2326,14 @@ export class OCPPServer<
       client.on("message", (payload) => {
         for (const plugin of this._plugins) {
           try {
-            this._guardPluginHook(
+            guardPluginHook(
+              this._logger,
               plugin.onMessage?.(client, payload),
               plugin.name,
               "onMessage",
             );
           } catch (err) {
-            this._reportPluginError(plugin.name, "onMessage", err);
+            reportPluginError(this._logger, plugin.name, "onMessage", err);
           }
         }
       });
@@ -2413,13 +2341,14 @@ export class OCPPServer<
       client.on("error", (err) => {
         for (const plugin of this._plugins) {
           try {
-            this._guardPluginHook(
+            guardPluginHook(
+              this._logger,
               plugin.onError?.(client, err),
               plugin.name,
               "onError",
             );
           } catch (err) {
-            this._reportPluginError(plugin.name, "onError", err);
+            reportPluginError(this._logger, plugin.name, "onError", err);
           }
         }
       });
@@ -2427,13 +2356,14 @@ export class OCPPServer<
       client.on("badMessage", ({ message: rawMsg, error: badErr }) => {
         for (const plugin of this._plugins) {
           try {
-            this._guardPluginHook(
+            guardPluginHook(
+              this._logger,
               plugin.onBadMessage?.(client, rawMsg, badErr),
               plugin.name,
               "onBadMessage",
             );
           } catch (err) {
-            this._reportPluginError(plugin.name, "onBadMessage", err);
+            reportPluginError(this._logger, plugin.name, "onBadMessage", err);
           }
         }
       });
@@ -2443,13 +2373,19 @@ export class OCPPServer<
         ({ message: msg, error: valErr }) => {
           for (const plugin of this._plugins) {
             try {
-              this._guardPluginHook(
+              guardPluginHook(
+                this._logger,
                 plugin.onValidationFailure?.(client, msg, valErr),
                 plugin.name,
                 "onValidationFailure",
               );
             } catch (err) {
-              this._reportPluginError(plugin.name, "onValidationFailure", err);
+              reportPluginError(
+                this._logger,
+                plugin.name,
+                "onValidationFailure",
+                err,
+              );
             }
           }
         },
@@ -2458,13 +2394,14 @@ export class OCPPServer<
       client.on("backpressure", (evt) => {
         for (const plugin of this._plugins) {
           try {
-            this._guardPluginHook(
+            guardPluginHook(
+              this._logger,
               plugin.onBackpressure?.(client, evt.bufferedAmount),
               plugin.name,
               "onBackpressure",
             );
           } catch (err) {
-            this._reportPluginError(plugin.name, "onBackpressure", err);
+            reportPluginError(this._logger, plugin.name, "onBackpressure", err);
           }
         }
       });
@@ -2472,13 +2409,14 @@ export class OCPPServer<
       client.on("pongTimeout", () => {
         for (const plugin of this._plugins) {
           try {
-            this._guardPluginHook(
+            guardPluginHook(
+              this._logger,
               plugin.onPongTimeout?.(client),
               plugin.name,
               "onPongTimeout",
             );
           } catch (err) {
-            this._reportPluginError(plugin.name, "onPongTimeout", err);
+            reportPluginError(this._logger, plugin.name, "onPongTimeout", err);
           }
         }
       });
@@ -2486,13 +2424,14 @@ export class OCPPServer<
       client.on("handlerError", ({ method: hMethod, error: hErr }) => {
         for (const plugin of this._plugins) {
           try {
-            this._guardPluginHook(
+            guardPluginHook(
+              this._logger,
               plugin.onHandlerError?.(client, hMethod, hErr),
               plugin.name,
               "onHandlerError",
             );
           } catch (err) {
-            this._reportPluginError(plugin.name, "onHandlerError", err);
+            reportPluginError(this._logger, plugin.name, "onHandlerError", err);
           }
         }
       });
@@ -2500,13 +2439,19 @@ export class OCPPServer<
       client.on("rateLimitExceeded", (evt) => {
         for (const plugin of this._plugins) {
           try {
-            this._guardPluginHook(
+            guardPluginHook(
+              this._logger,
               plugin.onRateLimitExceeded?.(client, evt.rawData),
               plugin.name,
               "onRateLimitExceeded",
             );
           } catch (err) {
-            this._reportPluginError(plugin.name, "onRateLimitExceeded", err);
+            reportPluginError(
+              this._logger,
+              plugin.name,
+              "onRateLimitExceeded",
+              err,
+            );
           }
         }
       });
@@ -2556,21 +2501,9 @@ export class OCPPServer<
     }, 60 * 1000).unref(); // Run every minute, don't block exit
   }
 
-  /**
-   * Drop cached node-liveness answers that are far past their TTL.
-   *
-   * `_nodeLiveness` is keyed by node id and was only ever written to. Node ids
-   * are per-process, so a cluster doing rolling deploys mints new ones on every
-   * release and the map grew for the life of the process. `_nodeLivenessSeen`
-   * is deliberately left alone — it records that a node once advertised itself,
-   * which is what makes a later absence mean "dead" rather than "old build",
-   * and forgetting it would make routing flap across a mixed-version cluster.
-   */
+  /** Test seam: see sweepNodeLiveness in server/presence.ts. */
   private _sweepNodeLiveness(now: number): void {
-    const maxAge = OCPPServer._NODE_LIVENESS_TTL_MS * 60;
-    for (const [nodeId, entry] of this._nodeLiveness) {
-      if (now - entry.at > maxAge) this._nodeLiveness.delete(nodeId);
-    }
+    sweepNodeLiveness(this._presence, now);
   }
 
   /**
@@ -2620,13 +2553,15 @@ export class OCPPServer<
     // Plugin: onClosing (pre-shutdown hook — before client drain)
     for (const plugin of this._plugins) {
       try {
-        await this._awaitShutdownHook(
+        await awaitShutdownHook(
+          this._logger,
+          this._options.pluginShutdownTimeoutMs,
           plugin.onClosing?.(),
           plugin.name,
           "onClosing",
         );
       } catch (err) {
-        this._reportPluginError(plugin.name, "onClosing", err);
+        reportPluginError(this._logger, plugin.name, "onClosing", err);
       }
     }
 
@@ -2728,13 +2663,15 @@ export class OCPPServer<
     // Plugin: onClose
     for (const plugin of this._plugins) {
       try {
-        await this._awaitShutdownHook(
+        await awaitShutdownHook(
+          this._logger,
+          this._options.pluginShutdownTimeoutMs,
           plugin.onClose?.(),
           plugin.name,
           "onClose",
         );
       } catch (err) {
-        this._reportPluginError(plugin.name, "onClose", err);
+        reportPluginError(this._logger, plugin.name, "onClose", err);
       }
     }
 
@@ -2750,7 +2687,7 @@ export class OCPPServer<
     // once, instead of waiting out its TTL.
     if (this._adapter?.removePresence) {
       await Promise.resolve(
-        this._adapter.removePresence(OCPPServer._nodeKey(this._nodeId)),
+        this._adapter.removePresence(nodeKey(this._nodeId)),
       ).catch(() => {});
     }
 
@@ -2870,13 +2807,14 @@ export class OCPPServer<
     if (options.presenceTtlSeconds !== undefined && this._presenceInterval) {
       clearTimeout(this._presenceInterval);
       this._presenceInterval = null;
-      this._startPresenceRefresh();
+      startPresenceRefresh(this._presence);
     }
 
     // Plugin: onReconfigure
     for (const plugin of this._plugins) {
       try {
-        this._guardPluginHook(
+        guardPluginHook(
+          this._logger,
           plugin.onReconfigure?.(options, oldOptions),
           plugin.name,
           "onReconfigure",
@@ -2982,8 +2920,8 @@ export class OCPPServer<
     }
 
     // 2. Check Registry & Unicast (with response correlation — report H1)
-    if (this._canRoutePresence) {
-      const nodeId = await this._lookupPresence(identity);
+    if (canRoutePresence(this._presence)) {
+      const nodeId = await lookupPresence(this._presence, identity);
       if (nodeId && !(await this._isNodeAlive(nodeId))) {
         // The owning node is gone. Its entry would otherwise linger for the
         // full TTL and every call to this charger would wait out the timeout.
@@ -2994,7 +2932,7 @@ export class OCPPServer<
             nodeId,
           },
         );
-        this._removePresenceFenced(identity, nodeId);
+        removePresenceFenced(this._presence, identity, nodeId);
         throw new Error(`Client ${identity} not found`);
       }
       if (nodeId) {
@@ -3180,7 +3118,7 @@ export class OCPPServer<
       // The local fast path below pipelines through callImmediate; a remote
       // batch cannot, but these calls are already crossing the network, so the
       // per-call cost is dominated by transport either way.
-      if (this._canRoutePresence) {
+      if (canRoutePresence(this._presence)) {
         this._logger?.debug?.("sendBatch: routing cross-node", { identity });
         const remote = await Promise.allSettled(
           calls.map((c) =>
@@ -3237,7 +3175,7 @@ export class OCPPServer<
     // stops driving this server.
     const previous = this._adapter;
     if (previous && previous !== adapter) {
-      this._stopPresenceRefresh();
+      stopPresenceRefresh(this._presence);
       try {
         await previous.unsubscribe("ocpp:broadcast");
         await previous.unsubscribe(`ocpp:node:${this._nodeId}`);
@@ -3310,286 +3248,60 @@ export class OCPPServer<
 
     // Presence heartbeat — refresh TTLs so long-lived connections never
     // expire out of the cluster registry (report C3).
-    this._startPresenceRefresh();
+    startPresenceRefresh(this._presence);
   }
 
-  /**
-   * Which node currently owns `identity`, or null.
-   *
-   * `getPresence` and `getPresenceBatch` are both optional, and the routing
-   * path only ever called the former — so an adapter that implemented only the
-   * batch variant reported no owner for anybody and cross-node routing silently
-   * did nothing.
-   */
-  private async _lookupPresence(identity: string): Promise<string | null> {
-    const adapter = this._adapter;
-    if (!adapter) return null;
-    if (adapter.getPresence) {
-      return (await adapter.getPresence(identity)) ?? null;
-    }
-    if (adapter.getPresenceBatch) {
-      const [owner] = await adapter.getPresenceBatch([identity]);
-      return owner ?? null;
-    }
-    return null;
-  }
-
-  /**
-   * Whether `nodeId` is still advertising itself.
-   *
-   * A crashed node leaves its clients in the registry for the full TTL — five
-   * minutes at the default — and every cross-node call aimed at them waited out
-   * callTimeoutMs plus the grace before failing, because nothing noticed the
-   * owner was gone. Checking liveness turns that into an immediate
-   * "not connected".
-   *
-   * Answers are cached briefly so this costs one extra registry read per node
-   * per few seconds, not one per call.
-   */
-  private async _isNodeAlive(nodeId: string): Promise<boolean> {
-    if (nodeId === this._nodeId) return true;
-    const cached = this._nodeLiveness.get(nodeId);
-    const now = Date.now();
-    if (cached && now - cached.at < OCPPServer._NODE_LIVENESS_TTL_MS) {
-      return cached.alive;
-    }
-    let alive = true;
-    try {
-      const seen = await this._lookupPresence(OCPPServer._nodeKey(nodeId));
-      if (seen !== null) {
-        alive = true;
-        // Remember that this node advertises itself, so a later absence is
-        // meaningful rather than ambiguous.
-        this._nodeLivenessSeen.add(nodeId);
-      } else {
-        // Fail safe. A missing entry is only evidence of death for a node we
-        // have previously watched advertise itself; otherwise it may simply be
-        // running a build that does not publish liveness, or one whose first
-        // heartbeat has not landed. Declaring those dead would break routing
-        // across a mixed-version cluster.
-        alive = !this._nodeLivenessSeen.has(nodeId);
-      }
-    } catch {
-      // A registry hiccup must not make every node look dead.
-      alive = true;
-    }
-    this._nodeLiveness.set(nodeId, { alive, at: now });
-    return alive;
-  }
-
-  /** True when this adapter can resolve owners at all. */
-  private get _canRoutePresence(): boolean {
-    return !!(this._adapter?.getPresence || this._adapter?.getPresenceBatch);
-  }
-
-  /**
-   * Delete this identity's presence entry, but only if the registry still
-   * names this node. Falls back to an unconditional delete for adapters that
-   * do not implement fencing.
-   */
-  private _removePresenceFenced(
-    identity: string,
-    /**
-     * The node the entry must still name for the delete to happen. Defaults to
-     * this node — the normal case, a client of ours going away. Garbage
-     * collecting a dead node's entry passes that node's id instead, so the
-     * delete is still fenced: if the charger has meanwhile reconnected
-     * elsewhere, the new owner's entry survives.
-     */
-    expectedOwner: string = this._nodeId,
-  ): void {
-    const adapter = this._adapter;
-    if (!adapter) return;
-    const raw = adapter.removePresenceIfOwned
-      ? adapter.removePresenceIfOwned(identity, expectedOwner)
-      : adapter.removePresence?.(identity);
-    if (!raw) return;
-    const done = Promise.resolve(raw);
-
-    // Tracked so close() can wait. These fire from each client's close handler,
-    // which close() does not await, so disconnecting the adapter straight
-    // afterwards raced them: the DELs were dropped and this node's clients
-    // stayed in the registry for the full TTL, with every cross-node call to
-    // them routed at a server that no longer exists.
-    const tracked: Promise<unknown> = done
-      .catch((err: unknown) => {
-        this._logger?.error?.("Error removing presence", {
-          identity,
-          error: err,
-        });
-      })
-      .finally(() => {
-        this._pendingAdapterWrites.delete(tracked);
-      });
-    this._pendingAdapterWrites.add(tracked);
-  }
-
-  private _stopPresenceRefresh(): void {
-    if (this._presenceInterval) {
-      clearTimeout(this._presenceInterval);
-      this._presenceInterval = null;
-    }
-  }
-
-  private _startPresenceRefresh(): void {
-    if (this._presenceInterval || !this._adapter?.setPresence) return;
-    const ttlSec = this._options.presenceTtlSeconds ?? 300;
-
-    // Refresh three times per TTL, not twice.
-    //
-    // At TTL/2 a single slow or skipped tick puts the next write at exactly the
-    // expiry instant — zero margin, and every connection on this node silently
-    // drops out of cluster routing. TTL/3 survives one lost cycle.
-    const baseMs = Math.max(250, (ttlSec * 1000) / 3);
-
-    // Jitter each tick by ±10%. Nodes started together by an orchestrator would
-    // otherwise refresh in lockstep, hammering the registry in synchronised
-    // bursts (and, with large fleets, a single burst can exceed the TTL).
-    const nextDelay = () => baseMs * (0.9 + Math.random() * 0.2);
-
-    const tick = () => {
-      // Overlap guard: a refresh slower than the interval would otherwise stack
-      // up, and each stacked run re-reads and re-writes every identity.
-      if (this._presenceRefreshInFlight) {
-        this._logger?.warn?.(
-          "Presence refresh still running when the next tick fired — skipping",
-        );
-      } else {
-        this._presenceRefreshInFlight = true;
-        this._refreshPresence(ttlSec)
-          .catch((err) => {
-            this._logger?.warn?.("Presence refresh failed", { error: err });
-          })
-          .finally(() => {
-            this._presenceRefreshInFlight = false;
-          });
-      }
-      schedule();
+  /** The server's presence fields, read and written through getters. */
+  private _createPresenceContext(): PresenceContext {
+    const server = this;
+    return {
+      get nodeId() {
+        return server._nodeId;
+      },
+      get adapter() {
+        return server._adapter;
+      },
+      get logger() {
+        return server._logger;
+      },
+      get nodeLiveness() {
+        return server._nodeLiveness;
+      },
+      get nodeLivenessSeen() {
+        return server._nodeLivenessSeen;
+      },
+      get pendingWrites() {
+        return server._pendingAdapterWrites;
+      },
+      get presenceTtlSeconds() {
+        return server._options.presenceTtlSeconds;
+      },
+      get isOpen() {
+        return server._state === "OPEN";
+      },
+      get presenceInterval() {
+        return server._presenceInterval;
+      },
+      set presenceInterval(timer) {
+        server._presenceInterval = timer;
+      },
+      get refreshInFlight() {
+        return server._presenceRefreshInFlight;
+      },
+      set refreshInFlight(running) {
+        server._presenceRefreshInFlight = running;
+      },
+      localIdentities: () => Array.from(server._clientsByIdentity.keys()),
     };
-
-    const schedule = () => {
-      if (this._state !== "OPEN") return;
-      this._presenceInterval = setTimeout(tick, nextDelay());
-      this._presenceInterval.unref();
-    };
-
-    schedule();
   }
 
-  /** Registry key under which a node advertises that it is alive. */
-  private static _nodeKey(nodeId: string): string {
-    return `__node__:${nodeId}`;
+  // Test seams: the presence logic lives in server/presence.ts.
+  private _isNodeAlive(nodeId: string): Promise<boolean> {
+    return isNodeAlive(this._presence, nodeId);
   }
 
-  private async _refreshPresence(ttlSec: number): Promise<void> {
-    const adapter = this._adapter;
-    if (!adapter) return;
-
-    // Advertise this node's own liveness on the same cadence and TTL as the
-    // client entries. Reusing the presence API means no adapter has to grow a
-    // method for it. Consumed by _isNodeAlive() below.
-    if (adapter.setPresence) {
-      // Promise.resolve(): the interface declares Promise<void>, but an adapter
-      // that returns nothing must not crash the heartbeat.
-      await Promise.resolve(
-        adapter.setPresence(
-          OCPPServer._nodeKey(this._nodeId),
-          this._nodeId,
-          ttlSec,
-        ),
-      ).catch(() => {});
-    }
-    let identities = Array.from(this._clientsByIdentity.keys());
-    if (identities.length === 0) return;
-
-    // Do not re-claim identities another node owns.
-    //
-    // This loop used to write `nodeId = us` for every local identity
-    // unconditionally. A node holding a half-open socket — peer gone, no FIN
-    // received — still lists that identity, so it kept stealing the entry back
-    // from the node actually serving the charger, and routing flapped on every
-    // heartbeat until the dead socket was reaped.
-    //
-    // `claimPresence` is the atomic version and is used when the set is small
-    // enough that per-identity round-trips are affordable. Above that the batch
-    // path stays, filtered by one bulk read: still a read-then-write race, but
-    // a foreign owner is now detected instead of trampled, so a zombie node
-    // backs off consistently rather than flapping.
-    const foreign: string[] = [];
-
-    const warnForeign = () => {
-      if (foreign.length === 0) return;
-      this._logger?.warn?.(
-        "Presence held by another node — local socket is stale",
-        { identities: foreign.slice(0, 20), count: foreign.length },
-      );
-    };
-
-    // No batch write available, but atomic claim is: use it. Preferring this
-    // over setPresenceBatch would turn one pipelined round-trip into N, which
-    // is the wrong trade at 100k connections.
-    if (!adapter.setPresenceBatch && adapter.claimPresence) {
-      const results = await Promise.all(
-        identities.map((identity) =>
-          adapter.claimPresence!(identity, this._nodeId, ttlSec)
-            .then((ok) => (ok ? null : identity))
-            .catch(() => null),
-        ),
-      );
-      foreign.push(...results.filter((x): x is string => x !== null));
-      warnForeign();
-      return;
-    }
-
-    // Chunk every bulk registry call. At the 100k connections this library
-    // advertises, an unchunked refresh is one 100k-key MGET and one
-    // 100k-command pipeline per cycle — enough to stall the Redis event loop
-    // for everyone else on the instance.
-    const CHUNK = 1000;
-    const chunk = <T>(xs: T[]): T[][] => {
-      if (xs.length <= CHUNK) return [xs];
-      const out: T[][] = [];
-      for (let i = 0; i < xs.length; i += CHUNK)
-        out.push(xs.slice(i, i + CHUNK));
-      return out;
-    };
-
-    if (adapter.getPresenceBatch) {
-      const owners: (string | null)[] = [];
-      for (const part of chunk(identities)) {
-        owners.push(...(await adapter.getPresenceBatch(part)));
-      }
-      const mine: string[] = [];
-      identities.forEach((identity, i) => {
-        const owner = owners[i];
-        if (owner === null || owner === undefined || owner === this._nodeId) {
-          mine.push(identity);
-        } else {
-          foreign.push(identity);
-        }
-      });
-      warnForeign();
-      identities = mine;
-      if (identities.length === 0) return;
-    }
-
-    if (adapter.setPresenceBatch) {
-      for (const part of chunk(identities)) {
-        await adapter.setPresenceBatch(
-          part.map((identity) => ({
-            identity,
-            nodeId: this._nodeId,
-            ttl: ttlSec,
-          })),
-        );
-      }
-    } else if (adapter.setPresence) {
-      await Promise.all(
-        identities.map((identity) =>
-          adapter.setPresence!(identity, this._nodeId, ttlSec),
-        ),
-      );
-    }
+  private _refreshPresence(ttlSec: number): Promise<void> {
+    return refreshPresence(this._presence, ttlSec);
   }
 
   private _onBroadcast(msg: unknown) {
@@ -3757,7 +3469,7 @@ export class OCPPServer<
       // Fenced: the entry may already name a different node (the charger
       // migrated while this message sat in the stream). Deleting it
       // unconditionally disconnected a live client from cross-node routing.
-      this._removePresenceFenced(payload.target);
+      removePresenceFenced(this._presence, payload.target);
     } catch (err) {
       this._logger?.error?.("Error processing unicast", {
         error: (err as Error).message,
