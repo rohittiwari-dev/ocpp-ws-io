@@ -14,7 +14,7 @@ import {
   IconServer,
   IconSparkles,
 } from "@tabler/icons-react";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -182,8 +182,8 @@ export default function TelemetryPage() {
   const [windowLimit, setWindowLimit] = useState<number>(60);
   const [chartType, setChartType] = useState<"area" | "line">("area");
   const [search, setSearch] = useState("");
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [samplePage, setSamplePage] = useState(0);
   const [samplePageSize, setSamplePageSize] = useState(6);
 
@@ -219,11 +219,11 @@ export default function TelemetryPage() {
     return filteredSamples.slice(start, start + samplePageSize);
   }, [filteredSamples, currentSamplePage, samplePageSize]);
 
-  const handleCopyJson = (sample: HistorySample, index: number) => {
+  const handleCopyJson = (sample: HistorySample, key: string) => {
     navigator.clipboard.writeText(JSON.stringify(sample, null, 2));
-    setCopiedIndex(index);
+    setCopiedKey(key);
     setTimeout(() => {
-      setCopiedIndex((prev) => (prev === index ? null : prev));
+      setCopiedKey((prev) => (prev === key ? null : prev));
     }, 2000);
   };
 
@@ -527,7 +527,7 @@ export default function TelemetryPage() {
                 className="w-48 text-xs"
                 aria-label="Chart metric selector"
               >
-                <SelectValue />
+                <SelectValue className={"capitalize"} />
               </SelectTrigger>
               <SelectContent>
                 {Object.entries(METRIC_CONFIGS).map(([k, cfg]) => (
@@ -860,92 +860,137 @@ export default function TelemetryPage() {
             <tbody>
               {pagedSamples.map((sample, index) => {
                 const globalIndex = currentSamplePage * samplePageSize + index;
-                const isExpanded = expandedIndex === globalIndex;
+                const sampleKey = `${sample.time}-${globalIndex}`;
+                const isExpanded = expandedKey === sampleKey;
                 const isLatest = globalIndex === 0 && !search;
 
                 return (
-                  <tr
-                    key={`${sample.time}-${globalIndex}`}
-                    className={`telemetry-sample-row ${isExpanded ? "is-expanded" : ""}`}
-                    onClick={() =>
-                      setExpandedIndex(isExpanded ? null : globalIndex)
-                    }
-                  >
-                    <td className="w-10 text-muted-foreground">
-                      {isExpanded ? (
-                        <IconChevronUp size={16} />
-                      ) : (
-                        <IconChevronDown size={16} />
-                      )}
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-2">
-                        {isLatest && (
-                          <span
-                            className="telemetry-live-dot is-live"
-                            title="Latest snapshot"
-                          />
-                        )}
-                        <strong className="font-mono text-xs">
-                          {sample.time}
-                        </strong>
-                      </div>
-                    </td>
-                    <td>
-                      <span className="font-mono text-xs">
-                        {sample.messagesPerSecond} req/s
-                      </span>
-                    </td>
-                    <td>
-                      <Status
-                        tone={
-                          sample.avgLatencyMs <= 50
-                            ? "mint"
-                            : sample.avgLatencyMs <= 150
-                              ? "yellow"
-                              : "rose"
-                        }
-                      >
-                        {sample.avgLatencyMs} ms
-                      </Status>
-                    </td>
-                    <td>
-                      <Status tone={sample.errorRate === 0 ? "mint" : "rose"}>
-                        {sample.errorRate}%
-                      </Status>
-                    </td>
-                    <td>
-                      <span className="font-mono text-xs">
-                        {sample.connectionCount} / {sample.peakConnections}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {(sample.memoryUsage.rss / 1048576).toFixed(1)} MB
-                      </span>
-                    </td>
-                    <td
-                      className="text-right"
-                      onClick={(e) => e.stopPropagation()}
+                  <Fragment key={sampleKey}>
+                    <tr
+                      className={`telemetry-sample-row ${isExpanded ? "is-expanded" : ""}`}
+                      onClick={() =>
+                        setExpandedKey(isExpanded ? null : sampleKey)
+                      }
                     >
-                      <button
-                        type="button"
-                        className="button secondary sm"
-                        onClick={() => handleCopyJson(sample, globalIndex)}
-                        title="Copy snapshot JSON"
-                      >
-                        {copiedIndex === globalIndex ? (
-                          <>
-                            <IconCheck size={13} className="text-mint" /> Copied
-                          </>
+                      <td className="w-10 text-muted-foreground">
+                        {isExpanded ? (
+                          <IconChevronUp size={16} />
                         ) : (
-                          <>
-                            <IconCopy size={13} /> Copy JSON
-                          </>
+                          <IconChevronDown size={16} />
                         )}
-                      </button>
-                    </td>
-                  </tr>
+                      </td>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          {isLatest && (
+                            <span
+                              className="telemetry-live-dot is-live"
+                              title="Latest snapshot"
+                            />
+                          )}
+                          <strong className="font-mono text-xs">
+                            {sample.time}
+                          </strong>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="font-mono text-xs">
+                          {sample.messagesPerSecond} req/s
+                        </span>
+                      </td>
+                      <td>
+                        <Status
+                          tone={
+                            sample.avgLatencyMs <= 50
+                              ? "mint"
+                              : sample.avgLatencyMs <= 150
+                                ? "yellow"
+                                : "rose"
+                          }
+                        >
+                          {sample.avgLatencyMs} ms
+                        </Status>
+                      </td>
+                      <td>
+                        <Status tone={sample.errorRate === 0 ? "mint" : "rose"}>
+                          {sample.errorRate}%
+                        </Status>
+                      </td>
+                      <td>
+                        <span className="font-mono text-xs">
+                          {sample.connectionCount} / {sample.peakConnections}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {(sample.memoryUsage.rss / 1048576).toFixed(1)} MB
+                        </span>
+                      </td>
+                      <td
+                        className="text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          className="button secondary sm"
+                          onClick={() => handleCopyJson(sample, sampleKey)}
+                          title="Copy snapshot JSON"
+                        >
+                          {copiedKey === sampleKey ? (
+                            <>
+                              <IconCheck size={13} className="text-mint" />{" "}
+                              Copied
+                            </>
+                          ) : (
+                            <>
+                              <IconCopy size={13} /> Copy JSON
+                            </>
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+
+                    {isExpanded && (
+                      <tr
+                        key={`${sampleKey}-expanded`}
+                        className="expanded-row"
+                      >
+                        <td colSpan={8} className="expanded-cell">
+                          <div className="telemetry-sample-expanded-card !m-0 !mt-2">
+                            <div className="telemetry-sample-expanded-header">
+                              <div className="flex items-center gap-2">
+                                <IconSparkles size={16} className="text-blue" />
+                                <strong>
+                                  Snapshot payload — {sample.time}
+                                </strong>
+                              </div>
+                              <button
+                                type="button"
+                                className="button secondary sm"
+                                onClick={() =>
+                                  handleCopyJson(sample, `full-${sampleKey}`)
+                                }
+                              >
+                                {copiedKey === `full-${sampleKey}` ? (
+                                  <>
+                                    <IconCheck
+                                      size={13}
+                                      className="text-mint"
+                                    />{" "}
+                                    Copied JSON
+                                  </>
+                                ) : (
+                                  <>
+                                    <IconCopy size={13} /> Copy full JSON
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                            <JsonView value={sample} />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
 
@@ -961,37 +1006,6 @@ export default function TelemetryPage() {
             </tbody>
           </table>
         </div>
-
-        {expandedIndex !== null && filteredSamples[expandedIndex] && (
-          <div className="telemetry-sample-expanded-card">
-            <div className="telemetry-sample-expanded-header">
-              <div className="flex items-center gap-2">
-                <IconSparkles size={16} className="text-blue" />
-                <strong>
-                  Snapshot payload — {filteredSamples[expandedIndex].time}
-                </strong>
-              </div>
-              <button
-                type="button"
-                className="button secondary sm"
-                onClick={() =>
-                  handleCopyJson(filteredSamples[expandedIndex], expandedIndex)
-                }
-              >
-                {copiedIndex === expandedIndex ? (
-                  <>
-                    <IconCheck size={13} className="text-mint" /> Copied JSON
-                  </>
-                ) : (
-                  <>
-                    <IconCopy size={13} /> Copy full JSON
-                  </>
-                )}
-              </button>
-            </div>
-            <JsonView value={filteredSamples[expandedIndex]} />
-          </div>
-        )}
 
         {filteredSamples.length > 0 && (
           <Pagination

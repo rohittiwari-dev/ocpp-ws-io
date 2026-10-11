@@ -196,7 +196,7 @@ export function Pagination({
                 className="w-16.5"
                 aria-label="Rows per page"
               >
-                <SelectValue />
+                <SelectValue className={"capitalize"} />
               </SelectTrigger>
               <SelectContent>
                 {PAGE_SIZE_OPTIONS.map((opt) => (

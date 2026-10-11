@@ -975,7 +975,7 @@ export default function ConnectionPage() {
                       className="w-37.5"
                       aria-label="Filter direction"
                     >
-                      <SelectValue />
+                      <SelectValue className={"capitalize"} />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Both directions</SelectItem>
@@ -1141,6 +1141,7 @@ export default function ConnectionPage() {
                             ? "No compatible presets for protocol"
                             : "Choose a protocol-compatible preset"
                         }
+                        className={"capitalize"}
                       />
                     </SelectTrigger>
                     <SelectContent>

@@ -9,6 +9,14 @@ export function verifyBindings(
   proxy: OCPPProtocolProxy,
 ) {
   const board = createBoard({ auth: { mode: "none" }, store });
+  const _boardWithOptions = createBoard({
+    auth: { mode: "none" },
+    store: {
+      maxMessages: 5000,
+      maxProxyEvents: 1000,
+      maxSmartChargeHistory: 500,
+    },
+  });
   new OCPPServer({ protocols: ["ocpp1.6"] }).plugin(board.plugin);
   new OCPPServer({ protocols: ["ocpp2.0.1"] }).plugin(board.plugin);
   new OCPPServer({ protocols: ["ocpp2.1"] }).plugin(board.plugin);

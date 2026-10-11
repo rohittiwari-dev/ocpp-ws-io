@@ -65,7 +65,7 @@ export default function LoginPage() {
               backgroundSize: "contain",
             }}
           />
-          <span>OCPP Board</span>
+          <span>OCPP WS IO</span>
         </div>
         <h1>
           Your charging network.

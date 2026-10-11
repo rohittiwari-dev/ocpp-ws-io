@@ -11,12 +11,25 @@ export interface JsonObject {
 
 // ─── Board Configuration Types ────────────────────────────────────
 
+export interface StoreOptions {
+  /** Maximum number of messages retained in the in-memory ring buffer. Default: 10000. */
+  maxMessages?: number;
+  /** Maximum number of protocol proxy translation events retained. Default: 2000. */
+  maxProxyEvents?: number;
+  /** Maximum number of smart charging history events retained. Default: 1000. */
+  maxSmartChargeHistory?: number;
+}
+
 export interface BoardOptions {
   basePath?: string;
   /** External origin when deployed behind a TLS-terminating reverse proxy. */
   publicOrigin?: string;
   auth: BoardAuthConfig;
-  store?: BoardStorageAdapter;
+  /**
+   * Storage configuration.
+   * Can be either ring buffer bounds (StoreOptions) or a custom BoardStorageAdapter instance.
+   */
+  store?: StoreOptions | BoardStorageAdapter;
   sseHeartbeatMs?: number;
   /** Disable operator RPC commands for read-only deployments. Default: true. */
   commandsEnabled?: boolean;

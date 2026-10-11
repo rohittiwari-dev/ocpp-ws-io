@@ -1,6 +1,6 @@
 {
   "name": "ocpp-ws-board",
-  "version": "0.2.1-alpha.1",
+  "version": "1.0.0",
   "description": "Monitoring UI and backend integration for ocpp-ws-io. Type-safe TypeScript toolkit for EV charging, CSMS backends, Redis scaling, and protocol validation.",
   "repository": {
     "type": "git",
@@ -56,9 +56,10 @@
   ],
   "scripts": {
     "dev": "vite",
+    "clean": "node -e \"const fs = require('node:fs'); fs.rmSync('dist', { recursive: true, force: true });\"",
     "build:ui": "vite build",
     "build:server": "tsup",
-    "build": "npm run build:ui && npm run build:server",
+    "build": "npm run clean && npm run build:ui && npm run build:server",
     "format": "biome format --write .",
     "check": "biome check --write .",
     "preview": "vite preview",

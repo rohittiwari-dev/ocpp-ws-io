@@ -16,16 +16,16 @@ export function expressAdapter(options: BoardOptions) {
         else if (value !== undefined) headers.set(name, value);
       }
       const origin = `${"encrypted" in req.socket && req.socket.encrypted ? "https" : "http"}://${req.headers.host ?? "localhost"}`;
-      let body: Uint8Array | undefined;
+      let body: string | undefined;
       if (req.method !== "GET" && req.method !== "HEAD") {
         if (req.body !== undefined) {
-          const encoded = Buffer.from(JSON.stringify(req.body));
-          if (encoded.length > 1048576) {
+          const encoded = JSON.stringify(req.body);
+          if (Buffer.byteLength(encoded) > 1048576) {
             res.statusCode = 413;
             res.end("Request body too large");
             return;
           }
-          body = new Uint8Array(encoded);
+          body = encoded;
         } else {
           const chunks: Buffer[] = [];
           let length = 0;
@@ -41,7 +41,7 @@ export function expressAdapter(options: BoardOptions) {
             }
             chunks.push(buffer);
           }
-          body = new Uint8Array(Buffer.concat(chunks));
+          body = Buffer.concat(chunks).toString("utf-8");
         }
       }
       const request = new Request(new URL(req.url ?? "/", origin), {

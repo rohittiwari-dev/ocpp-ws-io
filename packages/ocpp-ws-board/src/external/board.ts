@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
+import { clearInterval, setInterval } from "node:timers";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { unchecked } from "ocpp-ws-io";
@@ -19,14 +20,35 @@ import { createIntegrations } from "./integrations.js";
 import { createBoardPlugin, jsonValue } from "./plugin.js";
 import { SSEBroker } from "./sse.js";
 import { CompressedMemoryStore } from "./store.js";
-import type { BoardOptions, JsonValue, LoginCredentials } from "./types.js";
+import type {
+  BoardOptions,
+  BoardStorageAdapter,
+  JsonValue,
+  LoginCredentials,
+  StoreOptions,
+} from "./types.js";
+
+function isBoardStorageAdapter(
+  candidate: StoreOptions | BoardStorageAdapter,
+): candidate is BoardStorageAdapter {
+  return (
+    typeof candidate === "object" &&
+    candidate !== null &&
+    "getMessages" in candidate &&
+    typeof candidate.getMessages === "function"
+  );
+}
 
 export function createBoard(options: BoardOptions) {
   const basePath =
     options.basePath && options.basePath !== "/"
       ? `/${options.basePath.split("/").filter(Boolean).join("/")}`
       : "";
-  const store = options.store ?? new CompressedMemoryStore();
+  const store = !options.store
+    ? new CompressedMemoryStore()
+    : isBoardStorageAdapter(options.store)
+      ? options.store
+      : new CompressedMemoryStore(options.store);
   const auth = createAuthLayer(options.auth);
   const integrations = createIntegrations(store);
   const messageBroker = new SSEBroker(options.sseHeartbeatMs);
@@ -47,7 +69,7 @@ export function createBoard(options: BoardOptions) {
       sampling = false;
     }
   }, 2000);
-  telemetryInterval.unref?.();
+  telemetryInterval.unref();
   const plugin = createBoardPlugin(store, {
     onMessage: (message) => messageBroker.emit("message", message),
     onSecurityEvent: (event) => securityBroker.emit("security", event),

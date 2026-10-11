@@ -14,7 +14,7 @@ import {
   IconServer,
   IconX,
 } from "@tabler/icons-react";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   Select,
@@ -35,7 +35,7 @@ import {
 } from "@/components/workspace";
 import { useResource } from "@/hooks/use-resource";
 import { time } from "@/lib/export";
-import type { ErrorRecord, SystemEvent } from "@/types";
+import type { ErrorRecord, JsonValue, SystemEvent } from "@/types";
 
 const ERROR_CATEGORY_OPTIONS: Record<string, string> = {
   all: "All error categories",
@@ -214,7 +214,10 @@ export default function DiagnosticsPage() {
     return filteredRows.slice(start, start + pageSize);
   }, [filteredRows, currentPage, pageSize]);
 
-  const handleCopyJson = (data: unknown, id: string) => {
+  const handleCopyJson = (
+    data: JsonValue | ErrorRecord | SystemEvent,
+    id: string,
+  ) => {
     navigator.clipboard.writeText(JSON.stringify(data, null, 2));
     setCopiedId(id);
     setTimeout(() => {
@@ -654,7 +657,7 @@ export default function DiagnosticsPage() {
                 className="w-48 text-xs"
                 aria-label="Error category"
               >
-                <SelectValue />
+                <SelectValue className={"capitalize"} />
               </SelectTrigger>
               <SelectContent>
                 {Object.entries(ERROR_CATEGORY_OPTIONS).map(([k, label]) => (
@@ -676,7 +679,7 @@ export default function DiagnosticsPage() {
                 className="w-48 text-xs"
                 aria-label="Lifecycle event type"
               >
-                <SelectValue />
+                <SelectValue className={"capitalize"} />
               </SelectTrigger>
               <SelectContent>
                 {Object.entries(SYSTEM_EVENT_OPTIONS).map(([k, label]) => (
@@ -745,80 +748,153 @@ export default function DiagnosticsPage() {
                 const isError = "category" in row;
 
                 return (
-                  <tr
-                    key={row.id}
-                    className={`telemetry-sample-row ${isExpanded ? "is-expanded" : ""}`}
-                    onClick={() => setExpandedId(isExpanded ? null : row.id)}
-                  >
-                    <td className="w-10 text-muted-foreground">
-                      {isExpanded ? (
-                        <IconChevronUp size={16} />
-                      ) : (
-                        <IconChevronDown size={16} />
-                      )}
-                    </td>
-                    <td className="muted nowrap">{time(row.timestamp)}</td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      {row.identity ? (
-                        <Link
-                          to={`/connection/view/${encodeURIComponent(row.identity)}`}
-                          className="font-mono text-xs font-semibold text-foreground hover:underline"
-                        >
-                          {row.identity}
-                        </Link>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          Server
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      <Status tone={isError ? "rose" : "lavender"}>
-                        {(isError ? row.category : row.type).replaceAll(
-                          "_",
-                          " ",
-                        )}
-                      </Status>
-                    </td>
-                    <td>
-                      <span className="text-xs text-foreground font-medium">
-                        {row.message}
-                      </span>
-                    </td>
-                    <td
-                      className="text-right"
-                      onClick={(e) => e.stopPropagation()}
+                  <Fragment key={row.id}>
+                    <tr
+                      className={`telemetry-sample-row ${isExpanded ? "is-expanded" : ""}`}
+                      onClick={() => setExpandedId(isExpanded ? null : row.id)}
                     >
-                      <div className="flex items-center justify-end gap-2">
-                        {row.identity && (
-                          <Link
-                            to={`/messages?identity=${encodeURIComponent(row.identity)}`}
-                            className="button secondary sm"
-                            title="Inspect messages for charger"
-                          >
-                            Traffic
-                          </Link>
+                      <td className="w-10 text-muted-foreground">
+                        {isExpanded ? (
+                          <IconChevronUp size={16} />
+                        ) : (
+                          <IconChevronDown size={16} />
                         )}
-                        <button
-                          type="button"
-                          className="button secondary sm"
-                          onClick={() => handleCopyJson(row, row.id)}
-                          title="Copy diagnostic record JSON"
-                        >
-                          {copiedId === row.id ? (
-                            <>
-                              <IconCheck size={12} className="text-mint" />{" "}
-                              Copied
-                            </>
-                          ) : (
-                            <>
-                              <IconCopy size={12} /> Copy
-                            </>
+                      </td>
+                      <td className="muted nowrap">{time(row.timestamp)}</td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        {row.identity ? (
+                          <Link
+                            to={`/connection/view/${encodeURIComponent(row.identity)}`}
+                            className="font-mono text-xs font-semibold text-foreground hover:underline"
+                          >
+                            {row.identity}
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            Server
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <Status tone={isError ? "rose" : "lavender"}>
+                          {(isError ? row.category : row.type).replaceAll(
+                            "_",
+                            " ",
                           )}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                        </Status>
+                      </td>
+                      <td>
+                        <span className="text-xs text-foreground font-medium">
+                          {row.message}
+                        </span>
+                      </td>
+                      <td
+                        className="text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-end gap-2">
+                          {row.identity && (
+                            <Link
+                              to={`/messages?identity=${encodeURIComponent(row.identity)}`}
+                              className="button secondary sm"
+                              title="Inspect messages for charger"
+                            >
+                              Traffic
+                            </Link>
+                          )}
+                          <button
+                            type="button"
+                            className="button secondary sm"
+                            onClick={() => handleCopyJson(row, row.id)}
+                            title="Copy diagnostic record JSON"
+                          >
+                            {copiedId === row.id ? (
+                              <>
+                                <IconCheck size={12} className="text-mint" />{" "}
+                                Copied
+                              </>
+                            ) : (
+                              <>
+                                <IconCopy size={12} /> Copy
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {isExpanded && (
+                      <tr key={`${row.id}-expanded`} className="expanded-row">
+                        <td colSpan={6} className="expanded-cell">
+                          <div className="telemetry-sample-expanded-card !m-0 !mt-2">
+                            <div className="telemetry-sample-expanded-header">
+                              <div className="flex items-center gap-2">
+                                {isError ? (
+                                  <IconBug size={16} className="text-rose" />
+                                ) : (
+                                  <IconHistory
+                                    size={16}
+                                    className="text-blue"
+                                  />
+                                )}
+                                <strong>
+                                  {isError
+                                    ? `Error Record (${row.category})`
+                                    : `Lifecycle Event (${row.type})`}{" "}
+                                  — {row.identity || "Server"}
+                                </strong>
+                              </div>
+                              <button
+                                type="button"
+                                className="button secondary sm"
+                                onClick={() =>
+                                  handleCopyJson(row, `full-${row.id}`)
+                                }
+                              >
+                                {copiedId === `full-${row.id}` ? (
+                                  <>
+                                    <IconCheck
+                                      size={12}
+                                      className="text-mint"
+                                    />{" "}
+                                    Copied
+                                  </>
+                                ) : (
+                                  <>
+                                    <IconCopy size={12} /> Copy record
+                                  </>
+                                )}
+                              </button>
+                            </div>
+
+                            <div className="p-3 bg-muted/40 rounded-lg text-xs font-medium mb-3">
+                              {row.message}
+                            </div>
+
+                            {/* Render Stack trace in clean monospace code block if present */}
+                            {isError && (row as ErrorRecord).stack && (
+                              <div className="mb-3">
+                                <div className="text-[11px] font-semibold text-muted-foreground uppercase mb-1">
+                                  Stack Trace
+                                </div>
+                                <pre className="p-3 bg-background border border-border rounded-lg text-xs font-mono overflow-x-auto text-rose/90 whitespace-pre-wrap">
+                                  {(row as ErrorRecord).stack}
+                                </pre>
+                              </div>
+                            )}
+
+                            <JsonView
+                              value={
+                                (!isError
+                                  ? (row as SystemEvent).details
+                                  : undefined) ?? row
+                              }
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
 
@@ -842,70 +918,6 @@ export default function DiagnosticsPage() {
             </tbody>
           </table>
         </div>
-
-        {expandedId !== null &&
-          (() => {
-            const row = filteredRows.find((r) => r.id === expandedId);
-            if (!row) return null;
-            const isError = "category" in row;
-
-            return (
-              <div className="telemetry-sample-expanded-card">
-                <div className="telemetry-sample-expanded-header">
-                  <div className="flex items-center gap-2">
-                    {isError ? (
-                      <IconBug size={16} className="text-rose" />
-                    ) : (
-                      <IconHistory size={16} className="text-blue" />
-                    )}
-                    <strong>
-                      {isError
-                        ? `Error Record (${row.category})`
-                        : `Lifecycle Event (${row.type})`}{" "}
-                      — {row.identity || "Server"}
-                    </strong>
-                  </div>
-                  <button
-                    type="button"
-                    className="button secondary sm"
-                    onClick={() => handleCopyJson(row, row.id)}
-                  >
-                    {copiedId === row.id ? (
-                      <>
-                        <IconCheck size={12} className="text-mint" /> Copied
-                      </>
-                    ) : (
-                      <>
-                        <IconCopy size={12} /> Copy record
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <div className="p-3 bg-muted/40 rounded-lg text-xs font-medium mb-3">
-                  {row.message}
-                </div>
-
-                {/* Render Stack trace in clean monospace code block if present */}
-                {isError && (row as ErrorRecord).stack && (
-                  <div className="mb-3">
-                    <div className="text-[11px] font-semibold text-muted-foreground uppercase mb-1">
-                      Stack Trace
-                    </div>
-                    <pre className="p-3 bg-background border border-border rounded-lg text-xs font-mono overflow-x-auto text-rose/90 whitespace-pre-wrap">
-                      {(row as ErrorRecord).stack}
-                    </pre>
-                  </div>
-                )}
-
-                <JsonView
-                  value={
-                    (!isError ? (row as SystemEvent).details : undefined) ?? row
-                  }
-                />
-              </div>
-            );
-          })()}
 
         {filteredRows.length > 0 && (
           <Pagination

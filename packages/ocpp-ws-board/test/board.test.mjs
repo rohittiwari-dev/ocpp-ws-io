@@ -464,3 +464,34 @@ test("telemetry error ratio counts frames once and history does not grow on ever
   await store.getTelemetry();
   assert.equal((await store.getTelemetryHistory()).length, 1);
 });
+
+test("store options can be passed as ring buffer bounds in BoardOptions", async () => {
+  const board = createBoard({
+    auth: { mode: "none" },
+    store: {
+      maxMessages: 2,
+      maxProxyEvents: 5,
+      maxSmartChargeHistory: 3,
+    },
+  });
+
+  for (let i = 1; i <= 5; i++) {
+    await board.store.addMessage({
+      id: String(i),
+      identity: "CP-1",
+      direction: "IN",
+      type: "CALL",
+      method: "Heartbeat",
+      messageId: String(i),
+      timestamp: new Date().toISOString(),
+      protocol: "ocpp1.6",
+      source: "ocpp-ws-io",
+    });
+  }
+
+  const messages = await board.store.getMessages();
+  assert.equal(messages.length, 2, "ring buffer bounds maxMessages to 2");
+  assert.equal(messages[0].id, "5");
+  assert.equal(messages[1].id, "4");
+  board.cleanup();
+});

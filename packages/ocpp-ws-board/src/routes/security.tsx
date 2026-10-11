@@ -13,7 +13,7 @@ import {
   IconTerminal2,
   IconX,
 } from "@tabler/icons-react";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Select,
@@ -34,7 +34,7 @@ import {
 } from "@/components/workspace";
 import { useResource } from "@/hooks/use-resource";
 import { time } from "@/lib/export";
-import type { SecurityEventRecord } from "@/types";
+import type { JsonValue, SecurityEventRecord } from "@/types";
 
 type SecurityPreset =
   | "all"
@@ -70,8 +70,8 @@ export default function SecurityPage() {
   const [severity, setSeverity] = useState("");
   const [category, setCategory] = useState("");
   const [preset, setPreset] = useState<SecurityPreset>("all");
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(6);
@@ -159,11 +159,14 @@ export default function SecurityPage() {
     return filteredEvents.slice(start, start + pageSize);
   }, [filteredEvents, currentPage, pageSize]);
 
-  const handleCopyJson = (data: unknown, index: number) => {
+  const handleCopyJson = (
+    data: JsonValue | SecurityEventRecord,
+    id: string,
+  ) => {
     navigator.clipboard.writeText(JSON.stringify(data, null, 2));
-    setCopiedIndex(index);
+    setCopiedId(id);
     setTimeout(() => {
-      setCopiedIndex((prev) => (prev === index ? null : prev));
+      setCopiedId((prev) => (prev === id ? null : prev));
     }, 2000);
   };
 
@@ -411,7 +414,7 @@ export default function SecurityPage() {
             }}
           >
             <SelectTrigger className="w-38 text-xs" aria-label="Severity level">
-              <SelectValue />
+              <SelectValue className={"capitalize"} />
             </SelectTrigger>
             <SelectContent>
               {Object.entries(SEVERITY_OPTIONS).map(([k, label]) => (
@@ -433,7 +436,7 @@ export default function SecurityPage() {
               className="w-48 text-xs"
               aria-label="Security category"
             >
-              <SelectValue />
+              <SelectValue className={"capitalize"} />
             </SelectTrigger>
             <SelectContent>
               {Object.entries(CATEGORY_OPTIONS).map(([k, label]) => (
@@ -474,91 +477,150 @@ export default function SecurityPage() {
             </thead>
             <tbody>
               {pagedEvents.map((event, index) => {
-                const globalIndex = currentPage * pageSize + index;
-                const isExpanded = expandedIndex === globalIndex;
+                const isExpanded = expandedId === event.id;
 
                 return (
-                  <tr
-                    key={event.id}
-                    className={`telemetry-sample-row ${isExpanded ? "is-expanded" : ""}`}
-                    onClick={() =>
-                      setExpandedIndex(isExpanded ? null : globalIndex)
-                    }
-                  >
-                    <td className="w-10 text-muted-foreground">
-                      {isExpanded ? (
-                        <IconChevronUp size={16} />
-                      ) : (
-                        <IconChevronDown size={16} />
-                      )}
-                    </td>
-                    <td className="muted nowrap">{time(event.timestamp)}</td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <Link
-                        to={`/connection/view/${encodeURIComponent(event.identity)}`}
-                        className="font-mono text-xs font-semibold text-foreground hover:underline"
-                      >
-                        {event.identity || "Server"}
-                      </Link>
-                    </td>
-                    <td>
-                      <span className="exchange-action-badge">
-                        {event.category.replaceAll("_", " ")}
-                      </span>
-                    </td>
-                    <td>
-                      <Status
-                        tone={
-                          event.severity === "critical" ||
-                          event.severity === "high"
-                            ? "rose"
-                            : event.severity === "medium"
-                              ? "yellow"
-                              : "blue"
-                        }
-                      >
-                        {event.severity}
-                      </Status>
-                    </td>
-                    <td>
-                      <span className="text-xs text-foreground font-medium">
-                        {event.message}
-                      </span>
-                    </td>
-                    <td
-                      className="text-right"
-                      onClick={(e) => e.stopPropagation()}
+                  <Fragment key={event.id || index}>
+                    <tr
+                      className={`telemetry-sample-row ${isExpanded ? "is-expanded" : ""}`}
+                      onClick={() =>
+                        setExpandedId(isExpanded ? null : event.id)
+                      }
                     >
-                      <div className="flex items-center justify-end gap-2">
-                        {event.identity && (
-                          <Link
-                            to={`/commands?target=${encodeURIComponent(event.identity)}`}
-                            className="button secondary sm"
-                            title="Command charger"
-                          >
-                            <IconTerminal2 size={13} /> Command
-                          </Link>
+                      <td className="w-10 text-muted-foreground">
+                        {isExpanded ? (
+                          <IconChevronUp size={16} />
+                        ) : (
+                          <IconChevronDown size={16} />
                         )}
-                        <button
-                          type="button"
-                          className="button secondary sm"
-                          onClick={() => handleCopyJson(event, globalIndex)}
-                          title="Copy security event JSON"
+                      </td>
+                      <td className="muted nowrap">{time(event.timestamp)}</td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <Link
+                          to={`/connection/view/${encodeURIComponent(event.identity)}`}
+                          className="font-mono text-xs font-semibold text-foreground hover:underline"
                         >
-                          {copiedIndex === globalIndex ? (
-                            <>
-                              <IconCheck size={12} className="text-mint" />{" "}
-                              Copied
-                            </>
-                          ) : (
-                            <>
-                              <IconCopy size={12} /> Copy JSON
-                            </>
+                          {event.identity || "Server"}
+                        </Link>
+                      </td>
+                      <td>
+                        <span className="exchange-action-badge">
+                          {event.category.replaceAll("_", " ")}
+                        </span>
+                      </td>
+                      <td>
+                        <Status
+                          tone={
+                            event.severity === "critical" ||
+                            event.severity === "high"
+                              ? "rose"
+                              : event.severity === "medium"
+                                ? "yellow"
+                                : "blue"
+                          }
+                        >
+                          {event.severity}
+                        </Status>
+                      </td>
+                      <td>
+                        <span className="text-xs text-foreground font-medium">
+                          {event.message}
+                        </span>
+                      </td>
+                      <td
+                        className="text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-end gap-2">
+                          {event.identity && (
+                            <Link
+                              to={`/commands?target=${encodeURIComponent(event.identity)}`}
+                              className="button secondary sm"
+                              title="Command charger"
+                            >
+                              <IconTerminal2 size={13} /> Command
+                            </Link>
                           )}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                          <button
+                            type="button"
+                            className="button secondary sm"
+                            onClick={() => handleCopyJson(event, event.id)}
+                            title="Copy security event JSON"
+                          >
+                            {copiedId === event.id ? (
+                              <>
+                                <IconCheck size={12} className="text-mint" />{" "}
+                                Copied
+                              </>
+                            ) : (
+                              <>
+                                <IconCopy size={12} /> Copy JSON
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {isExpanded && (
+                      <tr key={`${event.id}-expanded`} className="expanded-row">
+                        <td colSpan={7} className="expanded-cell">
+                          <div className="telemetry-sample-expanded-card !m-0 !mt-2">
+                            <div className="telemetry-sample-expanded-header">
+                              <div className="flex items-center gap-2">
+                                <IconShieldExclamation
+                                  size={16}
+                                  className={
+                                    event.severity === "critical" ||
+                                    event.severity === "high"
+                                      ? "text-rose"
+                                      : "text-blue"
+                                  }
+                                />
+                                <strong>
+                                  Event details — {event.category} (
+                                  {event.identity || "Server"})
+                                </strong>
+                              </div>
+                              <button
+                                type="button"
+                                className="button secondary sm"
+                                onClick={() =>
+                                  handleCopyJson(event, `full-${event.id}`)
+                                }
+                              >
+                                {copiedId === `full-${event.id}` ? (
+                                  <>
+                                    <IconCheck
+                                      size={12}
+                                      className="text-mint"
+                                    />{" "}
+                                    Copied
+                                  </>
+                                ) : (
+                                  <>
+                                    <IconCopy size={12} /> Copy full event
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                            <div className="p-3 bg-muted/40 rounded-lg text-xs font-medium mb-3">
+                              {event.message}
+                            </div>
+                            <JsonView
+                              value={
+                                event.details ?? {
+                                  message: event.message,
+                                  severity: event.severity,
+                                  timestamp: event.timestamp,
+                                }
+                              }
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
 
@@ -583,57 +645,6 @@ export default function SecurityPage() {
             </tbody>
           </table>
         </div>
-
-        {expandedIndex !== null && filteredEvents[expandedIndex] && (
-          <div className="telemetry-sample-expanded-card">
-            <div className="telemetry-sample-expanded-header">
-              <div className="flex items-center gap-2">
-                <IconShieldExclamation
-                  size={16}
-                  className={
-                    filteredEvents[expandedIndex].severity === "critical" ||
-                    filteredEvents[expandedIndex].severity === "high"
-                      ? "text-rose"
-                      : "text-blue"
-                  }
-                />
-                <strong>
-                  Event details — {filteredEvents[expandedIndex].category} (
-                  {filteredEvents[expandedIndex].identity || "Server"})
-                </strong>
-              </div>
-              <button
-                type="button"
-                className="button secondary sm"
-                onClick={() =>
-                  handleCopyJson(filteredEvents[expandedIndex], expandedIndex)
-                }
-              >
-                {copiedIndex === expandedIndex ? (
-                  <>
-                    <IconCheck size={12} className="text-mint" /> Copied
-                  </>
-                ) : (
-                  <>
-                    <IconCopy size={12} /> Copy full event
-                  </>
-                )}
-              </button>
-            </div>
-            <div className="p-3 bg-muted/40 rounded-lg text-xs font-medium mb-3">
-              {filteredEvents[expandedIndex].message}
-            </div>
-            <JsonView
-              value={
-                filteredEvents[expandedIndex].details ?? {
-                  message: filteredEvents[expandedIndex].message,
-                  severity: filteredEvents[expandedIndex].severity,
-                  timestamp: filteredEvents[expandedIndex].timestamp,
-                }
-              }
-            />
-          </div>
-        )}
 
         {filteredEvents.length > 0 && (
           <Pagination

@@ -30,6 +30,7 @@ export type {
   SmartChargeSession,
   SmartChargeState,
   StoredMessage,
+  StoreOptions,
   SystemEvent,
   SystemEventType,
   TelemetrySnapshot,

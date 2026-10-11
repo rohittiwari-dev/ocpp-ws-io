@@ -10,6 +10,7 @@ import type {
   SecurityEventRecord,
   SmartChargeSession,
   StoredMessage,
+  StoreOptions,
   SystemEvent,
   TelemetrySnapshot,
 } from "./types.js";
@@ -112,10 +113,23 @@ export class CompressedMemoryStore implements BoardStorageAdapter {
   >(60);
 
   constructor(
-    maxMessages = 10000, // Increased defaults due to compression
+    optionsOrMaxMessages?: StoreOptions | number,
     maxProxyEvents = 2000,
     maxSmartChargeHistory = 1000,
   ) {
+    let maxMessages = 10000;
+    if (
+      typeof optionsOrMaxMessages === "object" &&
+      optionsOrMaxMessages !== null
+    ) {
+      maxMessages = optionsOrMaxMessages.maxMessages ?? 10000;
+      maxProxyEvents = optionsOrMaxMessages.maxProxyEvents ?? 2000;
+      maxSmartChargeHistory =
+        optionsOrMaxMessages.maxSmartChargeHistory ?? 1000;
+    } else if (typeof optionsOrMaxMessages === "number") {
+      maxMessages = optionsOrMaxMessages;
+    }
+
     this.messages = new CompressedRingBuffer<StoredMessage>(maxMessages);
     this.proxyEvents = new CompressedRingBuffer<ProxyEvent>(maxProxyEvents);
     this.smartChargeHistory = new CompressedRingBuffer<JsonValue>(

@@ -378,7 +378,7 @@ export default function ConnectionsPage() {
           }
         >
           <SelectTrigger className="w-36.25" aria-label="Filter status">
-            <SelectValue />
+            <SelectValue className={"capitalize"} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
@@ -407,7 +407,7 @@ export default function ConnectionsPage() {
           }
         >
           <SelectTrigger className="w-37.5" aria-label="Filter protocol">
-            <SelectValue />
+            <SelectValue className={"capitalize"} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All protocols</SelectItem>
@@ -433,7 +433,7 @@ export default function ConnectionsPage() {
           }}
         >
           <SelectTrigger className="w-36.25" aria-label="Sort chargers">
-            <SelectValue />
+            <SelectValue className={"capitalize"} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="newest">Newest first</SelectItem>

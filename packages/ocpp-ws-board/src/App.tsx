@@ -4,19 +4,19 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { BASE_PATH } from "@/lib/api";
 import { AuthProvider } from "@/lib/auth";
 import AuthLayout from "@/routes/AuthLayout";
-import CommandsPage from "@/routes/commands";
-import ConnectionPage from "@/routes/connection";
-import ConnectionsPage from "@/routes/connections";
-import DiagnosticsPage from "@/routes/diagnostics";
-import HelpPage from "@/routes/help";
-import IntegrationsPage from "@/routes/integrations";
-import LoginPage from "@/routes/login";
-import MessagesPage from "@/routes/messages";
-import OverviewPage from "@/routes/overview";
-import SecurityPage from "@/routes/security";
-import SettingsPage from "@/routes/settings";
 
+const LoginPage = lazy(() => import("@/routes/login"));
+const OverviewPage = lazy(() => import("@/routes/overview"));
+const ConnectionsPage = lazy(() => import("@/routes/connections"));
+const ConnectionPage = lazy(() => import("@/routes/connection"));
+const MessagesPage = lazy(() => import("@/routes/messages"));
 const TelemetryPage = lazy(() => import("@/routes/telemetry"));
+const SecurityPage = lazy(() => import("@/routes/security"));
+const CommandsPage = lazy(() => import("@/routes/commands"));
+const DiagnosticsPage = lazy(() => import("@/routes/diagnostics"));
+const IntegrationsPage = lazy(() => import("@/routes/integrations"));
+const SettingsPage = lazy(() => import("@/routes/settings"));
+const HelpPage = lazy(() => import("@/routes/help"));
 
 export default function App() {
   return (

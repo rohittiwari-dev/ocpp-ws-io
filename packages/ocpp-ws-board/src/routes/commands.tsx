@@ -396,7 +396,10 @@ export default function CommandsPage() {
                   }}
                 >
                   <SelectTrigger className="w-full" aria-label="Target charger">
-                    <SelectValue placeholder="Choose an online charger" />
+                    <SelectValue
+                      placeholder="Choose an online charger"
+                      className={"capitalize"}
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {onlineChargers.length === 0 ? (
@@ -444,6 +447,7 @@ export default function CommandsPage() {
                             ? "No compatible presets"
                             : "Choose compatible preset"
                       }
+                      className={"capitalize"}
                     />
                   </SelectTrigger>
                   <SelectContent>
@@ -819,7 +823,7 @@ export default function CommandsPage() {
           }}
         >
           <SelectTrigger className="w-36.25" aria-label="Filter status">
-            <SelectValue placeholder="All outcomes" />
+            <SelectValue placeholder="All outcomes" className={"capitalize"} />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All outcomes</SelectItem>

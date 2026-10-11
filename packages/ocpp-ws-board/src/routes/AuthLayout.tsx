@@ -146,7 +146,7 @@ function Workspace({
               backgroundSize: "contain",
             }}
           />
-          OCPP Board
+          OCPP WS IO
         </NavLink>
         <button
           type="button"
@@ -201,7 +201,7 @@ function Workspace({
             to="/connections"
             className="brand flex items-center gap-2 justify-center"
             onClick={closeMenu}
-            title="OCPP Board"
+            title="OCPP WS IO"
           >
             <span
               aria-hidden="true"
@@ -215,7 +215,7 @@ function Workspace({
                 backgroundSize: "contain",
               }}
             />
-            {!isIconRail && <span className="brand-text">OCPP Board</span>}
+            {!isIconRail && <span className="brand-text">OCPP WS IO</span>}
           </NavLink>
         </div>
 

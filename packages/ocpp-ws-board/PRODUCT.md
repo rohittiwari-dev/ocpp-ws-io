@@ -1,4 +1,4 @@
-# OCPP Board
+# OCPP WS IO
 
 <!-- impeccable:product-schema 1 -->
 

@@ -28,10 +28,11 @@ const board = createBoard({
   // auth: { mode: "custom",                // custom validator
   //         validate: async (creds) => ({ name: "admin" }) },
   store: {
-    maxMessages: 5000,          // ring buffer size (default: 5000)
-    maxProxyEvents: 1000,       // protocol-proxy events
-    maxSmartChargeHistory: 500, // smart-charge history
+    maxMessages: 10000,         // in-memory compressed ring buffer (default: 10000)
+    maxProxyEvents: 2000,       // protocol-proxy translation events (default: 2000)
+    maxSmartChargeHistory: 1000,// smart-charge history events (default: 1000)
   },
+  commandsEnabled: true,        // enable operator RPC composer (default: true)
   sseHeartbeatMs: 15000,        // SSE keepalive interval
 });
 
@@ -153,8 +154,12 @@ All endpoints are prefixed with `/api` and require authentication (except `POST 
 | `GET`    | `/api/messages/stream`                | SSE live message stream       |
 | `GET`    | `/api/telemetry`                      | Current telemetry snapshot    |
 | `GET`    | `/api/telemetry/stream`               | SSE live telemetry stream     |
-| `GET`    | `/api/smart-charge`                   | Smart charge sessions         |
-| `GET`    | `/api/proxy`                          | Protocol proxy events         |
+| `GET`    | `/api/commands`                       | List sent RPC command history |
+| `POST`   | `/api/commands`                       | Execute operator RPC command  |
+| `GET`    | `/api/security-events`                | Query security incidents      |
+| `GET`    | `/api/security-events/stream`         | SSE live security incidents   |
+| `GET`    | `/api/diagnostics`                    | Query exceptions & lifecycle  |
+| `GET`    | `/api/integrations`                   | Smart charging & proxy status |
 
 ## Architecture
 
