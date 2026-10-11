@@ -438,7 +438,7 @@ ${logs
                 ],
               });
               if (!p.isCancel(fStatus) && fStatus) {
-                await engine.sendFirmwareStatusNotification(fStatus as string);
+                await engine.sendFirmwareStatusNotification(fStatus);
               }
             } else if (eventType === "DiagnosticsStatusNotification") {
               const dStatus = await p.select({
@@ -451,9 +451,7 @@ ${logs
                 ],
               });
               if (!p.isCancel(dStatus) && dStatus) {
-                await engine.sendDiagnosticsStatusNotification(
-                  dStatus as string,
-                );
+                await engine.sendDiagnosticsStatusNotification(dStatus);
               }
             } else if (eventType === "CustomMeterValues") {
               const pValW = await p.text({

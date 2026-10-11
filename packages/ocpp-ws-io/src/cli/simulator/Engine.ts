@@ -1,15 +1,19 @@
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import WebSocket from "ws";
-import type { OCPPResponseType } from "../../types/index.js";
+import type { OCPPRequestType, OCPPResponseType } from "../../types/index.js";
 import type { JsonObject } from "../../types/json.js";
 import type {
   AuthorizeResponse,
+  BootReason,
   ConnectorStatus,
   ConnectorStatusV2,
   CsmsCall,
+  DiagnosticsStatus,
   EitherResponse,
+  FirmwareStatus,
   OutgoingPayload,
+  UploadLogStatusV2,
 } from "../types.js";
 
 /**
@@ -28,6 +32,11 @@ function connectorStatusV2(status: ConnectorStatus): ConnectorStatusV2 {
     default:
       return status;
   }
+}
+
+/** A 1.6 DiagnosticsStatus as the 2.0.1 and 2.1 log upload status it is. */
+function uploadLogStatusV2(status: DiagnosticsStatus): UploadLogStatusV2 {
+  return status === "UploadFailed" ? "UploadFailure" : status;
 }
 
 export interface EngineConfig {
@@ -155,12 +164,7 @@ export class SimulatorEngine extends EventEmitter {
     try {
       const response = await this.sendCall<EitherResponse<"BootNotification">>(
         "BootNotification",
-        {
-          chargePointVendor: "OCPP-WS-IO CLI",
-          chargePointModel: "VirtualSimulator-v1",
-          chargePointSerialNumber: "SIM-001",
-          firmwareVersion: "1.0.0-alpha",
-        },
+        this.bootNotificationRequest("PowerUp"),
       );
 
       if (response.status === "Accepted") {
@@ -481,7 +485,8 @@ export class SimulatorEngine extends EventEmitter {
         );
         if (reservationStatus === "Accepted") {
           this.reservationId = requestedId;
-          this.updateConnectorState("Preparing").catch(() => {}); // closest valid pre-reserved state
+          // 1.6 and 2.x both have a Reserved status.
+          this.updateConnectorState("Reserved").catch(() => {});
         }
         this.sendCallResult(messageId, { status: reservationStatus });
         break;
@@ -661,17 +666,37 @@ export class SimulatorEngine extends EventEmitter {
     }
   }
 
+  /**
+   * The BootNotification request in the version the simulator speaks: 1.6
+   * names the station's fields at the top level, 2.0.1 and 2.1 put them in
+   * `chargingStation` and add why it booted.
+   */
+  private bootNotificationRequest(reason: BootReason): OutgoingPayload {
+    if (this.config.protocol.startsWith("ocpp2")) {
+      return {
+        reason,
+        chargingStation: {
+          vendorName: "OCPP-WS-IO CLI",
+          model: "VirtualSimulator-v1",
+          serialNumber: "SIM-001",
+          firmwareVersion: "1.0.0-alpha",
+        },
+      } satisfies OCPPRequestType<"ocpp2.0.1", "BootNotification">;
+    }
+    return {
+      chargePointVendor: "OCPP-WS-IO CLI",
+      chargePointModel: "VirtualSimulator-v1",
+      chargePointSerialNumber: "SIM-001",
+      firmwareVersion: "1.0.0-alpha",
+    } satisfies OCPPRequestType<"ocpp1.6", "BootNotification">;
+  }
+
   public async sendBootNotification(): Promise<void> {
     this.emit("log", "Sending manual BootNotification...", "info");
     try {
       const response = await this.sendCall<EitherResponse<"BootNotification">>(
         "BootNotification",
-        {
-          chargePointVendor: "OCPP-WS-IO CLI",
-          chargePointModel: "VirtualSimulator-v1",
-          chargePointSerialNumber: "SIM-001",
-          firmwareVersion: "1.0.0-alpha",
-        },
+        this.bootNotificationRequest("Triggered"),
       );
       this.emit(
         "log",
@@ -709,7 +734,9 @@ export class SimulatorEngine extends EventEmitter {
     }
   }
 
-  public async sendFirmwareStatusNotification(status: string): Promise<void> {
+  public async sendFirmwareStatusNotification(
+    status: FirmwareStatus,
+  ): Promise<void> {
     this.emit(
       "log",
       `Sending FirmwareStatusNotification (${status})...`,
@@ -717,9 +744,13 @@ export class SimulatorEngine extends EventEmitter {
     );
     try {
       if (this.config.protocol.startsWith("ocpp2")) {
-        await this.sendCall("FirmwareStatusNotification", { status });
+        await this.sendCall("FirmwareStatusNotification", {
+          status,
+        } satisfies OCPPRequestType<"ocpp2.0.1", "FirmwareStatusNotification">);
       } else {
-        await this.sendCall("FirmwareStatusNotification", { status });
+        await this.sendCall("FirmwareStatusNotification", {
+          status,
+        } satisfies OCPPRequestType<"ocpp1.6", "FirmwareStatusNotification">);
       }
       this.emit("log", "FirmwareStatusNotification Accepted.", "success");
     } catch (err) {
@@ -732,7 +763,7 @@ export class SimulatorEngine extends EventEmitter {
   }
 
   public async sendDiagnosticsStatusNotification(
-    status: string,
+    status: DiagnosticsStatus,
   ): Promise<void> {
     this.emit(
       "log",
@@ -742,9 +773,16 @@ export class SimulatorEngine extends EventEmitter {
     try {
       if (this.config.protocol.startsWith("ocpp2")) {
         // In OCPP 2.0.1 it's LogStatusNotification
-        await this.sendCall("LogStatusNotification", { status });
+        await this.sendCall("LogStatusNotification", {
+          status: uploadLogStatusV2(status),
+        } satisfies OCPPRequestType<"ocpp2.0.1", "LogStatusNotification">);
       } else {
-        await this.sendCall("DiagnosticsStatusNotification", { status });
+        await this.sendCall("DiagnosticsStatusNotification", {
+          status,
+        } satisfies OCPPRequestType<
+          "ocpp1.6",
+          "DiagnosticsStatusNotification"
+        >);
       }
       this.emit(
         "log",
@@ -934,18 +972,17 @@ export class SimulatorEngine extends EventEmitter {
     try {
       await this.sendCall("NotifyDisplayMessages", {
         requestId: Math.floor(Math.random() * 1000),
-        messageFormat: "UTF8",
         messageInfo: [
           {
             id: 1,
-            priority: "Normal",
+            priority: "NormalCycle",
             message: {
               format: "UTF8",
               content: "Welcome to Virtual CP",
             },
           },
         ],
-      });
+      } satisfies OCPPRequestType<"ocpp2.0.1", "NotifyDisplayMessages">);
       this.emit("log", "NotifyDisplayMessages Accepted.", "success");
     } catch (err) {
       this.emit(

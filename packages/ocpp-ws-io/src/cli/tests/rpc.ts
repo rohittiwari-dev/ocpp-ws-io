@@ -150,7 +150,7 @@ export const rpcSuite: TestSuite = {
       },
     );
 
-    // ── 5. Invalid Message ID Type (FormatViolation) ────────────
+    // ── 5. Invalid Message ID Type (2.x: "-1", RpcFrameworkError) ──
 
     await check("Server enforces MessageId is a string", "MEDIUM", async () => {
       let ws: WebSocket | undefined;
@@ -163,17 +163,29 @@ export const rpcSuite: TestSuite = {
         const msg = await waitForMessage(ws, 4000);
         const parsed = JSON.parse(msg);
 
+        // 2.0.1 and 2.1 answer a message ID they cannot read under "-1", with
+        // RpcFrameworkError (Part 4 §4.2.3). 1.6 has no rule for it.
+        const unreadableIdAnswer =
+          Array.isArray(parsed) &&
+          protocol !== "ocpp1.6" &&
+          parsed[1] === "-1" &&
+          parsed[2] === "RpcFrameworkError";
         if (
           Array.isArray(parsed) &&
           parsed[0] === 4 &&
-          parsed[1] === 12345 &&
-          (parsed[2] === "FormatViolation" || parsed[2] === "ProtocolError")
+          (unreadableIdAnswer ||
+            (parsed[1] === 12345 &&
+              (parsed[2] === formatViolation || parsed[2] === "ProtocolError")))
         ) {
           return { passed: true };
         }
         return {
           passed: false,
-          issue: `Expected FormatViolation CALLERROR, got: ${msg.slice(0, 80)}`,
+          issue: `Expected ${
+            protocol === "ocpp1.6"
+              ? `${formatViolation} CALLERROR`
+              : 'CALLERROR under "-1" with RpcFrameworkError'
+          }, got: ${msg.slice(0, 80)}`,
         };
       } catch (_err) {
         return { passed: true };

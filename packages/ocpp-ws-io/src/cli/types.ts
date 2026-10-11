@@ -26,6 +26,30 @@ export type ConnectorStatus = OCPPRequestType<
   "StatusNotification"
 >["status"];
 
+/** A firmware status the simulator reports: 1.6's, all of which 2.x has. */
+export type FirmwareStatus = OCPPRequestType<
+  "ocpp1.6",
+  "FirmwareStatusNotification"
+>["status"];
+
+/** A diagnostics upload status the simulator reports: 1.6's DiagnosticsStatus. */
+export type DiagnosticsStatus = OCPPRequestType<
+  "ocpp1.6",
+  "DiagnosticsStatusNotification"
+>["status"];
+
+/** A log upload status as 2.0.1 and 2.1 report it in LogStatusNotification. */
+export type UploadLogStatusV2 = OCPPRequestType<
+  "ocpp2.0.1",
+  "LogStatusNotification"
+>["status"];
+
+/** Why a 2.0.1 or 2.1 station booted, as its BootNotification says. */
+export type BootReason = OCPPRequestType<
+  "ocpp2.0.1",
+  "BootNotification"
+>["reason"];
+
 /** A connector status as 2.0.1 and 2.1 report it, which has fewer states. */
 export type ConnectorStatusV2 = OCPPRequestType<
   "ocpp2.0.1",
