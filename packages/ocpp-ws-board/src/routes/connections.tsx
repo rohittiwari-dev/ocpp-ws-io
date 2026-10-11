@@ -60,6 +60,7 @@ export default function ConnectionsPage() {
   const [query, setQuery] = useSearchParams();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(6);
   const [sort, setSort] = useState("newest");
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
@@ -98,7 +99,7 @@ export default function ConnectionsPage() {
     );
   const currentPage = Math.min(
     page,
-    Math.max(0, Math.ceil(stations.length / 12) - 1),
+    Math.max(0, Math.ceil(stations.length / pageSize) - 1),
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: changing a filter resets pagination.
   useEffect(() => {
@@ -465,7 +466,10 @@ export default function ConnectionsPage() {
             </thead>
             <tbody>
               {stations
-                .slice(currentPage * 12, currentPage * 12 + 12)
+                .slice(
+                  currentPage * pageSize,
+                  currentPage * pageSize + pageSize,
+                )
                 .map((station, index) => (
                   <tr
                     key={station.identity}
@@ -695,7 +699,9 @@ export default function ConnectionsPage() {
         <Pagination
           page={currentPage}
           count={stations.length}
+          size={pageSize}
           onChange={setPage}
+          onPageSizeChange={setPageSize}
         />
       </section>
       <p className="table-note">

@@ -51,6 +51,7 @@ export default function SecurityPage() {
   const [severity, setSeverity] = useState("");
   const [category, setCategory] = useState("");
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(6);
   const events = (resource.data?.events ?? []).filter(
     (event) =>
       (!severity || event.severity === severity) &&
@@ -61,7 +62,7 @@ export default function SecurityPage() {
   );
   const currentPage = Math.min(
     page,
-    Math.max(0, Math.ceil(events.length / 20) - 1),
+    Math.max(0, Math.ceil(events.length / pageSize) - 1),
   );
   return (
     <>
@@ -137,7 +138,10 @@ export default function SecurityPage() {
             </thead>
             <tbody>
               {events
-                .slice(currentPage * 20, currentPage * 20 + 20)
+                .slice(
+                  currentPage * pageSize,
+                  currentPage * pageSize + pageSize,
+                )
                 .map((event) => (
                   <tr key={event.id}>
                     <td className="muted nowrap">{time(event.timestamp)}</td>
@@ -180,8 +184,9 @@ export default function SecurityPage() {
         <Pagination
           page={currentPage}
           count={events.length}
-          size={20}
+          size={pageSize}
           onChange={setPage}
+          onPageSizeChange={setPageSize}
         />
       </div>
       <p className="table-note">

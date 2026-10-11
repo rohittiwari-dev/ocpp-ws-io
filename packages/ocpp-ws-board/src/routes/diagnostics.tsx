@@ -24,6 +24,7 @@ export default function DiagnosticsPage() {
   const events = useResource<SystemEvent[]>("/system-events?limit=1000", 5000);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(6);
   const rows = (
     system ? (events.data ?? []) : (errors.data?.errors ?? [])
   ).filter(
@@ -36,7 +37,7 @@ export default function DiagnosticsPage() {
   const resource = system ? events : errors;
   const currentPage = Math.min(
     page,
-    Math.max(0, Math.ceil(rows.length / 20) - 1),
+    Math.max(0, Math.ceil(rows.length / pageSize) - 1),
   );
   return (
     <>
@@ -109,7 +110,10 @@ export default function DiagnosticsPage() {
             </thead>
             <tbody>
               {rows
-                .slice(currentPage * 20, currentPage * 20 + 20)
+                .slice(
+                  currentPage * pageSize,
+                  currentPage * pageSize + pageSize,
+                )
                 .map((event) => (
                   <tr key={event.id}>
                     <td className="muted nowrap">{time(event.timestamp)}</td>
@@ -142,8 +146,9 @@ export default function DiagnosticsPage() {
         <Pagination
           page={currentPage}
           count={rows.length}
-          size={20}
+          size={pageSize}
           onChange={setPage}
+          onPageSizeChange={setPageSize}
         />
       </div>
     </>

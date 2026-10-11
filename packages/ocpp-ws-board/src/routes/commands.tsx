@@ -14,6 +14,7 @@ import {
   Feedback,
   JsonView,
   PageHeading,
+  Pagination,
   Refresh,
   Status,
 } from "@/components/workspace";
@@ -41,6 +42,8 @@ export default function CommandsPage() {
   const [busy, setBusy] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [result, setResult] = useState<CommandRecord | null>(null);
+  const [historyPage, setHistoryPage] = useState(0);
+  const [historyPageSize, setHistoryPageSize] = useState(6);
   const station = stations.data?.find((item) => item.identity === identity);
   const presets = COMMAND_PRESETS.filter(
     (preset) => station && preset.protocols.includes(station.protocol),
@@ -315,33 +318,38 @@ export default function CommandsPage() {
               </tr>
             </thead>
             <tbody>
-              {(history.data ?? []).map((entry) => (
-                <tr key={entry.id}>
-                  <td className="nowrap muted">{time(entry.timestamp)}</td>
-                  <td>{entry.identity}</td>
-                  <td>{entry.method}</td>
-                  <td>{entry.operator}</td>
-                  <td>
-                    <Status
-                      tone={
-                        entry.status === "failed"
-                          ? "rose"
-                          : entry.status === "succeeded"
-                            ? "mint"
-                            : "yellow"
-                      }
-                    >
-                      {entry.status}
-                    </Status>
-                  </td>
-                  <td>
-                    <details className="payload-details">
-                      <summary>Inspect</summary>
-                      <JsonView value={entry} />
-                    </details>
-                  </td>
-                </tr>
-              ))}
+              {(history.data ?? [])
+                .slice(
+                  historyPage * historyPageSize,
+                  historyPage * historyPageSize + historyPageSize,
+                )
+                .map((entry) => (
+                  <tr key={entry.id}>
+                    <td className="nowrap muted">{time(entry.timestamp)}</td>
+                    <td>{entry.identity}</td>
+                    <td>{entry.method}</td>
+                    <td>{entry.operator}</td>
+                    <td>
+                      <Status
+                        tone={
+                          entry.status === "failed"
+                            ? "rose"
+                            : entry.status === "succeeded"
+                              ? "mint"
+                              : "yellow"
+                        }
+                      >
+                        {entry.status}
+                      </Status>
+                    </td>
+                    <td>
+                      <details className="payload-details">
+                        <summary>Inspect</summary>
+                        <JsonView value={entry} />
+                      </details>
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
@@ -350,6 +358,13 @@ export default function CommandsPage() {
             Requests sent from this board appear here with their outcome.
           </Empty>
         )}
+        <Pagination
+          page={historyPage}
+          count={history.data?.length ?? 0}
+          size={historyPageSize}
+          onChange={setHistoryPage}
+          onPageSizeChange={setHistoryPageSize}
+        />
       </div>
     </>
   );

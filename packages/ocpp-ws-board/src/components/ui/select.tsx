@@ -46,6 +46,8 @@ function SelectTrigger({
       data-size={size}
       className={cn(
         "flex w-fit items-center justify-between gap-2 rounded-lg border border-input bg-card py-2 pr-2.5 pl-3 text-sm whitespace-nowrap transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 min-h-[38px] text-foreground",
+        size === "sm" &&
+          "min-h-[28px] h-[28px] py-0.5 pr-1.5 pl-2 text-xs rounded-md gap-1",
         className,
       )}
       {...props}
@@ -53,7 +55,12 @@ function SelectTrigger({
       {children}
       <SelectPrimitive.Icon
         render={
-          <IconSelector className="pointer-events-none size-4 text-muted-foreground ml-auto shrink-0" />
+          <IconSelector
+            className={cn(
+              "pointer-events-none text-muted-foreground ml-auto shrink-0",
+              size === "sm" ? "size-3.5" : "size-4",
+            )}
+          />
         }
       />
     </SelectPrimitive.Trigger>

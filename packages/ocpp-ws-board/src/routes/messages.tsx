@@ -48,6 +48,7 @@ export default function MessagesPage() {
   const [direction, setDirection] = useState("");
   const [type, setType] = useState("");
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(6);
   const resource = useResource<StoredMessage[]>("/messages?limit=1000");
   const live = useSSE<StoredMessage>("/messages/stream", "message", !paused);
   const seen = new Set<string>();
@@ -72,7 +73,7 @@ export default function MessagesPage() {
   );
   const currentPage = Math.min(
     page,
-    Math.max(0, Math.ceil(messages.length / 20) - 1),
+    Math.max(0, Math.ceil(messages.length / pageSize) - 1),
   );
   return (
     <>
@@ -151,13 +152,17 @@ export default function MessagesPage() {
       )}
       <Feedback {...resource} retry={resource.refresh} />
       <TrafficTable
-        messages={messages.slice(currentPage * 20, currentPage * 20 + 20)}
+        messages={messages.slice(
+          currentPage * pageSize,
+          currentPage * pageSize + pageSize,
+        )}
       />
       <Pagination
         page={currentPage}
         count={messages.length}
-        size={20}
+        size={pageSize}
         onChange={setPage}
+        onPageSizeChange={setPageSize}
       />
       <p className="table-note">
         Showing up to 1,000 recent frames; the live buffer retains 200. Pausing

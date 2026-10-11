@@ -6,7 +6,26 @@ import {
   IconSearch,
 } from "@tabler/icons-react";
 import type { ReactNode } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { downloadJson } from "@/lib/export";
+
+export const PAGE_SIZE_OPTIONS = [6, 10, 15, 25, 50, 100] as const;
+export type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
+
+const PAGE_SIZE_ITEMS: Record<string, string> = {
+  "6": "6",
+  "10": "10",
+  "15": "15",
+  "25": "25",
+  "50": "50",
+  "100": "100",
+};
 export function PageHeading({
   title,
   description,
@@ -123,22 +142,73 @@ export function Export<T>({ data, name }: { data: T; name: string }) {
 export function Pagination({
   page,
   count,
-  size = 12,
+  size = 6,
   onChange,
+  onPageSizeChange,
 }: {
   page: number;
   count: number;
   size?: number;
   onChange: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
 }) {
   const total = Math.max(1, Math.ceil(count / size));
   return (
     <div className="table-footer">
-      <span>
-        {count
-          ? `${page * size + 1}-${Math.min((page + 1) * size, count)} of ${count}`
-          : "0 results"}
-      </span>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "16px",
+          flexWrap: "wrap",
+        }}
+      >
+        <span>
+          {count
+            ? `${page * size + 1}-${Math.min((page + 1) * size, count)} of ${count}`
+            : "0 results"}
+        </span>
+        {onPageSizeChange && (
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+          >
+            <span
+              style={{ fontSize: "12px", color: "var(--muted-foreground)" }}
+            >
+              Rows per page:
+            </span>
+            <Select
+              items={PAGE_SIZE_ITEMS}
+              value={String(size)}
+              onValueChange={(val) => {
+                if (val) {
+                  onPageSizeChange(Number(val));
+                  onChange(0);
+                }
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-[66px]"
+                aria-label="Rows per page"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAGE_SIZE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt} value={String(opt)}>
+                    {opt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </div>
       <div>
         <button
           className="button icon-button"

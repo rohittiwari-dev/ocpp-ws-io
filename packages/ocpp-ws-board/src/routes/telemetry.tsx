@@ -19,6 +19,7 @@ import {
   Export,
   Feedback,
   PageHeading,
+  Pagination,
   Refresh,
   Status,
 } from "@/components/workspace";
@@ -34,6 +35,8 @@ export default function TelemetryPage() {
   );
   const live = useSSELatest<TelemetrySnapshot>("/telemetry/stream");
   const [metric, setMetric] = useState("messagesPerSecond");
+  const [samplePage, setSamplePage] = useState(0);
+  const [samplePageSize, setSamplePageSize] = useState(6);
   const snapshot = live.connected && live.data ? live.data : resource.data;
   const labels: Record<string, string> = {
     messagesPerSecond: "Messages / second",
@@ -92,7 +95,7 @@ export default function TelemetryPage() {
             if (val) setMetric(val);
           }}
         >
-          <SelectTrigger className="w-[210px]" aria-label="Chart metric">
+          <SelectTrigger className="w-52.5" aria-label="Chart metric">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -192,17 +195,31 @@ export default function TelemetryPage() {
               </tr>
             </thead>
             <tbody>
-              {(history.data ?? []).map((sample, index) => (
-                <tr key={`${sample.time}-${index}`}>
-                  <td>{sample.time}</td>
-                  <td>{sample.messagesPerSecond}</td>
-                  <td>{sample.avgLatencyMs}</td>
-                  <td>{sample.errorRate}</td>
-                </tr>
-              ))}
+              {(history.data ?? [])
+                .slice(
+                  samplePage * samplePageSize,
+                  samplePage * samplePageSize + samplePageSize,
+                )
+                .map((sample, index) => (
+                  <tr key={`${sample.time}-${index}`}>
+                    <td>{sample.time}</td>
+                    <td>{sample.messagesPerSecond}</td>
+                    <td>{sample.avgLatencyMs}</td>
+                    <td>{sample.errorRate}</td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
+        {(history.data?.length ?? 0) > 0 && (
+          <Pagination
+            page={samplePage}
+            count={history.data?.length ?? 0}
+            size={samplePageSize}
+            onChange={setSamplePage}
+            onPageSizeChange={setSamplePageSize}
+          />
+        )}
       </details>
     </>
   );

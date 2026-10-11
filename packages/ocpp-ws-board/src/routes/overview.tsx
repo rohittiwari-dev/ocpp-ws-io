@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { TrafficTable } from "@/components/traffic-table";
 import {
   Export,
   Feedback,
   PageHeading,
+  Pagination,
   Refresh,
   Status,
 } from "@/components/workspace";
@@ -14,8 +16,14 @@ export default function OverviewPage() {
   const resource = useResource<OverviewStats>("/overview", 5000);
   const stations = useResource<ConnectionRecord[]>("/connections", 5000);
   const data = resource.data;
+  const [attentionPage, setAttentionPage] = useState(0);
+  const [attentionPageSize, setAttentionPageSize] = useState(6);
   const attention = (stations.data ?? []).filter(
     (station) => station.errorCount || station.status !== "online",
+  );
+  const currentAttentionPage = Math.min(
+    attentionPage,
+    Math.max(0, Math.ceil(attention.length / attentionPageSize) - 1),
   );
   return (
     <>
@@ -69,27 +77,32 @@ export default function OverviewPage() {
               </tr>
             </thead>
             <tbody>
-              {attention.slice(0, 5).map((station) => (
-                <tr key={station.identity}>
-                  <td>{station.identity}</td>
-                  <td>
-                    <Status
-                      tone={station.status === "online" ? "mint" : "yellow"}
-                    >
-                      {station.status}
-                    </Status>
-                  </td>
-                  <td>{station.errorCount ?? 0}</td>
-                  <td>
-                    <Link
-                      className="button"
-                      to={`/connection/view/${encodeURIComponent(station.identity)}`}
-                    >
-                      Inspect charger
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+              {attention
+                .slice(
+                  currentAttentionPage * attentionPageSize,
+                  currentAttentionPage * attentionPageSize + attentionPageSize,
+                )
+                .map((station) => (
+                  <tr key={station.identity}>
+                    <td>{station.identity}</td>
+                    <td>
+                      <Status
+                        tone={station.status === "online" ? "mint" : "yellow"}
+                      >
+                        {station.status}
+                      </Status>
+                    </td>
+                    <td>{station.errorCount ?? 0}</td>
+                    <td>
+                      <Link
+                        className="button"
+                        to={`/connection/view/${encodeURIComponent(station.identity)}`}
+                      >
+                        Inspect charger
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
               {!attention.length && (
                 <tr>
                   <td colSpan={4} className="muted">
@@ -102,6 +115,15 @@ export default function OverviewPage() {
             </tbody>
           </table>
         </div>
+        {attention.length > 0 && (
+          <Pagination
+            page={currentAttentionPage}
+            count={attention.length}
+            size={attentionPageSize}
+            onChange={setAttentionPage}
+            onPageSizeChange={setAttentionPageSize}
+          />
+        )}
       </div>
       <div className="section-heading">
         <h2>Recent traffic</h2>
