@@ -6,10 +6,29 @@ import type { JsonObject } from "../../types/json.js";
 import type {
   AuthorizeResponse,
   ConnectorStatus,
-  CsmsRequest,
+  ConnectorStatusV2,
+  CsmsCall,
   EitherResponse,
   OutgoingPayload,
 } from "../types.js";
+
+/**
+ * A 1.6 ChargePointStatus as 2.0.1 and 2.1 report it. They do not tell the
+ * states of a connector in use apart (that is the transaction's charging
+ * state), so those are all Occupied.
+ */
+function connectorStatusV2(status: ConnectorStatus): ConnectorStatusV2 {
+  switch (status) {
+    case "Preparing":
+    case "Charging":
+    case "SuspendedEVSE":
+    case "SuspendedEV":
+    case "Finishing":
+      return "Occupied";
+    default:
+      return status;
+  }
+}
 
 export interface EngineConfig {
   endpoint: string;
@@ -227,24 +246,22 @@ export class SimulatorEngine extends EventEmitter {
       // Type 2 = CALL (CSMS request)
       else if (typeId === 2) {
         const action = parsed[2];
-        const payload = parsed[3];
-        this.handleCSMSCall(messageId, action, payload);
+        // Taken as its action's request, as before: the simulator does not
+        // validate what the CSMS sends.
+        const call: CsmsCall = { action, payload: parsed[3] };
+        this.handleCSMSCall(messageId, action, call);
       }
     } catch (_e) {
       this.emit("log", "Failed to parse incoming WS message.", "error");
     }
   }
 
-  private handleCSMSCall(
-    messageId: string,
-    action: string,
-    payload: CsmsRequest,
-  ) {
+  private handleCSMSCall(messageId: string, action: string, call: CsmsCall) {
     this.emit("log", `[CSMS Request] ${action}`, "info");
 
-    switch (action) {
+    switch (call.action) {
       case "Reset":
-        this.emit("log", `CSMS requested ${payload.type} Reset.`, "warn");
+        this.emit("log", `CSMS requested ${call.payload.type} Reset.`, "warn");
         this.sendCallResult(messageId, { status: "Accepted" });
         setTimeout(() => {
           this.emit("log", "Simulating reboot...", "info");
@@ -256,7 +273,7 @@ export class SimulatorEngine extends EventEmitter {
       case "RemoteStartTransaction":
         this.emit(
           "log",
-          `CSMS requested RemoteStart for tag ${payload.idTag}`,
+          `CSMS requested RemoteStart for tag ${call.payload.idTag}`,
           "info",
         );
         if (
@@ -264,7 +281,7 @@ export class SimulatorEngine extends EventEmitter {
           this.connectorState === "Preparing"
         ) {
           this.sendCallResult(messageId, { status: "Accepted" });
-          this.activeIdTag = payload.idTag!;
+          this.activeIdTag = call.payload.idTag!;
           this.startTransaction().catch((e) =>
             this.emit("log", e.message, "error"),
           );
@@ -276,10 +293,10 @@ export class SimulatorEngine extends EventEmitter {
       case "RemoteStopTransaction":
         this.emit(
           "log",
-          `CSMS requested RemoteStop for transaction ${payload.transactionId}`,
+          `CSMS requested RemoteStop for transaction ${call.payload.transactionId}`,
           "info",
         );
-        if (this.activeTransactionId === Number(payload.transactionId)) {
+        if (this.activeTransactionId === Number(call.payload.transactionId)) {
           this.sendCallResult(messageId, { status: "Accepted" });
           this.stopTransaction().catch((e) =>
             this.emit("log", e.message, "error"),
@@ -292,7 +309,7 @@ export class SimulatorEngine extends EventEmitter {
       case "UnlockConnector":
         this.emit(
           "log",
-          `CSMS requested Unlock for connector ${payload.connectorId}`,
+          `CSMS requested Unlock for connector ${call.payload.connectorId}`,
           "info",
         );
         if (this.engineState === "CHARGING") {
@@ -302,20 +319,27 @@ export class SimulatorEngine extends EventEmitter {
         }
         break;
 
-      case "ChangeAvailability":
+      case "ChangeAvailability": {
+        // 1.6 names the availability asked for `type`; 2.0.1 and 2.1 name it
+        // `operationalStatus`.
+        const availability =
+          "operationalStatus" in call.payload
+            ? call.payload.operationalStatus
+            : call.payload.type;
         this.emit(
           "log",
-          `CSMS requested ChangeAvailability to ${payload.type}`,
+          `CSMS requested ChangeAvailability to ${availability}`,
           "info",
         );
         this.sendCallResult(messageId, { status: "Accepted" });
-        if (payload.type === "Inoperative") {
+        if (availability === "Inoperative") {
           // Per OCPP spec: Inoperative maps to Unavailable, NOT Faulted
           this.updateConnectorState("Unavailable").catch(() => {});
         } else {
           this.updateConnectorState("Available").catch(() => {});
         }
         break;
+      }
 
       case "ClearCache":
         this.emit("log", "CSMS requested ClearCache.", "info");
@@ -325,16 +349,19 @@ export class SimulatorEngine extends EventEmitter {
       case "ChangeConfiguration":
         this.emit(
           "log",
-          `CSMS requested ChangeConfiguration: ${payload.key} = ${payload.value}`,
+          `CSMS requested ChangeConfiguration: ${call.payload.key} = ${call.payload.value}`,
           "info",
         );
-        this.configurations.set(payload.key as string, payload.value!);
+        this.configurations.set(
+          call.payload.key as string,
+          call.payload.value!,
+        );
         this.sendCallResult(messageId, { status: "Accepted" });
         break;
 
       case "GetConfiguration": {
         this.emit("log", "CSMS requested GetConfiguration", "info");
-        const keys = payload.key || [];
+        const keys = call.payload.key || [];
         const configurationKey = [];
         const unknownKey = [];
 
@@ -405,18 +432,19 @@ export class SimulatorEngine extends EventEmitter {
       case "TriggerMessage":
         this.emit(
           "log",
-          `CSMS requested TriggerMessage for ${payload.requestedMessage}`,
+          `CSMS requested TriggerMessage for ${call.payload.requestedMessage}`,
           "info",
         );
         this.sendCallResult(messageId, { status: "Accepted" });
         // Execute trigger dynamically
         setTimeout(() => {
-          if (payload.requestedMessage === "BootNotification")
+          if (call.payload.requestedMessage === "BootNotification")
             this.sendBootNotification();
-          if (payload.requestedMessage === "Heartbeat") this.sendHeartbeat();
-          if (payload.requestedMessage === "StatusNotification")
+          if (call.payload.requestedMessage === "Heartbeat")
+            this.sendHeartbeat();
+          if (call.payload.requestedMessage === "StatusNotification")
             this.updateConnectorState(this.connectorState);
-          if (payload.requestedMessage === "MeterValues")
+          if (call.payload.requestedMessage === "MeterValues")
             this.triggerMeterValues();
         }, 1500);
         break;
@@ -434,10 +462,16 @@ export class SimulatorEngine extends EventEmitter {
         break;
 
       case "ReserveNow": {
+        // 1.6 names the reservation `reservationId`; 2.0.1 and 2.1 name it
+        // `id`. CancelReservation names it `reservationId` in every version.
+        const requestedId = Number(
+          "reservationId" in call.payload
+            ? call.payload.reservationId
+            : call.payload.id,
+        );
         const reservationStatus =
           this.connectorState !== "Available" ||
-          (this.reservationId !== null &&
-            this.reservationId !== Number(payload.reservationId))
+          (this.reservationId !== null && this.reservationId !== requestedId)
             ? "Occupied"
             : "Accepted";
         this.emit(
@@ -446,7 +480,7 @@ export class SimulatorEngine extends EventEmitter {
           "info",
         );
         if (reservationStatus === "Accepted") {
-          this.reservationId = Number(payload.reservationId);
+          this.reservationId = requestedId;
           this.updateConnectorState("Preparing").catch(() => {}); // closest valid pre-reserved state
         }
         this.sendCallResult(messageId, { status: reservationStatus });
@@ -455,7 +489,7 @@ export class SimulatorEngine extends EventEmitter {
 
       case "CancelReservation": {
         const cancelStatus =
-          this.reservationId === Number(payload.reservationId)
+          this.reservationId === Number(call.payload.reservationId)
             ? "Accepted"
             : "Rejected";
         this.emit(
@@ -488,7 +522,7 @@ export class SimulatorEngine extends EventEmitter {
 
       // ── OCPP 2.0.1 specific CSMS requests ──────────────────────
       case "RequestStartTransaction": {
-        const remoteIdTag = payload.idToken?.idToken || payload.idTag;
+        const remoteIdTag = call.payload.idToken?.idToken || call.payload.idTag;
         const canStart =
           this.connectorState === "Available" ||
           this.connectorState === "Preparing";
@@ -525,7 +559,7 @@ export class SimulatorEngine extends EventEmitter {
 
       case "GetVariables": {
         this.emit("log", "CSMS requested GetVariables (OCPP 2.0.1)", "info");
-        const getResults = (payload.getVariableData || []).map((req) => {
+        const getResults = (call.payload.getVariableData || []).map((req) => {
           const key = req.variable?.name || req.key;
           const val = this.configurations.get(key!);
           return {
@@ -541,7 +575,7 @@ export class SimulatorEngine extends EventEmitter {
 
       case "SetVariables": {
         this.emit("log", "CSMS requested SetVariables (OCPP 2.0.1)", "info");
-        const setResults = (payload.setVariableData || []).map((req) => {
+        const setResults = (call.payload.setVariableData || []).map((req) => {
           const key = req.variable?.name || req.key;
           this.configurations.set(key!, req.attributeValue!);
           return {
@@ -557,7 +591,7 @@ export class SimulatorEngine extends EventEmitter {
       case "GetReport": {
         this.emit(
           "log",
-          `CSMS requested GetReport (requestId: ${payload.requestId})`,
+          `CSMS requested GetReport (requestId: ${call.payload.requestId})`,
           "info",
         );
         this.sendCallResult(messageId, { status: "Accepted" });
@@ -591,12 +625,7 @@ export class SimulatorEngine extends EventEmitter {
         // OCPP 2.0.1+ payload
         await this.sendCall("StatusNotification", {
           timestamp: new Date().toISOString(),
-          connectorStatus:
-            status === "Preparing" ||
-            status === "Charging" ||
-            status === "Finishing"
-              ? "Occupied"
-              : status,
+          connectorStatus: connectorStatusV2(status),
           evseId: 1,
           connectorId: 1,
         });

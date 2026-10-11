@@ -1,3 +1,4 @@
+import type { AllMethodNames } from "../generated/index.js";
 import type { OCPPRequestType, OCPPResponseType } from "../types/index.js";
 
 /**
@@ -25,6 +26,12 @@ export type ConnectorStatus = OCPPRequestType<
   "StatusNotification"
 >["status"];
 
+/** A connector status as 2.0.1 and 2.1 report it, which has fewer states. */
+export type ConnectorStatusV2 = OCPPRequestType<
+  "ocpp2.0.1",
+  "StatusNotification"
+>["connectorStatus"];
+
 /** One entry of a GetVariables or SetVariables request, as the simulator reads it. */
 export interface VariableRequest {
   component?: OutgoingValue;
@@ -34,25 +41,54 @@ export interface VariableRequest {
   attributeValue?: string;
 }
 
+/** The protocols the simulator speaks. */
+type SimulatorProtocol = "ocpp1.6" | "ocpp2.0.1" | "ocpp2.1";
+
 /**
- * The fields of a CSMS request the simulator reads, for every action it
- * answers. Which ones a request has depends on its action and protocol.
+ * A CSMS request for an action, in each version that defines the action, so
+ * a field the versions name differently has to be read for each of them.
  */
-export interface CsmsRequest {
-  type?: string;
-  idTag?: string;
-  idToken?: { idToken: string };
-  transactionId?: number | string;
-  connectorId?: number;
-  /** ChangeConfiguration's key, or GetConfiguration's list of them. */
-  key?: string | string[];
-  value?: string;
-  requestedMessage?: string;
-  reservationId?: number;
-  requestId?: number;
-  getVariableData?: VariableRequest[];
-  setVariableData?: VariableRequest[];
+type CsmsRequestFor<A extends string> = {
+  [V in SimulatorProtocol]: A extends AllMethodNames<V>
+    ? OCPPRequestType<V, A>
+    : never;
+}[SimulatorProtocol];
+
+/** The CSMS requests the simulator answers, by action. */
+export interface CsmsRequests {
+  Reset: CsmsRequestFor<"Reset">;
+  RemoteStartTransaction: CsmsRequestFor<"RemoteStartTransaction">;
+  RemoteStopTransaction: CsmsRequestFor<"RemoteStopTransaction">;
+  UnlockConnector: CsmsRequestFor<"UnlockConnector">;
+  ChangeAvailability: CsmsRequestFor<"ChangeAvailability">;
+  ClearCache: CsmsRequestFor<"ClearCache">;
+  ChangeConfiguration: CsmsRequestFor<"ChangeConfiguration">;
+  GetConfiguration: CsmsRequestFor<"GetConfiguration">;
+  UpdateFirmware: CsmsRequestFor<"UpdateFirmware">;
+  GetDiagnostics: CsmsRequestFor<"GetDiagnostics">;
+  TriggerMessage: CsmsRequestFor<"TriggerMessage">;
+  SetChargingProfile: CsmsRequestFor<"SetChargingProfile">;
+  ClearChargingProfile: CsmsRequestFor<"ClearChargingProfile">;
+  GetCompositeSchedule: CsmsRequestFor<"GetCompositeSchedule">;
+  DataTransfer: CsmsRequestFor<"DataTransfer">;
+  ReserveNow: CsmsRequestFor<"ReserveNow">;
+  CancelReservation: CsmsRequestFor<"CancelReservation">;
+  SendLocalList: CsmsRequestFor<"SendLocalList">;
+  GetLocalListVersion: CsmsRequestFor<"GetLocalListVersion">;
+  /** Also accepted with a 1.6-style `idTag` in place of the idToken. */
+  RequestStartTransaction: CsmsRequestFor<"RequestStartTransaction"> & {
+    idTag?: string;
+  };
+  RequestStopTransaction: CsmsRequestFor<"RequestStopTransaction">;
+  GetVariables: { getVariableData?: VariableRequest[] };
+  SetVariables: { setVariableData?: VariableRequest[] };
+  GetReport: CsmsRequestFor<"GetReport">;
 }
+
+/** A CSMS call the simulator answers, its payload typed by its action. */
+export type CsmsCall = {
+  [A in keyof CsmsRequests]: { action: A; payload: CsmsRequests[A] };
+}[keyof CsmsRequests];
 
 /** A response the simulator reads, for an action named the same in 1.6 and 2.0.1. */
 export type EitherResponse<M extends string> =
