@@ -11,7 +11,6 @@
 	"types": "dist/index.d.ts",
 	"bin": {
 		"ocpp": "./dist/cli.mjs",
-		"ocpp-ws-cli": "./dist/cli.mjs",
 		"ocpp-ws-io": "./dist/cli.mjs"
 	},
 	"typesVersions": {

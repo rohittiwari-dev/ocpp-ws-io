@@ -85,6 +85,7 @@ import { AdaptiveLimiter } from "./adaptive-limiter.js";
 import { checkCORS } from "./cors.js";
 import { EventEmitterBase } from "./emitter-base.js";
 import { assertHealthEndpointAuth, checkHealthAuth } from "./health-auth.js";
+import { assertMaxIdentityLength, identityRefusal } from "./identity.js";
 import { RadixTrie } from "./radix-trie.js";
 import {
   type AnyOCPPRouter,
@@ -301,7 +302,7 @@ export class OCPPServer<
       }
     }
 
-    OCPPServer._assertMaxIdentityLength(options.maxIdentityLength);
+    assertMaxIdentityLength(options.maxIdentityLength);
     assertUniqueProtocols(options.protocols);
     assertStrictValidators(
       options.protocols,
@@ -534,52 +535,6 @@ export class OCPPServer<
         this._reportPluginError(pluginName, hook, err),
       );
     }
-  }
-
-  /**
-   * Charging station identity rules per version (OCPP-J §3.1.1): an
-   * identifierString (2.0.1 / 2.1 Part 2) without ":" (2.1 "SHALL NOT",
-   * 2.0.1 errata 2023-12 "SHALL not"), at most 48 characters. 1.6J has none.
-   */
-  private static readonly _IDENTITY_RULES: Readonly<
-    Record<string, { maxLength: number; pattern: RegExp }>
-  > = {
-    "ocpp2.0.1": { maxLength: 48, pattern: /^[A-Za-z0-9*\-_=+|@.]+$/ },
-    "ocpp2.1": { maxLength: 48, pattern: /^[A-Za-z0-9*\-_=+|@.]+$/ },
-  };
-
-  private static _assertMaxIdentityLength(value: number | undefined): void {
-    if (value !== undefined && !(Number.isInteger(value) && value > 0)) {
-      throw new Error(
-        `maxIdentityLength must be a positive integer, got ${value}`,
-      );
-    }
-  }
-
-  /**
-   * Why an identity is refused, if it is. `maxIdentityLength` applies in any
-   * mode and replaces the spec's length; strict mode adds the spec's rules for
-   * the negotiated version.
-   */
-  private _identityError(
-    identity: string,
-    protocol: string | undefined,
-    strictMode: boolean | readonly string[] | undefined,
-  ): string | undefined {
-    const strict =
-      protocol !== undefined &&
-      (strictMode === true ||
-        (Array.isArray(strictMode) && strictMode.includes(protocol)));
-    const rules = strict ? OCPPServer._IDENTITY_RULES[protocol] : undefined;
-    const limit = this._options.maxIdentityLength ?? rules?.maxLength;
-    const length = Array.from(identity).length;
-    if (limit !== undefined && length > limit) {
-      return `Charging station identity is ${length} characters; the maximum is ${limit}`;
-    }
-    if (rules && !rules.pattern.test(identity)) {
-      return "Charging station identity may only contain a-z A-Z 0-9 * - _ = + | @ .";
-    }
-    return undefined;
   }
 
   /** The certificate and protocol settings of a TLS context, from TLSOptions. */
@@ -1871,10 +1826,11 @@ export class OCPPServer<
       return;
     }
 
-    const identityError = this._identityError(
+    const identityError = identityRefusal(
       identity,
       selectedProtocol,
       matchedRouterConfig?.strictMode ?? this._options.strictMode,
+      this._options.maxIdentityLength,
     );
     if (identityError) {
       this._reportAuthFailure(handshake, req, 400, identityError);
@@ -2888,7 +2844,7 @@ export class OCPPServer<
   // ─── Reconfigure ─────────────────────────────────────────────
 
   reconfigure(options: Partial<ServerOptions<P>>): void {
-    OCPPServer._assertMaxIdentityLength(options.maxIdentityLength);
+    assertMaxIdentityLength(options.maxIdentityLength);
     // Checked on the combined options before any is applied.
     const next = { ...this._options, ...options };
     assertUniqueProtocols(next.protocols);
