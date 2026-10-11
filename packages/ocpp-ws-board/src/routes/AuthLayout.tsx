@@ -223,6 +223,15 @@ function Workspace({
             <IconSettings size={20} className="nav-icon" />
             {!isIconRail && <span>Workspace</span>}
           </NavLink>
+          <NavLink
+            to="/help"
+            onClick={closeMenu}
+            title={isIconRail ? "Help & Docs" : undefined}
+            className={({ isActive }) => cn("nav-item", isActive && "active")}
+          >
+            <IconHelpCircle size={20} className="nav-icon" />
+            {!isIconRail && <span>Help & Docs</span>}
+          </NavLink>
         </nav>
 
         {/* Sidebar Footer */}
@@ -253,9 +262,11 @@ function Workspace({
               </button>
               {logoutError && <p role="alert">{logoutError}</p>}
               <NavLink
-                to="/settings#help"
+                to="/help"
                 onClick={closeMenu}
-                className="nav-item"
+                className={({ isActive }) =>
+                  cn("nav-item", isActive && "active")
+                }
                 title="Help & shortcuts"
               >
                 <IconHelpCircle size={20} className="nav-icon" />
@@ -298,9 +309,11 @@ function Workspace({
                 )}
               </button>
               <NavLink
-                to="/settings#help"
+                to="/help"
                 onClick={closeMenu}
-                className="nav-item compact"
+                className={({ isActive }) =>
+                  cn("nav-item compact", isActive && "active")
+                }
                 title="Help & shortcuts"
                 aria-label="Help & shortcuts"
               >

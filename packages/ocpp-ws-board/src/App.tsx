@@ -8,6 +8,7 @@ import CommandsPage from "@/routes/commands";
 import ConnectionPage from "@/routes/connection";
 import ConnectionsPage from "@/routes/connections";
 import DiagnosticsPage from "@/routes/diagnostics";
+import HelpPage from "@/routes/help";
 import IntegrationsPage from "@/routes/integrations";
 import LoginPage from "@/routes/login";
 import MessagesPage from "@/routes/messages";
@@ -41,6 +42,11 @@ export default function App() {
                 <Route path="/diagnostics" element={<DiagnosticsPage />} />
                 <Route path="/integrations" element={<IntegrationsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/help" element={<HelpPage />} />
+                <Route
+                  path="/workspace"
+                  element={<Navigate to="/settings" replace />}
+                />
                 <Route
                   path="*"
                   element={<Navigate to="/connections" replace />}
