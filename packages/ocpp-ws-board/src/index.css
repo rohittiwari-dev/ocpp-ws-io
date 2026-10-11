@@ -1605,6 +1605,261 @@ td:first-child:has(.star-button) {
   font-size: 13px;
   line-height: 1.7;
 }
+/* Command Studio & Response Inspector */
+.command-studio-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.95fr);
+  gap: 20px;
+  align-items: start;
+  margin-bottom: 28px;
+}
+@media (max-width: 1024px) {
+  .command-studio-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.command-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.08);
+}
+.command-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card) 95%, var(--accent));
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.command-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--foreground);
+}
+.command-panel-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.preset-chips-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.preset-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  background: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.preset-chip-btn:hover {
+  background: color-mix(in srgb, var(--primary) 12%, var(--accent));
+  border-color: color-mix(in srgb, var(--primary) 35%, transparent);
+  color: var(--primary);
+}
+.preset-chip-btn.active {
+  background: color-mix(in srgb, var(--primary) 15%, var(--accent));
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.form-subgrid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 640px) {
+  .form-subgrid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+.timeout-pills {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.timeout-pill-btn {
+  flex: 1;
+  padding: 6px 0;
+  text-align: center;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--accent);
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.timeout-pill-btn:hover {
+  color: var(--foreground);
+  border-color: var(--primary);
+}
+.timeout-pill-btn.active {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: transparent;
+}
+.code-editor-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--background);
+}
+.code-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--card) 90%, var(--accent));
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+}
+.code-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.code-editor-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.code-editor-btn:hover {
+  color: var(--foreground);
+  border-color: var(--primary);
+}
+.code-editor-textarea {
+  width: 100%;
+  min-height: 190px;
+  max-height: 380px;
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--foreground);
+  background: transparent;
+  border: 0;
+  outline: none !important;
+  resize: vertical;
+  box-shadow: none !important;
+}
+.safety-review-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--yellow) 10%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--yellow) 30%, transparent);
+  font-size: 12px;
+  color: var(--foreground);
+  cursor: pointer;
+}
+.safety-review-banner input[type="checkbox"] {
+  margin-top: 2px;
+  accent-color: var(--primary);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+.response-inspector-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.08);
+}
+.response-inspector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card) 95%, var(--accent));
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.response-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  padding: 12px 20px;
+  background: var(--background);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.response-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.response-summary-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+.response-body-panel {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.command-history-expanded {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 10px;
+}
+@media (max-width: 900px) {
+  .command-history-expanded {
+    grid-template-columns: 1fr;
+  }
+}
+.history-expanded-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.history-expanded-block-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--foreground);
+}
 .chart-panel {
   height: 260px;
   min-width: 0;
