@@ -110,7 +110,7 @@ export default function MessagesPage() {
             setPage(0);
           }}
         >
-          <SelectTrigger className="w-[155px]" aria-label="Message direction">
+          <SelectTrigger className="w-38.75" aria-label="Message direction">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -127,7 +127,7 @@ export default function MessagesPage() {
             setPage(0);
           }}
         >
-          <SelectTrigger className="w-[155px]" aria-label="Message type">
+          <SelectTrigger className="w-38.75" aria-label="Message type">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

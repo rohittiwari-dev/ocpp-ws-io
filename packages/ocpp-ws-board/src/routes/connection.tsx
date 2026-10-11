@@ -972,7 +972,7 @@ export default function ConnectionPage() {
                     }
                   >
                     <SelectTrigger
-                      className="w-[150px]"
+                      className="w-37.5"
                       aria-label="Filter direction"
                     >
                       <SelectValue />
