@@ -193,7 +193,7 @@ export function Pagination({
             >
               <SelectTrigger
                 size="sm"
-                className="w-[66px]"
+                className="w-16.5"
                 aria-label="Rows per page"
               >
                 <SelectValue />
