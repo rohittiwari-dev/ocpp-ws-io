@@ -1,17 +1,12 @@
 import { EventEmitter } from "node:events";
-import WebSocket from "ws";
-import { TimeoutError, UnexpectedHttpResponse } from "../core/errors.js";
+import type WebSocket from "ws";
 import { initLogger } from "../core/init-logger.js";
 import { type MiddlewareFunction, MiddlewareStack } from "../core/middleware";
-import { assertUniqueProtocols, supportsSend } from "../core/protocol-list.js";
+import { assertUniqueProtocols } from "../core/protocol-list.js";
 import { Queue } from "../core/queue.js";
-import { createId, NOOP_LOGGER } from "../core/util.js";
-import {
-  assertStrictValidators,
-  getStandardValidator,
-} from "../core/validation/standard-validators.js";
+import { NOOP_LOGGER } from "../core/util.js";
+import { assertStrictValidators } from "../core/validation/standard-validators.js";
 import type { Validator } from "../core/validation/validator.js";
-import { isValidStatusCode } from "../core/ws-util.js";
 import type {
   AllMethodNames,
   OCPPRequestType,
@@ -45,17 +40,14 @@ import type {
   HandlerContext,
   WildcardHandler,
 } from "../types/handlers.js";
-import type { JsonObject, JsonValue } from "../types/json.js";
+import type { JsonObject } from "../types/json.js";
 import type { LoggerLike, LoggerLikeNotOptional } from "../types/logger.js";
-import type { MiddlewareContext, WireCall } from "../types/middleware.js";
+import type { MiddlewareContext } from "../types/middleware.js";
 import {
   type AnyOCPPProtocol,
   ConnectionState,
   type KnownProtocol,
-  MessageType,
-  type OCPPCall,
   type OCPPMessage,
-  type OCPPSend,
   type RequestOf,
   type ResponseOf,
   SecurityProfile,
@@ -65,9 +57,31 @@ import {
   type UncheckedHandler,
   type WithUniqueProtocols,
 } from "../types/protocol.js";
-import type { InboundContext, PendingCall } from "./context.js";
+import { safeSend } from "./backpressure.js";
+import {
+  attachWebsocket,
+  closeClient,
+  connectClient,
+  openConnection,
+} from "./connection.js";
+import type {
+  BackpressuredFrame,
+  ClientContext,
+  OfflineCall,
+  PendingCall,
+  ResolvedClientOptions,
+} from "./context.js";
 import type { SchemaKind } from "./frames.js";
 import { handleMessage } from "./inbound.js";
+import { startPing, stopPing } from "./keepalive.js";
+import {
+  bufferOutbound,
+  queueCall,
+  sendCall,
+  sendMessage,
+} from "./outbound.js";
+import { handleClose } from "./reconnect.js";
+import { validateMessage } from "./validation.js";
 import {
   buildEndpoint,
   buildWsOptions,
@@ -75,14 +89,6 @@ import {
 } from "./ws-options.js";
 
 const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
-
-/**
- * Schema id for a message. A SEND has a single schema with no request/response
- * suffix (`urn:NotifyPeriodicEventStream`).
- */
-function schemaIdFor(method: string, kind: SchemaKind): string {
-  return kind === "send" ? `urn:${method}` : `urn:${method}.${kind}`;
-}
 
 /** safeCall()'s arguments: an action, or a version and then an action. */
 type SafeCallArgs =
@@ -116,24 +122,7 @@ export class OCPPClient<
   static readonly CLOSING = CLOSING;
   static readonly CLOSED = CLOSED;
 
-  protected _options: Required<
-    Pick<
-      ClientOptions<P>,
-      | "identity"
-      | "endpoint"
-      | "callTimeoutMs"
-      | "pingIntervalMs"
-      | "deferPingsOnActivity"
-      | "callConcurrency"
-      | "maxBadMessages"
-      | "respondWithDetailedErrors"
-      | "reconnect"
-      | "maxReconnects"
-      | "backoffMin"
-      | "backoffMax"
-    >
-  > &
-    ClientOptions<P>;
+  protected _options: ResolvedClientOptions<P>;
 
   protected _state: ConnectionState = CLOSED;
   protected _ws: WebSocket | null = null;
@@ -173,19 +162,8 @@ export class OCPPClient<
   private _badMessageWindowStart = 0;
   private _lastActivity = 0;
   private _outboundBuffer: string[] = [];
-  /**
-   * Cap on frames buffered while CONNECTING. Without one, a client that never
-   * finishes connecting accumulates every send until the process runs out of
-   * memory. Oldest frames are dropped first, matching the offline queue.
-   */
-  private static readonly _OUTBOUND_BUFFER_MAX = 1000;
-  private _offlineQueue: Array<{
-    method: string;
-    params: unknown;
-    options: CallOptions | NoReplyCallOptions;
-    resolve: (value: unknown) => void;
-    reject: (reason: unknown) => void;
-  }> = [];
+
+  private _offlineQueue: OfflineCall[] = [];
   private _middleware: MiddlewareStack<MiddlewareContext>;
   /** Explicit validators from options; null means resolve per protocol. */
   private _validators: readonly Validator[] | null = null;
@@ -194,8 +172,8 @@ export class OCPPClient<
   protected _logger: LoggerLike = NOOP_LOGGER;
   protected _exchangeLog = false;
   protected _prettify = false;
-  /** The client state the incoming-message handlers read and write, through getters. */
-  private readonly _inbound: InboundContext = this._createInboundContext();
+  /** The client's state as the modules in client/ read and write it. */
+  private readonly _context: ClientContext = this._createContext();
 
   constructor(
     options: WithUniqueProtocols<ClientOptions<P>, P, L> &
@@ -382,148 +360,17 @@ export class OCPPClient<
    *
    * @returns A promise that resolves to an object containing the HTTP response from the upgrade request.
    */
-  async connect(): Promise<{
+  connect(): Promise<{
     response: import("node:http").IncomingMessage;
   }> {
-    if (this._state !== CLOSED) {
-      throw new Error(`Cannot connect: client is in state ${this._state}`);
-    }
-
-    this._state = CONNECTING;
-    this._reconnectAttempt = 0;
-    this._closeRequested = false;
-
-    try {
-      return await this._connectInternal();
-    } catch (err) {
-      // `reconnect: true` has to mean "keep trying", including from the very
-      // first attempt. Reconnection previously started only once an
-      // *established* connection dropped, so a charge point that booted while
-      // the CSMS was down threw once and never retried — the exact outage the
-      // option exists for. connect() still rejects, so the caller learns about
-      // the failure; the retry runs in the background and close() cancels it.
-      const msg = err instanceof Error ? err.message : "";
-      if (
-        (this._options as ClientOptions).retryInitialConnect === true &&
-        this._options.reconnect &&
-        this._options.maxReconnects > 0 &&
-        !this._closeRequested &&
-        !OCPPClient._INTOLERABLE_ERRORS.has(msg)
-      ) {
-        this._scheduleReconnect();
-      }
-      throw err;
-    }
+    return connectClient(this._context);
   }
 
-  private async _connectInternal(): Promise<{
+  /** Test seam, replaced by tests: see openConnection in client/connection.ts. */
+  private _connectInternal(): Promise<{
     response: import("node:http").IncomingMessage;
   }> {
-    return new Promise((resolve, reject) => {
-      const endpoint = this._buildEndpoint();
-      const wsOptions = this._buildWsOptions();
-
-      this._logger?.debug?.("Connecting", { url: endpoint });
-      this.emit("connecting", { url: endpoint });
-
-      const ws = new WebSocket(
-        endpoint,
-        // ws takes a mutable list.
-        [...(this._options.protocols ?? [])],
-        wsOptions,
-      );
-      this._ws = ws;
-
-      // The handshake response, from ws's own event: ws clears its request
-      // (and so the response with it) before "open".
-      let upgradeResponse: import("node:http").IncomingMessage | undefined;
-      const onUpgrade = (res: import("node:http").IncomingMessage) => {
-        upgradeResponse = res;
-      };
-
-      const onOpen = () => {
-        cleanup();
-        this._state = OPEN;
-        this._protocol = ws.protocol;
-        this._badMessageCount = 0;
-        this._badMessageWindowStart = 0;
-
-        // Narrow protocols to negotiated protocol for future reconnects (prevents flip-flopping)
-        if (ws.protocol && this._reconnectAttempt === 0) {
-          // ws only accepts a protocol this client offered.
-          this._options.protocols = [ws.protocol as P];
-        }
-
-        // Reset the reconnect counter on a successful (re)connection so that
-        // `maxReconnects` and backoff are per-disconnection-incident, not a
-        // cumulative lifetime budget (OCPP 2.0.1 §J.1 backoff resets on connect).
-        this._reconnectAttempt = 0;
-
-        this._openedAt = Date.now();
-        this._attachWebsocket(ws);
-        this._startPing();
-
-        // Flush offline queue (atomic drain to prevent re-entry)
-        this._flushOfflineQueue();
-
-        // Flush outbound buffer (messages queued during CONNECTING)
-        if (this._outboundBuffer.length > 0) {
-          const buffer = this._outboundBuffer;
-          this._outboundBuffer = [];
-          for (const msg of buffer) this._ws?.send(msg);
-        }
-
-        this._logger?.info?.("Connected", { protocol: ws.protocol });
-
-        // ws emits "upgrade" before "open", so the response is set here.
-        const result = { response: upgradeResponse! };
-        this.emit("open", result);
-        resolve(result);
-      };
-
-      const onError = (err: Error) => {
-        cleanup();
-        this._state = CLOSED;
-        this._logger?.error?.("Connection error", {
-          error: err.message,
-        });
-        // The connect() rejection is the primary failure signal — only emit
-        // "error" when someone listens, otherwise EventEmitter throws and
-        // the rejection below never runs.
-        if (this.listenerCount("error") > 0) this.emit("error", err);
-        reject(err);
-      };
-
-      const onUnexpectedResponse = (
-        _req: import("node:http").ClientRequest,
-        res: import("node:http").IncomingMessage,
-      ) => {
-        cleanup();
-        this._state = CLOSED;
-        const err = new UnexpectedHttpResponse(
-          `Unexpected HTTP response: ${res.statusCode}`,
-          res.statusCode ?? 0,
-          res.headers as Record<string, string>,
-        );
-        this._logger?.error?.("Unexpected HTTP response", {
-          statusCode: res.statusCode,
-        });
-        if (this.listenerCount("error") > 0) this.emit("error", err);
-        reject(err);
-      };
-
-      const cleanup = () => {
-        ws.removeListener("upgrade", onUpgrade);
-        ws.removeListener("open", onOpen);
-        ws.removeListener("error", onError);
-        ws.removeListener("unexpected-response", onUnexpectedResponse);
-      };
-
-      ws.on("upgrade", onUpgrade);
-      ws.on("open", onOpen);
-      ws.on("error", onError);
-      ws.on("unexpected-response", onUnexpectedResponse);
-    });
+    return openConnection(this._context);
   }
 
   // ─── Close ───────────────────────────────────────────────────
@@ -535,118 +382,8 @@ export class OCPPClient<
    * @param options Configuration for closing the connection (code, reason, awaiting pending calls, force close).
    * @returns A promise that resolves when the connection is fully closed.
    */
-  async close(
-    options: CloseOptions = {},
-  ): Promise<{ code: number; reason: string }> {
-    const {
-      code = 1000,
-      reason = "",
-      awaitPending = true,
-      force = false,
-    } = options;
-
-    if (this._closePromise) return this._closePromise;
-
-    // Recorded before any await so an in-flight reconnect attempt can see it.
-    this._closeRequested = true;
-
-    if (this._state === CLOSED) {
-      // Already closed, so there is no socket to shut down — but a client that
-      // never connected (or that gave up reconnecting) can still be holding
-      // offline-queued calls whose callers are waiting on a promise. Nothing
-      // will ever flush them, so settle them here instead of returning early
-      // and stranding them forever.
-      this._drainOfflineQueue("Client closed");
-      this._outboundBuffer.length = 0;
-      return { code: 1000, reason: "" };
-    }
-
-    // Cancel reconnection
-    if (this._reconnectTimer) {
-      clearTimeout(this._reconnectTimer);
-      this._reconnectTimer = null;
-    }
-
-    this._closePromise = this._closeInternal(code, reason, awaitPending, force);
-    return this._closePromise;
-  }
-
-  private async _closeInternal(
-    code: number,
-    reason: string,
-    awaitPending: boolean,
-    force: boolean,
-  ): Promise<{ code: number; reason: string }> {
-    this._state = CLOSING;
-    this._stopPing();
-    this.emit("closing");
-
-    // Calls still waiting behind the concurrency limit have not been sent, so
-    // there is nothing to await — but nothing settled them either, and once the
-    // socket is gone they can never run. Reject them before draining the
-    // in-flight ones. (force skips this only in the sense that everything is
-    // rejected below anyway.)
-    const droppedFromQueue = this._callQueue.clear(
-      new Error("Client closed before the call was sent"),
-    );
-    if (droppedFromQueue > 0) {
-      this._logger?.debug?.("Rejected queued calls on close", {
-        count: droppedFromQueue,
-      });
-    }
-
-    if (!force && awaitPending) {
-      // Wait for pending calls to resolve
-      const pendingPromises = Array.from(this._pendingCalls.values()).map(
-        (p) =>
-          new Promise<void>((resolve) => {
-            const origResolve = p.resolve;
-            const origReject = p.reject;
-            p.resolve = (v: unknown) => {
-              origResolve(v);
-              resolve();
-            };
-            p.reject = (r: unknown) => {
-              origReject(r);
-              resolve();
-            };
-          }),
-      );
-      if (pendingPromises.length > 0) {
-        await Promise.allSettled(pendingPromises);
-      }
-    }
-
-    return new Promise<{ code: number; reason: string }>((resolve) => {
-      if (!this._ws || this._ws.readyState === WebSocket.CLOSED) {
-        this._state = CLOSED;
-        this._cleanup();
-        const result = { code, reason };
-        this.emit("close", result);
-        resolve(result);
-        return;
-      }
-
-      const onClose = (closeCode: number, closeReason: Buffer) => {
-        this._ws?.removeListener("close", onClose);
-        this._state = CLOSED;
-        this._cleanup();
-        const result = {
-          code: closeCode,
-          reason: closeReason.toString(),
-        };
-        this.emit("close", result);
-        resolve(result);
-      };
-
-      this._ws.on("close", onClose);
-
-      if (force) {
-        this._ws.terminate();
-      } else {
-        this._ws.close(isValidStatusCode(code) ? code : 1000, reason);
-      }
-    });
+  close(options: CloseOptions = {}): Promise<{ code: number; reason: string }> {
+    return closeClient(this._context, options);
   }
 
   // Typed overloads check the payload for keys the schema does not define on
@@ -961,83 +698,8 @@ export class OCPPClient<
     options?: CallOptions,
   ): Promise<TResult>;
 
-  async call(...args: unknown[]): Promise<unknown> {
-    let method: string;
-    let params: unknown;
-    let options: CallOptions | NoReplyCallOptions;
-
-    // A version-named call has its action, a string, where the other form has
-    // params (an object), also when it has no params.
-    if (typeof args[0] === "string" && typeof args[1] === "string") {
-      // call(version, method, params?, options?) — version-specific
-      // version is type-level only, not sent on the wire
-      method = args[1] as string;
-      params = args[2] ?? {};
-      options = (args[3] as CallOptions | NoReplyCallOptions) ?? {};
-    } else {
-      // call(method, params?, options?)
-      method = args[0] as string;
-      params = args[1] ?? {};
-      options = (args[2] as CallOptions | NoReplyCallOptions) ?? {};
-    }
-
-    if (
-      "noReply" in options &&
-      options.noReply &&
-      "retries" in options &&
-      options.retries
-    ) {
-      throw new TypeError(
-        "noReply cannot be combined with retries: there is no answer to retry on",
-      );
-    }
-
-    if (this._state !== OPEN) {
-      // ── Offline Queue ──
-      if (
-        this._options.offlineQueue &&
-        (this._state === CLOSED || this._state === CONNECTING)
-      ) {
-        return new Promise((resolve, reject) => {
-          const maxSize = this._options.offlineQueueMaxSize ?? 100;
-          if (this._offlineQueue.length >= maxSize) {
-            const dropped = this._offlineQueue.shift(); // Drop oldest
-            dropped?.reject(
-              new Error("Offline queue overflow — oldest queued call dropped"),
-            );
-            this._logger?.warn?.(
-              "Offline queue full — dropping oldest message",
-              {
-                method,
-                queueSize: this._offlineQueue.length,
-              },
-            );
-          }
-          this._offlineQueue.push({
-            method,
-            params,
-            options,
-            resolve,
-            reject,
-          });
-          this._logger?.debug?.("Call queued offline", {
-            method,
-            queueSize: this._offlineQueue.length,
-          });
-        });
-      }
-      throw new Error(`Cannot call: client is in state ${this._state}`);
-    }
-
-    // ── Retry wrapper with Full Jitter ──
-    if ("retries" in options) {
-      const maxRetries = options.retries ?? 0;
-      if (maxRetries > 0) {
-        return this._callWithRetry(method, params, options, maxRetries);
-      }
-    }
-
-    return this._callQueue.push(() => this._sendCall(method, params, options));
+  call(...args: unknown[]): Promise<unknown> {
+    return queueCall(this._context, args);
   }
 
   /**
@@ -1075,7 +737,8 @@ export class OCPPClient<
         new Error(`Cannot call: client is in state ${this._state}`),
       );
     }
-    return this._sendCall(
+    return sendCall(
+      this._context,
       method,
       params ?? {},
       options ?? {},
@@ -1104,77 +767,13 @@ export class OCPPClient<
    */
   async send(method: UncheckedAction, params?: object): Promise<void>;
 
-  async send(
+  send(
     method: string,
     params:
       | OCPPSendRequestType<KnownProtocol<P>, SendMethodNames<KnownProtocol<P>>>
       | object = {},
   ): Promise<void> {
-    if (!supportsSend(this._protocol)) {
-      throw new Error(
-        `SEND messages exist only in OCPP 2.1 and custom protocols; this connection uses ${this._protocol ?? "no subprotocol"}`,
-      );
-    }
-    if (this._state !== OPEN || !this._ws) {
-      throw new Error(`Cannot send: client is in state ${this._state}`);
-    }
-
-    const messageId = this._newMessageId();
-    const ctx: MiddlewareContext = {
-      type: "outgoing_call",
-      messageId,
-      method,
-      params,
-      options: {},
-      unconfirmed: true,
-    };
-
-    await this._middleware.execute(ctx, async (c) => {
-      const ctxvals = c as Extract<
-        MiddlewareContext,
-        { type: "outgoing_call" }
-      >;
-      if (this._options.strictMode && this._protocol) {
-        this._validateOutbound(ctxvals.method, ctxvals.params, "send");
-      }
-
-      const wrapped = this._wrapOutgoing(ctxvals);
-      const wire = wrapped instanceof Promise ? await wrapped : wrapped;
-      const frame: OCPPSend = [
-        MessageType.SEND,
-        messageId,
-        wire.method,
-        wire.params,
-      ];
-      const allowSend = this._invokeBeforeSend(frame);
-      const allowed =
-        allowSend instanceof Promise ? await allowSend : allowSend;
-      if (allowed === false) return;
-
-      await new Promise<void>((resolve, reject) => {
-        this._safeSend(this._ws, JSON.stringify(frame), (err) =>
-          err ? reject(err) : resolve(),
-        );
-      });
-      this._emitMessageEvent(frame, "OUT", ctxvals);
-    });
-  }
-
-  /**
-   * The call as it goes on the wire: what the middleware left, or what its
-   * `wrap` (an envelope such as a signature) makes of that. Called after
-   * strict-mode validation, which checks the call itself, not the envelope.
-   */
-  private _wrapOutgoing(
-    ctx: Extract<MiddlewareContext, { type: "outgoing_call" }>,
-  ): WireCall | Promise<WireCall> {
-    // Sent as JSON, so it is JSON whatever the middleware typed it as.
-    const call: WireCall = {
-      method: ctx.method,
-      params: ctx.params as JsonValue,
-    };
-    // Without a wrap, nothing is awaited, so the send is not delayed.
-    return ctx.wrap ? ctx.wrap(call) : call;
+    return sendMessage(this._context, method, params);
   }
 
   // ─── Safe Call (Best Effort) ─────────────────────────────────
@@ -1257,208 +856,9 @@ export class OCPPClient<
     }
   }
 
-  private async _sendCall(
-    method: string,
-    params: unknown,
-    options: CallOptions | NoReplyCallOptions,
-  ): Promise<unknown> {
-    const msgId = options.idempotencyKey ?? this._newMessageId();
-    const timeoutMs = options.timeoutMs ?? this._options.callTimeoutMs;
-
-    const ctx: MiddlewareContext = {
-      type: "outgoing_call",
-      messageId: msgId,
-      method,
-      params,
-      options,
-    };
-
-    let callResult: unknown;
-
-    await this._middleware.execute(ctx, async (c) => {
-      // Cast ctx back to access specific fields safely if needed,
-      // but strictly we should use 'c' which is TContext.
-      // Since TContext is a union, we know it is outgoing_call here.
-      const ctxvals = c as Extract<
-        MiddlewareContext,
-        { type: "outgoing_call" }
-      >;
-
-      // Strict mode: validate outbound call
-      if (this._options.strictMode && this._protocol) {
-        this._validateOutbound(ctxvals.method, ctxvals.params, "req");
-      }
-
-      const wrapped = this._wrapOutgoing(ctxvals);
-      const wire = wrapped instanceof Promise ? await wrapped : wrapped;
-      const message: OCPPCall = [
-        MessageType.CALL,
-        msgId,
-        wire.method,
-        wire.params,
-      ];
-
-      const allowSend = this._invokeBeforeSend(message);
-      if (allowSend instanceof Promise) {
-        if ((await allowSend) === false) return;
-      } else if (allowSend === false) {
-        return;
-      }
-
-      const messageStr = JSON.stringify(message);
-
-      callResult = await new Promise<unknown>((resolve, reject) => {
-        // A second pending call under one ID would take the first one's
-        // response. Checked here, in the same tick that registers the ID, so
-        // two concurrent calls cannot both get past it.
-        if (this._pendingCalls.has(msgId) || this._noReplyCalls.has(msgId)) {
-          reject(
-            new Error(
-              `Message ID "${msgId}" is already in use by a pending call`,
-            ),
-          );
-          return;
-        }
-
-        // noReply: the peer still answers (OCPP-J requires it), but nobody
-        // waits. The ID is remembered while the answer can arrive, so it is
-        // dropped quietly rather than logged as unknown, and the call resolves
-        // once the frame is handed over, which frees the concurrency queue.
-        if ("noReply" in options && options.noReply) {
-          if (options.signal?.aborted) {
-            reject(options.signal.reason ?? new Error("Aborted"));
-            return;
-          }
-          const forget = setTimeout(() => {
-            this._noReplyCalls.delete(msgId);
-          }, timeoutMs);
-          this._noReplyCalls.set(msgId, forget);
-          const fail = (err: Error) => {
-            clearTimeout(forget);
-            this._noReplyCalls.delete(msgId);
-            reject(err);
-          };
-          if (this._ws?.readyState === WebSocket.OPEN) {
-            this._safeSend(this._ws, messageStr, (err) => {
-              if (err) {
-                fail(err);
-                return;
-              }
-              this._emitMessageEvent(message, "OUT", {
-                type: "outgoing_call",
-                messageId: msgId,
-                method: ctxvals.method,
-                params: ctxvals.params,
-                options,
-              });
-              resolve(undefined);
-            });
-          } else if (this._state === CONNECTING) {
-            this._bufferOutbound(messageStr);
-            resolve(undefined);
-          } else {
-            fail(new Error(`WebSocket is not open (state: ${this._state})`));
-          }
-          return;
-        }
-
-        let removeAbortListener: (() => void) | undefined;
-
-        const timeoutHandle = setTimeout(() => {
-          removeAbortListener?.();
-          this._pendingCalls.delete(msgId);
-          reject(
-            new TimeoutError(
-              `Call to "${ctxvals.method}" timed out after ${timeoutMs}ms`,
-            ),
-          );
-        }, timeoutMs);
-
-        // The signal may already have aborted while this call waited its turn
-        // in the concurrency queue or the offline queue. addEventListener does
-        // not fire for an already-aborted signal, so without this check the
-        // frame went on the wire for a call the caller had abandoned — and
-        // nothing rejected it either, leaving the timeout as the only exit.
-        if (options.signal?.aborted) {
-          clearTimeout(timeoutHandle);
-          this._pendingCalls.delete(msgId);
-          reject(options.signal.reason ?? new Error("Aborted"));
-          return;
-        }
-
-        const abortHandler = () => {
-          clearTimeout(timeoutHandle);
-          this._pendingCalls.delete(msgId);
-          reject(options.signal?.reason ?? new Error("Aborted"));
-        };
-
-        if (options.signal) {
-          options.signal.addEventListener("abort", abortHandler, {
-            once: true,
-          });
-          removeAbortListener = () =>
-            options.signal?.removeEventListener("abort", abortHandler);
-        }
-
-        this._pendingCalls.set(msgId, {
-          resolve,
-          reject,
-          timeoutHandle,
-          removeAbortListener,
-          method: ctxvals.method,
-          sentAt: Date.now(),
-        });
-
-        if (this._ws?.readyState === WebSocket.OPEN) {
-          this._safeSend(this._ws, messageStr, (err) => {
-            if (err) {
-              // Failed to send
-              clearTimeout(timeoutHandle);
-              removeAbortListener?.();
-              this._pendingCalls.delete(msgId);
-              reject(err);
-            } else {
-              // Emit outbound CALL message event for observability
-              this._emitMessageEvent(message, "OUT", {
-                type: "outgoing_call",
-                messageId: msgId,
-                method: ctxvals.method,
-                params: ctxvals.params,
-                options: options,
-              });
-            }
-          });
-        } else if (this._state === CONNECTING) {
-          // Buffer it
-          this._logger?.debug?.("Buffering call", {
-            method: ctxvals.method,
-          });
-          this._bufferOutbound(messageStr);
-          // The promise remains pending until connected & flushed -> then response comes
-        } else {
-          clearTimeout(timeoutHandle);
-          removeAbortListener?.();
-          this._pendingCalls.delete(msgId);
-          reject(new Error(`WebSocket is not open (state: ${this._state})`));
-        }
-      });
-
-      return callResult;
-    });
-
-    return callResult;
-  }
-
-  /** Buffer a frame for flush on open, dropping the oldest past the cap. */
+  /** Test seam: see bufferOutbound in client/outbound.ts. */
   private _bufferOutbound(message: string): void {
-    if (this._outboundBuffer.length >= OCPPClient._OUTBOUND_BUFFER_MAX) {
-      this._outboundBuffer.shift();
-      this._logger?.warn?.("Outbound buffer full — dropped oldest frame", {
-        identity: this._identity,
-        max: OCPPClient._OUTBOUND_BUFFER_MAX,
-      });
-    }
-    this._outboundBuffer.push(message);
+    bufferOutbound(this._context, message);
   }
 
   /**
@@ -1563,58 +963,27 @@ export class OCPPClient<
     });
   }
 
+  /** See attachWebsocket in client/connection.ts. */
   protected _attachWebsocket(ws: WebSocket): void {
-    ws.on("message", (data: WebSocket.RawData) => this._onMessage(data));
-    ws.on("close", (code: number, reason: Buffer) =>
-      this._onClose(code, reason),
-    );
-    ws.on("error", (err: Error) => {
-      // Node throws when 'error' is emitted with no listener attached. The
-      // connect-phase handlers already guard this; the post-open handler did
-      // not, so any socket error after the connection opened crashed a process
-      // that had not registered an error listener.
-      if (this.listenerCount("error") > 0) {
-        this.emit("error", err);
-      } else {
-        this._logger?.error?.("Socket error (no error listener attached)", {
-          identity: this._identity,
-          error: err.message,
-        });
-      }
-    });
-    ws.on("ping", () => {
-      this._recordActivity();
-      this.emit("ping");
-    });
-    ws.on("pong", () => {
-      // Clear pong timeout — connection is alive
-      if (this._pongTimer) {
-        clearTimeout(this._pongTimer);
-        this._pongTimer = null;
-      }
-      this._recordActivity();
-      this.emit("pong");
-    });
+    attachWebsocket(this._context, ws);
   }
 
-  /** The fields the incoming-message handlers use, and the calls they make, by name. */
-  private _createInboundContext(): InboundContext {
+  /**
+   * The client's fields, read and written by name, and the methods that stay
+   * on the client, called through it so overrides, test replacements and the
+   * client's listeners apply.
+   */
+  private _createContext(): ClientContext {
     const client = this;
     return {
       get identity() {
         return client._identity;
       },
-      get protocol() {
-        return client._protocol;
-      },
-      get state() {
-        return client._state;
-      },
       get logger() {
         return client._logger;
       },
-      get ws() {
-        return client._ws;
+      get options() {
+        return client._options;
       },
       get strictMode() {
         return client._options.strictMode;
@@ -1652,6 +1021,39 @@ export class OCPPClient<
       get noReplyCalls() {
         return client._noReplyCalls;
       },
+      get offlineQueue() {
+        return client._offlineQueue;
+      },
+      get callQueue() {
+        return client._callQueue;
+      },
+      get backpressureQueue() {
+        return client._backpressureQueue;
+      },
+      get lastActivity() {
+        return client._lastActivity;
+      },
+      get validators() {
+        return client._validators;
+      },
+      get state() {
+        return client._state;
+      },
+      set state(state) {
+        client._state = state;
+      },
+      get ws() {
+        return client._ws;
+      },
+      set ws(ws) {
+        client._ws = ws;
+      },
+      get protocol() {
+        return client._protocol;
+      },
+      set protocol(protocol) {
+        client._protocol = protocol;
+      },
       get badMessageCount() {
         return client._badMessageCount;
       },
@@ -1664,6 +1066,60 @@ export class OCPPClient<
       set badMessageWindowStart(at) {
         client._badMessageWindowStart = at;
       },
+      get outboundBuffer() {
+        return client._outboundBuffer;
+      },
+      set outboundBuffer(buffer) {
+        client._outboundBuffer = buffer;
+      },
+      get backpressureTimer() {
+        return client._backpressureTimer;
+      },
+      set backpressureTimer(timer) {
+        client._backpressureTimer = timer;
+      },
+      get pingTimer() {
+        return client._pingTimer;
+      },
+      set pingTimer(timer) {
+        client._pingTimer = timer;
+      },
+      get pongTimer() {
+        return client._pongTimer;
+      },
+      set pongTimer(timer) {
+        client._pongTimer = timer;
+      },
+      get reconnectAttempt() {
+        return client._reconnectAttempt;
+      },
+      set reconnectAttempt(attempt) {
+        client._reconnectAttempt = attempt;
+      },
+      get reconnectTimer() {
+        return client._reconnectTimer;
+      },
+      set reconnectTimer(timer) {
+        client._reconnectTimer = timer;
+      },
+      get closeRequested() {
+        return client._closeRequested;
+      },
+      set closeRequested(requested) {
+        client._closeRequested = requested;
+      },
+      get closePromise() {
+        return client._closePromise;
+      },
+      set closePromise(closing) {
+        client._closePromise = closing;
+      },
+      get openedAt() {
+        return client._openedAt;
+      },
+      set openedAt(at) {
+        client._openedAt = at;
+      },
       get emitter() {
         return client;
       },
@@ -1674,9 +1130,18 @@ export class OCPPClient<
       validateOutbound: (method, params, kind) =>
         client._validateOutbound(method, params, kind),
       invokeBeforeSend: (message) => client._invokeBeforeSend(message),
-      safeSend: (ws, data) => client._safeSend(ws, data),
+      safeSend: (ws, data, cb) => client._safeSend(ws, data, cb),
+      bufferOutbound: (message) => client._bufferOutbound(message),
       emitMessageEvent: (message, direction, ctx, latencyMs) =>
         client._emitMessageEvent(message, direction, ctx, latencyMs),
+      startPing: () => client._startPing(),
+      stopPing: () => client._stopPing(),
+      connectInternal: () => client._connectInternal(),
+      attachWebsocket: (ws) => client._attachWebsocket(ws),
+      onMessage: (data) => client._onMessage(data),
+      onClose: (code, reason) => client._onClose(code, reason),
+      buildEndpoint: () => client._buildEndpoint(),
+      buildWsOptions: () => client._buildWsOptions(),
       close: (options) => client.close(options),
     };
   }
@@ -1722,251 +1187,21 @@ export class OCPPClient<
 
   /** The server client's entry point, and a test seam: see handleMessage in client/inbound.ts. */
   protected _onMessage(rawData: WebSocket.RawData, preParsed?: unknown): void {
-    handleMessage(this._inbound, rawData, preParsed);
-  }
-
-  /** The ID of an outgoing CALL or SEND: idGenerator when set, else a UUID. */
-  private _newMessageId(): string {
-    const generate = this._options.idGenerator;
-    if (!generate) return createId();
-    const id = generate();
-    if (typeof id !== "string" || id === "") {
-      throw new TypeError("idGenerator must return a non-empty string");
-    }
-    return id;
+    handleMessage(this._context, rawData, preParsed);
   }
 
   // ─── Internal: Close handling ────────────────────────────────
 
-  /**
-   * Reject all in-flight calls and clear pending state.
-   */
-  private _rejectPendingCalls(reason: string): void {
-    for (const [, pending] of this._pendingCalls) {
-      clearTimeout(pending.timeoutHandle);
-      pending.removeAbortListener?.();
-      pending.reject(new Error(reason));
-    }
-    this._pendingCalls.clear();
-    this._pendingResponses.clear();
-    // No answer can arrive on a closed socket.
-    for (const forget of this._noReplyCalls.values()) clearTimeout(forget);
-    this._noReplyCalls.clear();
-  }
-
+  /** The server client's close handler too: see handleClose in client/reconnect.ts. */
   protected _onClose(code: number, reason: Buffer): void {
-    this._stopPing();
-    // A pending pong timer must not fire a spurious pongTimeout for a
-    // connection that already closed (review fix).
-    if (this._pongTimer) {
-      clearTimeout(this._pongTimer);
-      this._pongTimer = null;
-    }
-    const reasonStr = reason.toString();
-    this._rejectPendingCalls(`Connection closed (${code}: ${reasonStr})`);
-
-    if (this._state !== CLOSING) {
-      // Unexpected close — emit disconnect (transient, reconnect may follow)
-      this._logger?.info?.("Disconnected", { code, reason: reasonStr });
-      this.emit("disconnect", { code, reason: reasonStr });
-
-      if (
-        this._options.reconnect &&
-        this._reconnectAttempt < this._options.maxReconnects
-      ) {
-        this._scheduleReconnect();
-      } else {
-        // No reconnect — this is a permanent close
-        this._state = CLOSED;
-        // Nothing will ever flush the offline queue now, so settle it rather
-        // than leaving those callers pending forever.
-        this._drainOfflineQueue(
-          `Connection closed permanently (${code}: ${reasonStr})`,
-        );
-        this._outboundBuffer.length = 0;
-        this.emit("close", { code, reason: reasonStr });
-      }
-    } else {
-      this._state = CLOSED;
-      // close() handles the emit
-    }
-  }
-
-  // ─── Internal: Reconnection ──────────────────────────────────
-
-  /** Errors that should stop reconnection immediately */
-  private static readonly _INTOLERABLE_ERRORS = new Set([
-    "Maximum redirects exceeded",
-    "Server sent no subprotocol",
-    "Server sent an invalid subprotocol",
-    "Server sent a subprotocol but none was requested",
-    "Invalid Sec-WebSocket-Accept header",
-  ]);
-
-  private _scheduleReconnect(): void {
-    // close() may have landed between the socket dropping and this call.
-    if (this._closeRequested) return;
-    this._reconnectAttempt++;
-    this._state = CONNECTING;
-
-    // OCPP-J 2.0.1 / 2.1 §5.3: start from the minimum, double after every
-    // failed attempt, and add a new random part to every wait. The random part
-    // only ever adds (up to 25%), so no wait drops below backoffMin, and
-    // chargers that reached backoffMax still spread out instead of
-    // reconnecting in step after a CSMS restart.
-    // Floor the base delay. `backoffMin: 0` collapsed the exponential term to
-    // zero, so a client that could not reach the CSMS reconnected in a tight
-    // loop, saturating a CPU and hammering the server it was waiting on.
-    const base = Math.max(50, this._options.backoffMin);
-    const max = Math.max(base, this._options.backoffMax);
-    const delayMs =
-      Math.min(max, base * 2 ** (this._reconnectAttempt - 1)) *
-      (1 + Math.random() * 0.25);
-
-    this._logger?.warn?.("Reconnecting", {
-      attempt: this._reconnectAttempt,
-      delayMs: Math.round(delayMs),
-    });
-    this.emit("reconnect", {
-      attempt: this._reconnectAttempt,
-      delay: delayMs,
-    });
-
-    this._reconnectTimer = setTimeout(async () => {
-      this._reconnectTimer = null;
-      // close() clears a *pending* timer, but once this callback has fired
-      // there is nothing left to clear — so the attempt has to check for
-      // itself, both before connecting and after, or a closed client comes
-      // back to life and sits in CONNECTING forever.
-      if (this._closeRequested) {
-        this._state = CLOSED;
-        return;
-      }
-      try {
-        await this._connectInternal();
-        if (this._closeRequested) {
-          // The caller closed us while this attempt was in flight. Tear the
-          // socket we just opened straight back down.
-          this._logger?.debug?.(
-            "Closed during reconnect — dropping new socket",
-          );
-          this._ws?.terminate();
-          this._state = CLOSED;
-        }
-      } catch (err) {
-        if (this._closeRequested) {
-          this._state = CLOSED;
-          return;
-        }
-        // Intolerable errors — do not retry
-        const msg = err instanceof Error ? err.message : "";
-        if (OCPPClient._INTOLERABLE_ERRORS.has(msg)) {
-          this._logger?.error?.("Intolerable error — stopping reconnection", {
-            error: msg,
-          });
-          this._state = CLOSED;
-          this.emit("close", { code: 1001, reason: msg });
-          return;
-        }
-
-        if (
-          this._reconnectAttempt < this._options.maxReconnects &&
-          this._options.reconnect
-        ) {
-          this._scheduleReconnect();
-        } else {
-          // Max reconnects exhausted
-          this._state = CLOSED;
-          this.emit("close", {
-            code: 1001,
-            reason: "Max reconnection attempts exhausted",
-          });
-        }
-      }
-    }, delayMs);
-  }
-
-  // ─── Internal: Offline Queue ──────────────────────────────────
-
-  /**
-   * Atomically drains the offline queue and sends each message via _sendCall.
-   * Uses splice(0) to prevent re-entry bugs (double billing) if the connection
-   * drops again mid-flush — the queue is empty before any sends begin.
-   */
-  private _flushOfflineQueue(): void {
-    if (this._offlineQueue.length === 0) return;
-
-    // Atomic snapshot — clears queue before sending to prevent re-entry
-    const snapshot = this._offlineQueue.splice(0, this._offlineQueue.length);
-    this._logger?.info?.("Flushing offline queue", {
-      count: snapshot.length,
-    });
-
-    for (const entry of snapshot) {
-      this._callQueue
-        .push(() => this._sendCall(entry.method, entry.params, entry.options))
-        .then(entry.resolve)
-        .catch(entry.reject);
-    }
-  }
-
-  // ─── Internal: Call Retry with Full Jitter ───────────────────
-
-  /**
-   * Retry wrapper using Full Jitter exponential backoff.
-   * delay = random(0, min(retryMaxDelayMs, retryDelayMs * 2^attempt))
-   * Only retries on TimeoutError — all other errors propagate immediately.
-   */
-  private async _callWithRetry(
-    method: string,
-    params: unknown,
-    options: CallOptions,
-    maxRetries: number,
-  ): Promise<unknown> {
-    const baseDelay = options.retryDelayMs ?? 1000;
-    const maxDelay = options.retryMaxDelayMs ?? 30000;
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        return await this._callQueue.push(() =>
-          this._sendCall(method, params, options),
-        );
-      } catch (err) {
-        if (attempt === maxRetries || !(err instanceof TimeoutError)) {
-          throw err;
-        }
-        // Full Jitter: random(0, min(maxDelay, baseDelay * 2^attempt))
-        const expDelay = Math.min(maxDelay, baseDelay * 2 ** attempt);
-        const jitteredDelay = Math.random() * expDelay;
-        this._logger?.warn?.("Call retry", {
-          method,
-          attempt: attempt + 1,
-          maxRetries,
-          delayMs: Math.round(jitteredDelay),
-        });
-        await new Promise((r) => setTimeout(r, jitteredDelay));
-      }
-    }
-    // Should be unreachable, but satisfy TypeScript
-    throw new Error("Retry exhausted");
+    handleClose(this._context, code, reason);
   }
 
   // ─── Internal: Backpressure-Aware Send ───────────────────────
 
-  /** Maximum bytes allowed in the ws send buffer before applying backpressure (512KB) */
-  private static readonly _BACKPRESSURE_THRESHOLD = 512 * 1024;
-
   /** Sends queued while the socket is backpressured (FIFO). */
-  private _backpressureQueue: Array<{
-    data: string;
-    cb?: (err?: Error) => void;
-    enqueuedAt: number;
-  }> = [];
+  private _backpressureQueue: BackpressuredFrame[] = [];
   private _backpressureTimer: ReturnType<typeof setInterval> | null = null;
-  /** Frames held while the socket is over threshold, before dropping oldest. */
-  private static readonly _BACKPRESSURE_MAX_QUEUE = 1000;
-  /** How long a frame may wait for the peer to drain before it is failed. */
-  private static readonly _BACKPRESSURE_MAX_WAIT_MS = 10_000;
 
   /**
    * Protected hook for plugins to intercept outbound messages before serialization.
@@ -1978,171 +1213,25 @@ export class OCPPClient<
     return true; // Implemented by OCPPServerClient
   }
 
-  /**
-   * Wraps ws.send() with backpressure protection. When bufferedAmount
-   * exceeds the threshold, sends are queued and flushed FIFO by a single
-   * shared 50ms drain timer (one per client, not one per send — report M10).
-   * Entries older than 10s are sent regardless, preserving the previous
-   * timeout semantics. Prevents OOM on slow 2G/3G charger connections.
-   */
+  /** Test seam: see safeSend in client/backpressure.ts. */
   private _safeSend(
     ws: WebSocket | null,
     data: string,
     cb?: (err?: Error) => void,
   ): void {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      cb?.(new Error("WebSocket is not open"));
-      return;
-    }
-
-    if (
-      ws.bufferedAmount > OCPPClient._BACKPRESSURE_THRESHOLD ||
-      this._backpressureQueue.length > 0
-    ) {
-      if (this._backpressureQueue.length === 0) {
-        this._logger?.warn?.("Backpressure — pausing send", {
-          identity: this._identity,
-          bufferedAmount: ws.bufferedAmount,
-          threshold: OCPPClient._BACKPRESSURE_THRESHOLD,
-        });
-        // Emit identity + buffered amount for operator alerting
-        this.emit("backpressure", {
-          identity: this._identity,
-          bufferedAmount: ws.bufferedAmount,
-        });
-      }
-      // Bound the queue. Under sustained backpressure this array grew without
-      // limit, holding every frame in memory for a peer that is not reading.
-      if (
-        this._backpressureQueue.length >= OCPPClient._BACKPRESSURE_MAX_QUEUE
-      ) {
-        const dropped = this._backpressureQueue.shift();
-        dropped?.cb?.(
-          new Error("Backpressure queue full — oldest frame dropped"),
-        );
-        this._logger?.warn?.("Backpressure queue full — dropping oldest", {
-          identity: this._identity,
-          max: OCPPClient._BACKPRESSURE_MAX_QUEUE,
-        });
-      }
-      this._backpressureQueue.push({ data, cb, enqueuedAt: Date.now() });
-      this._startBackpressureDrain(ws);
-      return;
-    }
-
-    ws.send(data, cb);
-  }
-
-  private _startBackpressureDrain(ws: WebSocket): void {
-    if (this._backpressureTimer) return;
-    this._backpressureTimer = setInterval(() => {
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        this._stopBackpressureDrain();
-        const failed = this._backpressureQueue.splice(0);
-        for (const entry of failed) {
-          entry.cb?.(new Error("WebSocket closed during backpressure wait"));
-        }
-        return;
-      }
-      const now = Date.now();
-      while (this._backpressureQueue.length > 0) {
-        const head = this._backpressureQueue[0];
-        if (!head) break;
-
-        if (now - head.enqueuedAt >= OCPPClient._BACKPRESSURE_MAX_WAIT_MS) {
-          // Aged out. This used to send anyway, which flushed the whole
-          // backlog into a socket that was already over the threshold — the
-          // timeout defeated the backpressure it existed to apply. A frame the
-          // peer has not been able to accept for ten seconds is stale for OCPP
-          // purposes, so the caller is told instead.
-          this._backpressureQueue.shift();
-          head.cb?.(
-            new Error("Backpressure timeout — peer did not drain in time"),
-          );
-          continue;
-        }
-
-        if (ws.bufferedAmount <= OCPPClient._BACKPRESSURE_THRESHOLD) {
-          this._backpressureQueue.shift();
-          ws.send(head.data, head.cb);
-        } else {
-          break;
-        }
-      }
-      if (this._backpressureQueue.length === 0) {
-        this._stopBackpressureDrain();
-      }
-    }, 50);
-  }
-
-  private _stopBackpressureDrain(): void {
-    if (this._backpressureTimer) {
-      clearInterval(this._backpressureTimer);
-      this._backpressureTimer = null;
-    }
+    safeSend(this._context, ws, data, cb);
   }
 
   // ─── Internal: Ping/Pong ─────────────────────────────────────
 
+  /** The server client calls it too: see startPing in client/keepalive.ts. */
   protected _startPing(): void {
-    if (this._options.pingIntervalMs <= 0) return;
-
-    const pongTimeoutMs =
-      (this._options as ClientOptions).pongTimeoutMs ??
-      this._options.pingIntervalMs + 5000;
-
-    const doPing = () => {
-      if (this._state !== OPEN || !this._ws) return;
-
-      if (this._options.deferPingsOnActivity) {
-        const elapsed = Date.now() - this._lastActivity;
-        if (elapsed < this._options.pingIntervalMs) {
-          this._pingTimer = setTimeout(
-            doPing,
-            this._options.pingIntervalMs - elapsed,
-          );
-          return;
-        }
-      }
-
-      this._ws.ping();
-
-      // Start pong timeout — if no pong received, connection is dead
-      // Only arm a pong deadline when none is outstanding. Overwriting the
-      // handle orphaned the previous timer — it still fired, and terminated
-      // whatever socket was current by then, including a healthy reconnect.
-      // Keeping the first unanswered ping's deadline also preserves dead-peer
-      // detection when pongTimeoutMs exceeds pingIntervalMs.
-      if (pongTimeoutMs > 0 && !this._pongTimer) {
-        this._pongTimer = setTimeout(() => {
-          this._pongTimer = null;
-          this._logger?.warn?.("Pong timeout — terminating dead connection", {
-            identity: this._identity,
-            timeoutMs: pongTimeoutMs,
-          });
-          // Emit pongTimeout event for plugin observability
-          this.emit("pongTimeout", { identity: this._identity });
-          this._ws?.terminate();
-        }, pongTimeoutMs);
-      }
-
-      // Add ±25% jitter to prevent thundering herds on mass reconnections
-      const jitteredInterval =
-        this._options.pingIntervalMs * (0.75 + Math.random() * 0.5);
-      this._pingTimer = setTimeout(doPing, jitteredInterval);
-    };
-
-    // Add ±25% jitter to the very first ping as well
-    const initialJitteredInterval =
-      this._options.pingIntervalMs * (0.75 + Math.random() * 0.5);
-    this._pingTimer = setTimeout(doPing, initialJitteredInterval);
+    startPing(this._context);
   }
 
+  /** Test seam: see stopPing in client/keepalive.ts. */
   private _stopPing(): void {
-    if (this._pingTimer) {
-      clearTimeout(this._pingTimer);
-      this._pingTimer = null;
-    }
+    stopPing(this._context);
   }
 
   protected _recordActivity(): void {
@@ -2166,81 +1255,22 @@ export class OCPPClient<
     }
   }
 
+  /** Test seam: see validateMessage in client/validation.ts. */
   private _validateOutbound(
     method: string,
     params: unknown,
     suffix: SchemaKind,
   ): void {
-    const validator = this._findValidator();
-    if (!validator) return;
-
-    if (
-      this._options.strictModeMethods &&
-      !(this._options.strictModeMethods as readonly string[]).includes(method)
-    ) {
-      return; // Skip validation if method is not in the explicit strict list
-    }
-
-    const schemaId = schemaIdFor(method, suffix);
-    try {
-      validator.validate(schemaId, params);
-    } catch (err) {
-      this.emit("strictValidationFailure", {
-        message: params,
-        error: err as Error,
-      });
-      throw err;
-    }
+    validateMessage(this._context, method, params, suffix);
   }
 
+  /** Test seam: see validateMessage in client/validation.ts. */
   private _validateInbound(
     method: string,
     params: unknown,
     suffix: SchemaKind,
   ): void {
-    const validator = this._findValidator();
-    if (!validator) return;
-
-    if (
-      this._options.strictModeMethods &&
-      !(this._options.strictModeMethods as readonly string[]).includes(method)
-    ) {
-      return; // Skip validation if method is not in the explicit strict list
-    }
-
-    const schemaId = schemaIdFor(method, suffix);
-    try {
-      validator.validate(schemaId, params);
-    } catch (err) {
-      this.emit("strictValidationFailure", {
-        message: params,
-        error: err as Error,
-      });
-      throw err;
-    }
-  }
-
-  private _findValidator(): Validator | null {
-    if (!this._protocol) return null;
-
-    if (
-      this._strictProtocols &&
-      !this._strictProtocols.includes(this._protocol)
-    ) {
-      return null;
-    }
-
-    // A custom validator for this subprotocol wins; otherwise the built-in
-    // one. Returning null when custom validators were given, as before, left
-    // a standard protocol next to a custom one unvalidated.
-    const custom = this._validators?.find(
-      (v) => v.subprotocol === this._protocol,
-    );
-    if (custom) return custom;
-
-    // Built on first use and cached process-wide, so this costs one lookup
-    // per validated message after the first.
-    return getStandardValidator(this._protocol);
+    validateMessage(this._context, method, params, suffix);
   }
 
   // ─── Internal: Endpoint building ─────────────────────────────
@@ -2253,52 +1283,6 @@ export class OCPPClient<
   /** Test seam: see buildWsOptions in client/ws-options.ts. */
   private _buildWsOptions(): WebSocket.ClientOptions {
     return buildWsOptions(this._options, this._identity);
-  }
-
-  // ─── Internal: Cleanup ───────────────────────────────────────
-
-  /**
-   * Reject everything still waiting in the offline queue.
-   *
-   * These entries hold the caller's resolve/reject, so leaving them in place on
-   * a terminal close stranded those promises forever — the call never resolved,
-   * never rejected, and never timed out, because the timeout is only armed once
-   * a call is actually sent.
-   */
-  private _drainOfflineQueue(reason: string): void {
-    if (this._offlineQueue.length === 0) return;
-    const queued = this._offlineQueue.splice(0);
-    this._logger?.debug?.("Rejecting offline-queued calls", {
-      count: queued.length,
-      reason,
-    });
-    for (const entry of queued) {
-      entry.reject(new Error(reason));
-    }
-  }
-
-  private _cleanup(): void {
-    this._stopPing();
-    this._drainOfflineQueue("Client closed");
-    // Buffered frames belong to the connection that is going away. Keeping them
-    // replayed stale messages onto the next connect() — and, since nothing
-    // bounded this array, grew without limit across a long disconnect.
-    this._outboundBuffer.length = 0;
-    if (this._pongTimer) {
-      clearTimeout(this._pongTimer);
-      this._pongTimer = null;
-    }
-    if (this._reconnectTimer) {
-      clearTimeout(this._reconnectTimer);
-      this._reconnectTimer = null;
-    }
-    this._stopBackpressureDrain();
-    const queued = this._backpressureQueue.splice(0);
-    for (const entry of queued) {
-      entry.cb?.(new Error("Connection closed"));
-    }
-    this._closePromise = null;
-    this._ws = null;
   }
 }
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { OCPPServer } from "../src/server/server.js";
+import { BACKPRESSURE_THRESHOLD } from "../src/client/backpressure.js";
 import { OCPPClient } from "../src/client/client.js";
 import type { OCPPServerClient } from "../src/server/server-client.js";
 
@@ -171,8 +172,7 @@ describe("Phase B — Backpressure _safeSend", () => {
   });
 
   it("should have backpressure threshold configured", () => {
-    // @ts-expect-error — accessing private static
-    expect(OCPPClient._BACKPRESSURE_THRESHOLD).toBe(512 * 1024);
+    expect(BACKPRESSURE_THRESHOLD).toBe(512 * 1024);
   });
 });
 
