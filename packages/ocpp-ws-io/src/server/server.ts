@@ -92,6 +92,12 @@ import {
   OCPPRouter,
 } from "./router.js";
 import { OCPPServerClient } from "./server-client.js";
+import {
+  recordSessionActivity,
+  type SessionCache,
+  sweepExpiredSessions,
+  sweepPersistMarks,
+} from "./sessions.js";
 import { createWorkerPool, type WorkerPool } from "./worker-pool.js";
 import { createWss, warnIgnoredWssOptions } from "./wss-options.js";
 
@@ -261,7 +267,9 @@ export class OCPPServer<
    * so activity-only writes can be debounced (at most once per 30 s).
    */
   private _sessionLastPersisted = new Map<string, number>();
-  private static readonly _SESSION_PERSIST_DEBOUNCE_MS = 30_000;
+  /** `_sessions`, `_sessionLastPersisted`, `_pendingAdapterWrites` and the TTL, as server/sessions.ts reads them. */
+  private readonly _sessionCache: SessionCache;
+
   /** Longest a connecting charger waits for the adapter's stored session. */
   private static readonly _SESSION_FETCH_TIMEOUT_MS = 1000;
 
@@ -308,6 +316,12 @@ export class OCPPServer<
     // Initialize bounded LRU session cache
     const maxSessions = this._options.maxSessions ?? 50_000;
     this._sessions = new LRUMap(maxSessions);
+    this._sessionCache = {
+      sessions: this._sessions,
+      lastPersisted: this._sessionLastPersisted,
+      pendingWrites: this._pendingAdapterWrites,
+      timeoutMs: this._sessionTimeoutMs,
+    };
 
     // Initialize WebSocketServer immediately (ws best practice: noServer mode)
     // Apply maxPayloadBytes to reject oversized frames at the transport layer
@@ -2251,7 +2265,13 @@ export class OCPPServer<
           lastActive: Date.now(),
         });
       } else {
-        this._updateSessionActivity(identity, client.session, true);
+        recordSessionActivity(
+          this._sessionCache,
+          this._adapter,
+          identity,
+          client.session,
+          true,
+        );
       }
 
       // ── Duplicate Identity Eviction ──
@@ -2319,7 +2339,13 @@ export class OCPPServer<
             this._clientsByIdentity.delete(identity);
             // Message-driven writes are debounced, so flush the final state
             // for whichever node the charger reconnects to next.
-            this._updateSessionActivity(identity, client.session, true);
+            recordSessionActivity(
+              this._sessionCache,
+              this._adapter,
+              identity,
+              client.session,
+              true,
+            );
             // Remove presence — only when this socket still owns the
             // identity. The local check above catches an evicted duplicate on
             // THIS node; the fenced delete below catches the cross-node case,
@@ -2492,44 +2518,19 @@ export class OCPPServer<
       }
 
       client.on("message", () => {
-        this._updateSessionActivity(identity, client.session);
+        recordSessionActivity(
+          this._sessionCache,
+          this._adapter,
+          identity,
+          client.session,
+        );
       });
     });
   }
 
-  private _updateSessionActivity(
-    identity: string,
-    data: PersistedSession,
-    force?: boolean,
-  ) {
-    const now = Date.now();
-
-    // LRU is always updated — it serves as the hot cache on every path.
-    this._sessions.set(identity, { data, lastActive: now });
-
-    // When the adapter supports sessions, also persist to Redis.
-    // Activity-only writes are debounced (at most once per 30 s) to avoid
-    // flooding the store on high-message connections.
-    const adapter = this._adapter;
-    if (!adapter?.setSession) return;
-
-    if (!force) {
-      const lastPersisted = this._sessionLastPersisted.get(identity);
-      if (
-        lastPersisted !== undefined &&
-        now - lastPersisted < OCPPServer._SESSION_PERSIST_DEBOUNCE_MS
-      ) {
-        return;
-      }
-    }
-
-    this._sessionLastPersisted.set(identity, now);
-    const ttlSeconds = Math.ceil(this._sessionTimeoutMs / 1000);
-    const write: Promise<void> = adapter
-      .setSession(identity, data, ttlSeconds)
-      .catch(() => {})
-      .finally(() => this._pendingAdapterWrites.delete(write));
-    this._pendingAdapterWrites.add(write);
+  /** Drop persist marks old enough that they no longer suppress a write. */
+  private _sweepSessionPersistMarks(now: number): void {
+    sweepPersistMarks(this._sessionCache, now);
   }
 
   /**
@@ -2548,27 +2549,11 @@ export class OCPPServer<
     if (this._gcInterval) return;
     this._gcInterval = setInterval(() => {
       const now = Date.now();
-      for (const [identity, session] of this._sessions.entries()) {
-        if (now - session.lastActive > this._sessionTimeoutMs) {
-          this._sessions.delete(identity);
-        }
-      }
+      sweepExpiredSessions(this._sessionCache, now);
       this._sweepSessionPersistMarks(now);
       this._sweepConnectionBuckets(now);
       this._sweepNodeLiveness(now);
     }, 60 * 1000).unref(); // Run every minute, don't block exit
-  }
-
-  /**
-   * Drop debounce marks old enough that they no longer suppress a write. Swept
-   * by age rather than alongside the LRU, which evicts without telling us.
-   */
-  private _sweepSessionPersistMarks(now: number): void {
-    for (const [identity, at] of this._sessionLastPersisted) {
-      if (now - at >= OCPPServer._SESSION_PERSIST_DEBOUNCE_MS) {
-        this._sessionLastPersisted.delete(identity);
-      }
-    }
   }
 
   /**
