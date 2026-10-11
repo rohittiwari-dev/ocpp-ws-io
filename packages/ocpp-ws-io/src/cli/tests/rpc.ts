@@ -6,6 +6,11 @@ export const rpcSuite: TestSuite = {
   name: "RPC Timing & Mechanics",
   id: "rpc",
   run: async ({ baseUrl, protocol }, check) => {
+    // The error for a malformed payload: OCPP-J 1.6 §4.2.3 spells it
+    // FormationViolation, 2.0.1 and 2.1 FormatViolation.
+    const formatViolation =
+      protocol === "ocpp1.6" ? "FormationViolation" : "FormatViolation";
+
     // ── 1. Heartbeat Round-trip ──────────────────────────────────
 
     await check("Heartbeat round-trip", "HIGH", async () => {
@@ -210,7 +215,7 @@ export const rpcSuite: TestSuite = {
       },
     );
 
-    // ── 7. Missing Payload (FormatViolation) ────────────────────
+    // ── 7. Missing Payload (FormatViolation, 1.6 FormationViolation) ─
 
     await check(
       "Server rejects missing payload in CALL",
@@ -231,13 +236,13 @@ export const rpcSuite: TestSuite = {
             Array.isArray(parsed) &&
             parsed[0] === 4 &&
             parsed[1] === msgId &&
-            (parsed[2] === "FormatViolation" || parsed[2] === "ProtocolError")
+            (parsed[2] === formatViolation || parsed[2] === "ProtocolError")
           ) {
             return { passed: true };
           }
           return {
             passed: false,
-            issue: `Expected FormatViolation CALLERROR, got: ${msg.slice(
+            issue: `Expected ${formatViolation} CALLERROR, got: ${msg.slice(
               0,
               80,
             )}`,
@@ -250,7 +255,7 @@ export const rpcSuite: TestSuite = {
       },
     );
 
-    // ── 8. Non-Object Payload (FormatViolation) ─────────────────
+    // ── 8. Non-Object Payload (FormatViolation, 1.6 FormationViolation)
 
     await check(
       "Server rejects non-object payload in CALL",
@@ -271,7 +276,7 @@ export const rpcSuite: TestSuite = {
             Array.isArray(parsed) &&
             parsed[0] === 4 &&
             parsed[1] === msgId &&
-            (parsed[2] === "FormatViolation" ||
+            (parsed[2] === formatViolation ||
               parsed[2] === "ProtocolError" ||
               parsed[2] === "TypeConstraintViolation")
           ) {
