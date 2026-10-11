@@ -7,11 +7,11 @@ import { generateReport } from "../lib/reporter.js";
 import type { OutgoingPayload } from "../types.js";
 
 export interface FuzzOptions {
-  endpoint?: string;
-  workers?: number;
-  flood?: boolean;
-  report?: "json" | "md" | "txt";
-  reportDir?: string;
+  endpoint?: string | undefined;
+  workers?: number | undefined;
+  flood?: boolean | undefined;
+  report?: "json" | "md" | "txt" | undefined;
+  reportDir?: string | undefined;
 }
 
 export async function runFuzz(options: FuzzOptions = {}): Promise<void> {
@@ -181,7 +181,7 @@ ${pc.dim("Press Ctrl+C to terminate the chaos engine...")}
           };
           // Randomly scramble one property to undefined/null/NaN
           const keys = Object.keys(payload);
-          const randomKey = keys[Math.floor(Math.random() * keys.length)];
+          const randomKey = keys[Math.floor(Math.random() * keys.length)]!;
           const scramblers = [
             null,
             undefined,
@@ -226,7 +226,7 @@ ${pc.dim("Press Ctrl+C to terminate the chaos engine...")}
                   const anomalyGenerator =
                     fuzzPayloads[
                       Math.floor(Math.random() * fuzzPayloads.length)
-                    ];
+                    ]!;
                   const payload = anomalyGenerator(msgId);
 
                   ws.send(payload);

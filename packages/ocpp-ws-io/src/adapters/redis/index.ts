@@ -138,7 +138,7 @@ export class RedisAdapter implements EventAdapterInterface {
   private _logger?: RedisAdapterOptions["logger"];
   /** Consecutive stream-poll failures; surfaced through metrics(). */
   private _pollErrors = 0;
-  private _lastPollError?: string;
+  private _lastPollError?: string | undefined;
 
   /** Report a transport problem, falling back to console when no logger is set. */
   private _log(
@@ -227,7 +227,7 @@ export class RedisAdapter implements EventAdapterInterface {
   private _getPoolDriver(channel?: string): RedisPubSubDriver {
     if (this._driverPool.length === 1) return this._driver;
     if (channel === undefined) {
-      const driver = this._driverPool[this._nextPoolIndex];
+      const driver = this._driverPool[this._nextPoolIndex]!;
       this._nextPoolIndex = (this._nextPoolIndex + 1) % this._driverPool.length;
       return driver;
     }
@@ -235,7 +235,7 @@ export class RedisAdapter implements EventAdapterInterface {
     for (let i = 0; i < channel.length; i++) {
       hash = (hash * 31 + channel.charCodeAt(i)) | 0;
     }
-    return this._driverPool[Math.abs(hash) % this._driverPool.length];
+    return this._driverPool[Math.abs(hash) % this._driverPool.length]!;
   }
 
   async publish(channel: string, data: unknown): Promise<void> {

@@ -79,7 +79,7 @@ export function anomalyPlugin(options?: AnomalyPluginOptions): OCPPPlugin {
   function pruneExpired(timestamps: number[], now: number): number[] {
     const cutoff = now - windowMs;
     let i = 0;
-    while (i < timestamps.length && timestamps[i] < cutoff) i++;
+    while (i < timestamps.length && timestamps[i]! < cutoff) i++;
     return i > 0 ? timestamps.slice(i) : timestamps;
   }
 

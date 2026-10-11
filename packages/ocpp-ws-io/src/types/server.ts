@@ -549,12 +549,14 @@ export interface OCPPServerStats {
   /** Process ID */
   pid: number;
   /** Low-level WebSocket Server metrics */
-  webSockets?: {
-    /** Total active clients managed by the underlying ws server */
-    total: number;
-    /** Current messages waiting to be flushed to network (bytes) */
-    bufferedAmount: number;
-  };
+  webSockets?:
+    | {
+        /** Total active clients managed by the underlying ws server */
+        total: number;
+        /** Current messages waiting to be flushed to network (bytes) */
+        bufferedAmount: number;
+      }
+    | undefined;
 }
 // ─── Health Endpoint Options ─────────────────────────────────────
 

@@ -8,8 +8,8 @@ export type Severity = "HIGH" | "MEDIUM" | "LOW";
 export interface TestResult {
   name: string;
   passed: boolean;
-  severity?: Severity;
-  issue?: string;
+  severity?: Severity | undefined;
+  issue?: string | undefined;
   durationMs: number;
 }
 

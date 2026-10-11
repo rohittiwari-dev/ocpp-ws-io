@@ -83,16 +83,16 @@ export interface RoutesByArgs {
 export type PlainSendArgs = [
   identity: string,
   method: string,
-  params?: object,
-  options?: CallOptions,
+  params?: object | undefined,
+  options?: CallOptions | undefined,
 ];
 /** `sendToClient()`'s arguments naming a version and then an action. @internal */
 export type VersionNamedSendArgs = [
   identity: string,
   version: string,
   method: string,
-  params?: object,
-  options?: CallOptions,
+  params?: object | undefined,
+  options?: CallOptions | undefined,
 ];
 /**
  * `sendToClient()`'s arguments as its implementation reads them, whichever

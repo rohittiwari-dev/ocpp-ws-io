@@ -5,7 +5,10 @@
 		"rootDir": ".",
 		"module": "ESNext",
 		"moduleResolution": "Bundler",
-		"allowJs": true
+		"allowJs": true,
+		"exactOptionalPropertyTypes": false,
+		"noUncheckedIndexedAccess": false,
+		"noImplicitOverride": false
 	},
 	"include": ["src", "test"],
 	"exclude": ["node_modules", "dist", "test/types-augmented", "test/types-published"]

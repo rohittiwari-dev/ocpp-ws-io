@@ -29,7 +29,7 @@ export interface PendingCall {
   reject: (reason: unknown) => void;
   timeoutHandle: ReturnType<typeof setTimeout>;
   /** Detaches the abort listener from options.signal (if one was attached). */
-  removeAbortListener?: () => void;
+  removeAbortListener?: (() => void) | undefined;
   method: string;
   sentAt: number;
 }
@@ -83,26 +83,29 @@ export interface InboundContext extends MessageIdRules {
   close(options?: CloseOptions): Promise<{ code: number; reason: string }>;
 }
 
-/** The client's options, with the defaults its constructor fills in. */
+/** The options the client's constructor gives a default. */
+type DefaultedClientOption =
+  | "identity"
+  | "endpoint"
+  | "callTimeoutMs"
+  | "pingIntervalMs"
+  | "deferPingsOnActivity"
+  | "callConcurrency"
+  | "maxBadMessages"
+  | "respondWithDetailedErrors"
+  | "reconnect"
+  | "maxReconnects"
+  | "backoffMin"
+  | "backoffMax";
+
+/**
+ * The client's options, with the defaults its constructor fills in: each of
+ * those is set, as an option given as undefined keeps its default.
+ */
 export type ResolvedClientOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol> =
-  Required<
-    Pick<
-      ClientOptions<P>,
-      | "identity"
-      | "endpoint"
-      | "callTimeoutMs"
-      | "pingIntervalMs"
-      | "deferPingsOnActivity"
-      | "callConcurrency"
-      | "maxBadMessages"
-      | "respondWithDetailedErrors"
-      | "reconnect"
-      | "maxReconnects"
-      | "backoffMin"
-      | "backoffMax"
-    >
-  > &
-    ClientOptions<P>;
+  {
+    [K in DefaultedClientOption]-?: Exclude<ClientOptions<P>[K], undefined>;
+  } & ClientOptions<P>;
 
 /** A call made while offline, sent once the client connects. */
 export interface OfflineCall {
@@ -116,7 +119,7 @@ export interface OfflineCall {
 /** A frame waiting for the socket's send buffer to drain. */
 export interface BackpressuredFrame {
   data: string;
-  cb?: (err?: Error) => void;
+  cb?: ((err?: Error) => void) | undefined;
   enqueuedAt: number;
 }
 

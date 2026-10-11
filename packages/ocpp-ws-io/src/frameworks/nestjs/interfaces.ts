@@ -78,5 +78,5 @@ export enum OcppParamType {
 
 export interface OcppParamMetadata {
   type: OcppParamType;
-  data?: string;
+  data?: string | undefined;
 }

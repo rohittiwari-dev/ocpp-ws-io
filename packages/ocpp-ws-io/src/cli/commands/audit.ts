@@ -388,9 +388,9 @@ const AUDIT_DOMAINS: Domain[] = [
 type Answer = "PASS" | "FAIL" | "NA";
 
 export interface AuditOptions {
-  endpoint?: string;
-  identity?: string;
-  protocol?: string;
+  endpoint?: string | undefined;
+  identity?: string | undefined;
+  protocol?: string | undefined;
 }
 
 export async function runAudit(options: AuditOptions = {}): Promise<void> {

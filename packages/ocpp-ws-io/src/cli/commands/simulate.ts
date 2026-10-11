@@ -6,12 +6,12 @@ import { generateReport } from "../lib/reporter.js";
 import { SimulatorEngine } from "../simulator/Engine.js";
 
 export interface SimulateOptions {
-  endpoint?: string;
-  identity?: string;
-  idTag?: string;
-  protocol?: string;
-  report?: "json" | "md" | "txt";
-  reportDir?: string;
+  endpoint?: string | undefined;
+  identity?: string | undefined;
+  idTag?: string | undefined;
+  protocol?: string | undefined;
+  report?: "json" | "md" | "txt" | undefined;
+  reportDir?: string | undefined;
 }
 
 export async function runSimulate(

@@ -34,7 +34,7 @@ import type { OcppModuleOptions } from "./interfaces.js";
 
 @Injectable()
 export class OcppService implements OnModuleInit, OnModuleDestroy {
-  private attachedHttpServer?: HttpServer;
+  private attachedHttpServer?: HttpServer | undefined;
   private readonly gatewayPatterns = new Set<string | RegExp>();
   private acceptAllUpgrades = false;
   private readonly upgradeHandler = (
@@ -282,7 +282,7 @@ export class OcppService implements OnModuleInit, OnModuleDestroy {
     const pathParts = pathname.split("/").filter(Boolean);
 
     for (let i = 0; i < patternParts.length; i += 1) {
-      const expected = patternParts[i];
+      const expected = patternParts[i]!;
       const actual = pathParts[i];
 
       if (expected === "*") return true;

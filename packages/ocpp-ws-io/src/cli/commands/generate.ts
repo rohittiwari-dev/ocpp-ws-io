@@ -10,9 +10,9 @@ const EXAMPLE_SCHEMA_URL =
   "https://ocpp-ws-io.rohittiwari.me/schema-example.json";
 
 interface GenerateOptions {
-  out?: string;
-  schema?: string;
-  name?: string;
+  out?: string | undefined;
+  schema?: string | undefined;
+  name?: string | undefined;
 }
 
 export async function runGenerate(options: GenerateOptions): Promise<void> {

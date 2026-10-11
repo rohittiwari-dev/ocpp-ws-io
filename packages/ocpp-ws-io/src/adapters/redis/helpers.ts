@@ -113,7 +113,7 @@ export interface NodeRedisMulti {
     key: string,
     id: string,
     message: Record<string, string>,
-    options?: { TRIM?: NodeRedisTrim },
+    options?: { TRIM?: NodeRedisTrim | undefined },
   ): unknown;
   exec(): Promise<RedisReply[]>;
 }
@@ -138,7 +138,7 @@ export interface NodeRedisClient
     key: string,
     id: string,
     message: Record<string, string>,
-    options?: { TRIM?: NodeRedisTrim },
+    options?: { TRIM?: NodeRedisTrim | undefined },
   ): Promise<string>;
   xRead(
     streams: { key: string; id: string }[],
@@ -157,7 +157,8 @@ export function fromIoRedisStreams(reply: IoRedisStreamReply): StreamEntry[] {
     messages: messages.map(([id, fields]) => {
       const data: Record<string, string> = {};
       for (let i = 0; i < fields.length; i += 2) {
-        data[fields[i]] = fields[i + 1];
+        // A stream entry's fields come as name, value pairs.
+        data[fields[i]!] = fields[i + 1]!;
       }
       return { id, data };
     }),

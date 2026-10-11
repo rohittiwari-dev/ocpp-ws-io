@@ -49,7 +49,7 @@ export interface FlattenedJws {
 export interface SignedMessageSigner {
   algorithm: SignedMessageAlgorithm;
   /** x5t#S256 of the signing certificate, sent in the header (§7.4 SHOULD). */
-  thumbprint?: string;
+  thumbprint?: string | undefined;
   /**
    * Signs the JWS signing input. An ES256 signature is the 64-byte R || S
    * pair (RFC 7518 §3.4), not DER.
@@ -124,10 +124,10 @@ const SIGNED_PROTOCOLS = new Set(["ocpp2.0.1", "ocpp2.1"]);
 const MAX_TRACKED_IDS = 1000;
 
 interface ResolvedOptions {
-  signer?: SignedMessageSigner;
+  signer?: SignedMessageSigner | undefined;
   shouldSign: (action: string) => boolean;
   mustBeSigned: (action: string) => boolean;
-  verify?: SignedMessagesOptions["verify"];
+  verify?: SignedMessagesOptions["verify"] | undefined;
   messageTypeHeader: "OCPPMessageTypedId" | "OCPPMessageTypeId";
 }
 

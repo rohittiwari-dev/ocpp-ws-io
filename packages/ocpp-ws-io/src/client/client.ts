@@ -93,8 +93,17 @@ const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
 
 /** safeCall()'s arguments: an action, or a version and then an action. */
 type SafeCallArgs =
-  | [method: string, params?: object, options?: CallOptions]
-  | [version: string, method: string, params?: object, options?: CallOptions];
+  | [
+      method: string,
+      params?: object | undefined,
+      options?: CallOptions | undefined,
+    ]
+  | [
+      version: string,
+      method: string,
+      params?: object | undefined,
+      options?: CallOptions | undefined,
+    ];
 
 /**
  * call() by its implementation's arguments. safeCall() passes its own on

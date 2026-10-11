@@ -57,10 +57,10 @@ function isVersionNamed(args: SendToClientArgs): args is VersionNamedSendArgs {
 /** The parts of sendToClient's arguments, whichever form they take. */
 function parseSendToClientArgs(args: SendToClientArgs): {
   identity: string;
-  version?: string;
+  version?: string | undefined;
   method: string;
-  params?: object;
-  options?: CallOptions;
+  params?: object | undefined;
+  options?: CallOptions | undefined;
 } {
   if (isVersionNamed(args)) {
     const [identity, version, method, params, options] = args;

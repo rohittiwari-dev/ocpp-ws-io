@@ -7,7 +7,7 @@ import type { OCPPServerClient } from "./server-client.js";
 /** The listeners the server attached to an HTTP server, removed on close(). */
 export interface HttpServerListeners {
   upgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => void;
-  request?: (req: IncomingMessage, res: ServerResponse) => void;
+  request?: ((req: IncomingMessage, res: ServerResponse) => void) | undefined;
 }
 
 /**

@@ -7,7 +7,7 @@ import { MessageType } from "../types/protocol.js";
 // The rules an incoming frame is checked against, by OCPP-J version.
 
 /** Fewest elements a frame of each message type can have (Part 4 §4.2). */
-export const MIN_FRAME_LENGTH: Readonly<Record<number, number>> = {
+export const MIN_FRAME_LENGTH: Readonly<Record<MessageType, number>> = {
   [MessageType.CALL]: 4,
   [MessageType.CALLRESULT]: 3,
   [MessageType.CALLERROR]: 5,
@@ -34,7 +34,7 @@ const MAX_MESSAGE_ID_LENGTH = 36;
 export type SchemaKind = "req" | "conf" | "send";
 
 /** Position of the payload (or error details) object per message type. */
-export const PAYLOAD_INDEX: Readonly<Record<number, number>> = {
+export const PAYLOAD_INDEX: Readonly<Record<MessageType, number>> = {
   [MessageType.CALL]: 3,
   [MessageType.CALLRESULT]: 2,
   [MessageType.CALLERROR]: 4,
@@ -58,7 +58,7 @@ export interface MessageIdRules {
 export function isKnownMessageType(
   protocol: string | undefined,
   type: number,
-): boolean {
+): type is MessageType {
   if (
     type === MessageType.CALL ||
     type === MessageType.CALLRESULT ||

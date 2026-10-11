@@ -13,9 +13,9 @@ export interface RateLimitAlert {
   /** The event type that triggered the alert */
   eventType: "RATE_LIMIT_EXCEEDED" | "CONNECTION_RATE_LIMIT";
   /** Station identity (if known) */
-  identity?: string;
+  identity?: string | undefined;
   /** Remote IP address */
-  ip?: string;
+  ip?: string | undefined;
   /** ISO 8601 timestamp of the event */
   timestamp: string;
   /** Number of times the event occurred in the current window */

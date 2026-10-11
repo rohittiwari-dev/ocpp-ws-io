@@ -117,11 +117,11 @@ export interface ClientOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
    */
   backoffMax?: number;
   /** Call timeout in ms (default: 30000) */
-  callTimeoutMs?: number;
+  callTimeoutMs?: number | undefined;
   /** Ping interval in ms (default: 30000, 0 to disable) */
-  pingIntervalMs?: number;
+  pingIntervalMs?: number | undefined;
   /** Defer pings if activity detected (default: false) */
-  deferPingsOnActivity?: boolean;
+  deferPingsOnActivity?: boolean | undefined;
   /**
    * Pong response timeout in ms. If no pong is received within this
    * window after a ping, the connection is considered dead and terminated.
@@ -129,31 +129,31 @@ export interface ClientOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
    */
   pongTimeoutMs?: number;
   /** Maximum concurrent outbound calls (default: 1) */
-  callConcurrency?: number;
+  callConcurrency?: number | undefined;
   /**
    * Enable strict mode validation (default: false): `true` for every
    * configured protocol, or a list of them.
    */
-  strictMode?: boolean | readonly Configured<P>[];
+  strictMode?: boolean | readonly Configured<P>[] | undefined;
   /**
    * If defined, restricts strict mode validation ONLY to these methods: the
    * constructor takes the configured protocols' ({@link StrictModeMethodsFor})
    */
-  strictModeMethods?: readonly StrictModeMethod[];
+  strictModeMethods?: readonly StrictModeMethod[] | undefined;
   /** Custom validators for strict mode, for configured protocols */
-  strictModeValidators?: readonly Configured<Validator<P>>[];
+  strictModeValidators?: readonly Configured<Validator<P>>[] | undefined;
   /**
    * Creates the message ID of each outgoing CALL and SEND. A per-call
    * `idempotencyKey` still wins; without this, a random UUID is used.
    */
-  idGenerator?: MessageIdGenerator;
+  idGenerator?: MessageIdGenerator | undefined;
   /**
    * Checks the message ID of each incoming CALL and SEND, with or without
    * `strictMode`, in place of the built-in check. Without it, strict mode
    * rejects IDs over 36 characters (OCPP-J §4.1.4) and other modes accept
    * any string.
    */
-  idValidator?: MessageIdValidator;
+  idValidator?: MessageIdValidator | undefined;
   /**
    * Number of bad messages **in a row** at which the connection is closed
    * (code 1002). Every valid message resets the count, and empty frames are
@@ -163,7 +163,7 @@ export interface ClientOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
    * - `50` (default) — close on the 50th consecutive bad message.
    * - `Infinity` — never disconnect on bad messages (development only).
    */
-  maxBadMessages?: number;
+  maxBadMessages?: number | undefined;
   /**
    * Counting window in milliseconds for bad messages.
    *
@@ -177,18 +177,18 @@ export interface ClientOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
    *
    * Has no effect when `maxBadMessages` is `Infinity`.
    */
-  badMessageWindowMs?: number;
+  badMessageWindowMs?: number | undefined;
   /** Include error details in responses (default: false) */
-  respondWithDetailedErrors?: boolean;
+  respondWithDetailedErrors?: boolean | undefined;
   /**
    * Logging configuration.
    * - `undefined` / not set → default voltlog-io with console (logging enabled)
    * - `false` → logging disabled entirely
    * - `LoggingConfig` → custom configuration
    */
-  logging?: LoggingConfig | false;
+  logging?: LoggingConfig | false | undefined;
   /** Rate Limiting configuration (Token Bucket) */
-  rateLimit?: RateLimitOptions;
+  rateLimit?: RateLimitOptions | undefined;
   /**
    * If true, calls made while disconnected are queued in-memory
    * and flushed automatically on reconnect. (default: false)

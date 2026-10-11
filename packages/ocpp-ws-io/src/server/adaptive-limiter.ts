@@ -91,13 +91,13 @@ export function memoryUsage(): { used: number; total: number } {
 
 export interface AdaptiveLimiterOptions {
   /** CPU usage % at which limits start tightening (default: 70) */
-  cpuThresholdPercent?: number;
+  cpuThresholdPercent?: number | undefined;
   /** Memory usage % at which limits start tightening (default: 85) */
-  memThresholdPercent?: number;
+  memThresholdPercent?: number | undefined;
   /** Cooldown before the multiplier recovers after an overload (default: 10000ms) */
-  cooldownMs?: number;
+  cooldownMs?: number | undefined;
   /** How often to sample system metrics (default: 2000ms) */
-  sampleIntervalMs?: number;
+  sampleIntervalMs?: number | undefined;
 }
 
 export interface AdaptedEvent {

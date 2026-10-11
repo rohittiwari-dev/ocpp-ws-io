@@ -5,9 +5,9 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 
 export interface CertsOptions {
-  type?: "ca" | "server" | "client";
-  identity?: string;
-  out?: string;
+  type?: "ca" | "server" | "client" | undefined;
+  identity?: string | undefined;
+  out?: string | undefined;
 }
 
 export async function runCerts(options: CertsOptions = {}): Promise<void> {

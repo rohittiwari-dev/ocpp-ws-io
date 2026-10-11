@@ -3,8 +3,8 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 
 export interface MockOptions {
-  port?: number;
-  rate?: number;
+  port?: number | undefined;
+  rate?: number | undefined;
 }
 
 export async function runMock(options: MockOptions = {}): Promise<void> {

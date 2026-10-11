@@ -169,7 +169,7 @@ export function safeDecodeURIComponent(value: string): string {
 export function endpointOf(pathname: string, identity: string): string {
   const segments = pathname.split("/").filter(Boolean);
   for (let i = segments.length - 1; i >= 0; i--) {
-    if (safeDecodeURIComponent(segments[i]) === identity) {
+    if (safeDecodeURIComponent(segments[i]!) === identity) {
       segments.splice(i, 1);
       break;
     }

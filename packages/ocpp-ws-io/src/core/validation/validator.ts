@@ -84,18 +84,19 @@ export function isISODateTime(value: string): boolean {
   const m = DATE_TIME.exec(value);
   if (!m) return false;
 
-  const year = +m[1];
-  const month = +m[2];
-  const day = +m[3];
+  // Groups 1 to 6 are not optional in DATE_TIME, so a match has them.
+  const year = +m[1]!;
+  const month = +m[2]!;
+  const day = +m[3]!;
   if (month < 1 || month > 12) return false;
 
   const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  const maxDay = month === 2 && leap ? 29 : DAYS_IN_MONTH[month - 1];
+  const maxDay = month === 2 && leap ? 29 : DAYS_IN_MONTH[month - 1]!;
   if (day < 1 || day > maxDay) return false;
 
-  if (+m[4] > 23 || +m[5] > 59 || +m[6] > 60) return false;
+  if (+m[4]! > 23 || +m[5]! > 59 || +m[6]! > 60) return false;
   // m[8]/m[9] are the numeric offset, present only when the suffix is not Z.
-  if (m[8] !== undefined && (+m[8] > 23 || +m[9] > 59)) return false;
+  if (m[8] !== undefined && (+m[8] > 23 || +m[9]! > 59)) return false;
 
   return true;
 }
@@ -210,7 +211,7 @@ export class Validator<S extends string = string> {
 
     const isValid = validateFn(params);
     if (!isValid && validateFn.errors && validateFn.errors.length > 0) {
-      const primaryError = validateFn.errors[0];
+      const primaryError = validateFn.errors[0]!;
       let ocppErrorCode = keywordToOCPPError(primaryError.keyword);
       // Two of these codes were renamed between 1.6 and 2.0.1, and a charge
       // point's error enum is the version it speaks. Sending the wrong spelling

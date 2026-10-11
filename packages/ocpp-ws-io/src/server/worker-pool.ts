@@ -32,7 +32,7 @@ interface PendingTask {
   /** Index of the worker this task was dispatched to (for crash recovery). */
   workerIndex: number;
   /** Cleared when the task settles. */
-  timer?: ReturnType<typeof setTimeout>;
+  timer?: ReturnType<typeof setTimeout> | undefined;
 }
 
 export interface ParseResult {
@@ -198,7 +198,7 @@ export class WorkerPool {
       return Promise.reject(new Error("WorkerPool has no live workers"));
     }
     this._nextWorker = (workerIndex + 1) % this._workers.length;
-    const worker = this._workers[workerIndex];
+    const worker = this._workers[workerIndex]!;
 
     return new Promise<ParseResult>((resolve, reject) => {
       const id = this._taskId++;

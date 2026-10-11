@@ -83,13 +83,13 @@ export interface HandshakeInfo {
    * whose user-id is the identity (OCPP Security Profiles 1 and 2). Undefined
    * when there is no such header or the user-id is another.
    */
-  password?: Buffer;
+  password?: Buffer | undefined;
   /**
    * The charger's TLS client certificate (Security Profile 3, mutual TLS):
    * Node.js `getPeerCertificate()`, an empty object when the charger sent
    * none. Only read when the server's `securityProfile` is `TLS_CLIENT_CERT`.
    */
-  clientCertificate?: ReturnType<TLSSocket["getPeerCertificate"]>;
+  clientCertificate?: ReturnType<TLSSocket["getPeerCertificate"]> | undefined;
   /**
    * The server's configured `securityProfile` option (the same for every
    * connection; `NONE` by default), not one the charger chose.

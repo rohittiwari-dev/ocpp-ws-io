@@ -20,12 +20,12 @@ const AVAILABLE_SUITES: TestSuite[] = [
 ];
 
 interface TestOptions {
-  endpoint?: string;
-  identity?: string;
-  protocol?: string;
-  suite?: string;
-  report?: "json" | "md" | "txt";
-  reportDir?: string;
+  endpoint?: string | undefined;
+  identity?: string | undefined;
+  protocol?: string | undefined;
+  suite?: string | undefined;
+  report?: "json" | "md" | "txt" | undefined;
+  reportDir?: string | undefined;
 }
 
 export async function runTest(options: TestOptions): Promise<void> {

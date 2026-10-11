@@ -4,8 +4,8 @@ import pc from "picocolors";
 import type { ReportMessage, ReportValue } from "../types.js";
 
 export interface ReportConfig {
-  format?: "json" | "md" | "txt";
-  dir?: string;
+  format?: "json" | "md" | "txt" | undefined;
+  dir?: string | undefined;
 }
 
 export interface ReportData {
@@ -17,8 +17,8 @@ export interface ReportData {
   testResults?: {
     passed: boolean;
     name: string;
-    severity?: string;
-    issue?: string;
+    severity?: string | undefined;
+    issue?: string | undefined;
   }[];
   logs?: { msg: string; type: string; timestamp: string }[];
 }

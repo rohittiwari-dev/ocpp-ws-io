@@ -78,7 +78,7 @@ export function extractMethods(
     let match = id.match(/^urn:(.+)\.(req|conf)$/);
     if (match) {
       const [, name, suffix] = match;
-      methodNamed(name)[suffix === "req" ? "request" : "response"] = entry;
+      methodNamed(name!)[suffix === "req" ? "request" : "response"] = entry;
       continue;
     }
 
@@ -86,7 +86,7 @@ export function extractMethods(
     match = id.match(/^urn:(.+)(Request|Response)$/);
     if (match) {
       const [, name, suffix] = match;
-      methodNamed(name)[suffix === "Request" ? "request" : "response"] = entry;
+      methodNamed(name!)[suffix === "Request" ? "request" : "response"] = entry;
     }
   }
 
@@ -105,8 +105,8 @@ export function extractSendMethods(
     const id = entry.$id;
     if (!id) continue;
     const match = id.match(/^urn:([A-Za-z][A-Za-z0-9]*)$/);
-    if (!match || /(Request|Response)$/.test(match[1])) continue;
-    sendMethods.set(match[1], entry);
+    if (!match || /(Request|Response)$/.test(match[1]!)) continue;
+    sendMethods.set(match[1]!, entry);
   }
   return sendMethods;
 }
@@ -140,11 +140,11 @@ export function jsonSchemaToTS(
   // anyOf / oneOf
   if (schema.anyOf) {
     const types = schema.anyOf.map((s) => jsonSchemaToTS(s, definitions));
-    return types.length > 1 ? `(${types.join(" | ")})` : types[0];
+    return types.length > 1 ? `(${types.join(" | ")})` : types[0]!;
   }
   if (schema.oneOf) {
     const types = schema.oneOf.map((s) => jsonSchemaToTS(s, definitions));
-    return types.length > 1 ? `(${types.join(" | ")})` : types[0];
+    return types.length > 1 ? `(${types.join(" | ")})` : types[0]!;
   }
 
   // enum

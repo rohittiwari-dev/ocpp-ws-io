@@ -53,7 +53,7 @@ export type MiddlewareContext =
       messageId: string;
       method: string;
       params: unknown;
-      protocol?: string;
+      protocol?: string | undefined;
       /** True for an OCPP 2.1 SEND, which is never answered. */
       unconfirmed?: boolean;
     }

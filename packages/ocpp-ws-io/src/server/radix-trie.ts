@@ -146,7 +146,7 @@ export class RadixTrie {
 
     // Matches are collected in priority order (static > param > wildcard).
     // Use params from the most specific (first) match, collect all routers.
-    const params = matches[0].params;
+    const params = matches[0]!.params;
     const allRouters: AnyOCPPRouter[] = [];
     for (const m of matches) {
       allRouters.push(...m.routers);
@@ -177,7 +177,7 @@ export class RadixTrie {
       return;
     }
 
-    const segment = segments[depth];
+    const segment = segments[depth]!;
     const segLower = segment.toLowerCase();
 
     // Priority 1: Static match (exact, case-insensitive)

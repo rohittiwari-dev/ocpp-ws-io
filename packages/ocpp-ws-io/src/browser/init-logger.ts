@@ -56,7 +56,7 @@ function buildDisplayMiddleware(config: LoggingConfig): LogMiddleware {
     // ── Source context ──
     if (!showSource) {
       // Hide entirely
-      entry.context = undefined;
+      delete entry.context;
     } else if (prettySrc && entry.context) {
       // Build compact tag like [OCPPServer/WT159]
       const parts: string[] = [];
@@ -65,7 +65,7 @@ function buildDisplayMiddleware(config: LoggingConfig): LogMiddleware {
       if (parts.length > 0) {
         // Embed into message and clear context
         entry.message = `${DIM}[${parts.join("/")}]${RESET} ${entry.message}`;
-        entry.context = undefined;
+        delete entry.context;
       }
     }
 
@@ -144,7 +144,7 @@ export function initLogger(
   const logger = createLogger({
     level,
     transports,
-    middleware: middleware.length > 0 ? middleware : undefined,
+    ...(middleware.length > 0 ? { middleware } : {}),
   });
 
   // Bind default context (e.g. identity)

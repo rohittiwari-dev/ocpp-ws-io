@@ -7,13 +7,13 @@ import { generateReport } from "../lib/reporter.js";
 import type { CallFrame, OutgoingPayload } from "../types.js";
 
 export interface LoadTestOptions {
-  endpoint?: string;
-  clients?: number;
-  rampUp?: number; // seconds
-  mode?: "heartbeat" | "authorize-spam";
-  protocol?: string;
-  report?: "json" | "md" | "txt";
-  reportDir?: string;
+  endpoint?: string | undefined;
+  clients?: number | undefined;
+  rampUp?: number | undefined; // seconds
+  mode?: "heartbeat" | "authorize-spam" | undefined;
+  protocol?: string | undefined;
+  report?: "json" | "md" | "txt" | undefined;
+  reportDir?: string | undefined;
 }
 
 export async function runLoadTest(

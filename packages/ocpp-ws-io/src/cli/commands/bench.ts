@@ -6,12 +6,12 @@ import WebSocket from "ws";
 import { generateReport } from "../lib/reporter.js";
 
 export interface BenchOptions {
-  endpoint?: string;
-  duration?: number; // seconds
-  concurrency?: number; // parallel clients
-  protocol?: string;
-  report?: "json" | "md" | "txt";
-  reportDir?: string;
+  endpoint?: string | undefined;
+  duration?: number | undefined; // seconds
+  concurrency?: number | undefined; // parallel clients
+  protocol?: string | undefined;
+  report?: "json" | "md" | "txt" | undefined;
+  reportDir?: string | undefined;
 }
 
 // ── Percentile helpers ─────────────────────────────────────────
@@ -21,7 +21,7 @@ function insertSorted(arr: number[], val: number): void {
   let hi = arr.length;
   while (lo < hi) {
     const mid = (lo + hi) >>> 1;
-    if (arr[mid] < val) lo = mid + 1;
+    if (arr[mid]! < val) lo = mid + 1;
     else hi = mid;
   }
   arr.splice(lo, 0, val);
@@ -30,7 +30,7 @@ function insertSorted(arr: number[], val: number): void {
 function percentile(sorted: number[], pct: number): number {
   if (sorted.length === 0) return 0;
   const idx = Math.ceil((pct / 100) * sorted.length) - 1;
-  return sorted[Math.max(0, idx)];
+  return sorted[Math.max(0, idx)]!;
 }
 
 // ── Main ───────────────────────────────────────────────────────
@@ -366,10 +366,10 @@ ${pc.dim("Benchmark will auto-stop. Press Ctrl+C to abort early.")}
                 2,
               )
             : "0";
-        const min = latencies.length > 0 ? latencies[0].toFixed(2) : "0";
+        const min = latencies.length > 0 ? latencies[0]!.toFixed(2) : "0";
         const max =
           latencies.length > 0
-            ? latencies[latencies.length - 1].toFixed(2)
+            ? latencies[latencies.length - 1]!.toFixed(2)
             : "0";
         const avgConnect =
           connectTimes.length > 0

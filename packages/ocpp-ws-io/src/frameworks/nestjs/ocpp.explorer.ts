@@ -61,7 +61,7 @@ interface GatewayContext {
   message?: unknown;
   messageId?: string;
   method?: string;
-  protocol?: string;
+  protocol?: string | undefined;
   params?: unknown;
   payload?: unknown;
 }

@@ -32,11 +32,11 @@ export class OCPPServerClient<
       ws: WebSocket;
       handshake: HandshakeInfo;
       session: SessionData;
-      protocol?: string;
+      protocol?: string | undefined;
       /** Optional adaptive rate multiplier getter (from OCPPServer.AdaptiveLimiter) */
-      adaptiveMultiplier?: () => number;
+      adaptiveMultiplier?: (() => number) | undefined;
       /** Optional worker pool for off-thread JSON parsing */
-      workerPool?: WorkerPool;
+      workerPool?: WorkerPool | undefined;
       /** Plugins from the server for hook execution */
       plugins?: OCPPPlugin<P>[];
     },

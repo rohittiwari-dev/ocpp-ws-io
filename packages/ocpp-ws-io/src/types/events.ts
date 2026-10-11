@@ -83,7 +83,7 @@ export type MessageEventContext = MiddlewareContext & {
   /** Message timestamp (ISO 8601) */
   timestamp: string;
   /** Latency in milliseconds (only for responses/results) */
-  latencyMs?: number;
+  latencyMs?: number | undefined;
 };
 /**
  * Enriched message event payload with direction and context.
@@ -151,9 +151,9 @@ export interface SecurityEvent {
     | "ANOMALY_MESSAGE_FUZZING"
     | "ANOMALY_IDENTITY_COLLISION";
   /** Station identity (if known) */
-  identity?: string;
+  identity?: string | undefined;
   /** Remote IP address */
-  ip?: string;
+  ip?: string | undefined;
   /** ISO 8601 timestamp */
   timestamp: string;
   /** Event-specific details */
