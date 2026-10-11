@@ -1,5 +1,4 @@
 import {
-  IconBolt,
   IconEye,
   IconEyeOff,
   IconLock,
@@ -53,8 +52,19 @@ export default function LoginPage() {
   return (
     <div className="login-page">
       <section className="login-story" aria-label="Platform Overview">
-        <div className="brand">
-          <IconBolt size={34} fill="currentColor" />
+        <div className="brand flex items-center gap-2 justify-start">
+          <span
+            aria-hidden="true"
+            style={{
+              width: 28,
+              height: 28,
+              display: "inline-block",
+              backgroundImage: "url('/logo.svg')",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+              backgroundSize: "contain",
+            }}
+          />
           <span>OCPP Board</span>
         </div>
         <h1>

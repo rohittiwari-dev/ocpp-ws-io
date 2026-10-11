@@ -1,6 +1,6 @@
 import {
   IconActivity,
-  IconBolt,
+  IconAlertCircle,
   IconChevronRight,
   IconCommand,
   IconHelpCircle,
@@ -22,6 +22,16 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useTheme } from "@/components/theme-provider";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useResource } from "@/hooks/use-resource";
 import { useAuth } from "@/lib/auth";
 import { useSSELatest } from "@/lib/sse";
@@ -65,8 +75,19 @@ function Workspace({
     return false;
   });
   const [logoutError, setLogoutError] = useState("");
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const stations = useResource<ConnectionRecord[]>("/connections", 10000);
   const stream = useSSELatest<TelemetrySnapshot>("/telemetry/stream");
+
+  const handleConfirmLogout = () => {
+    setIsLoggingOut(true);
+    setLogoutError("");
+    logout().catch((error: Error) => {
+      setLogoutError(error.message);
+      setIsLoggingOut(false);
+    });
+  };
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed((prev) => {
@@ -109,8 +130,22 @@ function Workspace({
 
       {/* Mobile Top Header */}
       <div className="mobile-top">
-        <NavLink to="/connections" className="brand">
-          <IconBolt size={28} fill="currentColor" />
+        <NavLink
+          to="/connections"
+          className="brand flex items-center gap-2 justify-center"
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              width: 28,
+              height: 28,
+              display: "inline-block",
+              backgroundImage: "url('/logo.svg')",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+              backgroundSize: "contain",
+            }}
+          />
           OCPP Board
         </NavLink>
         <button
@@ -164,11 +199,22 @@ function Workspace({
         <div className="rail-header">
           <NavLink
             to="/connections"
-            className="brand"
+            className="brand flex items-center gap-2 justify-center"
             onClick={closeMenu}
             title="OCPP Board"
           >
-            <IconBolt size={28} fill="currentColor" className="brand-icon" />
+            <span
+              aria-hidden="true"
+              style={{
+                width: 28,
+                height: 28,
+                display: "inline-block",
+                backgroundImage: "url('/logo.svg')",
+                backgroundPosition: "center",
+                backgroundRepeat: "no-repeat",
+                backgroundSize: "contain",
+              }}
+            />
             {!isIconRail && <span className="brand-text">OCPP Board</span>}
           </NavLink>
         </div>
@@ -223,22 +269,24 @@ function Workspace({
             <IconSettings size={20} className="nav-icon" />
             {!isIconRail && <span>Workspace</span>}
           </NavLink>
-          <NavLink
+          {/* <NavLink
             to="/help"
             onClick={closeMenu}
             title={isIconRail ? "Help & Docs" : undefined}
-            className={({ isActive }) => cn("nav-item", isActive && "active")}
+            className={({ isActive }) =>
+              cn("nav-item hidden", isActive && "active")
+            }
           >
             <IconHelpCircle size={20} className="nav-icon" />
             {!isIconRail && <span>Help & Docs</span>}
-          </NavLink>
+          </NavLink> */}
         </nav>
 
         {/* Sidebar Footer */}
         <div className="rail-bottom">
           {!isIconRail ? (
             <>
-              <div className="operator">
+              {/* <div className="operator hidden!">
                 <span className="avatar tone-lavender">
                   {user.slice(0, 1).toUpperCase()}
                 </span>
@@ -246,16 +294,15 @@ function Workspace({
                   <strong>{user}</strong>
                   <small>Operator workspace</small>
                 </div>
-              </div>
+              </div> */}
               <button
                 type="button"
                 className="nav-item"
                 title="Sign out"
-                onClick={() =>
-                  void logout().catch((error: Error) =>
-                    setLogoutError(error.message),
-                  )
-                }
+                onClick={() => {
+                  setLogoutError("");
+                  setShowLogoutDialog(true);
+                }}
               >
                 <IconLogout size={20} className="nav-icon" />
                 <span>Sign out</span>
@@ -324,11 +371,10 @@ function Workspace({
                 className="nav-item compact"
                 title="Sign out"
                 aria-label="Sign out"
-                onClick={() =>
-                  void logout().catch((error: Error) =>
-                    setLogoutError(error.message),
-                  )
-                }
+                onClick={() => {
+                  setLogoutError("");
+                  setShowLogoutDialog(true);
+                }}
               >
                 <IconLogout size={20} className="nav-icon" />
               </button>
@@ -379,6 +425,61 @@ function Workspace({
           <Outlet />
         </div>
       </main>
+
+      {/* Sign Out Confirmation Dialog */}
+      <AlertDialog
+        open={showLogoutDialog}
+        onOpenChange={(open) => {
+          if (!isLoggingOut) {
+            setShowLogoutDialog(open);
+            if (!open) setLogoutError("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-destructive/10 text-destructive shrink-0">
+                <IconLogout size={22} />
+              </div>
+              <div>
+                <AlertDialogTitle>Sign out of workspace?</AlertDialogTitle>
+                <span className="text-xs text-muted-foreground font-mono">
+                  Operator: {user}
+                </span>
+              </div>
+            </div>
+            <AlertDialogDescription className="mt-2 text-xs text-muted-foreground leading-relaxed">
+              Are you sure you want to end your current session? You will be
+              returned to the sign-in screen and any live message stream views
+              or filters will be cleared.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {logoutError && (
+            <div
+              className="notice text-xs text-rose flex items-center gap-1.5 p-2 rounded-lg bg-rose/10 border border-rose/20"
+              role="alert"
+            >
+              <IconAlertCircle size={14} />
+              <span>{logoutError}</span>
+            </div>
+          )}
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isLoggingOut}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={isLoggingOut}
+              onClick={handleConfirmLogout}
+            >
+              {isLoggingOut ? "Signing out..." : "Sign out"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
