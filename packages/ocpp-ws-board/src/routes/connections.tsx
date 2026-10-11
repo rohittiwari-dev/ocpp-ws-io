@@ -1,4 +1,9 @@
-import { IconArrowUpRight, IconStar, IconTerminal2 } from "@tabler/icons-react";
+import {
+  IconArrowUpRight,
+  IconPlug,
+  IconStar,
+  IconTerminal2,
+} from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
@@ -80,6 +85,20 @@ export default function ConnectionsPage() {
       /* Favorites remain available for this session. */
     }
   };
+  const totalCount = resource.data?.length ?? 0;
+  const onlineCount = (resource.data ?? []).filter(
+    (station) => station.status === "online",
+  ).length;
+  const offlineCount = (resource.data ?? []).filter(
+    (station) => station.status === "offline",
+  ).length;
+  const attentionCount = (resource.data ?? []).filter(
+    (station) => station.errorCount || station.status === "evicted",
+  ).length;
+  const recentStations = [...(resource.data ?? [])]
+    .sort((a, b) => b.connectedAt.localeCompare(a.connectedAt))
+    .slice(0, 5);
+  const protocols = ["ocpp1.6", "ocpp2.0.1", "ocpp2.1"];
   return (
     <>
       <PageHeading
@@ -92,30 +111,155 @@ export default function ConnectionsPage() {
         }
         description="Your charging network, one connection at a time."
       >
+        <div className="segmented">
+          <Link
+            to="/connections"
+            className={view !== "favorites" ? "active" : ""}
+          >
+            All stations
+          </Link>
+          <Link
+            to="/connections?view=favorites"
+            className={view === "favorites" ? "active" : ""}
+          >
+            Starred
+          </Link>
+        </div>
         <Link className="button primary" to="/commands">
           <IconTerminal2 size={18} />
           Send command
         </Link>
       </PageHeading>
-      <div className="fleet-summary">
-        <div className="station-stack">
-          {(resource.data ?? []).slice(0, 4).map((station, index) => (
-            <span key={station.identity} className={`avatar pastel-${index}`}>
-              {station.identity.slice(0, 1).toUpperCase()}
-            </span>
-          ))}
+      <div className="station-meta-bar">
+        <div className="fleet-summary">
+          <div className="station-stack">
+            {(resource.data ?? []).slice(0, 4).map((station, index) => (
+              <span key={station.identity} className={`avatar pastel-${index}`}>
+                {station.identity.slice(0, 1).toUpperCase()}
+              </span>
+            ))}
+          </div>
+          <span>
+            <strong>{onlineCount}</strong> stations online
+          </span>
+          <span className="summary-divider" />
+          <span>
+            Updated {resource.updatedAt?.toLocaleTimeString() ?? "\u2014"}
+          </span>
         </div>
-        <span>
-          <strong>
-            {resource.data?.filter((station) => station.status === "online")
-              .length ?? 0}
-          </strong>{" "}
-          stations online
-        </span>
-        <span className="summary-divider" />
-        <span>
-          Updated {resource.updatedAt?.toLocaleTimeString() ?? "\u2014"}
-        </span>
+        {recentStations.length > 0 && (
+          <div
+            className="recent-strip"
+            aria-label="Recently connected stations"
+          >
+            <span className="recent-label">Recently connected:</span>
+            <div className="recent-chips">
+              {recentStations.map((station) => (
+                <Link
+                  key={station.identity}
+                  to={`/connection/view/${encodeURIComponent(station.identity)}`}
+                  className="recent-chip"
+                  title={`Connected: ${station.identity}`}
+                >
+                  <span
+                    className={`status-dot ${station.status === "online" ? "mint" : ""}`}
+                  />
+                  <span>{station.identity}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="station-filter-strip" aria-label="Station quick filters">
+        <div className="filter-chip-group">
+          <span className="filter-group-title">Status:</span>
+          <button
+            type="button"
+            className={`filter-chip ${!status && view !== "attention" ? "active" : ""}`}
+            onClick={() => {
+              const next = new URLSearchParams(query);
+              next.delete("status");
+              if (view === "attention") next.delete("view");
+              setQuery(next);
+            }}
+          >
+            <IconPlug size={15} />
+            <span>All</span>
+            <span className="count-badge">{totalCount}</span>
+          </button>
+          <button
+            type="button"
+            className={`filter-chip ${status === "online" ? "active" : ""}`}
+            onClick={() => {
+              const next = new URLSearchParams(query);
+              if (status === "online") next.delete("status");
+              else next.set("status", "online");
+              if (view === "attention") next.delete("view");
+              setQuery(next);
+            }}
+          >
+            <span className="status-dot mint" />
+            <span>Online</span>
+            <span className="count-badge tone-mint">{onlineCount}</span>
+          </button>
+          <button
+            type="button"
+            className={`filter-chip ${status === "offline" ? "active" : ""}`}
+            onClick={() => {
+              const next = new URLSearchParams(query);
+              if (status === "offline") next.delete("status");
+              else next.set("status", "offline");
+              if (view === "attention") next.delete("view");
+              setQuery(next);
+            }}
+          >
+            <span className="status-dot" />
+            <span>Offline</span>
+            <span className="count-badge">{offlineCount}</span>
+          </button>
+          <button
+            type="button"
+            className={`filter-chip ${view === "attention" ? "active" : ""}`}
+            onClick={() => {
+              const next = new URLSearchParams(query);
+              if (view === "attention") next.delete("view");
+              else next.set("view", "attention");
+              next.delete("status");
+              setQuery(next);
+            }}
+          >
+            <span className="status-dot rose" />
+            <span>Needs attention</span>
+            <span className="count-badge tone-rose">{attentionCount}</span>
+          </button>
+        </div>
+        <div className="filter-strip-divider" />
+        <div className="filter-chip-group">
+          <span className="filter-group-title">Protocols:</span>
+          {protocols.map((proto) => {
+            const isSelected = protocol === proto;
+            const count = (resource.data ?? []).filter(
+              (station) => station.protocol === proto,
+            ).length;
+            return (
+              <button
+                key={proto}
+                type="button"
+                className={`filter-chip ${isSelected ? "active" : ""}`}
+                onClick={() => {
+                  const next = new URLSearchParams(query);
+                  if (isSelected) next.delete("protocol");
+                  else next.set("protocol", proto);
+                  setQuery(next);
+                }}
+              >
+                <span>OCPP {proto.replace("ocpp", "")}</span>
+                <span className="count-badge">{count}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
       <div className="toolbar">
         <Search

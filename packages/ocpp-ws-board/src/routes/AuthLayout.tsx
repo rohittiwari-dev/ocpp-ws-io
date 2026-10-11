@@ -2,7 +2,6 @@ import {
   IconActivity,
   IconBolt,
   IconChevronRight,
-  IconCircleCheck,
   IconCommand,
   IconHelpCircle,
   IconLayoutDashboard,
@@ -59,8 +58,6 @@ function Workspace({
   const active =
     navigation.find((item) => location.pathname.startsWith(item.to))?.label ??
     (location.pathname.startsWith("/connection/") ? "Stations" : "Workspace");
-  const counts = (status: string) =>
-    (stations.data ?? []).filter((station) => station.status === status).length;
   const closeMenu = () => setMenuOpen(false);
   return (
     <div className="workspace">
@@ -167,94 +164,6 @@ function Workspace({
             Dark mode
             <span className={`switch ${theme === "dark" ? "on" : ""}`} />
           </button>
-        </div>
-      </aside>
-      <aside className="context-rail" aria-label="Station views">
-        <h2>Network</h2>
-        <div className="segmented">
-          <NavLink to="/connections" end>
-            All stations
-          </NavLink>
-          <NavLink to="/connections?view=favorites">Starred</NavLink>
-        </div>
-        <div className="context-group">
-          <h3>Station views</h3>
-          <NavLink to="/connections" className="context-link">
-            <IconPlug size={18} />
-            All stations<span>{stations.data?.length ?? "\u2014"}</span>
-          </NavLink>
-          <NavLink to="/connections?status=online" className="context-link">
-            <span className="status-dot mint" />
-            Online
-            <span className="count-badge tone-mint">{counts("online")}</span>
-          </NavLink>
-          <NavLink to="/connections?status=offline" className="context-link">
-            <span className="status-dot" />
-            Offline<span>{counts("offline")}</span>
-          </NavLink>
-          <NavLink to="/connections?view=attention" className="context-link">
-            <span className="status-dot rose" />
-            Needs attention
-            <span className="count-badge tone-rose">
-              {
-                (stations.data ?? []).filter(
-                  (station) =>
-                    station.errorCount || station.status === "evicted",
-                ).length
-              }
-            </span>
-          </NavLink>
-        </div>
-        <div className="context-group">
-          <h3>Protocols</h3>
-          {["ocpp1.6", "ocpp2.0.1", "ocpp2.1"].map((protocol) => (
-            <NavLink
-              key={protocol}
-              to={`/connections?protocol=${protocol}`}
-              className="context-link"
-            >
-              <span className="tree-branch" />
-              OCPP {protocol.replace("ocpp", "")}
-              <span>
-                {
-                  (stations.data ?? []).filter(
-                    (station) => station.protocol === protocol,
-                  ).length
-                }
-              </span>
-            </NavLink>
-          ))}
-        </div>
-        <div className="context-group">
-          <h3>Recently connected</h3>
-          {(stations.data ?? [])
-            .toSorted((a, b) => b.connectedAt.localeCompare(a.connectedAt))
-            .slice(0, 5)
-            .map((station) => (
-              <NavLink
-                className="context-link recent-station"
-                key={station.identity}
-                to={`/connection/view/${encodeURIComponent(station.identity)}`}
-              >
-                <span
-                  className={`status-dot ${station.status === "online" ? "mint" : ""}`}
-                />
-                <span className="truncate">{station.identity}</span>
-              </NavLink>
-            ))}
-          {!stations.data?.length && (
-            <p className="context-note">
-              Stations appear when they connect to your server.
-            </p>
-          )}
-        </div>
-        <div className="context-bottom">
-          <IconCircleCheck size={18} />
-          <span>
-            Public core API bindings
-            <br />
-            <small>OCPP 1.6 / 2.0.1 / 2.1</small>
-          </span>
         </div>
       </aside>
       <main id="main-content" className="main-workspace">

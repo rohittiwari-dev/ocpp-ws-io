@@ -89,16 +89,14 @@ import {
   nodeKey,
   type PresenceContext,
   refreshPresence,
-  removePresenceFenced,
   startPresenceRefresh,
   stopPresenceRefresh,
   sweepNodeLiveness,
 } from "./presence.js";
 import { RadixTrie } from "./radix-trie.js";
 import { type AnyOCPPRouter, OCPPRouter } from "./router.js";
-import { OCPPServerClient } from "./server-client.js";
+import type { OCPPServerClient } from "./server-client.js";
 import {
-  recordSessionActivity,
   type SessionCache,
   sweepExpiredSessions,
   sweepPersistMarks,
@@ -109,12 +107,12 @@ import {
   sweepConnectionBuckets,
 } from "./upgrade/admission.js";
 import { authenticate, BASIC_AUTH_CHALLENGE } from "./upgrade/auth.js";
-import {
-  attachClientPlugins,
-  buildClientOptions,
-} from "./upgrade/client-setup.js";
 import type { ConnectionBucket, UpgradeContext } from "./upgrade/context.js";
 import { buildHandshakeInfo } from "./upgrade/handshake.js";
+import {
+  type RegistrationContext,
+  registerClient,
+} from "./upgrade/register-client.js";
 import {
   identityFromPath,
   matchRoute,
@@ -196,6 +194,9 @@ export class OCPPServer<
   };
   /** The server state the steps in server/upgrade/ read, through getters. */
   private readonly _upgrade: UpgradeContext = this._createUpgradeContext();
+  /** The server state client registration reads, through getters. */
+  private readonly _registration: RegistrationContext<P> =
+    this._createRegistrationContext();
   private _clients = new Set<OCPPServerClient<P>>();
   private _clientsByIdentity = new Map<string, OCPPServerClient<P>>();
   private _httpServers = new Set<Server>();
@@ -475,6 +476,52 @@ export class OCPPServer<
         server._reportAuthFailure(handshake, req, code, message),
       reportUpgradeError: (handshake, req, error, stack) =>
         server._reportUpgradeError(handshake, req, error, stack),
+    };
+  }
+
+  /** The fields client registration reads, and the client event, by name. */
+  private _createRegistrationContext(): RegistrationContext<P> {
+    const server = this;
+    return {
+      get options() {
+        return server._options;
+      },
+      get logger() {
+        return server._logger;
+      },
+      get plugins() {
+        return server._plugins;
+      },
+      get clients() {
+        return server._clients;
+      },
+      get clientsByIdentity() {
+        return server._clientsByIdentity;
+      },
+      get sessions() {
+        return server._sessions;
+      },
+      get sessionCache() {
+        return server._sessionCache;
+      },
+      get adapter() {
+        return server._adapter;
+      },
+      get nodeId() {
+        return server._nodeId;
+      },
+      get presence() {
+        return server._presence;
+      },
+      get adaptiveLimiter() {
+        return server._adaptiveLimiter;
+      },
+      get workerPool() {
+        return server._workerPool;
+      },
+      emitClient: (client) => {
+        server.emit("client", client);
+      },
     };
   }
 
@@ -1423,7 +1470,7 @@ export class OCPPServer<
       config: matchedRouterConfig,
     } = matchRoute(this._routes, pathname, this._logger);
 
-    let identity = identityFromPath(params, pathname);
+    const identity = identityFromPath(params, pathname);
 
     if (!identity) {
       abortHandshake(socket, 400, "Missing identity in URL path");
@@ -1667,176 +1714,18 @@ export class OCPPServer<
     this._wss.handleUpgrade(req, socket, head, (ws) => {
       // The handshake is done; from here the connection is counted as a client.
       releaseHandshakeSlot();
-      const clientOptions = buildClientOptions<P>(
-        identity,
-        matchedRouterConfig,
-        this._options,
-      );
-
-      // An auth callback may namespace the identity (multi-tenant servers where
-      // the same station id appears under different path prefixes). Apply it
-      // before anything keyed on identity — session lookup, _clientsByIdentity,
-      // presence — so all of them agree.
-      const overrideIdentity = (acceptOptions as AuthAccept | undefined)
-        ?.identity;
-      if (overrideIdentity && overrideIdentity !== identity) {
-        identity = overrideIdentity;
-        handshake.identity = overrideIdentity;
-      }
-
-      // The stored copy replaces the LRU one rather than merging with it: this
-      // node's copy can predate changes made while the charger was elsewhere.
-      const finalSession = {
-        ...(ctx?.state || {}),
-        ...(storedSession ?? this._sessions.get(identity)?.data ?? {}),
-        ...((acceptOptions as AuthAccept | undefined)?.session || {}),
-      };
-
-      const client = new OCPPServerClient(clientOptions, {
+      registerClient(this._registration, {
         ws,
+        req,
         handshake,
-        session: finalSession,
-        protocol: selectedProtocol,
-        adaptiveMultiplier: this._adaptiveLimiter
-          ? () => this._adaptiveLimiter?.multiplier ?? 1
-          : undefined,
-        workerPool: this._workerPool ?? undefined,
-        plugins: this._plugins,
-      });
-
-      if (storedSessionUnavailable) {
-        // Don't overwrite what the unreachable store may hold with a local guess.
-        this._sessions.set(identity, {
-          data: client.session,
-          lastActive: Date.now(),
-        });
-      } else {
-        recordSessionActivity(
-          this._sessionCache,
-          this._adapter,
-          identity,
-          client.session,
-          true,
-        );
-      }
-
-      // ── Duplicate Identity Eviction ──
-      // If a client with the same identity is already connected (e.g. 4G reconnect
-      // racing the old TCP FIN), evict the stale socket to prevent phantom broadcasts
-      // and memory leaks from zombie connections.
-      const existingClient = this._clientsByIdentity.get(identity);
-      if (existingClient && existingClient !== client) {
-        this._logger?.warn?.("Evicting stale connection for identity", {
-          identity,
-          reason: "Duplicate identity replaced by new connection",
-        });
-        // Plugin: onEviction
-        for (const plugin of this._plugins) {
-          try {
-            guardPluginHook(
-              this._logger,
-              plugin.onEviction?.(existingClient, client),
-              plugin.name,
-              "onEviction",
-            );
-          } catch (err) {
-            reportPluginError(this._logger, plugin.name, "onEviction", err);
-          }
-        }
-        // Fire-and-forget force close — don't await, don't block the new connection
-        existingClient
-          .close({
-            code: 4000,
-            reason: "Evicted by new connection",
-            force: true,
-          })
-          .catch(() => {});
-        // Immediately remove from tracking to prevent race
-        this._clients.delete(existingClient);
-      }
-
-      this._clients.add(client);
-      this._clientsByIdentity.set(identity, client);
-
-      // Register presence (TTL refreshed by the presence heartbeat — see
-      // startPresenceRefresh).
-      if (this._adapter?.setPresence) {
-        const ttlSec = this._options.presenceTtlSeconds ?? 300;
-        this._adapter
-          .setPresence(identity, this._nodeId, ttlSec)
-          .catch((err) => {
-            this._logger?.error?.("Error setting presence", {
-              identity,
-              error: err,
-            });
-          });
-      }
-
-      this._logger?.info?.("Client connected", {
         identity,
-        remoteAddress: req.socket.remoteAddress,
-        protocol: selectedProtocol,
-      });
-
-      client.on(
-        "close",
-        ({ code, reason }: { code: number; reason: string }) => {
-          this._clients.delete(client);
-          if (this._clientsByIdentity.get(identity) === client) {
-            this._clientsByIdentity.delete(identity);
-            // Message-driven writes are debounced, so flush the final state
-            // for whichever node the charger reconnects to next.
-            recordSessionActivity(
-              this._sessionCache,
-              this._adapter,
-              identity,
-              client.session,
-              true,
-            );
-            // Remove presence — only when this socket still owns the
-            // identity. The local check above catches an evicted duplicate on
-            // THIS node; the fenced delete below catches the cross-node case,
-            // where the charger has already reconnected elsewhere and that
-            // node owns the registry entry. An unconditional DEL here wiped
-            // the new owner's entry and left the charger unroutable until the
-            // next heartbeat.
-            removePresenceFenced(this._presence, identity);
-          }
-          // Plugin: onDisconnect
-          for (const plugin of this._plugins) {
-            try {
-              guardPluginHook(
-                this._logger,
-                plugin.onDisconnect?.(client, code, reason),
-                plugin.name,
-                "onDisconnect",
-              );
-            } catch (err) {
-              this._logger?.error?.("Plugin onDisconnect error", {
-                name: plugin.name,
-                error: (err as Error).message,
-              });
-            }
-          }
-          this._logger?.info?.("Client disconnected", { identity });
-        },
-      );
-
-      attachClientPlugins(client, this._plugins, () => this._logger);
-
-      // Dispatch route-specific "client" events
-      this.emit("client", client);
-      for (const router of matchedRouters) {
-        router._emitClient(client);
-      }
-
-      client.on("message", () => {
-        recordSessionActivity(
-          this._sessionCache,
-          this._adapter,
-          identity,
-          client.session,
-        );
+        routeConfig: matchedRouterConfig,
+        routers: matchedRouters,
+        ctx,
+        acceptOptions,
+        selectedProtocol,
+        storedSession,
+        storedSessionUnavailable,
       });
     });
   }
