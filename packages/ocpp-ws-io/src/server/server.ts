@@ -13,7 +13,7 @@ import type {
   TLSSocket,
   Server as TlsServer,
 } from "node:tls";
-import { WebSocketServer, type ServerOptions as WsLibServerOptions } from "ws";
+import type { WebSocketServer } from "ws";
 import {
   HandshakeRejection,
   type RPCError,
@@ -80,7 +80,6 @@ import type {
   ServerOptions,
 } from "../types/server.js";
 import type { PersistedSession, SessionData } from "../types/session.js";
-import type { ManagedWsServerOption } from "../types/transport.js";
 import { AdaptiveLimiter } from "./adaptive-limiter.js";
 import { checkCORS } from "./cors.js";
 import { EventEmitterBase } from "./emitter-base.js";
@@ -94,31 +93,10 @@ import {
 } from "./router.js";
 import { OCPPServerClient } from "./server-client.js";
 import { createWorkerPool, type WorkerPool } from "./worker-pool.js";
+import { createWss, warnIgnoredWssOptions } from "./wss-options.js";
 
 /** RFC 9110 §15.5.2: every 401 carries a challenge; OCPP uses Basic Auth. */
 const BASIC_AUTH_CHALLENGE = 'Basic realm="ocpp-ws-io", charset="UTF-8"';
-
-/**
- * What to use instead of each `ws` option `wssOptions` does not take. Typed
- * against ManagedWsServerOption, so the list cannot drift from the type.
- */
-const WSS_OPTION_HINT: Record<ManagedWsServerOption, string> = {
-  port: "use listen(port)",
-  host: "use listen(port, host)",
-  backlog: "set it on your own HTTP server",
-  path: "use route()",
-  noServer: "always on: use listen() or handleUpgrade",
-  server: "use listen(port, host, { server })",
-  verifyClient: "use auth(), middleware or isKnownIdentity",
-  handleProtocols: "use protocols",
-  maxPayload: "use maxPayloadBytes",
-  perMessageDeflate: "use compression",
-  clientTracking: "always on: stats() needs it",
-  autoPong: "always on: pings are answered, RFC 6455 §5.5.2",
-};
-const MANAGED_WSS_OPTIONS = Object.keys(
-  WSS_OPTION_HINT,
-) as ManagedWsServerOption[];
 
 /** A version-named call has its action, a string, where the other has params. */
 function isVersionNamed(args: SendToClientArgs): args is VersionNamedSendArgs {
@@ -333,7 +311,7 @@ export class OCPPServer<
 
     // Initialize WebSocketServer immediately (ws best practice: noServer mode)
     // Apply maxPayloadBytes to reject oversized frames at the transport layer
-    this._wss = this._createWss();
+    this._wss = createWss(this._options, this._negotiatedProtocols);
 
     // Start Session Garbage Collector
     this._startSessionGC();
@@ -349,7 +327,7 @@ export class OCPPServer<
       );
     }
     if (this._options.respondWithDetailedErrors) this._warnDetailedErrors();
-    this._warnIgnoredWssOptions();
+    warnIgnoredWssOptions(this._options.wssOptions, this._logger);
 
     // Building a protocol's validator costs ~27 ms, against 0.9 µs to run one.
     // Left to the first message that needs it, that lands on a charger's first
@@ -590,27 +568,6 @@ export class OCPPServer<
       } catch (err) {
         this._reportPluginError(plugin.name, "onAuthFailed", err);
       }
-    }
-  }
-
-  /** Once for the server, not per connection (its clients stay quiet). */
-  /**
-   * wssOptions does not offer the options the server sets itself; its type
-   * leaves them out. Plain JavaScript can still pass them: they are dropped,
-   * and this names each with what to use instead, so the setting does not
-   * fail silently.
-   */
-  private _warnIgnoredWssOptions(): void {
-    const given: WsLibServerOptions = { ...this._options.wssOptions };
-    const ignored = MANAGED_WSS_OPTIONS.filter(
-      (key) => given[key] !== undefined,
-    ).map((key) => `${key} (${WSS_OPTION_HINT[key]})`);
-
-    if (ignored.length > 0) {
-      this._logger?.warn?.(
-        "wssOptions does not take these options; set them through the server options",
-        { ignored },
-      );
     }
   }
 
@@ -2197,7 +2154,7 @@ export class OCPPServer<
     // Ensure _wss is available (should always be after constructor init)
     if (!this._wss) {
       // Reapply full transport config (maxPayload + compression) on re-init
-      this._wss = this._createWss();
+      this._wss = createWss(this._options, this._negotiatedProtocols);
     }
 
     if (refuseProtocol) {
@@ -2747,7 +2704,7 @@ export class OCPPServer<
     // close()/listen() restart cycle preserves the configured behavior.
     if (this._wss) {
       this._wss.close();
-      this._wss = this._createWss();
+      this._wss = createWss(this._options, this._negotiatedProtocols);
     }
 
     // Detach our listeners from every server; only close servers we own.
@@ -2862,7 +2819,8 @@ export class OCPPServer<
     ) {
       this._warnDetailedErrors();
     }
-    if (options.wssOptions !== undefined) this._warnIgnoredWssOptions();
+    if (options.wssOptions !== undefined)
+      warnIgnoredWssOptions(this._options.wssOptions, this._logger);
 
     // Transport-level settings only apply to a fresh WebSocketServer —
     // rebuild so new connections pick them up (existing sockets keep theirs).
@@ -2872,7 +2830,7 @@ export class OCPPServer<
       options.wssOptions !== undefined
     ) {
       this._wss?.close();
-      this._wss = this._createWss();
+      this._wss = createWss(this._options, this._negotiatedProtocols);
     }
 
     // Toggle the adaptive limiter to match the new rateLimit config
@@ -4013,72 +3971,5 @@ export class OCPPServer<
     }
 
     await Promise.all(localPromises);
-  }
-
-  // ─── Internal: WebSocketServer Factory ──────────────────────────
-
-  /**
-   * Builds a `noServer` WebSocketServer with the configured transport-layer
-   * settings (max payload + per-message compression). Centralized so every
-   * (re)creation site — constructor, upgrade re-init, and close/restart —
-   * stays consistent.
-   */
-  private _createWss(): WebSocketServer {
-    // wssOptions first. Its type leaves out the options set below; any that
-    // still arrive, from JavaScript, are dropped (and were warned about).
-    const extra: WsLibServerOptions = { ...this._options.wssOptions };
-    for (const key of MANAGED_WSS_OPTIONS) delete extra[key];
-    return new WebSocketServer({
-      ...extra,
-      // stats() reads wss.clients, and chargers disconnect without pongs;
-      // set explicitly rather than relying on the `ws` defaults.
-      clientTracking: true,
-      autoPong: true,
-      noServer: true,
-      // Without this, ws picks the FIRST protocol the client offered, while
-      // _handleUpgrade separately selected the first one the *server* supports.
-      // When those differ the client is told it is speaking one version while
-      // the server validates another — e.g. a client offering
-      // ["ocpp2.0.1","ocpp1.6"] against a server supporting only ocpp1.6 got
-      // "ocpp2.0.1" echoed back. Hand ws the selection we actually made.
-      handleProtocols: (
-        protocols: Set<string>,
-        request: IncomingMessage,
-      ): string | false => {
-        const chosen = this._negotiatedProtocols.get(request);
-        if (chosen !== undefined) return chosen;
-        // No server-side protocol list configured: keep ws's default of
-        // echoing the client's first offer.
-        return protocols.values().next().value ?? false;
-      },
-      maxPayload: this._options.maxPayloadBytes ?? 65536,
-      perMessageDeflate: this._buildCompressionConfig(),
-    });
-  }
-
-  // ─── Internal: Compression Config ───────────────────────────────
-
-  private _buildCompressionConfig(): boolean | object {
-    const compression = this._options.compression;
-    if (!compression) return false;
-    if (compression === true) {
-      return {
-        threshold: 1024,
-        zlibDeflateOptions: { level: 6, memLevel: 8 },
-        zlibInflateOptions: {},
-        serverNoContextTakeover: true,
-        clientNoContextTakeover: true,
-      };
-    }
-    return {
-      threshold: compression.threshold ?? 1024,
-      zlibDeflateOptions: {
-        level: compression.level ?? 6,
-        memLevel: compression.memLevel ?? 8,
-      },
-      zlibInflateOptions: {},
-      serverNoContextTakeover: compression.serverNoContextTakeover ?? true,
-      clientNoContextTakeover: compression.clientNoContextTakeover ?? true,
-    };
   }
 }
