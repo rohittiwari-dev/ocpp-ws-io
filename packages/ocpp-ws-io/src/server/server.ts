@@ -8,22 +8,13 @@ import {
   type ServerOptions as HttpsServerOptions,
 } from "node:https";
 import type { Duplex } from "node:stream";
-import type {
-  SecureContextOptions,
-  TLSSocket,
-  Server as TlsServer,
-} from "node:tls";
+import type { SecureContextOptions, Server as TlsServer } from "node:tls";
 import type { WebSocketServer } from "ws";
 import { HandshakeRejection } from "../core/errors.js";
 import { initLogger } from "../core/init-logger.js";
 import { LRUMap } from "../core/lru-map.js";
 import { assertUniqueProtocols } from "../core/protocol-list.js";
-import {
-  createId,
-  endpointOf,
-  NOOP_LOGGER,
-  safeDecodeURIComponent,
-} from "../core/util.js";
+import { createId, NOOP_LOGGER } from "../core/util.js";
 import {
   assertStrictValidators,
   getStandardValidator,
@@ -31,7 +22,6 @@ import {
 import {
   abortHandshake,
   getClientIp,
-  parseBasicAuth,
   parseSubprotocols,
 } from "../core/ws-util.js";
 import type { AllMethodNames, OCPPResponseType } from "../generated/index.js";
@@ -42,8 +32,11 @@ import type {
   ConnectionMiddleware,
 } from "../types/auth.js";
 import type { CallOptions, CloseOptions } from "../types/calls.js";
-import type { ClientOptions } from "../types/client.js";
-import type { ServerEvents, TypedEventEmitter } from "../types/events.js";
+import type {
+  SecurityEvent,
+  ServerEvents,
+  TypedEventEmitter,
+} from "../types/events.js";
 import type {
   BatchCall,
   BatchExactKeys,
@@ -119,6 +112,16 @@ import {
   sweepExpiredSessions,
   sweepPersistMarks,
 } from "./sessions.js";
+import {
+  attachClientPlugins,
+  buildClientOptions,
+} from "./upgrade/client-setup.js";
+import { buildHandshakeInfo } from "./upgrade/handshake.js";
+import {
+  identityFromPath,
+  matchRoute,
+  type RouteTable,
+} from "./upgrade/route-match.js";
 import { createWorkerPool, type WorkerPool } from "./worker-pool.js";
 import { createWss, warnIgnoredWssOptions } from "./wss-options.js";
 
@@ -190,6 +193,12 @@ export class OCPPServer<
   private _negotiatedProtocols = new WeakMap<IncomingMessage, string | false>();
   /** Routers with RegExp patterns (fallback linear scan). */
   private _regexRouters: AnyOCPPRouter[] = [];
+  /** The routers above, in the order server/upgrade/route-match.ts tries them. */
+  private readonly _routes: RouteTable = {
+    globalRouters: this._globalMiddlewareRouters,
+    trie: this._trie,
+    regexRouters: this._regexRouters,
+  };
   private _clients = new Set<OCPPServerClient<P>>();
   private _clientsByIdentity = new Map<string, OCPPServerClient<P>>();
   private _httpServers = new Set<Server>();
@@ -413,6 +422,23 @@ export class OCPPServer<
     return options;
   }
 
+  /** Emit a security event, and pass it to every plugin's onSecurityEvent. */
+  private _emitSecurityEvent(event: SecurityEvent): void {
+    this.emit("securityEvent", event);
+    for (const plugin of this._plugins) {
+      try {
+        guardPluginHook(
+          this._logger,
+          plugin.onSecurityEvent?.(event),
+          plugin.name,
+          "onSecurityEvent",
+        );
+      } catch (err) {
+        reportPluginError(this._logger, plugin.name, "onSecurityEvent", err);
+      }
+    }
+  }
+
   /** Log and emit a refused handshake, and pass it to the plugins. */
   private _reportAuthFailure(
     handshake: HandshakeInfo,
@@ -485,19 +511,7 @@ export class OCPPServer<
       timestamp: new Date().toISOString(),
       details: { error },
     };
-    this.emit("securityEvent", secEvt);
-    for (const plugin of this._plugins) {
-      try {
-        guardPluginHook(
-          this._logger,
-          plugin.onSecurityEvent?.(secEvt),
-          plugin.name,
-          "onSecurityEvent",
-        );
-      } catch (err) {
-        reportPluginError(this._logger, plugin.name, "onSecurityEvent", err);
-      }
-    }
+    this._emitSecurityEvent(secEvt);
   }
 
   // ─── Getters ─────────────────────────────────────────────────
@@ -1331,19 +1345,7 @@ export class OCPPServer<
           maxConnections,
         },
       };
-      this.emit("securityEvent", secEvt);
-      for (const plugin of this._plugins) {
-        try {
-          guardPluginHook(
-            this._logger,
-            plugin.onSecurityEvent?.(secEvt),
-            plugin.name,
-            "onSecurityEvent",
-          );
-        } catch (err) {
-          reportPluginError(this._logger, plugin.name, "onSecurityEvent", err);
-        }
-      }
+      this._emitSecurityEvent(secEvt);
       abortHandshake(socket, 503, "Connection limit reached");
       return;
     }
@@ -1411,25 +1413,7 @@ export class OCPPServer<
           timestamp: new Date().toISOString(),
           details: { tokensRemaining: bucket.tokens },
         };
-        this.emit("securityEvent", secEvt);
-        // Plugin: onSecurityEvent
-        for (const plugin of this._plugins) {
-          try {
-            guardPluginHook(
-              this._logger,
-              plugin.onSecurityEvent?.(secEvt),
-              plugin.name,
-              "onSecurityEvent",
-            );
-          } catch (err) {
-            reportPluginError(
-              this._logger,
-              plugin.name,
-              "onSecurityEvent",
-              err,
-            );
-          }
-        }
+        this._emitSecurityEvent(secEvt);
         abortHandshake(socket, 429, "Too Many Requests");
         return;
       }
@@ -1467,112 +1451,18 @@ export class OCPPServer<
       `http://${req.headers.host ?? "localhost"}`,
     );
 
-    let matchedHandler: AuthCallback | undefined;
-    const matchedMiddlewares: ConnectionMiddleware[] = [];
-    const matchedRouters: AnyOCPPRouter[] = [];
-    const params: Record<string, string> = {};
     const pathname = url.pathname;
+    const {
+      authCallback: matchedHandler,
+      middlewares: matchedMiddlewares,
+      routers: matchedRouters,
+      params,
+      hasTerminalRoute,
+      hasPatternRouters,
+      config: matchedRouterConfig,
+    } = matchRoute(this._routes, pathname, this._logger);
 
-    let hasTerminalRoute = false;
-    const hasPatternRouters =
-      this._trie.size > 0 || this._regexRouters.length > 0;
-    let matchedRouterConfig:
-      | import("../types/index.js").RouterConfig
-      | undefined;
-
-    // ── Freeze trie on first match for V8 JIT optimization ──
-    if (!this._trie.frozen && this._trie.size > 0) {
-      this._trie.freeze();
-    }
-
-    // 1. Global middleware routers — always match (catch-all)
-    //
-    // Their auth callback is held separately: the collection order below is
-    // global -> trie -> regex, and a first-wins `matchedHandler` meant a global
-    // auth latched before the trie was even consulted, silently discarding
-    // every route-specific auth callback. Specificity wins now — a route's own
-    // auth beats the catch-all, and the global one is used only when no matched
-    // route defines its own.
-    let globalHandler: AuthCallback | undefined;
-    for (const router of this._globalMiddlewareRouters) {
-      matchedRouters.push(router);
-      if (router.middlewares.length > 0) {
-        matchedMiddlewares.push(...router.middlewares);
-      }
-      if (router.authCallback && !globalHandler) {
-        globalHandler = router.authCallback as AuthCallback | undefined;
-      }
-    }
-
-    // 2. Radix Trie lookup — O(k) where k = path segments
-    const trieResult = this._trie.match(pathname);
-    if (trieResult) {
-      Object.assign(params, trieResult.params);
-      for (const router of trieResult.routers) {
-        matchedRouters.push(router);
-        hasTerminalRoute = true;
-        if (router._routeConfig) {
-          matchedRouterConfig = Object.assign(
-            matchedRouterConfig || {},
-            router._routeConfig,
-          );
-        }
-        if (router.middlewares.length > 0) {
-          matchedMiddlewares.push(...router.middlewares);
-        }
-        if (router.authCallback && !matchedHandler) {
-          matchedHandler = router.authCallback as AuthCallback | undefined;
-        }
-      }
-    }
-
-    // 3. RegExp fallback — linear scan only for routers with RegExp patterns
-    for (const router of this._regexRouters) {
-      for (const compiled of router._regexPatterns) {
-        const match = compiled.regex.exec(pathname);
-        if (match) {
-          matchedRouters.push(router);
-          hasTerminalRoute = true;
-          if (match.groups) {
-            for (const [key, val] of Object.entries(match.groups)) {
-              params[key] = safeDecodeURIComponent(val ?? "");
-            }
-          }
-          if (router._routeConfig) {
-            matchedRouterConfig = Object.assign(
-              matchedRouterConfig || {},
-              router._routeConfig,
-            );
-          }
-          if (router.middlewares.length > 0) {
-            matchedMiddlewares.push(...router.middlewares);
-          }
-          if (router.authCallback && !matchedHandler) {
-            matchedHandler = router.authCallback as AuthCallback | undefined;
-          }
-          break; // Stop checking patterns within this single router
-        }
-      }
-    }
-
-    // Fall back to the catch-all auth only when no matched route defined one.
-    if (!matchedHandler && globalHandler) {
-      matchedHandler = globalHandler;
-    } else if (matchedHandler && globalHandler) {
-      this._logger?.debug?.(
-        "Route-specific auth takes precedence over global auth",
-        { pathname },
-      );
-    }
-
-    // Determine the identity:
-    // 1. If it was successfully matched as a param, use it.
-    // 2. Otherwise extract it from the end of the pathname (legacy behavior).
-    let identity = params.identity;
-    if (!identity) {
-      const pathParts = pathname.split("/").filter(Boolean);
-      identity = safeDecodeURIComponent(pathParts[pathParts.length - 1] ?? "");
-    }
+    let identity = identityFromPath(params, pathname);
 
     if (!identity) {
       abortHandshake(socket, 400, "Missing identity in URL path");
@@ -1625,45 +1515,16 @@ export class OCPPServer<
     // Set when the auth callback picks a version the charger did not offer.
     let protocolRefused = false;
 
-    // Parse Basic Auth (modular)
-    const password = parseBasicAuth(req.headers.authorization ?? "", identity);
-
-    // Client certificate (Profile 3 — mTLS)
-    let clientCertificate:
-      | ReturnType<TLSSocket["getPeerCertificate"]>
-      | undefined;
     const profile = this._options.securityProfile ?? SecurityProfile.NONE;
-    if (
-      profile === SecurityProfile.TLS_CLIENT_CERT &&
-      "getPeerCertificate" in socket
-    ) {
-      clientCertificate = (socket as TLSSocket).getPeerCertificate();
-    }
-
-    // The URL as the charger asked for it: ws, or wss when this socket is
-    // TLS (a proxy terminating TLS in front of the server is not seen).
-    const requestedUrl = new URL(url.href);
-    requestedUrl.protocol =
-      "encrypted" in req.socket && req.socket.encrypted === true
-        ? "wss:"
-        : "ws:";
-
-    // Build HandshakeInfo
-    const handshake: HandshakeInfo = {
+    const handshake = buildHandshakeInfo({
+      req,
+      socket,
+      url,
       identity,
-      remoteAddress: req.socket.remoteAddress ?? "",
-      headers: req.headers as Record<string, string | string[] | undefined>,
-      protocols,
-      pathname,
-      url: requestedUrl.href,
-      endpoint: endpointOf(pathname, identity),
       params,
-      query: url.searchParams,
-      request: req,
-      password,
-      clientCertificate,
+      protocols,
       securityProfile: profile,
-    };
+    });
 
     // Unknown-path rejection.
     //
@@ -1704,7 +1565,7 @@ export class OCPPServer<
       (profile === SecurityProfile.BASIC_AUTH ||
         profile === SecurityProfile.TLS_BASIC_AUTH) &&
       this._options.requireBasicAuth !== false &&
-      !password?.length
+      !handshake.password?.length
     ) {
       this._reportAuthFailure(handshake, req, 401, "Unauthorized");
       abortHandshake(socket, 401, "Unauthorized", {
@@ -1925,25 +1786,7 @@ export class OCPPServer<
             timestamp: new Date().toISOString(),
             details: { reason },
           };
-          this.emit("securityEvent", secEvtAbort);
-          // Plugin: onSecurityEvent
-          for (const plugin of this._plugins) {
-            try {
-              guardPluginHook(
-                this._logger,
-                plugin.onSecurityEvent?.(secEvtAbort),
-                plugin.name,
-                "onSecurityEvent",
-              );
-            } catch (err) {
-              reportPluginError(
-                this._logger,
-                plugin.name,
-                "onSecurityEvent",
-                err,
-              );
-            }
-          }
+          this._emitSecurityEvent(secEvtAbort);
           this.emit("upgradeAborted", {
             identity,
             reason,
@@ -2086,38 +1929,11 @@ export class OCPPServer<
     this._wss.handleUpgrade(req, socket, head, (ws) => {
       // The handshake is done; from here the connection is counted as a client.
       releaseHandshakeSlot();
-      const clientOptions: ClientOptions<P> = {
+      const clientOptions = buildClientOptions<P>(
         identity,
-        endpoint: "",
-        callTimeoutMs:
-          matchedRouterConfig?.callTimeoutMs ?? this._options.callTimeoutMs,
-        pingIntervalMs:
-          matchedRouterConfig?.pingIntervalMs ?? this._options.pingIntervalMs,
-        deferPingsOnActivity:
-          matchedRouterConfig?.deferPingsOnActivity ??
-          this._options.deferPingsOnActivity,
-        callConcurrency:
-          matchedRouterConfig?.callConcurrency ?? this._options.callConcurrency,
-        maxBadMessages: this._options.maxBadMessages,
-        badMessageWindowMs: this._options.badMessageWindowMs,
-        respondWithDetailedErrors: this._options.respondWithDetailedErrors,
-        // A route's list was limited to its protocols, a subset of the
-        // server's, by config().
-        strictMode:
-          (matchedRouterConfig?.strictMode as
-            | boolean
-            | readonly P[]
-            | undefined) ?? this._options.strictMode,
-        strictModeMethods:
-          matchedRouterConfig?.strictModeMethods ??
-          this._options.strictModeMethods,
-        strictModeValidators: this._options.strictModeValidators,
-        idGenerator: this._options.idGenerator,
-        idValidator: this._options.idValidator,
-        rateLimit: matchedRouterConfig?.rateLimit ?? this._options.rateLimit,
-        reconnect: false,
-        logging: this._options.logging,
-      };
+        matchedRouterConfig,
+        this._options,
+      );
 
       // An auth callback may namespace the identity (multi-tenant servers where
       // the same station id appears under different path prefixes). Apply it
@@ -2268,160 +2084,7 @@ export class OCPPServer<
         },
       );
 
-      // Plugin: onConnection
-      for (const plugin of this._plugins) {
-        try {
-          const result = plugin.onConnection?.(client);
-          if (result instanceof Promise) {
-            result.catch((err) => {
-              this._logger?.error?.("Plugin onConnection error", {
-                name: plugin.name,
-                error: (err as Error).message,
-              });
-            });
-          }
-        } catch (err) {
-          this._logger?.error?.("Plugin onConnection error", {
-            name: plugin.name,
-            error: (err as Error).message,
-          });
-        }
-      }
-
-      // ── Wire plugin event hooks ──
-      // onMessage: unified message observation (IN + OUT)
-      client.on("message", (payload) => {
-        for (const plugin of this._plugins) {
-          try {
-            guardPluginHook(
-              this._logger,
-              plugin.onMessage?.(client, payload),
-              plugin.name,
-              "onMessage",
-            );
-          } catch (err) {
-            reportPluginError(this._logger, plugin.name, "onMessage", err);
-          }
-        }
-      });
-      // onError: WebSocket-level errors
-      client.on("error", (err) => {
-        for (const plugin of this._plugins) {
-          try {
-            guardPluginHook(
-              this._logger,
-              plugin.onError?.(client, err),
-              plugin.name,
-              "onError",
-            );
-          } catch (err) {
-            reportPluginError(this._logger, plugin.name, "onError", err);
-          }
-        }
-      });
-      // onBadMessage: malformed/unparseable messages
-      client.on("badMessage", ({ message: rawMsg, error: badErr }) => {
-        for (const plugin of this._plugins) {
-          try {
-            guardPluginHook(
-              this._logger,
-              plugin.onBadMessage?.(client, rawMsg, badErr),
-              plugin.name,
-              "onBadMessage",
-            );
-          } catch (err) {
-            reportPluginError(this._logger, plugin.name, "onBadMessage", err);
-          }
-        }
-      });
-      // onValidationFailure: schema validation failures (strictMode)
-      client.on(
-        "strictValidationFailure",
-        ({ message: msg, error: valErr }) => {
-          for (const plugin of this._plugins) {
-            try {
-              guardPluginHook(
-                this._logger,
-                plugin.onValidationFailure?.(client, msg, valErr),
-                plugin.name,
-                "onValidationFailure",
-              );
-            } catch (err) {
-              reportPluginError(
-                this._logger,
-                plugin.name,
-                "onValidationFailure",
-                err,
-              );
-            }
-          }
-        },
-      );
-      // onBackpressure: slow client detection
-      client.on("backpressure", (evt) => {
-        for (const plugin of this._plugins) {
-          try {
-            guardPluginHook(
-              this._logger,
-              plugin.onBackpressure?.(client, evt.bufferedAmount),
-              plugin.name,
-              "onBackpressure",
-            );
-          } catch (err) {
-            reportPluginError(this._logger, plugin.name, "onBackpressure", err);
-          }
-        }
-      });
-      // onPongTimeout: dead peer detection
-      client.on("pongTimeout", () => {
-        for (const plugin of this._plugins) {
-          try {
-            guardPluginHook(
-              this._logger,
-              plugin.onPongTimeout?.(client),
-              plugin.name,
-              "onPongTimeout",
-            );
-          } catch (err) {
-            reportPluginError(this._logger, plugin.name, "onPongTimeout", err);
-          }
-        }
-      });
-      // onHandlerError: user handler threw during CALL processing
-      client.on("handlerError", ({ method: hMethod, error: hErr }) => {
-        for (const plugin of this._plugins) {
-          try {
-            guardPluginHook(
-              this._logger,
-              plugin.onHandlerError?.(client, hMethod, hErr),
-              plugin.name,
-              "onHandlerError",
-            );
-          } catch (err) {
-            reportPluginError(this._logger, plugin.name, "onHandlerError", err);
-          }
-        }
-      });
-      // onRateLimitExceeded: message dropped due to rate limiting
-      client.on("rateLimitExceeded", (evt) => {
-        for (const plugin of this._plugins) {
-          try {
-            guardPluginHook(
-              this._logger,
-              plugin.onRateLimitExceeded?.(client, evt.rawData),
-              plugin.name,
-              "onRateLimitExceeded",
-            );
-          } catch (err) {
-            reportPluginError(
-              this._logger,
-              plugin.name,
-              "onRateLimitExceeded",
-              err,
-            );
-          }
-        }
-      });
+      attachClientPlugins(client, this._plugins, () => this._logger);
 
       // Dispatch route-specific "client" events
       this.emit("client", client);

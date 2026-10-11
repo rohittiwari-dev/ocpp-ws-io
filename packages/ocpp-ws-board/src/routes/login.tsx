@@ -1,21 +1,27 @@
-import { IconBolt, IconLock } from "@tabler/icons-react";
-import { useState } from "react";
+import { IconBolt, IconEye, IconEyeOff, IconLock } from "@tabler/icons-react";
+import { type FormEvent, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
+
 export default function LoginPage() {
   const { session, isLoading, login } = useAuth();
   const [token, setToken] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showToken, setShowToken] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
   if (isLoading)
     return (
       <div className="loading-state full-height">Checking your session...</div>
     );
   if (session?.authenticated) return <Navigate to="/connections" replace />;
+
   const tokenMode = session?.authMode === "token" || !session?.authMode;
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError("");
@@ -33,12 +39,13 @@ export default function LoginPage() {
       setBusy(false);
     }
   }
+
   return (
     <div className="login-page">
-      <section className="login-story">
+      <section className="login-story" aria-label="Platform Overview">
         <div className="brand">
           <IconBolt size={34} fill="currentColor" />
-          OCPP Board
+          <span>OCPP Board</span>
         </div>
         <h1>
           Your charging network.
@@ -50,66 +57,117 @@ export default function LoginPage() {
           operations moving.
         </p>
       </section>
+
       <form className="login-form" onSubmit={(event) => void submit(event)}>
         <IconLock size={27} className="muted" />
         <h2>Welcome back</h2>
         <p>Sign in to your operator workspace.</p>
+
         {tokenMode ? (
-          <label className="field">
-            <span>Access token</span>
-            <input
-              className="text-input"
-              type="password"
-              required
-              value={token}
-              autoComplete="current-password"
-              onChange={(event) => setToken(event.target.value)}
-            />
-          </label>
+          <div className="field">
+            <label htmlFor="token">Access token</label>
+            <div className="input-wrap">
+              <input
+                id="token"
+                className="text-input"
+                type={showToken ? "text" : "password"}
+                required
+                value={token}
+                autoComplete="current-password"
+                onChange={(event) => setToken(event.target.value)}
+              />
+              <button
+                type="button"
+                className="toggle-vis"
+                aria-label={
+                  showToken ? "Hide access token" : "Show access token"
+                }
+                onClick={() => setShowToken(!showToken)}
+              >
+                {showToken ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+              </button>
+            </div>
+          </div>
         ) : (
           <>
-            <label className="field">
-              <span>Username</span>
+            <div className="field">
+              <label htmlFor="username">Username</label>
               <input
+                id="username"
                 className="text-input"
                 required
                 value={username}
                 autoComplete="username"
                 onChange={(event) => setUsername(event.target.value)}
               />
-            </label>
-            <label className="field">
-              <span>Password</span>
-              <input
-                className="text-input"
-                type="password"
-                required
-                value={password}
-                autoComplete="current-password"
-                onChange={(event) => setPassword(event.target.value)}
-              />
-            </label>
-            {session?.authMode === "custom" && (
-              <label className="field">
-                <span>Token (optional)</span>
+            </div>
+
+            <div className="field">
+              <label htmlFor="password">Password</label>
+              <div className="input-wrap">
                 <input
+                  id="password"
                   className="text-input"
-                  type="password"
-                  value={token}
-                  onChange={(event) => setToken(event.target.value)}
+                  type={showPassword ? "text" : "password"}
+                  required
+                  value={password}
+                  autoComplete="current-password"
+                  onChange={(event) => setPassword(event.target.value)}
                 />
-              </label>
+                <button
+                  type="button"
+                  className="toggle-vis"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? (
+                    <IconEyeOff size={16} />
+                  ) : (
+                    <IconEye size={16} />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {session?.authMode === "custom" && (
+              <div className="field">
+                <label htmlFor="custom-token">Token (optional)</label>
+                <div className="input-wrap">
+                  <input
+                    id="custom-token"
+                    className="text-input"
+                    type={showToken ? "text" : "password"}
+                    value={token}
+                    onChange={(event) => setToken(event.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="toggle-vis"
+                    aria-label={showToken ? "Hide token" : "Show token"}
+                    onClick={() => setShowToken(!showToken)}
+                  >
+                    {showToken ? (
+                      <IconEyeOff size={16} />
+                    ) : (
+                      <IconEye size={16} />
+                    )}
+                  </button>
+                </div>
+              </div>
             )}
           </>
         )}
+
         {error && (
           <p className="error-banner" role="alert">
             {error}
           </p>
         )}
-        <button className="button primary" disabled={busy}>
+
+        <button type="submit" className="button primary" disabled={busy}>
           {busy ? "Signing in..." : "Sign in"}
         </button>
+
         <p className="notice">
           Use the credentials configured by your server administrator.
         </p>

@@ -138,25 +138,43 @@ a {
   text-decoration: none;
 }
 button,
+a {
+  outline-offset: 3px;
+}
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--ring);
+}
 input,
 select,
 textarea {
-  outline-offset: 4px;
+  outline: none;
 }
-a:focus-visible,
-button:focus-visible,
+input,
+textarea {
+  caret-color: var(--blue);
+}
+input:focus,
 input:focus-visible,
+select:focus,
 select:focus-visible,
+textarea:focus,
 textarea:focus-visible {
-  outline: 2px solid var(--ring);
+  outline: none !important;
 }
 ::selection {
   background: var(--blue);
   color: var(--background);
 }
-input,
-textarea {
-  caret-color: var(--blue);
+[data-slot="input-group"] input,
+[data-slot="input-group"] input:focus,
+[data-slot="input-group"] input:focus-visible,
+[data-slot="input-group-control"],
+[data-slot="input-group-control"]:focus,
+[data-slot="input-group-control"]:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
 }
 h1,
 h2,
@@ -512,7 +530,7 @@ small {
   width: 100%;
   border: 0;
   color: var(--foreground);
-  outline-offset: 2px;
+  outline: none;
 }
 .search-field input::placeholder {
   color: var(--muted-foreground);
@@ -524,9 +542,22 @@ textarea {
   background: var(--card);
   border-radius: 8px;
   color: var(--foreground);
-  padding: 8px 10px;
+  padding: 8px 12px;
   min-height: 38px;
   max-width: 100%;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.text-input:focus,
+.text-input:focus-visible,
+select:focus,
+select:focus-visible,
+textarea:focus,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 22%, transparent);
 }
 select {
   font-size: 13px;
@@ -902,6 +933,39 @@ td:first-child:has(.star-button) {
   resize: vertical;
   min-height: 230px;
   font: 13px / 1.8 var(--font-mono);
+}
+.field .input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.field .input-wrap .text-input {
+  width: 100%;
+  padding-right: 36px;
+}
+.field .input-wrap .toggle-vis {
+  position: absolute;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s ease;
+}
+.field .input-wrap .toggle-vis:hover {
+  color: var(--foreground);
+}
+.field .input-wrap .toggle-vis:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
 }
 .form-panel {
   background: var(--card);
