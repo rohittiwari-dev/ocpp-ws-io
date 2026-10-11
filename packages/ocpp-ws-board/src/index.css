@@ -1062,6 +1062,7 @@ td:first-child:has(.star-button) {
 }
 .field input,
 .field select,
+.field [data-slot="select-trigger"],
 .field textarea {
   width: 100%;
 }
@@ -1373,7 +1374,8 @@ td:first-child:has(.star-button) {
     flex-basis: 100%;
     max-width: none;
   }
-  .toolbar select {
+  .toolbar select,
+  .toolbar [data-slot="select-trigger"] {
     flex: 1;
     min-width: 125px;
   }

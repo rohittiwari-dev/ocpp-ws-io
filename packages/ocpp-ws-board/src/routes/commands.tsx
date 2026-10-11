@@ -2,6 +2,13 @@ import { IconSend } from "@tabler/icons-react";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Empty,
   Export,
   Feedback,
@@ -37,6 +44,18 @@ export default function CommandsPage() {
   const station = stations.data?.find((item) => item.identity === identity);
   const presets = COMMAND_PRESETS.filter(
     (preset) => station && preset.protocols.includes(station.protocol),
+  );
+  const onlineChargers = (stations.data ?? []).filter(
+    (item) => item.status === "online",
+  );
+  const chargerItems: Record<string, string> = Object.fromEntries(
+    onlineChargers.map((item) => [
+      item.identity,
+      `${item.identity} / ${item.protocol}`,
+    ]),
+  );
+  const presetItems: Record<string, string> = Object.fromEntries(
+    presets.map((preset, index) => [String(index), preset.name]),
   );
   async function send(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -102,33 +121,43 @@ export default function CommandsPage() {
             disabled={busy}
             style={{ border: 0, padding: 0, margin: 0 }}
           >
-            <label className="field">
+            <div className="field">
               <span>Target charger</span>
-              <select
-                required
-                value={identity}
-                onChange={(event) => {
-                  setIdentity(event.target.value);
+              <Select
+                items={chargerItems}
+                value={identity || null}
+                onValueChange={(val) => {
+                  setIdentity(val ?? "");
                   setAcknowledged(false);
                 }}
               >
-                <option value="">Choose an online charger</option>
-                {(stations.data ?? [])
-                  .filter((item) => item.status === "online")
-                  .map((item) => (
-                    <option key={item.identity} value={item.identity}>
-                      {item.identity} / {item.protocol}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label className="field">
+                <SelectTrigger className="w-full" aria-label="Target charger">
+                  <SelectValue placeholder="Choose an online charger" />
+                </SelectTrigger>
+                <SelectContent>
+                  {onlineChargers.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">
+                      No online chargers available
+                    </div>
+                  ) : (
+                    onlineChargers.map((item) => (
+                      <SelectItem key={item.identity} value={item.identity}>
+                        {item.identity} / {item.protocol}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="field">
               <span>Start from a preset</span>
-              <select
+              <Select
                 key={station?.protocol ?? "none"}
-                defaultValue=""
-                onChange={(event) => {
-                  const preset = presets[Number(event.target.value)];
+                items={presetItems}
+                value={null}
+                onValueChange={(val) => {
+                  if (val === null) return;
+                  const preset = presets[Number(val)];
                   if (preset) {
                     setMethod(preset.method);
                     setPayload(JSON.stringify(preset.params, null, 2));
@@ -137,17 +166,31 @@ export default function CommandsPage() {
                   }
                 }}
               >
-                <option value="" disabled>
-                  Choose a protocol-compatible preset
-                </option>
-                {presets.map((preset, index) => (
-                  <option key={preset.name} value={index}>
-                    {preset.name}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger
+                  className="w-full"
+                  disabled={presets.length === 0}
+                  aria-label="Start from a preset"
+                >
+                  <SelectValue
+                    placeholder={
+                      !station
+                        ? "Choose an online charger first"
+                        : presets.length === 0
+                          ? "No compatible presets for selected charger"
+                          : "Choose a protocol-compatible preset"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {presets.map((preset, index) => (
+                    <SelectItem key={preset.name} value={String(index)}>
+                      {preset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <small>{description}</small>
-            </label>
+            </div>
             <label className="field">
               <span>OCPP action</span>
               <input

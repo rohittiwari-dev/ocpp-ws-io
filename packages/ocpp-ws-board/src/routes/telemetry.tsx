@@ -9,6 +9,13 @@ import {
   YAxis,
 } from "recharts";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Export,
   Feedback,
   PageHeading,
@@ -78,17 +85,24 @@ export default function TelemetryPage() {
       </div>
       <div className="section-heading">
         <h2>{labels[metric]}</h2>
-        <select
-          aria-label="Chart metric"
+        <Select
+          items={labels}
           value={metric}
-          onChange={(event) => setMetric(event.target.value)}
+          onValueChange={(val) => {
+            if (val) setMetric(val);
+          }}
         >
-          {Object.entries(labels).map(([key, label]) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="w-[210px]" aria-label="Chart metric">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(labels).map(([key, label]) => (
+              <SelectItem key={key} value={key}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <Feedback {...history} retry={history.refresh} />
       <div

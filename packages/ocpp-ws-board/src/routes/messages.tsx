@@ -3,6 +3,13 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { TrafficTable } from "@/components/traffic-table";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Export,
   Feedback,
   PageHeading,
@@ -14,6 +21,26 @@ import {
 import { useResource } from "@/hooks/use-resource";
 import { useSSE } from "@/lib/sse";
 import type { StoredMessage } from "@/types";
+
+const DIRECTION_OPTIONS: Record<string, string> = {
+  all: "Both directions",
+  IN: "Received",
+  OUT: "Sent",
+};
+
+const MESSAGE_TYPES = [
+  "CALL",
+  "CALLRESULT",
+  "CALLERROR",
+  "CALLRESULTERROR",
+  "SEND",
+] as const;
+
+const MESSAGE_TYPE_OPTIONS: Record<string, string> = {
+  all: "All types",
+  ...Object.fromEntries(MESSAGE_TYPES.map((val) => [val, val])),
+};
+
 export default function MessagesPage() {
   const [query, setQuery] = useSearchParams();
   const [paused, setPaused] = useState(false);
@@ -74,33 +101,43 @@ export default function MessagesPage() {
           }}
           placeholder="Search action, charger, ID or payload..."
         />
-        <select
-          aria-label="Message direction"
-          value={direction}
-          onChange={(event) => {
-            setDirection(event.target.value);
+        <Select
+          items={DIRECTION_OPTIONS}
+          value={direction || "all"}
+          onValueChange={(val) => {
+            setDirection(val === "all" ? "" : (val ?? ""));
             setPage(0);
           }}
         >
-          <option value="">Both directions</option>
-          <option value="IN">Received</option>
-          <option value="OUT">Sent</option>
-        </select>
-        <select
-          aria-label="Message type"
-          value={type}
-          onChange={(event) => {
-            setType(event.target.value);
+          <SelectTrigger className="w-[155px]" aria-label="Message direction">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Both directions</SelectItem>
+            <SelectItem value="IN">Received</SelectItem>
+            <SelectItem value="OUT">Sent</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          items={MESSAGE_TYPE_OPTIONS}
+          value={type || "all"}
+          onValueChange={(val) => {
+            setType(val === "all" ? "" : (val ?? ""));
             setPage(0);
           }}
         >
-          <option value="">All types</option>
-          {["CALL", "CALLRESULT", "CALLERROR", "CALLRESULTERROR", "SEND"].map(
-            (value) => (
-              <option key={value}>{value}</option>
-            ),
-          )}
-        </select>
+          <SelectTrigger className="w-[155px]" aria-label="Message type">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All types</SelectItem>
+            {MESSAGE_TYPES.map((value) => (
+              <SelectItem key={value} value={value}>
+                {value}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Refresh onClick={resource.refresh} />
         <Export data={messages} name="messages" />
       </div>

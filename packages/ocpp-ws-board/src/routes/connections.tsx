@@ -21,6 +21,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Empty,
   Export,
   Feedback,
@@ -34,6 +41,20 @@ import { useResource } from "@/hooks/use-resource";
 import { api } from "@/lib/api";
 import { time } from "@/lib/export";
 import type { ConnectionRecord } from "@/types";
+
+const STATUS_OPTIONS: Record<string, string> = {
+  all: "All statuses",
+  online: "Online",
+  offline: "Offline",
+  evicted: "Evicted",
+};
+
+const SORT_OPTIONS: Record<string, string> = {
+  newest: "Newest first",
+  name: "Charger name",
+  errors: "Most errors",
+};
+
 export default function ConnectionsPage() {
   const resource = useResource<ConnectionRecord[]>("/connections", 5000);
   const [query, setQuery] = useSearchParams();
@@ -176,10 +197,10 @@ export default function ConnectionsPage() {
         }
         description="Your charging network, one charger at a time."
       >
-        <div className="segmented">
+        <div className="segmented min-w-max">
           <Link
             to="/connections"
-            className={view !== "favorites" ? "active" : ""}
+            className={view !== "favorites" ? "active min-w-max" : "min-w-max"}
           >
             All chargers
           </Link>
@@ -348,42 +369,77 @@ export default function ConnectionsPage() {
           onChange={setSearch}
           placeholder="Search chargers or IP address..."
         />
-        <select
-          aria-label="Filter status"
-          value={status}
-          onChange={(event) => filter("status", event.target.value)}
+        <Select
+          items={STATUS_OPTIONS}
+          value={status || "all"}
+          onValueChange={(val) =>
+            filter("status", val === "all" ? "" : (val ?? ""))
+          }
         >
-          <option value="">All statuses</option>
-          <option value="online">Online</option>
-          <option value="offline">Offline</option>
-          <option value="evicted">Evicted</option>
-        </select>
-        <select
-          aria-label="Filter protocol"
-          value={protocol}
-          onChange={(event) => filter("protocol", event.target.value)}
+          <SelectTrigger className="w-36.25" aria-label="Filter status">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="online">Online</SelectItem>
+            <SelectItem value="offline">Offline</SelectItem>
+            <SelectItem value="evicted">Evicted</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          items={{
+            all: "All protocols",
+            ...Object.fromEntries(
+              [
+                ...new Set([
+                  "ocpp1.6",
+                  "ocpp2.0.1",
+                  "ocpp2.1",
+                  ...(resource.data ?? []).map((station) => station.protocol),
+                ]),
+              ].map((value) => [value, value]),
+            ),
+          }}
+          value={protocol || "all"}
+          onValueChange={(val) =>
+            filter("protocol", val === "all" ? "" : (val ?? ""))
+          }
         >
-          <option value="">All protocols</option>
-          {[
-            ...new Set([
-              "ocpp1.6",
-              "ocpp2.0.1",
-              "ocpp2.1",
-              ...(resource.data ?? []).map((station) => station.protocol),
-            ]),
-          ].map((value) => (
-            <option key={value}>{value}</option>
-          ))}
-        </select>
-        <select
-          aria-label="Sort chargers"
+          <SelectTrigger className="w-37.5" aria-label="Filter protocol">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All protocols</SelectItem>
+            {[
+              ...new Set([
+                "ocpp1.6",
+                "ocpp2.0.1",
+                "ocpp2.1",
+                ...(resource.data ?? []).map((station) => station.protocol),
+              ]),
+            ].map((value) => (
+              <SelectItem key={value} value={value}>
+                {value}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          items={SORT_OPTIONS}
           value={sort}
-          onChange={(event) => setSort(event.target.value)}
+          onValueChange={(val) => {
+            if (val) setSort(val);
+          }}
         >
-          <option value="newest">Newest first</option>
-          <option value="name">Charger name</option>
-          <option value="errors">Most errors</option>
-        </select>
+          <SelectTrigger className="w-36.25" aria-label="Sort chargers">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="newest">Newest first</SelectItem>
+            <SelectItem value="name">Charger name</SelectItem>
+            <SelectItem value="errors">Most errors</SelectItem>
+          </SelectContent>
+        </Select>
         <Refresh onClick={resource.refresh} />
         <Export name="chargers" data={stations} />
       </div>

@@ -1,5 +1,12 @@
 import { useState } from "react";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Empty,
   Export,
   Feedback,
@@ -13,6 +20,28 @@ import {
 import { useResource } from "@/hooks/use-resource";
 import { time } from "@/lib/export";
 import type { SecurityEventRecord } from "@/types";
+
+const SEVERITY_OPTIONS: Record<string, string> = {
+  all: "All severities",
+  low: "low",
+  medium: "medium",
+  high: "high",
+  critical: "critical",
+};
+
+const CATEGORIES = [
+  "AUTH_FAILED",
+  "RATE_LIMIT",
+  "ANOMALY",
+  "PROTOCOL_VIOLATION",
+  "POLICY_REJECTION",
+] as const;
+
+const CATEGORY_OPTIONS: Record<string, string> = {
+  all: "All categories",
+  ...Object.fromEntries(CATEGORIES.map((val) => [val, val])),
+};
+
 export default function SecurityPage() {
   const resource = useResource<{
     events: SecurityEventRecord[];
@@ -52,38 +81,46 @@ export default function SecurityPage() {
           }}
           placeholder="Search charger or security event..."
         />
-        <select
-          aria-label="Severity"
-          value={severity}
-          onChange={(event) => {
-            setSeverity(event.target.value);
+        <Select
+          items={SEVERITY_OPTIONS}
+          value={severity || "all"}
+          onValueChange={(val) => {
+            setSeverity(val === "all" ? "" : (val ?? ""));
             setPage(0);
           }}
         >
-          <option value="">All severities</option>
-          {["low", "medium", "high", "critical"].map((value) => (
-            <option key={value}>{value}</option>
-          ))}
-        </select>
-        <select
-          aria-label="Security category"
-          value={category}
-          onChange={(event) => {
-            setCategory(event.target.value);
+          <SelectTrigger className="w-[155px]" aria-label="Severity">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All severities</SelectItem>
+            {["low", "medium", "high", "critical"].map((value) => (
+              <SelectItem key={value} value={value}>
+                {value}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          items={CATEGORY_OPTIONS}
+          value={category || "all"}
+          onValueChange={(val) => {
+            setCategory(val === "all" ? "" : (val ?? ""));
             setPage(0);
           }}
         >
-          <option value="">All categories</option>
-          {[
-            "AUTH_FAILED",
-            "RATE_LIMIT",
-            "ANOMALY",
-            "PROTOCOL_VIOLATION",
-            "POLICY_REJECTION",
-          ].map((value) => (
-            <option key={value}>{value}</option>
-          ))}
-        </select>
+          <SelectTrigger className="w-[185px]" aria-label="Security category">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All categories</SelectItem>
+            {CATEGORIES.map((value) => (
+              <SelectItem key={value} value={value}>
+                {value}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <Feedback {...resource} retry={resource.refresh} />
       <div className="table-panel">
