@@ -1071,14 +1071,95 @@ td:first-child:has(.star-button) {
   align-items: center !important;
   gap: 6px !important;
   border-radius: 6px !important;
+  font-weight: 600 !important;
+  color: var(--foreground) !important;
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+}
+.action-toolbar-btn:hover {
+  background: var(--accent) !important;
+  color: var(--foreground) !important;
 }
 .action-toolbar-btn.primary {
-  background: var(--blue) !important;
-  color: #fff !important;
-  border: none !important;
+  background: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  border-color: transparent !important;
+  font-weight: 650 !important;
 }
 .action-toolbar-btn.primary:hover {
-  opacity: 0.9;
+  opacity: 0.92;
+  filter: brightness(1.05);
+}
+/* Active filter banner in Messages view */
+.active-filter-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  margin: 0 0 16px 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary) 10%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--border));
+}
+.active-filter-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.active-filter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--foreground);
+}
+.active-filter-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--background);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+}
+.filter-chip strong {
+  font-weight: 650;
+}
+.filter-chip-code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--foreground);
+}
+.filter-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.filter-clear-btn:hover {
+  background: color-mix(in srgb, var(--rose) 12%, var(--card));
+  border-color: color-mix(in srgb, var(--rose) 35%, transparent);
+  color: var(--rose);
 }
 .message-error-callout {
   display: flex;

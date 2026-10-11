@@ -1,4 +1,11 @@
-import { IconPlayerPause, IconPlayerPlay } from "@tabler/icons-react";
+import {
+  IconArrowsExchange,
+  IconHash,
+  IconPlayerPause,
+  IconPlayerPlay,
+  IconPlug,
+  IconX,
+} from "@tabler/icons-react";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { TrafficTable } from "@/components/traffic-table";
@@ -143,10 +150,43 @@ export default function MessagesPage() {
         <Export data={messages} name="messages" />
       </div>
       {query.size > 0 && (
-        <div className="notice">
-          Exchange filter: {query.get("identity")} {query.get("messageId")}{" "}
-          <button className="button" onClick={() => setQuery({})}>
-            Clear filter
+        <div
+          className="active-filter-banner"
+          role="region"
+          aria-label="Active exchange filter"
+        >
+          <div className="active-filter-content">
+            <div className="active-filter-label">
+              <IconArrowsExchange size={16} />
+              <span>Correlated exchange</span>
+            </div>
+            <div className="active-filter-tags">
+              {query.get("identity") && (
+                <span className="filter-chip">
+                  <IconPlug size={13} className="muted" />
+                  <span className="muted">Charger:</span>
+                  <strong>{query.get("identity")}</strong>
+                </span>
+              )}
+              {query.get("messageId") && (
+                <span className="filter-chip">
+                  <IconHash size={13} className="muted" />
+                  <span className="muted">Message ID:</span>
+                  <code className="filter-chip-code">
+                    {query.get("messageId")}
+                  </code>
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="filter-clear-btn"
+            aria-label="Clear active exchange filter"
+            onClick={() => setQuery({})}
+          >
+            <IconX size={14} />
+            <span>Clear filter</span>
           </button>
         </div>
       )}
