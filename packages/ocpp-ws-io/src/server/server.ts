@@ -1,14 +1,5 @@
-import {
-  createServer as createHttpServer,
-  type IncomingMessage,
-  type Server,
-} from "node:http";
-import {
-  createServer as createHttpsServer,
-  type ServerOptions as HttpsServerOptions,
-} from "node:https";
+import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
-import type { SecureContextOptions, Server as TlsServer } from "node:tls";
 import type { WebSocketServer } from "ws";
 import { initLogger } from "../core/init-logger.js";
 import { LRUMap } from "../core/lru-map.js";
@@ -54,16 +45,22 @@ import {
 } from "../types/protocol.js";
 import type {
   CORSOptions,
-  HealthEndpointOptions,
   ListenOptions,
+  RateLimitOptions,
   ServerOptions,
 } from "../types/server.js";
 import type { PersistedSession, SessionData } from "../types/session.js";
 import { AdaptiveLimiter } from "./adaptive-limiter.js";
 import { checkCORS } from "./cors.js";
 import { EventEmitterBase } from "./emitter-base.js";
-import { assertHealthEndpointAuth, checkHealthAuth } from "./health-auth.js";
+import { assertHealthEndpointAuth } from "./health-auth.js";
+import { createHealthHandler, type HealthContext } from "./health-endpoint.js";
 import { assertMaxIdentityLength, identityRefusal } from "./identity.js";
+import {
+  closeHttpServers,
+  drainClients,
+  type HttpServerListeners,
+} from "./lifecycle.js";
 import {
   broadcastToAll,
   broadcastToIdentities,
@@ -78,7 +75,6 @@ import {
 import {
   awaitShutdownHook,
   guardPluginHook,
-  METRICS_PLUGIN_TIMEOUT_MS,
   reportPluginError,
   withTimeout,
 } from "./plugin-hooks.js";
@@ -102,6 +98,11 @@ import {
   sweepPersistMarks,
 } from "./sessions.js";
 import {
+  canReloadSecureContext,
+  createProfileServer,
+  secureContextOptions,
+} from "./tls.js";
+import {
   refuseOverConnectionLimit,
   refuseOverConnectionRate,
   sweepConnectionBuckets,
@@ -120,15 +121,6 @@ import {
 } from "./upgrade/route-match.js";
 import { createWorkerPool, type WorkerPool } from "./worker-pool.js";
 import { createWss, warnIgnoredWssOptions } from "./wss-options.js";
-
-/** A listening server whose certificate can be replaced in place (HTTPS). */
-function canReloadSecureContext(
-  srv: Server,
-): srv is Server & Pick<TlsServer, "setSecureContext"> {
-  return (
-    "setSecureContext" in srv && typeof srv.setSecureContext === "function"
-  );
-}
 
 /**
  * OCPPServer — A typed WebSocket RPC server for OCPP communication.
@@ -197,6 +189,8 @@ export class OCPPServer<
   /** The server state client registration reads, through getters. */
   private readonly _registration: RegistrationContext<P> =
     this._createRegistrationContext();
+  /** The server state the health endpoint reads, through getters. */
+  private readonly _health: HealthContext<P> = this._createHealthContext();
   private _clients = new Set<OCPPServerClient<P>>();
   private _clientsByIdentity = new Map<string, OCPPServerClient<P>>();
   private _httpServers = new Set<Server>();
@@ -207,16 +201,7 @@ export class OCPPServer<
   private _warnedNoAuthCallback = false;
 
   /** Listeners we attached per server, for removal on close(). */
-  private _attachedHttpHandlers = new Map<
-    Server,
-    {
-      upgrade: (req: IncomingMessage, socket: Duplex, head: Buffer) => void;
-      request?: (
-        req: IncomingMessage,
-        res: import("node:http").ServerResponse,
-      ) => void;
-    }
-  >();
+  private _attachedHttpHandlers = new Map<Server, HttpServerListeners>();
   private _wss: WebSocketServer | null = null;
   private _state: "OPEN" | "CLOSING" | "CLOSED" = "OPEN";
   /** The close() in progress, so concurrent callers await the same shutdown. */
@@ -344,24 +329,7 @@ export class OCPPServer<
     // Initialize adaptive rate limiter if enabled
     const rl = this._options.rateLimit;
     if (rl?.adaptive) {
-      this._adaptiveLimiter = new AdaptiveLimiter({
-        cpuThresholdPercent: rl.cpuThresholdPercent,
-        memThresholdPercent: rl.memThresholdPercent,
-        cooldownMs: rl.cooldownMs,
-        sampleIntervalMs: rl.sampleIntervalMs,
-      });
-      this._adaptiveLimiter.on(
-        "adapted",
-        (event: {
-          multiplier: number;
-          cpuPercent: number;
-          memPercent: number;
-        }) => {
-          this._logger?.info?.("Adaptive rate limit adjusted", event);
-          this.emit("rateLimit:adapted", event);
-        },
-      );
-      this._adaptiveLimiter.start();
+      this._startAdaptiveLimiter(rl);
     }
 
     // Initialize worker thread pool if enabled
@@ -400,21 +368,6 @@ export class OCPPServer<
     } catch (err) {
       reportPluginError(this._logger, plugin.name, "onInit", err);
     }
-  }
-
-  /** The certificate and protocol settings of a TLS context, from TLSOptions. */
-  private static _secureContextOptions(
-    tlsOpts: import("../types/index.js").TLSOptions,
-  ): SecureContextOptions {
-    const options: SecureContextOptions = {};
-    if (tlsOpts.cert) options.cert = tlsOpts.cert;
-    if (tlsOpts.key) options.key = tlsOpts.key;
-    if (tlsOpts.ca) options.ca = tlsOpts.ca;
-    if (tlsOpts.passphrase) options.passphrase = tlsOpts.passphrase;
-    if (tlsOpts.minVersion) options.minVersion = tlsOpts.minVersion;
-    if (tlsOpts.maxVersion) options.maxVersion = tlsOpts.maxVersion;
-    if (tlsOpts.ciphers) options.ciphers = tlsOpts.ciphers;
-    return options;
   }
 
   /** Emit a security event, and pass it to every plugin's onSecurityEvent. */
@@ -525,6 +478,23 @@ export class OCPPServer<
     };
   }
 
+  /** The fields the health endpoint reads, by name; stats() is the server's own. */
+  private _createHealthContext(): HealthContext<P> {
+    const server = this;
+    return {
+      get logger() {
+        return server._logger;
+      },
+      get plugins() {
+        return server._plugins;
+      },
+      get state() {
+        return server._state;
+      },
+      stats: () => server.stats(),
+    };
+  }
+
   /** Log and emit a refused handshake, and pass it to the plugins. */
   private _reportAuthFailure(
     handshake: HandshakeInfo,
@@ -566,6 +536,32 @@ export class OCPPServer<
         reportPluginError(this._logger, plugin.name, "onAuthFailed", err);
       }
     }
+  }
+
+  /**
+   * Create and start the adaptive rate limiter, logging and emitting each
+   * adjustment. The constructor and reconfigure() both use it, so the two
+   * cannot pass different options.
+   */
+  private _startAdaptiveLimiter(rl: RateLimitOptions): void {
+    this._adaptiveLimiter = new AdaptiveLimiter({
+      cpuThresholdPercent: rl.cpuThresholdPercent,
+      memThresholdPercent: rl.memThresholdPercent,
+      cooldownMs: rl.cooldownMs,
+      sampleIntervalMs: rl.sampleIntervalMs,
+    });
+    this._adaptiveLimiter.on(
+      "adapted",
+      (event: {
+        multiplier: number;
+        cpuPercent: number;
+        memPercent: number;
+      }) => {
+        this._logger?.info?.("Adaptive rate limit adjusted", event);
+        this.emit("rateLimit:adapted", event);
+      },
+    );
+    this._adaptiveLimiter.start();
   }
 
   private _warnDetailedErrors(): void {
@@ -941,34 +937,9 @@ export class OCPPServer<
       this._adapterDetachedByClose = false;
     }
 
-    let httpServer: Server;
-
-    if (options?.server) {
-      // Use existing HTTP/HTTPS server
-      httpServer = options.server;
-    } else {
-      // Create server based on security profile
-      const profile = this._options.securityProfile ?? SecurityProfile.NONE;
-
-      if (
-        profile === SecurityProfile.TLS_BASIC_AUTH ||
-        profile === SecurityProfile.TLS_CLIENT_CERT
-      ) {
-        const tlsOpts = this._options.tls ?? {};
-        const httpsOptions: HttpsServerOptions =
-          OCPPServer._secureContextOptions(tlsOpts);
-
-        // Profile 3: Request client certificate (mTLS)
-        if (profile === SecurityProfile.TLS_CLIENT_CERT) {
-          httpsOptions.requestCert = true;
-          httpsOptions.rejectUnauthorized = tlsOpts.rejectUnauthorized ?? true;
-        }
-
-        httpServer = createHttpsServer(httpsOptions);
-      } else {
-        httpServer = createHttpServer();
-      }
-    }
+    // An existing HTTP/HTTPS server, or one created for the security profile.
+    const httpServer: Server =
+      options?.server || createProfileServer(this._options);
 
     // Reset state if server was previously closed
     if (this._state === "CLOSED") {
@@ -1041,153 +1012,11 @@ export class OCPPServer<
         ) => void)
       | undefined;
     if (this._options.healthEndpoint) {
-      // Re-checked here because reconfigure() can replace the option.
-      assertHealthEndpointAuth(this._options.healthEndpoint);
-      const heOpts: HealthEndpointOptions | undefined =
-        typeof this._options.healthEndpoint === "object"
-          ? this._options.healthEndpoint
-          : undefined;
-      if (!heOpts?.auth) {
-        this._logger?.warn?.(
-          "healthEndpoint has no auth: /health and /metrics answer anyone who can reach this port. Set healthEndpoint: { auth: { bearer } } or { auth: { username, password } }.",
-        );
-      }
-
-      const serveHealth = async (
-        req: IncomingMessage,
-        res: import("node:http").ServerResponse,
-      ): Promise<void> => {
-        if (res.headersSent || res.writableEnded) return;
-        const url = req.url ?? "";
-
-        if (
-          (url === "/health" || url === "/metrics") &&
-          heOpts?.auth &&
-          !checkHealthAuth(req, heOpts.auth)
-        ) {
-          res.writeHead(401, {
-            "Content-Type": "text/plain",
-            "WWW-Authenticate":
-              "bearer" in heOpts.auth
-                ? 'Bearer realm="ocpp-ws-io"'
-                : 'Basic realm="ocpp-ws-io", charset="UTF-8"',
-          });
-          res.end("Unauthorized");
-          return;
-        }
-
-        if (url === "/health") {
-          const s = this.stats();
-          const body = JSON.stringify({
-            status: this._state === "OPEN" ? "ok" : "degraded",
-            state: this._state,
-            connectedClients: s.connectedClients,
-            activeSessions: s.activeSessions,
-            uptimeSeconds: Math.round(s.uptimeSeconds),
-            pid: s.pid,
-          });
-          res.writeHead(200, {
-            "Content-Type": "application/json",
-            "Cache-Control": "no-cache",
-          });
-          res.end(body);
-          return;
-        }
-
-        if (url === "/metrics") {
-          const s = this.stats();
-          const lines = [
-            "# HELP ocpp_connected_clients Number of currently connected OCPP clients",
-            "# TYPE ocpp_connected_clients gauge",
-            `ocpp_connected_clients ${s.connectedClients}`,
-            "",
-            "# HELP ocpp_active_sessions Number of active in-memory sessions",
-            "# TYPE ocpp_active_sessions gauge",
-            `ocpp_active_sessions ${s.activeSessions}`,
-            "",
-            "# HELP ocpp_uptime_seconds Process uptime in seconds",
-            "# TYPE ocpp_uptime_seconds gauge",
-            `ocpp_uptime_seconds ${Math.round(s.uptimeSeconds)}`,
-            "",
-            "# HELP ocpp_memory_rss_bytes Resident set size in bytes",
-            "# TYPE ocpp_memory_rss_bytes gauge",
-            `ocpp_memory_rss_bytes ${s.memoryUsage.rss}`,
-            "",
-            "# HELP ocpp_memory_heap_used_bytes V8 heap used in bytes",
-            "# TYPE ocpp_memory_heap_used_bytes gauge",
-            `ocpp_memory_heap_used_bytes ${s.memoryUsage.heapUsed}`,
-            "",
-            "# HELP ocpp_memory_heap_total_bytes V8 heap total in bytes",
-            "# TYPE ocpp_memory_heap_total_bytes gauge",
-            `ocpp_memory_heap_total_bytes ${s.memoryUsage.heapTotal}`,
-            "",
-            "# HELP ocpp_ws_buffered_bytes Total buffered WebSocket bytes",
-            "# TYPE ocpp_ws_buffered_bytes gauge",
-            `ocpp_ws_buffered_bytes ${s.webSockets?.bufferedAmount ?? 0}`,
-            "",
-          ];
-          // Plugin: getCustomMetrics — append plugin-contributed Prometheus lines.
-          //
-          // Collected before the response starts. Writing the header first and
-          // then awaiting meant a slow plugin left the scrape holding an open
-          // connection with a 200 and no body, and there was no way back to an
-          // error status once the header had gone. Prometheus scrapes on an
-          // interval, so each hung scrape stacked another held connection.
-          for (const plugin of this._plugins) {
-            if (plugin.getCustomMetrics) {
-              try {
-                // The hook may be sync or async; normalise before bounding it.
-                const custom = await withTimeout(
-                  Promise.resolve(plugin.getCustomMetrics()),
-                  METRICS_PLUGIN_TIMEOUT_MS,
-                );
-                if (custom?.length) {
-                  lines.push("");
-                  lines.push(...custom);
-                }
-              } catch (err) {
-                // A plugin that is slow or broken costs its own metrics, not
-                // the scrape — the rest of the output still goes out.
-                reportPluginError(
-                  this._logger,
-                  plugin.name,
-                  "getCustomMetrics",
-                  err,
-                );
-              }
-            }
-          }
-
-          res.writeHead(200, {
-            "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
-            "Cache-Control": "no-cache",
-          });
-          res.end(lines.join("\n"));
-          return;
-        }
-
-        // Only 404 unknown routes on servers we created. On a user-provided
-        // server the application's own handlers must keep working (report H7).
-        if (ownsServer) {
-          res.writeHead(404, { "Content-Type": "text/plain" });
-          res.end("Not Found");
-        }
-      };
-      // The "request" listener ignores the returned promise, so a throw inside
-      // serveHealth would otherwise be an unhandled rejection.
-      requestHandler = (req, res) => {
-        serveHealth(req, res).catch((err: Error) => {
-          this._logger?.error?.("Health endpoint request failed", {
-            error: err?.message ?? String(err),
-          });
-          if (!res.headersSent) {
-            res.writeHead(500, { "Content-Type": "text/plain" });
-            res.end("Internal Server Error");
-          } else {
-            res.destroy();
-          }
-        });
-      };
+      requestHandler = createHealthHandler(
+        this._health,
+        this._options.healthEndpoint,
+        ownsServer,
+      );
       httpServer.on("request", requestHandler);
     }
     this._attachedHttpHandlers.set(httpServer, {
@@ -1280,7 +1109,7 @@ export class OCPPServer<
     // setSecureContext replaces the whole context, so it is built from the
     // merged options: built from the update alone, replacing just the
     // certificate dropped the CA, minVersion and ciphers set at startup.
-    const httpsOptions = OCPPServer._secureContextOptions(this._options.tls);
+    const httpsOptions = secureContextOptions(this._options.tls);
 
     let updated = 0;
     for (const srv of this._httpServers) {
@@ -1828,26 +1657,7 @@ export class OCPPServer<
     // reach 0 (max 5s) before closing. Prevents in-flight financial messages
     // from being lost during rolling deployments.
     if (!options.force) {
-      const drainTimeout = 5000;
-      const drainPromises = Array.from(this._clients).map(async (client) => {
-        if (client.bufferedAmount > 0) {
-          this._logger?.debug?.("Waiting for client buffer to drain", {
-            identity: client.identity,
-            bufferedAmount: client.bufferedAmount,
-          });
-          await new Promise<void>((resolve) => {
-            let elapsed = 0;
-            const check = setInterval(() => {
-              elapsed += 50;
-              if (client.bufferedAmount === 0 || elapsed >= drainTimeout) {
-                clearInterval(check);
-                resolve();
-              }
-            }, 50);
-          });
-        }
-      });
-      await Promise.allSettled(drainPromises);
+      await drainClients(this._clients, this._logger);
     }
 
     // Close all clients
@@ -1871,25 +1681,11 @@ export class OCPPServer<
     }
 
     // Detach our listeners from every server; only close servers we own.
-    const serverClosePromises: Promise<void>[] = [];
-    for (const srv of this._httpServers) {
-      const handlers = this._attachedHttpHandlers.get(srv);
-      if (handlers) {
-        srv.removeListener("upgrade", handlers.upgrade);
-        if (handlers.request) srv.removeListener("request", handlers.request);
-      }
-      if (this._ownedHttpServers.has(srv)) {
-        serverClosePromises.push(
-          new Promise<void>((resolve) => {
-            srv.close(() => resolve());
-          }),
-        );
-      }
-    }
-    await Promise.allSettled(serverClosePromises);
-    this._httpServers.clear();
-    this._ownedHttpServers.clear();
-    this._attachedHttpHandlers.clear();
+    await closeHttpServers(
+      this._httpServers,
+      this._ownedHttpServers,
+      this._attachedHttpHandlers,
+    );
 
     // Stop adaptive limiter
     if (this._adaptiveLimiter) {
@@ -2002,27 +1798,7 @@ export class OCPPServer<
     if (options.rateLimit !== undefined) {
       const wantAdaptive = !!options.rateLimit?.adaptive;
       if (wantAdaptive && !this._adaptiveLimiter) {
-        const rl = options.rateLimit;
-        this._adaptiveLimiter = new AdaptiveLimiter({
-          cpuThresholdPercent: rl.cpuThresholdPercent,
-          memThresholdPercent: rl.memThresholdPercent,
-          cooldownMs: rl.cooldownMs,
-          // Was omitted here while the constructor passed it, so enabling
-          // adaptive limiting at runtime silently reverted to the 2s default.
-          sampleIntervalMs: rl.sampleIntervalMs,
-        });
-        this._adaptiveLimiter.on(
-          "adapted",
-          (event: {
-            multiplier: number;
-            cpuPercent: number;
-            memPercent: number;
-          }) => {
-            this._logger?.info?.("Adaptive rate limit adjusted", event);
-            this.emit("rateLimit:adapted", event);
-          },
-        );
-        this._adaptiveLimiter.start();
+        this._startAdaptiveLimiter(options.rateLimit);
       } else if (!wantAdaptive && this._adaptiveLimiter) {
         this._adaptiveLimiter.stop();
         this._adaptiveLimiter = null;
