@@ -1013,6 +1013,7 @@ td:first-child:has(.star-button) {
   min-height: 100dvh;
   display: grid;
   grid-template-columns: 1fr 1fr;
+  background: var(--background);
 }
 .login-story {
   background: var(--context);
@@ -1020,9 +1021,10 @@ td:first-child:has(.star-button) {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  border-right: 1px solid var(--border);
 }
 .login-story .brand {
-  margin: 0 0 70px;
+  margin: 0 0 60px;
 }
 .login-story h1 {
   font-size: 46px;
@@ -1034,23 +1036,57 @@ td:first-child:has(.star-button) {
   color: var(--muted-foreground);
   max-width: 400px;
   font-size: 16px;
+  line-height: 1.6;
+}
+.login-badges {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 36px;
+  flex-wrap: wrap;
+}
+.login-console {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+  position: relative;
+  min-height: 100%;
+}
+.login-theme-toggle {
+  position: absolute;
+  top: 24px;
+  right: 24px;
 }
 .login-form {
-  align-self: center;
-  justify-self: center;
-  width: min(390px, 100%);
-  padding: 30px;
+  width: min(410px, 100%);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 36px 32px;
+}
+.login-form .muted {
+  margin-bottom: 12px;
 }
 .login-form h2 {
-  font-size: 27px;
-  margin-bottom: 8px;
+  font-size: 24px;
+  margin-bottom: 6px;
 }
 .login-form > p {
   color: var(--muted-foreground);
-  margin-bottom: 30px;
+  margin-bottom: 26px;
+  font-size: 14px;
 }
-.login-form .button {
+.login-form .button.primary {
   width: 100%;
+  min-height: 38px;
+  font-size: 14px;
+  margin-top: 6px;
+}
+.login-form .notice {
+  margin-top: 8px;
+  padding-bottom: 0;
+  text-align: center;
 }
 .integration-section {
   padding: 22px 0;
@@ -1236,10 +1272,12 @@ td:first-child:has(.star-button) {
     grid-template-columns: 1fr;
   }
   .login-story {
-    padding: 28px;
+    padding: 32px 24px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
   }
   .login-story .brand {
-    margin-bottom: 26px;
+    margin-bottom: 20px;
   }
   .login-story h1 {
     font-size: 32px;
@@ -1247,10 +1285,14 @@ td:first-child:has(.star-button) {
   .login-story p {
     display: none;
   }
+  .login-badges {
+    margin-top: 16px;
+  }
+  .login-console {
+    padding: 28px 16px;
+  }
   .login-form {
-    padding: 28px;
-    width: 100%;
-    max-width: 420px;
+    padding: 28px 20px;
   }
   .table-footer {
     padding: 10px;

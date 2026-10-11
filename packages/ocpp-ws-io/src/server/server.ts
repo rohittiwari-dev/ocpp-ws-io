@@ -10,7 +10,6 @@ import {
 import type { Duplex } from "node:stream";
 import type { SecureContextOptions, Server as TlsServer } from "node:tls";
 import type { WebSocketServer } from "ws";
-import { HandshakeRejection } from "../core/errors.js";
 import { initLogger } from "../core/init-logger.js";
 import { LRUMap } from "../core/lru-map.js";
 import { assertUniqueProtocols } from "../core/protocol-list.js";
@@ -19,11 +18,7 @@ import {
   assertStrictValidators,
   getStandardValidator,
 } from "../core/validation/standard-validators.js";
-import {
-  abortHandshake,
-  getClientIp,
-  parseSubprotocols,
-} from "../core/ws-util.js";
+import { abortHandshake, parseSubprotocols } from "../core/ws-util.js";
 import type { AllMethodNames, OCPPResponseType } from "../generated/index.js";
 import type { EventAdapterInterface } from "../types/adapter.js";
 import type {
@@ -100,11 +95,7 @@ import {
   sweepNodeLiveness,
 } from "./presence.js";
 import { RadixTrie } from "./radix-trie.js";
-import {
-  type AnyOCPPRouter,
-  executeMiddlewareChain,
-  OCPPRouter,
-} from "./router.js";
+import { type AnyOCPPRouter, OCPPRouter } from "./router.js";
 import { OCPPServerClient } from "./server-client.js";
 import {
   recordSessionActivity,
@@ -113,9 +104,16 @@ import {
   sweepPersistMarks,
 } from "./sessions.js";
 import {
+  refuseOverConnectionLimit,
+  refuseOverConnectionRate,
+  sweepConnectionBuckets,
+} from "./upgrade/admission.js";
+import { authenticate, BASIC_AUTH_CHALLENGE } from "./upgrade/auth.js";
+import {
   attachClientPlugins,
   buildClientOptions,
 } from "./upgrade/client-setup.js";
+import type { ConnectionBucket, UpgradeContext } from "./upgrade/context.js";
 import { buildHandshakeInfo } from "./upgrade/handshake.js";
 import {
   identityFromPath,
@@ -124,9 +122,6 @@ import {
 } from "./upgrade/route-match.js";
 import { createWorkerPool, type WorkerPool } from "./worker-pool.js";
 import { createWss, warnIgnoredWssOptions } from "./wss-options.js";
-
-/** RFC 9110 §15.5.2: every 401 carries a challenge; OCPP uses Basic Auth. */
-const BASIC_AUTH_CHALLENGE = 'Basic realm="ocpp-ws-io", charset="UTF-8"';
 
 /** A listening server whose certificate can be replaced in place (HTTPS). */
 function canReloadSecureContext(
@@ -199,6 +194,8 @@ export class OCPPServer<
     trie: this._trie,
     regexRouters: this._regexRouters,
   };
+  /** The server state the steps in server/upgrade/ read, through getters. */
+  private readonly _upgrade: UpgradeContext = this._createUpgradeContext();
   private _clients = new Set<OCPPServerClient<P>>();
   private _clientsByIdentity = new Map<string, OCPPServerClient<P>>();
   private _httpServers = new Set<Server>();
@@ -229,10 +226,7 @@ export class OCPPServer<
   private _globalCORS?: CORSOptions;
 
   // Connection-level rate limiting (per-IP token bucket)
-  private _connectionBuckets = new Map<
-    string,
-    { tokens: number; lastRefill: number }
-  >();
+  private _connectionBuckets = new Map<string, ConnectionBucket>();
   private _adaptiveLimiter: AdaptiveLimiter | null = null;
   private _plugins: OCPPPlugin<P>[] = [];
   private _workerPool: WorkerPool | null = null;
@@ -437,6 +431,51 @@ export class OCPPServer<
         reportPluginError(this._logger, plugin.name, "onSecurityEvent", err);
       }
     }
+  }
+
+  /** The fields the upgrade steps read, and the reports they make, by name. */
+  private _createUpgradeContext(): UpgradeContext {
+    const server = this;
+    return {
+      get logger() {
+        return server._logger;
+      },
+      get globalCORS() {
+        return server._globalCORS;
+      },
+      get maxConnections() {
+        return server._options.maxConnections;
+      },
+      get connectionRateLimit() {
+        return server._options.connectionRateLimit;
+      },
+      get handshakeTimeoutMs() {
+        return server._options.handshakeTimeoutMs;
+      },
+      get clientCount() {
+        return server._clients.size;
+      },
+      get pendingHandshakes() {
+        return server._pendingHandshakes;
+      },
+      get connectionBuckets() {
+        return server._connectionBuckets;
+      },
+      get warnedUntrustedProxy() {
+        return server._warnedUntrustedProxy;
+      },
+      set warnedUntrustedProxy(warned) {
+        server._warnedUntrustedProxy = warned;
+      },
+      emitSecurityEvent: (event) => server._emitSecurityEvent(event),
+      emitUpgradeAborted: (event) => {
+        server.emit("upgradeAborted", event);
+      },
+      reportAuthFailure: (handshake, req, code, message) =>
+        server._reportAuthFailure(handshake, req, code, message),
+      reportUpgradeError: (handshake, req, error, stack) =>
+        server._reportUpgradeError(handshake, req, error, stack),
+    };
   }
 
   /** Log and emit a refused handshake, and pass it to the plugins. */
@@ -1324,31 +1363,8 @@ export class OCPPServer<
       return;
     }
 
-    // Hard connection cap — reject before any expensive handshake work.
-    //
-    // `_clients` only gains an entry once auth has completed, so counting it
-    // alone let every concurrently-arriving handshake pass the gate while the
-    // others were still awaiting an async auth callback: the cap was overshot
-    // by however many upgrades were in flight. In-flight handshakes are
-    // counted too, and released in the finally below.
-    const maxConnections = this._options.maxConnections;
-    if (
-      maxConnections !== undefined &&
-      this._clients.size + this._pendingHandshakes >= maxConnections
-    ) {
-      const secEvt = {
-        type: "CONNECTION_LIMIT" as const,
-        ip: getClientIp(req as never, this._globalCORS?.trustProxy),
-        timestamp: new Date().toISOString(),
-        details: {
-          activeConnections: this._clients.size,
-          maxConnections,
-        },
-      };
-      this._emitSecurityEvent(secEvt);
-      abortHandshake(socket, 503, "Connection limit reached");
-      return;
-    }
+    // Before any expensive handshake work.
+    if (refuseOverConnectionLimit(this._upgrade, req, socket)) return;
 
     // Reserve a slot for this handshake and release it on every exit path.
     this._pendingHandshakes++;
@@ -1363,62 +1379,7 @@ export class OCPPServer<
     socket.once("close", releaseHandshakeSlot);
 
     // Connection-level per-IP rate limit
-    const connRateLimit = this._options.connectionRateLimit;
-    if (connRateLimit) {
-      // Rate limiting can trust a proxy without CORS being configured at all,
-      // so its own setting wins and the CORS one is the fallback.
-      const trustProxy =
-        connRateLimit.trustProxy ?? this._globalCORS?.trustProxy;
-      const ip = getClientIp(req as never, trustProxy);
-
-      // An X-Forwarded-For we are not trusting means every charger behind the
-      // proxy collapses onto one bucket and the per-IP limit is really a
-      // fleet-wide cap. Say so once rather than failing silently.
-      if (
-        trustProxy !== true &&
-        !this._warnedUntrustedProxy &&
-        req.headers["x-forwarded-for"] !== undefined
-      ) {
-        this._warnedUntrustedProxy = true;
-        this._logger?.warn?.(
-          "connectionRateLimit is counting per proxy address, not per client",
-          {
-            reason:
-              "X-Forwarded-For is present but no proxy is trusted, so every client behind it shares one bucket",
-            fix: "set connectionRateLimit.trustProxy (or cors({ trustProxy })) if this server is only reachable through a trusted proxy",
-            resolvedIp: ip,
-          },
-        );
-      }
-      const now = Date.now();
-      let bucket = this._connectionBuckets.get(ip);
-      if (!bucket) {
-        bucket = { tokens: connRateLimit.limit, lastRefill: now };
-        this._connectionBuckets.set(ip, bucket);
-      } else {
-        const elapsed = now - bucket.lastRefill;
-        const refillRate = connRateLimit.limit / connRateLimit.windowMs;
-        bucket.tokens = Math.min(
-          connRateLimit.limit,
-          bucket.tokens + elapsed * refillRate,
-        );
-        bucket.lastRefill = now;
-      }
-      if (bucket.tokens < 1) {
-        this._logger?.warn?.("Connection rate limit exceeded", { ip });
-        // Emit security event for connection-level rate limiting
-        const secEvt = {
-          type: "CONNECTION_RATE_LIMIT" as const,
-          ip,
-          timestamp: new Date().toISOString(),
-          details: { tokensRemaining: bucket.tokens },
-        };
-        this._emitSecurityEvent(secEvt);
-        abortHandshake(socket, 429, "Too Many Requests");
-        return;
-      }
-      bucket.tokens -= 1;
-    }
+    if (refuseOverConnectionRate(this._upgrade, req, socket)) return;
 
     // Socket readyState & upgrade header validation
     if ((socket as import("node:net").Socket).readyState !== "open") {
@@ -1599,244 +1560,21 @@ export class OCPPServer<
 
     const isKnownIdentity = this._options.isKnownIdentity;
     if (matchedHandler || matchedMiddlewares.length > 0 || isKnownIdentity) {
-      const ac = new AbortController();
-
-      // Socket lifecycle → abort on premature close / error
-      const onSocketGone = () => {
-        ac.abort(new Error("Socket closed during handshake"));
-      };
-      socket.on("close", onSocketGone);
-      socket.on("error", onSocketGone);
-      socket.on("end", onSocketGone);
-
-      // Handshake timeout guard
-      const timeoutMs = this._options.handshakeTimeoutMs ?? 30_000;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      if (timeoutMs > 0) {
-        timer = setTimeout(() => {
-          ac.abort(new Error("Handshake timeout"));
-        }, timeoutMs);
-      }
-
-      try {
-        ctx = {
-          handshake,
-          state: {},
-          reject: (code = 401, message = "Unauthorized") => {
-            throw new HandshakeRejection(code, message);
-          },
-          next: async (_payload?: SessionData) => {}, // Bound dynamically inside executeMiddlewareChain
-        };
-
-        const chain = [...matchedMiddlewares];
-        let authCalled = false;
-
-        // OCPP-J §3.2: an identity the CSMS does not recognize SHOULD get 404.
-        // First in the chain, so middleware and auth never see one, and inside
-        // it, so the handshake timeout and socket-close abort apply.
-        if (isKnownIdentity) {
-          chain.unshift(async (c) => {
-            const aborted = new Promise<never>((_, reject) => {
-              ac.signal.addEventListener(
-                "abort",
-                () => reject(ac.signal.reason),
-                { once: true },
-              );
-            });
-            // Settles after the lookup when the handshake ends later on.
-            aborted.catch(() => {});
-            // A lookup that throws is an outage, not an unknown charger: it
-            // reaches the catch below, which logs it and answers 500.
-            const known = await Promise.race([
-              Promise.resolve(isKnownIdentity(identity, c.handshake)),
-              aborted,
-            ]);
-            if (!known) {
-              c.reject(404, "Unknown charging station");
-              return;
-            }
-            await c.next();
-          });
-        }
-
-        // Push the Auth check as the terminal handler of the middleware chain
-        chain.push(async (c) => {
-          authCalled = true;
-          // Without an auth callback the negotiated protocol stands. This used
-          // to take the charger's first offer, so with middleware but no auth
-          // callback a server could end up speaking a version it does not
-          // support.
-          if (matchedHandler) {
-            acceptOptions = await new Promise<AuthAccept | undefined>(
-              (resolve, reject) => {
-                let settled = false;
-
-                const accept = (opts?: AuthAccept) => {
-                  if (settled) return;
-                  settled = true;
-                  if (opts?.protocol) {
-                    // RFC 6455 §4.2.2: the server may only pick a protocol
-                    // the client offered; the client fails any other.
-                    if (protocols.has(opts.protocol)) {
-                      selectedProtocol = opts.protocol;
-                    } else {
-                      this._logger?.warn?.(
-                        "accept() chose a subprotocol the charger did not offer",
-                        { identity, protocol: opts.protocol },
-                      );
-                      selectedProtocol = undefined;
-                      protocolRefused = true;
-                    }
-                  }
-                  resolve(opts);
-                };
-
-                const rejectAuth = (
-                  code = 401,
-                  message = "Unauthorized",
-                ): never => {
-                  const rejection = new HandshakeRejection(code, message);
-                  if (!settled) {
-                    settled = true;
-                    reject(rejection);
-                  }
-                  throw rejection;
-                };
-
-                // Guard: already aborted before we even start
-                if (ac.signal.aborted) {
-                  reject(ac.signal.reason);
-                  return;
-                }
-
-                ac.signal.addEventListener(
-                  "abort",
-                  () => {
-                    if (!settled) {
-                      settled = true;
-                      reject(ac.signal.reason);
-                    }
-                  },
-                  { once: true },
-                );
-
-                this._logger?.debug?.("Executing auth callback", {
-                  identity,
-                  pathname,
-                });
-
-                const authCtx: import("../types/index.js").AuthContext = {
-                  handshake,
-                  state: c.state,
-                  reject: rejectAuth,
-                  signal: ac.signal,
-                  accept,
-                };
-
-                // Awaited, so an async callback's failure is handled here: the
-                // promise it returns used to be dropped, so a throw, or the
-                // throw inside reject(), was an unhandled rejection that ended
-                // the process.
-                const callback = matchedHandler!;
-                const run = async () => {
-                  try {
-                    await callback(authCtx);
-                  } catch (err) {
-                    if (!settled) {
-                      settled = true;
-                      reject(err);
-                    } else if (!(err instanceof HandshakeRejection)) {
-                      this._logger?.error?.(
-                        "Auth callback threw after accepting or rejecting",
-                        {
-                          identity,
-                          error:
-                            err instanceof Error ? err.message : String(err),
-                        },
-                      );
-                    }
-                  }
-                };
-                void run();
-              },
-            );
-          }
-        });
-
-        // Execute dynamic middleware pipeline
-        await executeMiddlewareChain(chain, ctx);
-
-        if (!authCalled) {
-          throw new Error(
-            "Connection middleware ended without calling next() or reject()",
-          );
-        }
-      } catch (err) {
-        if (ac.signal.aborted) {
-          const reason = err instanceof Error ? err.message : "Unknown abort";
-          this._logger?.warn?.("Handshake aborted", {
-            identity,
-            reason,
-          });
-          // Emit security event for upgrade aborts
-          const secEvtAbort = {
-            type: "UPGRADE_ABORTED" as const,
-            identity,
-            ip: req.socket.remoteAddress,
-            timestamp: new Date().toISOString(),
-            details: { reason },
-          };
-          this._emitSecurityEvent(secEvtAbort);
-          this.emit("upgradeAborted", {
-            identity,
-            reason,
-            socket,
-            request: req,
-          });
-          if (!socket.destroyed) socket.destroy();
-          return;
-        }
-
-        if (err instanceof HandshakeRejection) {
-          // ctx.reject(code, message): the status and message the developer
-          // chose. Only an HTTP error status can end a handshake.
-          let code = err.code;
-          if (!Number.isInteger(code) || code < 400 || code > 599) {
-            this._logger?.warn?.(
-              "reject() needs an HTTP status from 400 to 599; answered 500",
-              { identity, code },
-            );
-            code = 500;
-          }
-          this._reportAuthFailure(handshake, req, code, err.message);
-          abortHandshake(
-            socket,
-            code,
-            err.message,
-            code === 401
-              ? { "WWW-Authenticate": BASIC_AUTH_CHALLENGE }
-              : undefined,
-          );
-          return;
-        }
-
-        // Anything else thrown is a bug or an outage, not a verdict on the
-        // charger. Its details stay in the server log: the charger gets a bare
-        // 500, never a 401 it would record as FailedToAuthenticateAtCsms.
-        this._reportUpgradeError(
-          handshake,
-          req,
-          err instanceof Error ? err.message : String(err),
-          err instanceof Error ? err.stack : undefined,
-        );
-        abortHandshake(socket, 500);
-        return;
-      } finally {
-        if (timer) clearTimeout(timer);
-        socket.removeListener("close", onSocketGone);
-        socket.removeListener("error", onSocketGone);
-        socket.removeListener("end", onSocketGone);
-      }
+      const auth = await authenticate(this._upgrade, {
+        req,
+        socket,
+        handshake,
+        identity,
+        pathname,
+        protocols,
+        selectedProtocol,
+        authCallback: matchedHandler,
+        middlewares: matchedMiddlewares,
+        isKnownIdentity,
+      });
+      // Refused, failed or abandoned: the socket is answered or destroyed.
+      if (!auth) return;
+      ({ ctx, acceptOptions, selectedProtocol, protocolRefused } = auth);
     }
 
     // Keyed by the identity auth settled on, so a namespaced charger never reads
@@ -2136,23 +1874,9 @@ export class OCPPServer<
     sweepNodeLiveness(this._presence, now);
   }
 
-  /**
-   * Evict per-IP connection buckets that have been idle longer than the
-   * rate-limit window. Recreating a bucket grants a full token allowance,
-   * which is exactly what a full refill after `windowMs` idle would yield —
-   * so eviction is behavior-preserving while bounding memory (report H4).
-   */
+  /** Test seam: see sweepConnectionBuckets in server/upgrade/admission.ts. */
   private _sweepConnectionBuckets(now: number): void {
-    const rl = this._options.connectionRateLimit;
-    if (!rl) {
-      this._connectionBuckets.clear();
-      return;
-    }
-    for (const [ip, bucket] of this._connectionBuckets) {
-      if (now - bucket.lastRefill > rl.windowMs) {
-        this._connectionBuckets.delete(ip);
-      }
-    }
+    sweepConnectionBuckets(this._upgrade, now);
   }
 
   // ─── Close ───────────────────────────────────────────────────
