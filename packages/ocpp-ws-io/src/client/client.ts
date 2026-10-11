@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import type WebSocket from "ws";
 import { initLogger } from "../core/init-logger.js";
 import { type MiddlewareFunction, MiddlewareStack } from "../core/middleware";
+import { withoutUndefined } from "../core/options.js";
 import { assertUniqueProtocols } from "../core/protocol-list.js";
 import { Queue } from "../core/queue.js";
 import { NOOP_LOGGER } from "../core/util.js";
@@ -206,7 +207,7 @@ export class OCPPClient<
       maxBadMessages: 50,
       respondWithDetailedErrors: false,
       securityProfile: SecurityProfile.NONE,
-      ...options,
+      ...withoutUndefined(options),
     };
 
     this._callQueue = new Queue(this._options.callConcurrency);
@@ -878,8 +879,9 @@ export class OCPPClient<
   // ─── Reconfigure ─────────────────────────────────────────────
 
   reconfigure(options: Partial<ClientOptions<P>>): void {
+    const given = withoutUndefined(options);
     // Checked on the combined options before any is applied.
-    const next = { ...this._options, ...options };
+    const next = { ...this._options, ...given };
     assertUniqueProtocols(next.protocols);
     assertStrictValidators(
       next.protocols,
@@ -887,7 +889,7 @@ export class OCPPClient<
       next.strictModeValidators,
     );
     const detailedBefore = this._options.respondWithDetailedErrors;
-    Object.assign(this._options, options);
+    Object.assign(this._options, given);
 
     if (options.respondWithDetailedErrors && !detailedBefore) {
       this._warnDetailedErrors();

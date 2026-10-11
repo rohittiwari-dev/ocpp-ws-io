@@ -4,6 +4,7 @@ import {
   type MiddlewareFunction,
   MiddlewareStack,
 } from "../core/middleware.js";
+import { withoutUndefined } from "../core/options.js";
 import { assertUniqueProtocols, supportsSend } from "../core/protocol-list.js";
 // Type-only. Through the re-exports in ./types.js the compiler rejects the
 // typed send() overload against its implementation once a custom protocol is
@@ -195,7 +196,7 @@ export class BrowserOCPPClient<
       callConcurrency: 1,
       maxBadMessages: 50,
       respondWithDetailedErrors: false,
-      ...options,
+      ...withoutUndefined(options),
     };
 
     this._callQueue = new Queue(this._options.callConcurrency);
@@ -904,7 +905,7 @@ export class BrowserOCPPClient<
   reconfigure(options: Partial<BrowserClientOptions<P>>): void {
     assertUniqueProtocols(options.protocols ?? this._options.protocols);
     const detailedBefore = this._options.respondWithDetailedErrors;
-    Object.assign(this._options, options);
+    Object.assign(this._options, withoutUndefined(options));
 
     if (options.respondWithDetailedErrors && !detailedBefore) {
       this._warnDetailedErrors();

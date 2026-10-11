@@ -3,6 +3,7 @@ import type { Duplex } from "node:stream";
 import type { WebSocketServer } from "ws";
 import { initLogger } from "../core/init-logger.js";
 import { LRUMap } from "../core/lru-map.js";
+import { withoutUndefined } from "../core/options.js";
 import { assertUniqueProtocols } from "../core/protocol-list.js";
 import { createId, NOOP_LOGGER } from "../core/util.js";
 import {
@@ -281,7 +282,7 @@ export class OCPPServer<
       respondWithDetailedErrors: false,
       handshakeTimeoutMs: 30000,
       sessionTtlMs: 2 * 60 * 60 * 1000,
-      ...options,
+      ...withoutUndefined(options),
     };
 
     assertHealthEndpointAuth(this._options.healthEndpoint);
@@ -1763,8 +1764,9 @@ export class OCPPServer<
 
   reconfigure(options: Partial<ServerOptions<P>>): void {
     assertMaxIdentityLength(options.maxIdentityLength);
+    const given = withoutUndefined(options);
     // Checked on the combined options before any is applied.
-    const next = { ...this._options, ...options };
+    const next = { ...this._options, ...given };
     assertUniqueProtocols(next.protocols);
     assertStrictValidators(
       next.protocols,
@@ -1772,7 +1774,7 @@ export class OCPPServer<
       next.strictModeValidators,
     );
     const oldOptions = { ...this._options } as ServerOptions<P>;
-    Object.assign(this._options, options);
+    Object.assign(this._options, given);
 
     if (
       options.respondWithDetailedErrors &&
