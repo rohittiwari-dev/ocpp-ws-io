@@ -16,6 +16,7 @@
     "ocpp-ws-io/type-generation",
     "ocpp-ws-io/api-reference",
     "ocpp-ws-io/upgrading-to-v3",
+    "ocpp-ws-io/upgrading-to-v3-1",
     "ocpp-ws-io/concepts",
     "smart-charge-engine",
     "protocol-proxy",

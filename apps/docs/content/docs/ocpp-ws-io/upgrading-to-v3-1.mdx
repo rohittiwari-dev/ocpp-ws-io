@@ -1,0 +1,49 @@
+---
+title: Upgrading to 3.1
+description: What changes from ocpp-ws-io 3.0.x to 3.1.0 — the wildcard handler's one-argument signature, empty OCPP 1.6 payloads, and the protocol proxy, smart charge engine and CLI moving into the package.
+---
+
+3.1.0 is on npm's `beta` tag until it is released:
+
+```bash
+npm install ocpp-ws-io@beta
+```
+
+Requirements are those of 3.0: Node.js 20 or later, and TypeScript 5.4 or later to type-check against the package's types.
+
+## Breaking changes
+
+| Change | Affects you if | What to do |
+| --- | --- | --- |
+| **A wildcard handler receives one argument, the context.** `client.handle((method, ctx) => …)` becomes `client.handle((ctx) => …)`, and the action is `ctx.method`. The same for the browser client and for a route's wildcard handler, whose context still has `ctx.client`. A handler for a named action is unchanged | You register a wildcard handler with two parameters | Drop the first parameter and read `ctx.method`. TypeScript flags every such handler. In JavaScript, a two-parameter handler gets the context as its first argument and `undefined` as its second, so code that reads the second fails: look for `.handle(` calls whose function takes two parameters |
+| **Empty OCPP 1.6 payloads must be objects** (types only). `HeartbeatRequest`, `StatusNotificationResponse` and the other empty 1.6 interfaces extend `Record<string, never>` | You pass or return something other than `{}` for an empty 1.6 payload: a number, a string, an array, or extra fields | Use `{}`. An async handler that returns `{}`, and `NOREPLY`, still work |
+
+Before:
+
+```typescript
+client.handle((method, ctx) => {
+  console.log(`Unhandled ${method}`, ctx.params);
+  return {};
+});
+```
+
+After:
+
+```typescript
+client.handle((ctx) => {
+  console.log(`Unhandled ${ctx.method}`, ctx.params);
+  return {};
+});
+```
+
+## Moved into ocpp-ws-io
+
+The protocol proxy, the smart charge engine and the CLI ship in `ocpp-ws-io` from 3.1.0. Their separate packages are deprecated; their last releases only re-export or run `ocpp-ws-io`.
+
+| Before | Now |
+| --- | --- |
+| `ocpp-protocol-proxy`, `/presets`, `/adapters` | `ocpp-ws-io/proxy`, `/proxy/presets`, `/proxy/adapters` — see [Moving from ocpp-protocol-proxy](/docs/protocol-proxy#moving-from-ocpp-protocol-proxy) |
+| `ocpp-smart-charge-engine`, `/strategies`, `/builders` | `ocpp-ws-io/smart-charge`, `/smart-charge/strategies`, `/smart-charge/builders` — see [Moving from ocpp-smart-charge-engine](/docs/smart-charge-engine#moving-from-ocpp-smart-charge-engine) |
+| `ocpp-ws-cli` (the `ocpp` command) | the `ocpp` command of `ocpp-ws-io`, or `npx ocpp-ws-io@beta` — see [the CLI](/docs/cli) |
+
+The full list is in the [CHANGELOG](https://github.com/rohittiwari-dev/ocpp-ws-io/blob/main/packages/ocpp-ws-io/CHANGELOG.md).

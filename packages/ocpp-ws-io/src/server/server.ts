@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import {
   createServer as createHttpServer,
   type IncomingMessage,
@@ -76,7 +75,6 @@ import {
 } from "../types/protocol.js";
 import type {
   CORSOptions,
-  HealthEndpointAuth,
   HealthEndpointOptions,
   ListenOptions,
   ServerOptions,
@@ -86,6 +84,7 @@ import type { ManagedWsServerOption } from "../types/transport.js";
 import { AdaptiveLimiter } from "./adaptive-limiter.js";
 import { checkCORS } from "./cors.js";
 import { EventEmitterBase } from "./emitter-base.js";
+import { assertHealthEndpointAuth, checkHealthAuth } from "./health-auth.js";
 import { RadixTrie } from "./radix-trie.js";
 import {
   type AnyOCPPRouter,
@@ -323,7 +322,7 @@ export class OCPPServer<
       ...options,
     };
 
-    OCPPServer._assertHealthEndpointAuth(this._options.healthEndpoint);
+    assertHealthEndpointAuth(this._options.healthEndpoint);
 
     this._sessionTimeoutMs = this._options.sessionTtlMs!;
 
@@ -427,78 +426,6 @@ export class OCPPServer<
    * The point is that a scrape cannot be held open by one slow plugin.
    */
   private static readonly _METRICS_PLUGIN_TIMEOUT_MS = 2000;
-
-  /**
-   * Reject health-endpoint credentials that are missing or empty. A token read
-   * from an unset environment variable arrives as `undefined`; left to the
-   * request handler, it threw there on the first `/health` request and the
-   * unhandled rejection took the process down.
-   */
-  private static _assertHealthEndpointAuth(
-    option: boolean | HealthEndpointOptions | undefined,
-  ): void {
-    const auth = typeof option === "object" ? option.auth : undefined;
-    if (!auth) return;
-    if ("bearer" in auth) {
-      if (typeof auth.bearer !== "string" || auth.bearer === "") {
-        throw new Error(
-          "healthEndpoint.auth.bearer must be a non-empty string — check that the token's environment variable is set",
-        );
-      }
-      return;
-    }
-    if (
-      typeof auth.username !== "string" ||
-      auth.username === "" ||
-      typeof auth.password !== "string" ||
-      auth.password === ""
-    ) {
-      throw new Error(
-        "healthEndpoint.auth needs a non-empty username and password",
-      );
-    }
-  }
-
-  /** Constant-time string comparison that does not reveal either length. */
-  private static _safeEqual(a: string, b: string): boolean {
-    return timingSafeEqual(
-      createHash("sha256").update(a).digest(),
-      createHash("sha256").update(b).digest(),
-    );
-  }
-
-  private _checkHealthAuth(
-    req: IncomingMessage,
-    auth: HealthEndpointAuth,
-  ): boolean {
-    const header = req.headers.authorization ?? "";
-    const space = header.indexOf(" ");
-    if (space === -1) return false;
-    // RFC 7235: the scheme name is case-insensitive.
-    const scheme = header.slice(0, space).toLowerCase();
-    const credentials = header.slice(space + 1).trim();
-
-    if ("bearer" in auth) {
-      return (
-        scheme === "bearer" && OCPPServer._safeEqual(credentials, auth.bearer)
-      );
-    }
-
-    if (scheme !== "basic") return false;
-    const decoded = Buffer.from(credentials, "base64").toString();
-    const colonIdx = decoded.indexOf(":");
-    if (colonIdx === -1) return false;
-    // Both halves are always compared, so timing does not reveal which failed.
-    const userMatch = OCPPServer._safeEqual(
-      decoded.slice(0, colonIdx),
-      auth.username,
-    );
-    const passMatch = OCPPServer._safeEqual(
-      decoded.slice(colonIdx + 1),
-      auth.password,
-    );
-    return userMatch && passMatch;
-  }
 
   /** Reject if a promise has not settled within `timeoutMs`. */
   private _withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -1216,7 +1143,7 @@ export class OCPPServer<
       | undefined;
     if (this._options.healthEndpoint) {
       // Re-checked here because reconfigure() can replace the option.
-      OCPPServer._assertHealthEndpointAuth(this._options.healthEndpoint);
+      assertHealthEndpointAuth(this._options.healthEndpoint);
       const heOpts: HealthEndpointOptions | undefined =
         typeof this._options.healthEndpoint === "object"
           ? this._options.healthEndpoint
@@ -1237,7 +1164,7 @@ export class OCPPServer<
         if (
           (url === "/health" || url === "/metrics") &&
           heOpts?.auth &&
-          !this._checkHealthAuth(req, heOpts.auth)
+          !checkHealthAuth(req, heOpts.auth)
         ) {
           res.writeHead(401, {
             "Content-Type": "text/plain",
