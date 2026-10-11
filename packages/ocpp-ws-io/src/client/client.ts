@@ -1,31 +1,17 @@
 import { EventEmitter } from "node:events";
 import WebSocket from "ws";
-import {
-  type RPCError,
-  RPCFormatViolationError,
-  RPCGenericError,
-  RPCMessageTypeNotSupportedError,
-  RPCNotImplementedError,
-  TimeoutError,
-  UnexpectedHttpResponse,
-} from "../core/errors.js";
+import { TimeoutError, UnexpectedHttpResponse } from "../core/errors.js";
 import { initLogger } from "../core/init-logger.js";
 import { type MiddlewareFunction, MiddlewareStack } from "../core/middleware";
 import { assertUniqueProtocols, supportsSend } from "../core/protocol-list.js";
 import { Queue } from "../core/queue.js";
-import {
-  createId,
-  createRPCError,
-  getErrorPlainObject,
-  getPackageIdent,
-  NOOP_LOGGER,
-} from "../core/util.js";
+import { createId, NOOP_LOGGER } from "../core/util.js";
 import {
   assertStrictValidators,
   getStandardValidator,
 } from "../core/validation/standard-validators.js";
 import type { Validator } from "../core/validation/validator.js";
-import { isEmptyFrame, isValidStatusCode } from "../core/ws-util.js";
+import { isValidStatusCode } from "../core/ws-util.js";
 import type {
   AllMethodNames,
   OCPPRequestType,
@@ -67,11 +53,7 @@ import {
   ConnectionState,
   type KnownProtocol,
   MessageType,
-  NOREPLY,
   type OCPPCall,
-  type OCPPCallError,
-  type OCPPCallResult,
-  type OCPPCallResultError,
   type OCPPMessage,
   type OCPPSend,
   type RequestOf,
@@ -83,106 +65,23 @@ import {
   type UncheckedHandler,
   type WithUniqueProtocols,
 } from "../types/protocol.js";
-import type { ManagedWsClientOption } from "../types/transport.js";
+import type { InboundContext, PendingCall } from "./context.js";
+import type { SchemaKind } from "./frames.js";
+import { handleMessage } from "./inbound.js";
+import {
+  buildEndpoint,
+  buildWsOptions,
+  warnIgnoredWsOpts,
+} from "./ws-options.js";
 
 const { CONNECTING, OPEN, CLOSING, CLOSED } = ConnectionState;
-
-/** Fewest elements a frame of each message type can have (Part 4 §4.2). */
-const MIN_FRAME_LENGTH: Readonly<Record<number, number>> = {
-  [MessageType.CALL]: 4,
-  [MessageType.CALLRESULT]: 3,
-  [MessageType.CALLERROR]: 5,
-  [MessageType.CALLRESULTERROR]: 5,
-  [MessageType.SEND]: 4,
-};
-
-/** Which error frame answers a bad message, and under which message ID. */
-interface BadMessageReply {
-  frame: typeof MessageType.CALLERROR | typeof MessageType.CALLRESULTERROR;
-  messageId: string;
-}
-
-/** A frame whose message ID could not be read is answered under ID "-1". */
-const UNREADABLE_ID_REPLY: BadMessageReply = {
-  frame: MessageType.CALLERROR,
-  messageId: "-1",
-};
-
-/** OCPP-J §4.1.4: "maximum of 36 characters, to allow for UUIDs/GUIDs". */
-const MAX_MESSAGE_ID_LENGTH = 36;
-
-/** Which schema of a message is being validated. */
-type SchemaKind = "req" | "conf" | "send";
 
 /**
  * Schema id for a message. A SEND has a single schema with no request/response
  * suffix (`urn:NotifyPeriodicEventStream`).
  */
-/**
- * Merges header sets left to right. Names are compared without case, as HTTP
- * does, so a later source always replaces an earlier one's header, whatever
- * the case of either name and whatever order the keys were added in.
- */
-function mergeHeaders(
-  ...sources: Array<Record<string, string> | undefined>
-): Record<string, string> {
-  const merged: Record<string, string> = {};
-  const nameOf = new Map<string, string>();
-  for (const source of sources) {
-    for (const [name, value] of Object.entries(source ?? {})) {
-      const lower = name.toLowerCase();
-      const previous = nameOf.get(lower);
-      if (previous !== undefined) delete merged[previous];
-      merged[name] = value;
-      nameOf.set(lower, name);
-    }
-  }
-  return merged;
-}
-
-/**
- * What to use instead of each `ws` option `wsOpts` does not take. Typed
- * against ManagedWsClientOption, so the list cannot drift from the type.
- */
-const WS_OPTION_HINT: Record<ManagedWsClientOption, string> = {
-  handshakeTimeout: "use connectTimeoutMs",
-  perMessageDeflate: "use compression",
-  headers: "use headers",
-  autoPong: "always on: pings are answered, RFC 6455 §5.5.2",
-  ca: "use tls",
-  cert: "use tls",
-  key: "use tls",
-  passphrase: "use tls",
-  rejectUnauthorized: "use tls",
-  minVersion: "use tls",
-  maxVersion: "use tls",
-  ciphers: "use tls",
-};
-const MANAGED_WS_OPTIONS = Object.keys(
-  WS_OPTION_HINT,
-) as ManagedWsClientOption[];
-
 function schemaIdFor(method: string, kind: SchemaKind): string {
   return kind === "send" ? `urn:${method}` : `urn:${method}.${kind}`;
-}
-
-/** Position of the payload (or error details) object per message type. */
-const PAYLOAD_INDEX: Readonly<Record<number, number>> = {
-  [MessageType.CALL]: 3,
-  [MessageType.CALLRESULT]: 2,
-  [MessageType.CALLERROR]: 4,
-  [MessageType.CALLRESULTERROR]: 4,
-  [MessageType.SEND]: 3,
-};
-
-interface PendingCall {
-  resolve: (value: unknown) => void;
-  reject: (reason: unknown) => void;
-  timeoutHandle: ReturnType<typeof setTimeout>;
-  /** Detaches the abort listener from options.signal (if one was attached). */
-  removeAbortListener?: () => void;
-  method: string;
-  sentAt: number;
 }
 
 /** safeCall()'s arguments: an action, or a version and then an action. */
@@ -295,6 +194,8 @@ export class OCPPClient<
   protected _logger: LoggerLike = NOOP_LOGGER;
   protected _exchangeLog = false;
   protected _prettify = false;
+  /** The client state the incoming-message handlers read and write, through getters. */
+  private readonly _inbound: InboundContext = this._createInboundContext();
 
   constructor(
     options: WithUniqueProtocols<ClientOptions<P>, P, L> &
@@ -348,7 +249,7 @@ export class OCPPClient<
     }
 
     if (this._options.respondWithDetailedErrors) this._warnDetailedErrors();
-    this._warnIgnoredWsOpts();
+    warnIgnoredWsOpts(this._options.wsOpts, this._logger);
 
     if (this._options.logging) {
       // Since logging is enabled, initLogger ensures _logger is set.
@@ -1591,7 +1492,8 @@ export class OCPPClient<
     if (options.respondWithDetailedErrors && !detailedBefore) {
       this._warnDetailedErrors();
     }
-    if (options.wsOpts !== undefined) this._warnIgnoredWsOpts();
+    if (options.wsOpts !== undefined)
+      warnIgnoredWsOpts(this._options.wsOpts, this._logger);
 
     if (options.callConcurrency !== undefined) {
       this._callQueue.setConcurrency(options.callConcurrency);
@@ -1621,26 +1523,6 @@ export class OCPPClient<
     this._logger.warn?.(
       "respondWithDetailedErrors is on: a handler error's properties are sent to the CSMS in CALLERROR details. Keep it off in production.",
     );
-  }
-
-  /**
-   * wsOpts does not offer the options the client sets itself; its type leaves
-   * them out. Plain JavaScript can still pass them: they are dropped, and this
-   * names each with the option to use instead, so the setting does not fail
-   * silently.
-   */
-  private _warnIgnoredWsOpts(): void {
-    const given: WebSocket.ClientOptions = { ...this._options.wsOpts };
-    const ignored = MANAGED_WS_OPTIONS.filter(
-      (key) => given[key] !== undefined,
-    ).map((key) => `${key} (${WS_OPTION_HINT[key]})`);
-
-    if (ignored.length > 0) {
-      this._logger.warn?.(
-        "wsOpts does not take these options; set them through the client options",
-        { ignored },
-      );
-    }
   }
 
   // ─── Internal: WebSocket attachment ──────────────────────────
@@ -1715,6 +1597,90 @@ export class OCPPClient<
     });
   }
 
+  /** The fields the incoming-message handlers use, and the calls they make, by name. */
+  private _createInboundContext(): InboundContext {
+    const client = this;
+    return {
+      get identity() {
+        return client._identity;
+      },
+      get protocol() {
+        return client._protocol;
+      },
+      get state() {
+        return client._state;
+      },
+      get logger() {
+        return client._logger;
+      },
+      get ws() {
+        return client._ws;
+      },
+      get strictMode() {
+        return client._options.strictMode;
+      },
+      get strictProtocols() {
+        return client._strictProtocols;
+      },
+      get idValidator() {
+        return client._options.idValidator;
+      },
+      get respondWithDetailedErrors() {
+        return client._options.respondWithDetailedErrors;
+      },
+      get badMessageWindowMs() {
+        return client._options.badMessageWindowMs;
+      },
+      get maxBadMessages() {
+        return client._options.maxBadMessages;
+      },
+      get handlers() {
+        return client._handlers;
+      },
+      get wildcardHandler() {
+        return client._wildcardHandler;
+      },
+      get middleware() {
+        return client._middleware;
+      },
+      get pendingCalls() {
+        return client._pendingCalls;
+      },
+      get pendingResponses() {
+        return client._pendingResponses;
+      },
+      get noReplyCalls() {
+        return client._noReplyCalls;
+      },
+      get badMessageCount() {
+        return client._badMessageCount;
+      },
+      set badMessageCount(count) {
+        client._badMessageCount = count;
+      },
+      get badMessageWindowStart() {
+        return client._badMessageWindowStart;
+      },
+      set badMessageWindowStart(at) {
+        client._badMessageWindowStart = at;
+      },
+      get emitter() {
+        return client;
+      },
+      recordActivity: () => client._recordActivity(),
+      awaitHandlerGrace: () => client._awaitHandlerGrace(),
+      validateInbound: (method, params, kind) =>
+        client._validateInbound(method, params, kind),
+      validateOutbound: (method, params, kind) =>
+        client._validateOutbound(method, params, kind),
+      invokeBeforeSend: (message) => client._invokeBeforeSend(message),
+      safeSend: (ws, data) => client._safeSend(ws, data),
+      emitMessageEvent: (message, direction, ctx, latencyMs) =>
+        client._emitMessageEvent(message, direction, ctx, latencyMs),
+      close: (options) => client.close(options),
+    };
+  }
+
   // ─── Internal: Message event helpers ────────────────────────
 
   /**
@@ -1754,775 +1720,9 @@ export class OCPPClient<
 
   // ─── Internal: Message handling ──────────────────────────────
 
+  /** The server client's entry point, and a test seam: see handleMessage in client/inbound.ts. */
   protected _onMessage(rawData: WebSocket.RawData, preParsed?: unknown): void {
-    this._recordActivity();
-
-    // Some charge points send empty frames. They carry nothing to answer, and
-    // counting them as bad messages would disconnect an otherwise working
-    // charger.
-    if (preParsed === undefined && isEmptyFrame(rawData)) return;
-
-    const rawText = () =>
-      typeof rawData === "string" ? rawData : (rawData as Buffer).toString();
-
-    // Until the message ID has been read, a bad frame is answered under ID
-    // "-1" (2.0.1 / 2.1 §4.2.3: "When also the MessageId cannot be read").
-    let message: OCPPMessage;
-    try {
-      message =
-        preParsed !== undefined
-          ? // Worker pool already parsed — skip JSON.parse entirely
-            (preParsed as OCPPMessage)
-          : // JSON.parse accepts a Buffer directly (implicit utf8 toString).
-            (JSON.parse(rawData as unknown as string) as OCPPMessage);
-    } catch {
-      this._onBadMessage(
-        rawText(),
-        createRPCError("RpcFrameworkError", "Message must be a JSON structure"),
-        UNREADABLE_ID_REPLY,
-      );
-      return;
-    }
-    if (!Array.isArray(message)) {
-      this._onBadMessage(
-        rawText(),
-        createRPCError("RpcFrameworkError", "Message must be an array"),
-        UNREADABLE_ID_REPLY,
-      );
-      return;
-    }
-
-    // Typed as parsed JSON: the frame is untrusted until checked below.
-    const messageType: JsonValue = message[0];
-    const messageId: JsonValue = message[1];
-
-    if (typeof messageType !== "number") {
-      this._onBadMessage(
-        rawText(),
-        createRPCError("RpcFrameworkError", "Message type must be a number"),
-        UNREADABLE_ID_REPLY,
-      );
-      return;
-    }
-
-    // A type number this protocol does not define is a bad message, answered
-    // with MessageTypeNotSupported (2.0.1 §4.4) under ID "-1": the frame's own
-    // ID is not read for a type the protocol does not define.
-    if (!this._isKnownMessageType(messageType)) {
-      this._onBadMessage(
-        rawText(),
-        new RPCMessageTypeNotSupportedError(
-          `Unknown message type: ${messageType}`,
-        ),
-        UNREADABLE_ID_REPLY,
-      );
-      return;
-    }
-
-    if (typeof messageId !== "string") {
-      this._onBadMessage(
-        rawText(),
-        createRPCError("RpcFrameworkError", "Message ID must be a string"),
-        UNREADABLE_ID_REPLY,
-      );
-      return;
-    }
-
-    // A rejected request ID is answered like an unreadable one, under "-1";
-    // a SEND is never answered (2.1 Part 2 FR.07).
-    if (messageType === MessageType.CALL || messageType === MessageType.SEND) {
-      const idError = this._messageIdError(messageId);
-      if (idError) {
-        this._onBadMessage(
-          rawText(),
-          idError,
-          messageType === MessageType.CALL ? UNREADABLE_ID_REPLY : undefined,
-        );
-        return;
-      }
-    }
-
-    if (message.length < MIN_FRAME_LENGTH[messageType]) {
-      this._onBadMessage(
-        JSON.stringify(message),
-        new RPCFormatViolationError(
-          `Missing payload elements for message type ${messageType}`,
-        ),
-        this._replyTo(messageType, messageId),
-      );
-      return;
-    }
-
-    // Payload MUST be a JSON object (not array or primitive)
-    const payloadIndex = PAYLOAD_INDEX[messageType];
-    // Every OCPP-J version allows an absent payload to be sent as null
-    // (1.6J §4.2.1, 2.0.1/2.1 §4.1.5); it means the same as {}.
-    if (
-      (messageType === MessageType.CALL || messageType === MessageType.SEND) &&
-      message[3] === null
-    ) {
-      (message as OCPPCall)[3] = {};
-    } else if (messageType === MessageType.CALLRESULT && message[2] === null) {
-      (message as OCPPCallResult)[2] = {};
-    }
-    const payload = message[payloadIndex];
-    if (
-      typeof payload !== "object" ||
-      payload === null ||
-      Array.isArray(payload)
-    ) {
-      this._onBadMessage(
-        JSON.stringify(message),
-        new RPCFormatViolationError(
-          `Payload must be a JSON object, got ${
-            payload === null
-              ? "null"
-              : Array.isArray(payload)
-                ? "array"
-                : typeof payload
-          }`,
-        ),
-        this._replyTo(messageType, messageId),
-      );
-      return;
-    }
-
-    this._resetBadMessageCount();
-
-    switch (messageType) {
-      case MessageType.CALL:
-        this._handleIncomingCall(message as OCPPCall);
-        break;
-      case MessageType.SEND:
-        this._handleIncomingSend(message as OCPPSend);
-        break;
-      case MessageType.CALLRESULTERROR:
-        this._handleCallResultError(message as OCPPCallResultError);
-        break;
-      case MessageType.CALLRESULT:
-        // Async with no await: an error escaping it (a throwing middleware or
-        // response listener) became an unhandled rejection and took the
-        // process down. The message is already dispatched, so log and carry on.
-        this._handleCallResult(message as OCPPCallResult).catch((err) => {
-          this._logger?.error?.("Error handling CALLRESULT", {
-            identity: this._identity,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
-        break;
-      case MessageType.CALLERROR:
-        this._handleCallError(message as OCPPCallError).catch((err) => {
-          this._logger?.error?.("Error handling CALLERROR", {
-            identity: this._identity,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
-        break;
-    }
-  }
-
-  /**
-   * CALLRESULTERROR exists only in OCPP 2.1; SEND in OCPP 2.1 and custom
-   * protocols ({@link supportsSend}).
-   */
-  private _isKnownMessageType(type: number): boolean {
-    if (
-      type === MessageType.CALL ||
-      type === MessageType.CALLRESULT ||
-      type === MessageType.CALLERROR
-    ) {
-      return true;
-    }
-    if (type === MessageType.SEND) return supportsSend(this._protocol);
-    return this._protocol === "ocpp2.1" && type === MessageType.CALLRESULTERROR;
-  }
-
-  private _findHandler(method: string): CallHandler | undefined {
-    return (
-      (this._protocol
-        ? this._handlers.get(`${this._protocol}:${method}`)
-        : undefined) ?? this._handlers.get(method)
-    );
-  }
-
-  /**
-   * OCPP 2.1 SEND: routed to the action's handler like a CALL, but nothing is
-   * ever sent back, neither a result nor an error (Part 4 §4.2.4, Part 2
-   * FR.07). Failures are logged and surfaced as events only.
-   */
-  private async _handleIncomingSend(message: OCPPSend): Promise<void> {
-    const [, msgId, method, params] = message;
-    const ctx: MiddlewareContext = {
-      type: "incoming_call",
-      messageId: msgId,
-      method,
-      params,
-      protocol: this._protocol,
-      unconfirmed: true,
-    };
-
-    try {
-      await this._middleware.execute(ctx, async (c) => {
-        const ctxvals = c as Extract<
-          MiddlewareContext,
-          { type: "incoming_call" }
-        >;
-        const observed: OCPPSend = [
-          MessageType.SEND,
-          ctxvals.messageId,
-          ctxvals.method,
-          ctxvals.params,
-        ];
-        this._emitMessageEvent(observed, "IN", ctxvals);
-
-        if (this._state !== OPEN) return;
-
-        let handler = this._findHandler(ctxvals.method);
-        if (!handler && !this._wildcardHandler) {
-          await this._awaitHandlerGrace();
-          handler = this._findHandler(ctxvals.method);
-        }
-        if (!handler && !this._wildcardHandler) {
-          this._logger?.debug?.("No handler for SEND message", {
-            method: ctxvals.method,
-          });
-          return;
-        }
-
-        if (this._options.strictMode && this._protocol) {
-          try {
-            this._validateInbound(ctxvals.method, ctxvals.params, "send");
-          } catch {
-            // strictValidationFailure was emitted; there is nobody to tell.
-            return;
-          }
-        }
-
-        const context: HandlerContext = {
-          messageId: ctxvals.messageId,
-          method: ctxvals.method,
-          protocol: this._protocol,
-          params: ctxvals.params,
-          signal: new AbortController().signal,
-          unconfirmed: true,
-        };
-        try {
-          if (handler) {
-            await handler(context);
-          } else {
-            await this._wildcardHandler?.(context);
-          }
-        } catch (err) {
-          this._logger?.warn?.("Handler failed for SEND message", {
-            method: ctxvals.method,
-            error: (err as Error)?.message ?? String(err),
-          });
-          this.emit("handlerError", {
-            method: ctxvals.method,
-            error: err as Error,
-          });
-        }
-      });
-    } catch (err) {
-      this._logger?.error?.("Middleware failed on SEND message", {
-        method,
-        error: (err as Error)?.message ?? String(err),
-      });
-    }
-  }
-
-  /** OCPP 2.1: the peer could not process a CALLRESULT we sent. Never answered. */
-  private _handleCallResultError(message: OCPPCallResultError): void {
-    const [, msgId, errorCode, errorDescription] = message;
-    this._logger?.warn?.("Peer could not process a CALLRESULT", {
-      messageId: msgId,
-      errorCode,
-      errorDescription,
-    });
-    this.emit("callResultError", message);
-  }
-
-  private async _handleIncomingCall(message: OCPPCall): Promise<void> {
-    const [, msgId, method, params] = message;
-
-    const ctx: MiddlewareContext = {
-      type: "incoming_call",
-      messageId: msgId,
-      method,
-      params,
-      protocol: this._protocol,
-    };
-
-    // Whether the chain reached the handler step, which answers the CALL
-    // itself, with a CALLRESULT or a CALLERROR.
-    let reachedHandler = false;
-    try {
-      await this._middleware.execute(ctx, async (c) => {
-        reachedHandler = true;
-        const ctxvals = c as Extract<
-          MiddlewareContext,
-          { type: "incoming_call" }
-        >;
-
-        const modifiedMessage: OCPPCall = [
-          MessageType.CALL,
-          ctxvals.messageId,
-          ctxvals.method,
-          ctxvals.params,
-        ];
-
-        // Emit enriched message event (replaces old "call" event)
-        this._emitMessageEvent(modifiedMessage, "IN", ctxvals);
-        // Keep backward-compatible "call" event
-        this.emit("call", modifiedMessage);
-
-        if (this._state !== OPEN) {
-          return;
-        }
-
-        try {
-          if (this._pendingResponses.has(ctxvals.messageId)) {
-            // 1.6J Table 7 has no RpcFrameworkError; GenericError covers
-            // "any other error not covered by the previous ones".
-            throw createRPCError(
-              this._protocol === "ocpp1.6"
-                ? "GenericError"
-                : "RpcFrameworkError",
-              `Already processing call with ID: ${ctxvals.messageId}`,
-            );
-          }
-
-          let specificHandler = this._findHandler(ctxvals.method);
-
-          // Startup grace. The socket dispatches as soon as it opens, so a CALL
-          // can arrive before the application has finished registering its
-          // handlers — and rejecting it would tell the peer this charger does
-          // not support an action it does support. Wait briefly instead; see
-          // ClientOptions.handlerGraceMs.
-          if (!specificHandler && !this._wildcardHandler) {
-            await this._awaitHandlerGrace();
-            specificHandler = this._findHandler(ctxvals.method);
-          }
-
-          if (!specificHandler && !this._wildcardHandler) {
-            throw new RPCNotImplementedError(
-              `Method "${ctxvals.method}" not implemented`,
-            );
-          }
-
-          if (this._options.strictMode && this._protocol) {
-            this._validateInbound(ctxvals.method, ctxvals.params, "req");
-          }
-
-          this._pendingResponses.add(ctxvals.messageId);
-
-          const ac = new AbortController();
-          const context: HandlerContext = {
-            messageId: ctxvals.messageId,
-            method: ctxvals.method,
-            protocol: this._protocol,
-            params: ctxvals.params,
-            signal: ac.signal,
-          };
-
-          let result: unknown;
-          if (specificHandler) {
-            result = await specificHandler(context);
-          } else if (this._wildcardHandler) {
-            result = await this._wildcardHandler(context);
-          }
-
-          this._pendingResponses.delete(ctxvals.messageId);
-
-          if (result === NOREPLY) return;
-
-          if (this._options.strictMode && this._protocol) {
-            this._validateOutbound(ctxvals.method, result, "conf");
-          }
-
-          // Run the response through the middleware chain before sending it.
-          //
-          // `outgoing_result` was declared as a context type and consumed by
-          // schemaVersioningPlugin — which transforms a response *down* for an
-          // older charge point — but the chain never executed for it, so that
-          // branch could not run.
-          //
-          // `onBeforeSend` sees this response too, but a CALLRESULT is
-          // `[3, messageId, payload]` and carries no action name, so a plugin
-          // there cannot tell which request it answers without correlating
-          // against pending state. Carrying `method` is why this context type
-          // exists.
-          //
-          // Validation above deliberately stays ahead of this: a handler's
-          // result is checked against the current schema, and only then adapted
-          // for whatever the peer speaks.
-          let payload = result;
-          try {
-            const outCtx: MiddlewareContext = {
-              type: "outgoing_result",
-              messageId: ctxvals.messageId,
-              method: ctxvals.method,
-              payload: result,
-            };
-            let wrap: Extract<
-              MiddlewareContext,
-              { type: "outgoing_result" }
-            >["wrap"];
-            await this._middleware.execute(outCtx, async (c) => {
-              const out = c as Extract<
-                MiddlewareContext,
-                { type: "outgoing_result" }
-              >;
-              payload = out.payload;
-              wrap = out.wrap;
-            });
-            // An envelope (a signature) goes around the reply every
-            // middleware has finished with. If it fails, the reply goes
-            // without it, like a failed middleware's.
-            if (wrap) payload = await wrap(payload as JsonValue);
-          } catch (err) {
-            // Fail open with what the handler produced. A middleware that
-            // throws must not cost the charge point its response — it would
-            // sit waiting for a CALLRESULT that never arrives.
-            this._logger?.error?.("Middleware failed on outgoing result", {
-              method: ctxvals.method,
-              error: (err as Error)?.message ?? String(err),
-            });
-          }
-
-          const response: OCPPCallResult = [
-            MessageType.CALLRESULT,
-            ctxvals.messageId,
-            payload,
-          ];
-
-          const allowSend = this._invokeBeforeSend(response);
-          if (allowSend instanceof Promise) {
-            if ((await allowSend) === false) return result;
-          } else if (allowSend === false) {
-            return result;
-          }
-
-          this._safeSend(this._ws, JSON.stringify(response));
-          // Emit outbound CALLRESULT message event for observability
-          this._emitMessageEvent(response, "OUT", {
-            type: "outgoing_result",
-            messageId: ctxvals.messageId,
-            method: ctxvals.method,
-            // What was sent, not what the handler returned — they differ once
-            // a middleware has transformed the response.
-            payload,
-          });
-          this.emit("callResult", response);
-
-          return result;
-        } catch (err) {
-          this._pendingResponses.delete(ctxvals.messageId);
-
-          const rpcErr =
-            err instanceof RPCGenericError || (err as RPCError).rpcErrorCode
-              ? (err as RPCError)
-              : createRPCError("InternalError", (err as Error).message);
-
-          // Never ship stack traces to remote peers (report M13)
-          const details = this._options.respondWithDetailedErrors
-            ? getErrorPlainObject(err as Error, false)
-            : {};
-
-          // Same treatment as the CALLRESULT path above: a CALLERROR on the
-          // wire carries no action name either, so this context is the only
-          // place a plugin can make an action-specific decision about one.
-          // The declared context exposes the code and description; `details`
-          // is not part of it and is sent as produced.
-          let errorCode = rpcErr.rpcErrorCode;
-          let errorDescription =
-            rpcErr.rpcErrorMessage || (err as Error).message || "";
-          try {
-            const outCtx: MiddlewareContext = {
-              type: "outgoing_error",
-              messageId: ctxvals.messageId,
-              method: ctxvals.method,
-              errorCode,
-              errorDescription,
-            };
-            await this._middleware.execute(outCtx, async (c) => {
-              const out = c as Extract<
-                MiddlewareContext,
-                { type: "outgoing_error" }
-              >;
-              errorCode = out.errorCode;
-              errorDescription = out.errorDescription;
-            });
-          } catch (mwErr) {
-            // Fail open. A middleware that throws while an error is being
-            // reported must not swallow the error report itself.
-            this._logger?.error?.("Middleware failed on outgoing error", {
-              method: ctxvals.method,
-              error: (mwErr as Error)?.message ?? String(mwErr),
-            });
-          }
-          errorDescription = this._fitErrorDescription(errorDescription);
-
-          const errorResponse: OCPPCallError = [
-            MessageType.CALLERROR,
-            ctxvals.messageId,
-            errorCode,
-            errorDescription,
-            details,
-          ];
-
-          const allowSend = this._invokeBeforeSend(errorResponse);
-          if (allowSend instanceof Promise) {
-            if ((await allowSend) === false) throw err;
-          } else if (allowSend === false) {
-            throw err;
-          }
-
-          this._safeSend(this._ws, JSON.stringify(errorResponse));
-          // Emit outbound CALLERROR message event for observability
-          this._emitMessageEvent(errorResponse, "OUT", {
-            type: "outgoing_error",
-            messageId: ctxvals.messageId,
-            method: ctxvals.method,
-            // What was sent, not what was thrown — they differ once a
-            // middleware has rewritten the code or description.
-            errorCode,
-            errorDescription,
-          });
-          this.emit("callError", errorResponse);
-          // Emit handler error event for plugin observability
-          this.emit("handlerError", {
-            method: ctxvals.method,
-            error: err as Error,
-          });
-
-          throw err;
-        }
-      });
-    } catch (err) {
-      // Past the handler step, the error was already sent as a CALLERROR to
-      // the peer, and logged explicitly by the createLoggingMiddleware. It is
-      // swallowed here to prevent an UnhandledPromiseRejection, since
-      // _handleIncomingCall is executed synchronously by _onMessage.
-      if (reachedHandler) return;
-
-      // A middleware threw before the handler step (rejecting the call, or
-      // failing). Nothing answered the CALL, and OCPP-J requires an answer:
-      // without one the peer only learns of it from its own timeout.
-      this._logger?.error?.("Middleware failed on incoming call", {
-        method,
-        error: (err as Error)?.message ?? String(err),
-      });
-      if (this._state !== OPEN) return;
-      const rpcErr =
-        err instanceof RPCGenericError || (err as RPCError).rpcErrorCode
-          ? (err as RPCError)
-          : createRPCError("InternalError", (err as Error).message);
-      this._sendRpcError([
-        MessageType.CALLERROR,
-        msgId,
-        rpcErr.rpcErrorCode,
-        rpcErr.rpcErrorMessage || (err as Error).message || "",
-        this._options.respondWithDetailedErrors
-          ? getErrorPlainObject(err as Error, false)
-          : {},
-      ]);
-    }
-  }
-
-  private async _handleCallResult(message: OCPPCallResult): Promise<void> {
-    const [, msgId, payload] = message;
-
-    if (!this._pendingCalls.has(msgId)) {
-      if (this._takeNoReplyAnswer(msgId)) return;
-      this._logger?.warn?.("Received CallResult for unknown messageId", {
-        messageId: msgId,
-      });
-      return;
-    }
-
-    const pending = this._pendingCalls.get(msgId)!;
-
-    const ctx: MiddlewareContext = {
-      type: "incoming_result",
-      messageId: msgId,
-      payload,
-      method: pending.method,
-    };
-
-    try {
-      await this._runIncomingResult(ctx);
-    } catch (err) {
-      this._failPendingCall(msgId, err as Error);
-    }
-  }
-
-  /**
-   * A middleware rejected a reply (CALLRESULT or CALLERROR), or failed on it.
-   * The caller is waiting on this call, and without this it only saw its
-   * timeout. Once the call is settled, the error is only logged.
-   */
-  private _failPendingCall(msgId: string, err: Error | RPCError): void {
-    const pendingCtx = this._pendingCalls.get(msgId);
-    if (!pendingCtx) {
-      this._logger?.error?.("Middleware failed on a reply", {
-        messageId: msgId,
-        error: err.message,
-      });
-      return;
-    }
-    clearTimeout(pendingCtx.timeoutHandle);
-    pendingCtx.removeAbortListener?.();
-    this._pendingCalls.delete(msgId);
-    pendingCtx.reject(err);
-  }
-
-  private async _runIncomingResult(ctx: MiddlewareContext): Promise<void> {
-    await this._middleware.execute(ctx, async (c) => {
-      const ctxvals = c as Extract<
-        MiddlewareContext,
-        { type: "incoming_result" }
-      >;
-      const pendingCtx = this._pendingCalls.get(ctxvals.messageId);
-      if (!pendingCtx) return;
-
-      // Handled by createLoggingMiddleware
-      const latencyMs = Date.now() - pendingCtx.sentAt;
-
-      // Rebuild from the post-middleware context, the way the inbound CALL
-      // path does. Emitting the raw frame handed observers the payload as it
-      // arrived, so a middleware that rewrote it — piiRedactorPlugin returns a
-      // redacted clone rather than mutating in place — was bypassed, and
-      // unredacted payloads reached broker plugins running includePayload.
-      const observedResult: OCPPCallResult = [
-        MessageType.CALLRESULT,
-        ctxvals.messageId,
-        ctxvals.payload,
-      ];
-
-      // Emit enriched message event (replaces old "callResult" event)
-      this._emitMessageEvent(observedResult, "IN", ctxvals, latencyMs);
-      // Keep backward-compatible "callResult" event
-      this.emit("callResult", observedResult);
-
-      // Strict mode: validate the inbound response payload against the
-      // method's .conf schema (report M6).
-      if (this._options.strictMode && this._protocol) {
-        try {
-          this._validateInbound(pendingCtx.method, ctxvals.payload, "conf");
-        } catch (err) {
-          clearTimeout(pendingCtx.timeoutHandle);
-          pendingCtx.removeAbortListener?.();
-          this._pendingCalls.delete(ctxvals.messageId);
-          pendingCtx.reject(err);
-          // 2.1 Part 2 FR.06: a response that fails the schema is answered
-          // with CALLRESULTERROR so the sender learns it was not processed.
-          if (this._protocol === "ocpp2.1") {
-            this._sendRpcError([
-              MessageType.CALLRESULTERROR,
-              ctxvals.messageId,
-              (err as RPCError).rpcErrorCode ?? "FormatViolation",
-              (err as Error).message ?? "",
-              {},
-            ]);
-          }
-          return;
-        }
-      }
-
-      clearTimeout(pendingCtx.timeoutHandle);
-      pendingCtx.removeAbortListener?.();
-      this._pendingCalls.delete(ctxvals.messageId);
-      pendingCtx.resolve(ctxvals.payload);
-    });
-  }
-
-  private async _handleCallError(message: OCPPCallError): Promise<void> {
-    const [, msgId] = message;
-
-    const pending = this._pendingCalls.get(msgId);
-    if (!pending) {
-      if (this._takeNoReplyAnswer(msgId)) return;
-      this._logger?.warn?.("Received CallError for unknown messageId", {
-        messageId: msgId,
-      });
-      return;
-    }
-
-    const ctx: MiddlewareContext = {
-      type: "incoming_error",
-      messageId: msgId,
-      error: message,
-      method: pending.method,
-    };
-
-    const chain = this._middleware.execute(ctx, async (c) => {
-      const ctxvals = c as Extract<
-        MiddlewareContext,
-        { type: "incoming_error" }
-      >;
-      const pendingCtx = this._pendingCalls.get(ctxvals.messageId);
-      if (!pendingCtx) return;
-
-      const latencyMs = Date.now() - pendingCtx.sentAt;
-
-      // Same rebuild as the CALLRESULT path above: observers must see what
-      // middleware produced, not what arrived on the wire.
-      const observedError = ctxvals.error as OCPPCallError;
-
-      // Emit enriched message event (replaces old "callError" event)
-      this._emitMessageEvent(observedError, "IN", ctxvals, latencyMs);
-      // Keep backward-compatible "callError" event
-      this.emit("callError", observedError);
-
-      const [, , code, msg, details] = ctxvals.error;
-
-      clearTimeout(pendingCtx.timeoutHandle);
-      pendingCtx.removeAbortListener?.();
-      this._pendingCalls.delete(ctxvals.messageId);
-
-      const err = createRPCError(code, msg, details);
-      pendingCtx.reject(err);
-    });
-    try {
-      await chain;
-    } catch (err) {
-      this._failPendingCall(msgId, err as Error);
-    }
-  }
-
-  // ─── Internal: Bad message handling ──────────────────────────
-
-  /**
-   * maxBadMessages counts bad messages in a row, so a valid frame ends the run.
-   * Counting over the whole connection slowly disconnected working chargers
-   * that send an occasional odd frame.
-   */
-  private _resetBadMessageCount(): void {
-    this._badMessageCount = 0;
-    this._badMessageWindowStart = 0;
-  }
-
-  /**
-   * A malformed CALL gets a CALLERROR (Part 4 §4.2.3, "the call is received"),
-   * and on OCPP 2.1 a malformed CALLRESULT gets a CALLRESULTERROR (2.1 Part 2
-   * FR.06). Nothing else is answered — a CALLERROR in particular, since two
-   * peers replying to each other's errors would loop.
-   */
-  private _replyTo(
-    messageType: number,
-    messageId: string,
-  ): BadMessageReply | undefined {
-    if (messageType === MessageType.CALL) {
-      return { frame: MessageType.CALLERROR, messageId };
-    }
-    if (
-      messageType === MessageType.CALLRESULT &&
-      this._protocol === "ocpp2.1"
-    ) {
-      return { frame: MessageType.CALLRESULTERROR, messageId };
-    }
-    return undefined;
+    handleMessage(this._inbound, rawData, preParsed);
   }
 
   /** The ID of an outgoing CALL or SEND: idGenerator when set, else a UUID. */
@@ -2534,122 +1734,6 @@ export class OCPPClient<
       throw new TypeError("idGenerator must return a non-empty string");
     }
     return id;
-  }
-
-  /**
-   * Why an incoming request's message ID is rejected, if it is. idValidator
-   * decides when set, in any mode; otherwise strict mode applies the spec's
-   * limit of 36 characters (1.6J Table 3, 2.0.1 / 2.1 Table 4). 1.6 has no
-   * RpcFrameworkError (Table 7), so GenericError answers there.
-   */
-  private _messageIdError(messageId: string): RPCError | undefined {
-    const code =
-      this._protocol === "ocpp1.6" ? "GenericError" : "RpcFrameworkError";
-    const validate = this._options.idValidator;
-    if (validate) {
-      let valid: boolean;
-      try {
-        valid = validate(messageId);
-      } catch (err) {
-        return createRPCError(
-          code,
-          `idValidator failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-      return valid ? undefined : createRPCError(code, "Message ID rejected");
-    }
-    const strict =
-      this._options.strictMode &&
-      (!this._strictProtocols ||
-        this._strictProtocols.includes(this._protocol ?? ""));
-    const length = Array.from(messageId).length;
-    if (strict && length > MAX_MESSAGE_ID_LENGTH) {
-      return createRPCError(
-        code,
-        `Message ID is ${length} characters; the maximum is ${MAX_MESSAGE_ID_LENGTH}`,
-      );
-    }
-    return undefined;
-  }
-
-  /** ErrorDescription is string[255] on 2.0.1 and 2.1 (Table 7); 1.6 sets no limit. */
-  private _fitErrorDescription(description: string): string {
-    if (this._protocol !== "ocpp2.0.1" && this._protocol !== "ocpp2.1") {
-      return description;
-    }
-    const chars = Array.from(description);
-    return chars.length > 255 ? chars.slice(0, 255).join("") : description;
-  }
-
-  private _onBadMessage(
-    rawMessage: string,
-    error: Error,
-    reply?: BadMessageReply,
-  ): void {
-    const now = Date.now();
-    const windowMs = this._options.badMessageWindowMs;
-
-    if (windowMs && windowMs > 0 && this._badMessageWindowStart > 0) {
-      if (now - this._badMessageWindowStart >= windowMs) {
-        this._badMessageCount = 0;
-        this._badMessageWindowStart = 0;
-      }
-    }
-
-    this._badMessageCount++;
-    if (this._badMessageWindowStart === 0) {
-      this._badMessageWindowStart = now;
-    }
-
-    this._logger?.warn?.("Bad message", {
-      error: error.message,
-      count: this._badMessageCount,
-    });
-    this.emit("badMessage", { message: rawMessage, error });
-
-    // The caller decides whether and how the frame is answered, so the sender
-    // of a malformed request is not left waiting out its timeout.
-    if (reply && this._ws) {
-      // Report the error that actually occurred. This previously sent the
-      // format-violation code whatever had gone wrong, so an unsupported
-      // message type was reported to the peer as a malformed payload.
-      const rpcCode = (error as { rpcErrorCode?: string }).rpcErrorCode;
-      // OCPP 1.6J spells this error "FormationViolation" (report M7)
-      const formatCode =
-        this._protocol === "ocpp1.6" ? "FormationViolation" : "FormatViolation";
-      // A format violation is spelled differently per version, so it is
-      // resolved here rather than taken from the error as-is. GenericError
-      // exists in every version and passes through.
-      const code =
-        !rpcCode || rpcCode === "FormatViolation" ? formatCode : rpcCode;
-      const description = error.message || "Invalid message format";
-      this._sendRpcError([reply.frame, reply.messageId, code, description, {}]);
-    }
-
-    if (this._badMessageCount >= this._options.maxBadMessages) {
-      this.close({ code: 1002, reason: "Too many bad messages" }).catch(
-        () => {},
-      );
-    }
-  }
-
-  /** Send a CALLERROR or CALLRESULTERROR, honouring an onBeforeSend veto. */
-  private _sendRpcError(frame: OCPPCallError | OCPPCallResultError): void {
-    frame[3] = this._fitErrorDescription(frame[3]);
-    const send = () => {
-      this._safeSend(this._ws, JSON.stringify(frame));
-      if (frame[0] === MessageType.CALLERROR) this.emit("callError", frame);
-    };
-    const allowSend = this._invokeBeforeSend(frame);
-    if (allowSend instanceof Promise) {
-      allowSend
-        .then((allowed) => {
-          if (allowed !== false) send();
-        })
-        .catch(() => {});
-    } else if (allowSend !== false) {
-      send();
-    }
   }
 
   // ─── Internal: Close handling ────────────────────────────────
@@ -2668,18 +1752,6 @@ export class OCPPClient<
     // No answer can arrive on a closed socket.
     for (const forget of this._noReplyCalls.values()) clearTimeout(forget);
     this._noReplyCalls.clear();
-  }
-
-  /** The answer to a noReply call: dropped quietly. False if it was not one. */
-  private _takeNoReplyAnswer(msgId: string): boolean {
-    const forget = this._noReplyCalls.get(msgId);
-    if (forget === undefined) return false;
-    clearTimeout(forget);
-    this._noReplyCalls.delete(msgId);
-    this._logger?.debug?.("Dropped the answer to a noReply call", {
-      messageId: msgId,
-    });
-    return true;
   }
 
   protected _onClose(code: number, reason: Buffer): void {
@@ -3173,109 +2245,14 @@ export class OCPPClient<
 
   // ─── Internal: Endpoint building ─────────────────────────────
 
+  /** Test seam: see buildEndpoint in client/ws-options.ts. */
   private _buildEndpoint(): string {
-    // Use URL so identities land in the pathname even when the configured
-    // endpoint carries a query string (report: low/_buildEndpoint).
-    const url = new URL(this._options.endpoint);
-    if (!url.pathname.endsWith("/")) url.pathname += "/";
-    url.pathname += encodeURIComponent(this._identity);
-
-    if (this._options.query) {
-      for (const [k, v] of new URLSearchParams(this._options.query)) {
-        url.searchParams.append(k, v);
-      }
-    }
-    return url.toString();
+    return buildEndpoint(this._options, this._identity);
   }
 
+  /** Test seam: see buildWsOptions in client/ws-options.ts. */
   private _buildWsOptions(): WebSocket.ClientOptions {
-    // wsOpts first. Its type leaves out the options set below; any that still
-    // arrive, from JavaScript, are dropped (and were warned about).
-    const extra: WebSocket.ClientOptions = { ...this._options.wsOpts };
-    for (const key of MANAGED_WS_OPTIONS) delete extra[key];
-    const opts: WebSocket.ClientOptions = {
-      ...extra,
-      headers: mergeHeaders(this._options.headers, {
-        "User-Agent": getPackageIdent(),
-      }),
-      // A CSMS disconnects a charger that stops answering its pings; set
-      // explicitly rather than relying on the `ws` default.
-      autoPong: true,
-    };
-
-    // Bound the upgrade. `ws` aborts the handshake and emits an error when this
-    // elapses, which is what turns a black-holed peer into a failed attempt the
-    // reconnect logic can act on, instead of an indefinite CONNECTING. Set or
-    // cleared here either way, so wsOpts cannot change it.
-    const connectTimeoutMs =
-      (this._options as ClientOptions).connectTimeoutMs ?? 30_000;
-    opts.handshakeTimeout = connectTimeoutMs > 0 ? connectTimeoutMs : undefined;
-
-    const profile = this._options.securityProfile ?? SecurityProfile.NONE;
-
-    // Profile 1 & 2: Basic Auth header
-    if (
-      (profile === SecurityProfile.BASIC_AUTH ||
-        profile === SecurityProfile.TLS_BASIC_AUTH) &&
-      this._options.password
-    ) {
-      const credentials = Buffer.from(
-        `${this._identity}:${this._options.password.toString()}`,
-      ).toString("base64");
-      // Merged rather than assigned, so it replaces an `authorization` header
-      // from `headers` whatever its case.
-      opts.headers = mergeHeaders(opts.headers, {
-        Authorization: `Basic ${credentials}`,
-      });
-    }
-
-    // TLS settings on every profile: a wss:// endpoint needs them whatever the
-    // OCPP profile (`ca` for a CSMS on a private CA, even on profile 0). They
-    // used to apply on profiles 2 and 3 only, and were silently ignored
-    // otherwise. On profile 3, `cert` and `key` identify the charger.
-    const tls = this._options.tls;
-    if (tls) {
-      if (tls.ca) opts.ca = tls.ca;
-      if (tls.rejectUnauthorized !== undefined)
-        opts.rejectUnauthorized = tls.rejectUnauthorized;
-      if (tls.minVersion) opts.minVersion = tls.minVersion;
-      if (tls.maxVersion) opts.maxVersion = tls.maxVersion;
-      if (tls.ciphers) opts.ciphers = tls.ciphers;
-      if (tls.cert) opts.cert = tls.cert;
-      if (tls.key) opts.key = tls.key;
-      if (tls.passphrase) opts.passphrase = tls.passphrase;
-    }
-
-    // Compression: permessage-deflate, only when asked for. `ws` offers it by
-    // default, so off has to be set explicitly; leaving it unset meant a
-    // client documented as uncompressed (and one set to `false`) negotiated it
-    // with any server that supports it.
-    const compression = this._options.compression;
-    if (!compression) {
-      opts.perMessageDeflate = false;
-    } else {
-      opts.perMessageDeflate =
-        compression === true
-          ? {
-              zlibDeflateOptions: { level: 6, memLevel: 8 },
-              zlibInflateOptions: {},
-              clientNoContextTakeover: true,
-              serverNoContextTakeover: true,
-            }
-          : {
-              zlibDeflateOptions: {
-                level: compression.level ?? 6,
-                memLevel: compression.memLevel ?? 8,
-              },
-              zlibInflateOptions: {},
-              clientNoContextTakeover:
-                compression.clientNoContextTakeover ?? true,
-              serverNoContextTakeover:
-                compression.serverNoContextTakeover ?? true,
-            };
-    }
-
-    return opts;
+    return buildWsOptions(this._options, this._identity);
   }
 
   // ─── Internal: Cleanup ───────────────────────────────────────
