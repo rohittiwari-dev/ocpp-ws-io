@@ -7,6 +7,7 @@ export class SSEBroker {
     this.heartbeatInterval = setInterval(() => {
       this.broadcast(": heartbeat\n\n");
     }, heartbeatMs);
+    this.heartbeatInterval.unref?.();
   }
 
   subscribe(send: (data: string) => void): () => void {
@@ -16,7 +17,7 @@ export class SSEBroker {
     };
   }
 
-  emit(event: string, data: unknown): void {
+  emit<T>(event: string, data: T): void {
     const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
     this.broadcast(payload);
   }

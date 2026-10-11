@@ -5,12 +5,11 @@ import type {
   SessionInfo,
 } from "./types.js";
 
-const sessions = new Map<string, SessionInfo>();
 const DEFAULT_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 export function createAuthLayer(config: BoardAuthConfig) {
-  const ttl =
-    config.mode !== "none" ? ((config as any).sessionTtlMs ?? DEFAULT_TTL) : 0;
+  const sessions = new Map<string, SessionInfo>();
+  const ttl = config.mode !== "none" ? (config.sessionTtlMs ?? DEFAULT_TTL) : 0;
 
   async function authenticate(creds: LoginCredentials): Promise<AuthResult> {
     switch (config.mode) {
@@ -33,6 +32,10 @@ export function createAuthLayer(config: BoardAuthConfig) {
 
   function createSession(user: { id?: string; name: string }): string {
     const id = crypto.randomUUID();
+    for (const [key, session] of sessions)
+      if (session.expiresAt <= Date.now()) sessions.delete(key);
+    if (sessions.size >= 10000)
+      throw new Error("Board session capacity reached");
     sessions.set(id, {
       user,
       expiresAt: Date.now() + ttl,
@@ -63,6 +66,7 @@ export function createAuthLayer(config: BoardAuthConfig) {
   }
 
   return {
+    cleanup: () => sessions.clear(),
     authenticate,
     createSession,
     getSession,
@@ -78,7 +82,7 @@ export function parseSessionCookie(
   cookieHeader: string | null | undefined,
 ): string | null {
   if (!cookieHeader) return null;
-  const match = cookieHeader.match(/board-session=([^;]+)/);
+  const match = cookieHeader.match(/(?:^|;\s*)board-session=([^;]+)/);
   return match?.[1] ?? null;
 }
 

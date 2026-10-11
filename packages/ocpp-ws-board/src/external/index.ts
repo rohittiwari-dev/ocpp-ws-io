@@ -38,3 +38,11 @@ export type {
 // ─── Convenience default ──────────────────────────────────────────
 import { createBoard } from "./board.js";
 export default createBoard;
+
+export type {
+  BoardPluginInstance,
+  CommandRecord,
+  CommandRequest,
+  ServerInfo,
+} from "../types/operations.js";
+export type { BoardStorageAdapter, JsonObject, JsonValue } from "./types.js";

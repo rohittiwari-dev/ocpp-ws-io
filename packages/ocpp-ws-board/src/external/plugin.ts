@@ -1,331 +1,261 @@
+import { randomUUID } from "node:crypto";
+import type {
+  MessageEventPayload,
+  OCPPPlugin,
+  OCPPServerClient,
+} from "ocpp-ws-io";
+import type { BoardPluginInstance } from "../types/operations.js";
 import type {
   BoardStorageAdapter,
   ErrorRecord,
+  JsonValue,
   SecurityEventRecord,
   StoredMessage,
   SystemEvent,
 } from "./types.js";
 
-let counter = 0;
-let securityCounter = 0;
-let errorCounter = 0;
-let sysCounter = 0;
-
-/**
- * Map the middleware context type to OCPP-J message types.
- * ocpp-ws-io uses: incoming_call, outgoing_call, incoming_result, incoming_error
- */
-function resolveMessageType(
-  ctxType: string,
-  message?: unknown[],
-): "CALL" | "CALLRESULT" | "CALLERROR" {
-  if (ctxType === "incoming_call" || ctxType === "outgoing_call") return "CALL";
-  if (ctxType === "incoming_result") return "CALLRESULT";
-  if (ctxType === "incoming_error") return "CALLERROR";
-
-  // Fallback: infer from OCPP-J message array [messageType, ...]
-  if (Array.isArray(message)) {
-    const mt = message[0];
-    if (mt === 2) return "CALL";
-    if (mt === 3) return "CALLRESULT";
-    if (mt === 4) return "CALLERROR";
-  }
-  return "CALL";
-}
-
-/** Callbacks for SSE broadcast */
 export interface BoardPluginCallbacks {
-  onMessage?: (msg: StoredMessage) => void;
-  onSecurityEvent?: (evt: SecurityEventRecord) => void;
+  onMessage?: (message: StoredMessage) => void;
+  onSecurityEvent?: (event: SecurityEventRecord) => void;
 }
 
-export interface BoardPluginInstance {
-  name: string;
-  serverRef?: any;
-  [key: string]: any;
+/** JSON boundary for public core objects; never exposes server options or TLS material. */
+export function jsonValue(
+  value: object | string | number | boolean | null | undefined,
+): JsonValue {
+  if (value === undefined) return null;
+  try {
+    return JSON.parse(JSON.stringify(value)) as JsonValue;
+  } catch {
+    return "[Not serializable]";
+  }
 }
 
-/**
- * The OCPPPlugin that passively observes connections, messages,
- * security events, errors, and lifecycle events using native hooks.
- */
 export function createBoardPlugin(
   store: BoardStorageAdapter,
   callbacks?: BoardPluginCallbacks,
 ): BoardPluginInstance {
-  return {
-    name: "ocpp-ws-board",
-    serverRef: undefined,
+  const active = new Map<string, OCPPServerClient>();
+  let pending = Promise.resolve();
+  // Preserve ordering even when a custom storage adapter is asynchronous.
+  const write = (operation: () => void | Promise<void>) => {
+    const task = pending.then(operation);
+    pending = task.catch(() => {});
+    return task;
+  };
+  const system = (
+    type: SystemEvent["type"],
+    message: string,
+    identity?: string,
+    details?: SystemEvent["details"],
+  ) =>
+    write(() =>
+      store.addSystemEvent({
+        id: randomUUID(),
+        type,
+        message,
+        identity,
+        details,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  const error = (
+    client: OCPPServerClient,
+    category: ErrorRecord["category"],
+    err: Error,
+    method?: string,
+  ) =>
+    write(() =>
+      store.addError({
+        id: randomUUID(),
+        category,
+        identity: client.identity,
+        message: err.message,
+        stack: err.stack,
+        method,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  const security = (record: SecurityEventRecord) =>
+    write(async () => {
+      await store.addSecurityEvent(record);
+      callbacks?.onSecurityEvent?.(record);
+    });
 
-    // ── Server Lifecycle ────────────────────────────────────────
-
-    onInit(server: any) {
-      this.serverRef = server;
+  const hooks: OCPPPlugin = {
+    onInit(server) {
+      plugin.serverRef = server;
     },
-
-    // ── Connection Lifecycle ────────────────────────────────────
-
-    onConnection(client: any) {
-      store.addConnection({
-        identity: client.identity ?? "unknown",
-        remoteAddress: client.handshake?.remoteAddress ?? "",
-        protocol: client.protocol ?? "",
-        connectedAt: new Date().toISOString(),
-        status: "online",
-        sessionData: client.session ?? {},
-        securityProfile: client.handshake?.securityProfile ?? 0,
+    onConnection(client) {
+      active.set(client.identity, client);
+      const session = jsonValue(client.session);
+      return write(() =>
+        store.addConnection({
+          identity: client.identity,
+          remoteAddress: client.handshake.remoteAddress ?? "",
+          protocol: client.protocol ?? "",
+          connectedAt: new Date().toISOString(),
+          status: "online",
+          sessionData:
+            session && typeof session === "object" && !Array.isArray(session)
+              ? session
+              : {},
+          securityProfile: client.securityProfile,
+        }),
+      );
+    },
+    onDisconnect(client, code, reason) {
+      if (active.get(client.identity) !== client) return;
+      active.delete(client.identity);
+      return write(() => store.removeConnection(client.identity, code, reason));
+    },
+    onEviction(evicted, replacement) {
+      return system(
+        "EVICTION",
+        `Connection replaced for ${evicted.identity}`,
+        evicted.identity,
+        { replacedBy: replacement.identity },
+      );
+    },
+    onMessage(client, payload) {
+      const message = toStoredMessage(
+        payload,
+        client.identity,
+        client.protocol ?? "",
+      );
+      return write(async () => {
+        await store.addMessage(message);
+        callbacks?.onMessage?.(message);
       });
     },
-
-    onDisconnect(client: any, code: number, reason: string) {
-      store.removeConnection(client.identity ?? "unknown", code, reason);
+    onSecurityEvent(event) {
+      // AUTH_FAILED is already emitted by the core alongside onAuthFailed.
+      const category = event.type.includes("AUTH")
+        ? "AUTH_FAILED"
+        : event.type.includes("LIMIT")
+          ? "RATE_LIMIT"
+          : event.type === "INVALID_PAYLOAD"
+            ? "PROTOCOL_VIOLATION"
+            : "ANOMALY";
+      const details = jsonValue(event.details ?? {});
+      return security({
+        id: randomUUID(),
+        category,
+        identity: event.identity ?? "server",
+        message: event.type.replaceAll("_", " "),
+        severity: category === "AUTH_FAILED" ? "high" : "medium",
+        details:
+          details && typeof details === "object" && !Array.isArray(details)
+            ? details
+            : {},
+        timestamp: event.timestamp,
+      });
     },
-
-    onEviction(evicted: any, replacement: any) {
-      const identity = evicted.identity ?? "unknown";
-      store.evictConnection(identity);
-
-      const evt: SystemEvent = {
-        id: `sys-${++sysCounter}`,
-        type: "EVICTION",
-        identity,
-        message: `Station "${identity}" evicted by new connection`,
-        details: { replacedBy: replacement?.identity },
-        timestamp: new Date().toISOString(),
-      };
-      store.addSystemEvent(evt);
-    },
-
-    // ── Message Traffic ─────────────────────────────────────────
-
-    onMessage(client: any, payload: any) {
-      const msg = toStoredMessage(payload, client.identity, client.protocol);
-      store.addMessage(msg);
-      callbacks?.onMessage?.(msg);
-    },
-
-    // ── Security ────────────────────────────────────────────────
-
-    onSecurityEvent(evt: any) {
-      const record: SecurityEventRecord = {
-        id: `sec-${++securityCounter}`,
-        category: mapSecurityCategory(evt.type ?? evt.eventType),
-        identity: evt.identity ?? "unknown",
-        message: evt.message ?? evt.type ?? "Security event",
-        severity: mapSeverity(evt.type ?? evt.eventType),
-        details: evt,
-        timestamp: new Date().toISOString(),
-      };
-      store.addSecurityEvent(record);
-      callbacks?.onSecurityEvent?.(record);
-    },
-
-    onAuthFailed(handshake: any, code: number, reason: string) {
-      const identity = handshake?.identity ?? "unknown";
-      const record: SecurityEventRecord = {
-        id: `sec-${++securityCounter}`,
-        category: "AUTH_FAILED",
-        identity,
-        message: `Authentication failed: ${reason}`,
-        severity: "high",
-        details: { reason, code },
-        timestamp: new Date().toISOString(),
-      };
-      store.addSecurityEvent(record);
-      callbacks?.onSecurityEvent?.(record);
-    },
-
-    onRateLimitExceeded(client: any) {
-      const identity = client.identity ?? "unknown";
-      const record: SecurityEventRecord = {
-        id: `sec-${++securityCounter}`,
+    onRateLimitExceeded(client) {
+      return security({
+        id: randomUUID(),
         category: "RATE_LIMIT",
-        identity,
-        message: `Rate limit exceeded for "${identity}"`,
+        identity: client.identity,
+        message: "Station message rate limit exceeded",
         severity: "medium",
         timestamp: new Date().toISOString(),
-      };
-      store.addSecurityEvent(record);
-      callbacks?.onSecurityEvent?.(record);
+      });
     },
-
-    // ── Errors ──────────────────────────────────────────────────
-
-    onError(error: any, context: any) {
-      const record: ErrorRecord = {
-        id: `err-${++errorCounter}`,
-        category: "UNKNOWN",
-        identity: context?.client?.identity ?? "server",
-        message: error?.message ?? String(error),
-        stack: error?.stack,
-        timestamp: new Date().toISOString(),
-      };
-      store.addError(record);
+    onError(client, err) {
+      return error(client, "PROTOCOL_ERROR", err);
     },
-
-    onBadMessage(client: any, error: any) {
-      const record: ErrorRecord = {
-        id: `err-${++errorCounter}`,
-        category: "BAD_MESSAGE",
-        identity: client.identity ?? "unknown",
-        message: error?.message ?? "Malformed OCPP message",
-        timestamp: new Date().toISOString(),
-      };
-      store.addError(record);
+    onBadMessage(client, _raw, err) {
+      return error(client, "BAD_MESSAGE", err);
     },
-
-    onValidationFailure(client: any, message: any) {
-      const record: ErrorRecord = {
-        id: `err-${++errorCounter}`,
-        category: "VALIDATION_FAILURE",
-        identity: client.identity ?? "unknown",
-        message: `Schema validation failed for ${
-          message?.method ?? "unknown method"
-        }`,
-        method: message?.method,
-        timestamp: new Date().toISOString(),
-      };
-      store.addError(record);
+    onValidationFailure(client, _message, err) {
+      return error(client, "VALIDATION_FAILURE", err);
     },
-
-    onHandlerError(client: any, method: string, error: any) {
-      const record: ErrorRecord = {
-        id: `err-${++errorCounter}`,
-        category: "HANDLER_ERROR",
-        identity: client.identity ?? "unknown",
-        message: `Handler crashed: ${method} — ${
-          error?.message ?? String(error)
-        }`,
-        method,
-        stack: error?.stack,
-        timestamp: new Date().toISOString(),
-      };
-      store.addError(record);
+    onHandlerError(client, method, err) {
+      return error(client, "HANDLER_ERROR", err, method);
     },
-
-    // ── Backpressure & Health ───────────────────────────────────
-
-    onBackpressure(client: any, queueSize: number) {
-      const evt: SystemEvent = {
-        id: `sys-${++sysCounter}`,
-        type: "BACKPRESSURE",
-        identity: client.identity ?? "unknown",
-        message: `Backpressure detected — queue depth: ${queueSize}`,
-        details: { queueSize },
-        timestamp: new Date().toISOString(),
-      };
-      store.addSystemEvent(evt);
+    onBackpressure(client, bufferedAmount) {
+      return system(
+        "BACKPRESSURE",
+        `Send buffer: ${bufferedAmount} bytes`,
+        client.identity,
+        { bufferedAmount },
+      );
     },
-
-    onPongTimeout(client: any) {
-      const evt: SystemEvent = {
-        id: `sys-${++sysCounter}`,
-        type: "PONG_TIMEOUT",
-        identity: client.identity ?? "unknown",
-        message: `Pong timeout — peer unresponsive`,
-        timestamp: new Date().toISOString(),
-      };
-      store.addSystemEvent(evt);
+    onPongTimeout(client) {
+      return system(
+        "PONG_TIMEOUT",
+        "Peer did not answer WebSocket ping",
+        client.identity,
+      );
     },
-
-    // ── Server Management ───────────────────────────────────────
-
-    onReconfigure(config: any) {
-      const evt: SystemEvent = {
-        id: `sys-${++sysCounter}`,
-        type: "RECONFIGURE",
-        message: "Server configuration updated",
-        details: config,
-        timestamp: new Date().toISOString(),
-      };
-      store.addSystemEvent(evt);
+    onReconfigure(options) {
+      return system("RECONFIGURE", "Server configuration updated", undefined, {
+        changedKeys: Object.keys(options),
+      });
     },
-
+    onTLSUpdate() {
+      return system("TLS_UPDATE", "Server TLS certificates reloaded");
+    },
     onClosing() {
-      const evt: SystemEvent = {
-        id: `sys-${++sysCounter}`,
-        type: "SHUTDOWN",
-        message: "Server shutting down gracefully",
-        timestamp: new Date().toISOString(),
-      };
-      store.addSystemEvent(evt);
+      return system("SHUTDOWN", "Server is draining connections");
     },
-
-    onClose() {
-      // Final cleanup
+    async onClose() {
+      await pending;
+      active.clear();
+      plugin.serverRef = undefined;
     },
+    name: "ocpp-ws-board",
   };
+  const plugin: BoardPluginInstance = { ...hooks, flush: () => pending };
+  return plugin;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────
-
-function mapSecurityCategory(type: string): SecurityEventRecord["category"] {
-  if (!type) return "ANOMALY";
-  const t = type.toUpperCase();
-  if (t.includes("AUTH")) return "AUTH_FAILED";
-  if (t.includes("RATE")) return "RATE_LIMIT";
-  if (t.includes("PROTOCOL") || t.includes("VIOLATION"))
-    return "PROTOCOL_VIOLATION";
-  if (t.includes("POLICY") || t.includes("REJECT")) return "POLICY_REJECTION";
-  return "ANOMALY";
-}
-
-function mapSeverity(type: string): SecurityEventRecord["severity"] {
-  if (!type) return "medium";
-  const t = type.toUpperCase();
-  if (t.includes("AUTH")) return "high";
-  if (t.includes("RATE")) return "medium";
-  if (t.includes("ANOMALY")) return "high";
-  return "medium";
-}
-
-/**
- * Convert the message event payload from ocpp-ws-io into a StoredMessage.
- *
- * Event payload shape:
- *   { message: [msgType, msgId, method?, params?], direction: "IN"|"OUT", ctx: { type, messageId, method, params, timestamp, latencyMs, protocol } }
- */
 function toStoredMessage(
-  payload: any,
-  identity?: string,
-  protocol?: string,
+  payload: MessageEventPayload,
+  identity: string,
+  protocol: string,
 ): StoredMessage {
-  const ctx = payload.ctx ?? {};
-  const message = payload.message; // OCPP-J array: [type, id, method?, params/payload?]
-
-  // Extract method: ctx.method is most reliable, then from OCPP-J array position [2] for CALLs
+  const frame = jsonValue(payload.message);
+  const values = Array.isArray(frame) ? frame : [];
+  const kind = values[0];
+  const type: StoredMessage["type"] =
+    kind === 3
+      ? "CALLRESULT"
+      : kind === 4
+        ? "CALLERROR"
+        : kind === 5
+          ? "CALLRESULTERROR"
+          : kind === 6
+            ? "SEND"
+            : "CALL";
+  const isCall = type === "CALL" || type === "SEND";
+  const ctx = payload.ctx;
   const method =
-    ctx.method ??
-    (Array.isArray(message) && message[0] === 2 ? message[2] : undefined) ??
-    "Unknown";
-
-  // Extract messageId
-  const messageId =
-    ctx.messageId ?? (Array.isArray(message) ? message[1] : "") ?? "";
-
-  // Extract params/payload from ctx or from OCPP-J array
-  const params =
-    ctx.params ??
-    (Array.isArray(message) && message[0] === 2 ? message[3] : undefined);
-
-  const responsePayload =
-    ctx.payload ??
-    (Array.isArray(message) && (message[0] === 3 || message[0] === 4)
-      ? message[2]
-      : undefined);
-
+    "method" in ctx && typeof ctx.method === "string"
+      ? ctx.method
+      : isCall && typeof values[2] === "string"
+        ? values[2]
+        : "Response";
+  const response =
+    type === "CALLERROR" || type === "CALLRESULTERROR"
+      ? {
+          errorCode: values[2] ?? null,
+          errorDescription: values[3] ?? null,
+          errorDetails: values[4] ?? null,
+        }
+      : values[2];
   return {
-    id: `msg-${++counter}`,
-    identity: identity ?? "unknown",
-    direction: payload.direction ?? "IN",
-    type: resolveMessageType(ctx.type, message),
+    id: randomUUID(),
+    identity,
+    direction: payload.direction,
+    type,
     method,
-    messageId,
-    params: params ?? responsePayload,
-    payload: responsePayload,
+    messageId: typeof values[1] === "string" ? values[1] : "",
+    params: isCall ? values[3] : response,
+    payload: isCall ? undefined : response,
     timestamp: ctx.timestamp ?? new Date().toISOString(),
     latencyMs: ctx.latencyMs,
-    protocol: ctx.protocol ?? protocol ?? "",
+    protocol,
     source: "ocpp-ws-io",
   };
 }

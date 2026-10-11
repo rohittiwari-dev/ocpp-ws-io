@@ -1,54 +1,91 @@
+import { once } from "node:events";
+import type { ServerResponse } from "node:http";
+import type { BoardIncomingMessage } from "../../types/operations.js";
 import { createBoard } from "../board.js";
 import type { BoardOptions } from "../types.js";
 
-/**
- * Express/Connect adapter.
- * Usage:
- *   import { expressAdapter } from "ocpp-ws-board";
- *   app.use("/ocpp-ws-io/ui", expressAdapter({ auth: { mode: "token", token: "secret" } }));
- */
+/** Node/Express middleware; mount at options.basePath when using a URL prefix. */
 export function expressAdapter(options: BoardOptions) {
   const board = createBoard(options);
-
-  // Return both the middleware handler and the plugin
-  const handler = async (req: any, res: any) => {
-    const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
-    const honoReq = new Request(url.toString(), {
-      method: req.method,
-      headers: req.headers as any,
-      body: req.method !== "GET" && req.method !== "HEAD" ? req : undefined,
-    });
-
-    const response = await board.app.fetch(honoReq);
-
-    res.status(response.status);
-    response.headers.forEach((value: string, key: string) => {
-      res.setHeader(key, value);
-    });
-
-    if (response.body) {
-      const reader = response.body.getReader();
-      const pump = async () => {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            res.end();
-            break;
+  const handler = async (req: BoardIncomingMessage, res: ServerResponse) => {
+    try {
+      const headers = new Headers();
+      for (const [name, value] of Object.entries(req.headers)) {
+        if (Array.isArray(value))
+          for (const item of value) headers.append(name, item);
+        else if (value !== undefined) headers.set(name, value);
+      }
+      const origin = `${"encrypted" in req.socket && req.socket.encrypted ? "https" : "http"}://${req.headers.host ?? "localhost"}`;
+      let body: Uint8Array | undefined;
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        if (req.body !== undefined) {
+          const encoded = Buffer.from(JSON.stringify(req.body));
+          if (encoded.length > 1048576) {
+            res.statusCode = 413;
+            res.end("Request body too large");
+            return;
           }
-          res.write(value);
+          body = new Uint8Array(encoded);
+        } else {
+          const chunks: Buffer[] = [];
+          let length = 0;
+          for await (const chunk of req) {
+            const buffer = Buffer.isBuffer(chunk)
+              ? chunk
+              : Buffer.from(String(chunk));
+            length += buffer.length;
+            if (length > 1048576) {
+              res.statusCode = 413;
+              res.end("Request body too large");
+              return;
+            }
+            chunks.push(buffer);
+          }
+          body = new Uint8Array(Buffer.concat(chunks));
         }
+      }
+      const request = new Request(new URL(req.url ?? "/", origin), {
+        method: req.method,
+        headers,
+        body,
+      });
+      const response = await board.app.fetch(request);
+      res.statusCode = response.status;
+      response.headers.forEach((value, name) => res.setHeader(name, value));
+      if (!response.body) {
+        res.end();
+        return;
+      }
+      const reader = response.body.getReader();
+      const abort = () => {
+        void reader.cancel().catch(() => {});
       };
-      pump().catch(() => res.end());
-    } else {
-      const text = await response.text();
-      res.end(text);
+      res.once("close", abort);
+      try {
+        while (!res.destroyed) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!res.write(value)) {
+            const abortWait = new AbortController();
+            try {
+              await Promise.race([
+                once(res, "drain", { signal: abortWait.signal }),
+                once(res, "close", { signal: abortWait.signal }),
+              ]);
+            } finally {
+              abortWait.abort();
+            }
+          }
+        }
+      } finally {
+        res.off("close", abort);
+        await reader.cancel().catch(() => {});
+      }
+      res.end();
+    } catch {
+      if (!res.headersSent) res.statusCode = 500;
+      res.end();
     }
   };
-
-  return {
-    handler,
-    plugin: board.plugin,
-    store: board.store,
-    cleanup: board.cleanup,
-  };
+  return { ...board, handler };
 }

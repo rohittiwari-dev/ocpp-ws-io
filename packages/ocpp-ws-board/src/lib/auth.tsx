@@ -32,11 +32,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    const expire = () => setSession({ authenticated: false });
+    window.addEventListener("board:unauthorized", expire);
     api
       .get<SessionData>("/auth/session")
       .then(setSession)
       .catch(() => setSession({ authenticated: false }))
       .finally(() => setIsLoading(false));
+    return () => window.removeEventListener("board:unauthorized", expire);
   }, []);
 
   const login = async (credentials: {

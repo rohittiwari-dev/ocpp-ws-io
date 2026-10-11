@@ -1,288 +1,127 @@
-import {
-  IconActivity,
-  IconAlertTriangle,
-  IconCircleCheckFilled,
-  IconClock,
-  IconGauge,
-  IconMessage,
-  IconPlug,
-  IconServer,
-  IconShieldExclamation,
-} from "@tabler/icons-react";
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { MessageRow } from "@/components/message-row";
-import { StatCard } from "@/components/stat-card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { TrafficTable } from "@/components/traffic-table";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { api } from "@/lib/api";
-import { useSSE, useSSELatest } from "@/lib/sse";
-
-export interface OverviewData {
-  connectedClients: number;
-  totalConnections: number;
-  messagesPerSecond: number;
-  avgLatencyMs: number;
-  errorRate: number;
-  uptimeSeconds: number;
-  totalMessages: number;
-  recentMessages: any[];
-  securityEventCount: number;
-  errorCount: number;
-  systemEventCount: number;
-}
-
-export interface TelemetryData {
-  messagesPerSecond: number;
-  avgLatencyMs: number;
-  errorRate: number;
-  connectionCount: number;
-  uptimeSeconds: number;
-  totalMessages: number;
-  memoryUsage: { rss: number; heapUsed: number; heapTotal: number };
-}
-
-function formatUptime(seconds: number): string {
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (d > 0) return `${d}d ${h}h ${m}m`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m ${seconds % 60}s`;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
+  Export,
+  Feedback,
+  PageHeading,
+  Refresh,
+  Status,
+} from "@/components/workspace";
+import { useResource } from "@/hooks/use-resource";
+import { duration } from "@/lib/export";
+import type { ConnectionRecord, OverviewStats } from "@/types";
 export default function OverviewPage() {
-  const [overview, setOverview] = useState<OverviewData | null>(null);
-  const { data: liveTelemetry } = useSSELatest<TelemetryData>(
-    "/telemetry/stream",
-    "telemetry",
+  const resource = useResource<OverviewStats>("/overview", 5000);
+  const stations = useResource<ConnectionRecord[]>("/connections", 5000);
+  const data = resource.data;
+  const attention = (stations.data ?? []).filter(
+    (station) => station.errorCount || station.status !== "online",
   );
-  const { data: liveMessages } = useSSE<any>("/messages/stream", "message");
-
-  useEffect(() => {
-    api.get<OverviewData>("/overview").then(setOverview);
-  }, []);
-
-  const tele: TelemetryData | null =
-    liveTelemetry ?? (overview as unknown as TelemetryData) ?? null;
-  const recentMsgs =
-    liveMessages.length > 0
-      ? liveMessages.slice(0, 10)
-      : (overview?.recentMessages ?? []);
-
-  const securityCount = overview?.securityEventCount ?? 0;
-  const errorCount = overview?.errorCount ?? 0;
-  const heapPercent =
-    tele?.memoryUsage?.heapTotal && tele?.memoryUsage?.heapUsed
-      ? Math.round(
-          (tele.memoryUsage.heapUsed / tele.memoryUsage.heapTotal) * 100,
-        )
-      : 0;
-
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      {/* Page header */}
-      <div className="flex flex-col gap-1">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-primary/10">
-              <IconGauge className="size-5 text-primary" />
-            </div>
-            <h1 className="text-2xl font-heading font-bold tracking-tight">
-              Overview
-            </h1>
-          </div>
-          <div className="flex items-center gap-2">
-            {securityCount > 0 && (
-              <Link to="/security">
-                <Badge variant="destructive" className="gap-1.5 cursor-pointer">
-                  <IconShieldExclamation className="size-3" />
-                  {securityCount} Security{" "}
-                  {securityCount === 1 ? "Event" : "Events"}
-                </Badge>
-              </Link>
-            )}
-            <Badge
-              variant="outline"
-              className="gap-1.5 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 bg-emerald-500/8"
-            >
-              <IconCircleCheckFilled className="size-3" />
-              Healthy
-            </Badge>
-          </div>
+    <>
+      <PageHeading
+        title="Network overview"
+        description="A clear view of your stations, traffic, and operational health."
+      >
+        <Refresh onClick={resource.refresh} />
+        <Export data={data} name="overview" />
+      </PageHeading>
+      <Feedback {...resource} retry={resource.refresh} />
+      <div className="metric-strip">
+        <div className="metric">
+          <span>Online stations</span>
+          <strong>{data?.connectedClients ?? "\u2014"}</strong>
+          <small>{data?.totalConnections ?? 0} observed stations</small>
         </div>
-        <p className="text-sm text-muted-foreground ml-12">
-          Real-time observability for your OCPP infrastructure.
-        </p>
+        <div className="metric">
+          <span>Message throughput</span>
+          <strong>
+            {data?.messagesPerSecond ?? "\u2014"}
+            <small>frames / second / last 10 seconds</small>
+          </strong>
+        </div>
+        <div className="metric">
+          <span>Average response</span>
+          <strong>
+            {data?.avgLatencyMs ?? "\u2014"}
+            <small>milliseconds / recorded responses</small>
+          </strong>
+        </div>
+        <div className="metric">
+          <span>Board uptime</span>
+          <strong>{data ? duration(data.uptimeSeconds) : "\u2014"}</strong>
+          <small>Since this board started</small>
+        </div>
       </div>
-
-      <Separator className="opacity-50" />
-
-      {/* Primary metrics */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          title="Active Connections"
-          value={tele?.connectionCount ?? overview?.connectedClients ?? 0}
-          subtitle={`${overview?.totalConnections ?? 0} lifetime`}
-          icon={<IconPlug className="size-4" />}
-        />
-        <StatCard
-          title="Throughput"
-          value={`${tele?.messagesPerSecond ?? 0} msg/s`}
-          subtitle={`${
-            tele?.totalMessages ?? overview?.totalMessages ?? 0
-          } total processed`}
-          icon={<IconMessage className="size-4" />}
-        />
-        <StatCard
-          title="Avg Latency"
-          value={`${tele?.avgLatencyMs ?? 0}ms`}
-          subtitle={
-            (tele?.avgLatencyMs ?? 0) < 100
-              ? "Optimal"
-              : (tele?.avgLatencyMs ?? 0) < 500
-                ? "Moderate"
-                : "High"
-          }
-          trend={
-            (tele?.avgLatencyMs ?? 0) < 100
-              ? "up"
-              : (tele?.avgLatencyMs ?? 0) < 500
-                ? "neutral"
-                : "down"
-          }
-          icon={<IconGauge className="size-4" />}
-        />
-        <StatCard
-          title="Error Rate"
-          value={`${tele?.errorRate ?? 0}%`}
-          subtitle={
-            (tele?.errorRate ?? 0) < 1
-              ? "Normal"
-              : (tele?.errorRate ?? 0) < 5
-                ? "Acceptable"
-                : "Critical"
-          }
-          trend={
-            (tele?.errorRate ?? 0) < 1
-              ? "up"
-              : (tele?.errorRate ?? 0) < 5
-                ? "neutral"
-                : "down"
-          }
-          icon={<IconAlertTriangle className="size-4" />}
-        />
+      <div className="section-heading">
+        <h2>Needs attention</h2>
+        <Link to="/connections?view=attention">Open station workspace</Link>
       </div>
-
-      {/* Secondary metrics */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          title="Uptime"
-          value={formatUptime(tele?.uptimeSeconds ?? 0)}
-          icon={<IconClock className="size-4" />}
-        />
-        <StatCard
-          title="Heap Memory"
-          value={formatBytes(tele?.memoryUsage?.heapUsed ?? 0)}
-          subtitle={`${heapPercent}% of ${formatBytes(
-            tele?.memoryUsage?.heapTotal ?? 0,
-          )}`}
-          trend={
-            heapPercent < 70 ? "up" : heapPercent < 90 ? "neutral" : "down"
-          }
-          icon={<IconServer className="size-4" />}
-        />
-        <StatCard
-          title="RSS Memory"
-          value={formatBytes(tele?.memoryUsage?.rss ?? 0)}
-          subtitle="Resident Set Size"
-          icon={<IconActivity className="size-4" />}
-        />
-        <StatCard
-          title="Security Events"
-          value={securityCount}
-          subtitle={
-            errorCount > 0 ? `${errorCount} errors tracked` : "All clear"
-          }
-          trend={
-            securityCount === 0 ? "up" : securityCount < 5 ? "neutral" : "down"
-          }
-          icon={<IconShieldExclamation className="size-4" />}
-        />
-      </div>
-
-      {/* Live message stream */}
-      <Card className="glass-card overflow-hidden relative group">
-        <div className="accent-line-top opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-        <div className="absolute inset-x-0 -top-8 h-24 bg-mesh-gradient pointer-events-none" />
-        <CardHeader className="flex flex-row items-center justify-between py-5 px-6 relative">
-          <div className="space-y-0.5">
-            <CardTitle className="text-base font-heading">
-              Live Message Stream
-            </CardTitle>
-            <CardDescription>Latest 10 events</CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            {liveMessages.length > 0 && (
-              <Badge
-                variant="outline"
-                className="gap-1.5 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 bg-emerald-500/8 text-[10px] uppercase tracking-wider font-mono"
-              >
-                <span className="relative flex size-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full size-1.5 bg-emerald-500" />
-                </span>
-                Live
-              </Badge>
-            )}
-            <Link to="/messages">
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-lg hover:bg-primary/10 hover:text-primary hover:border-primary/20 transition-all"
-              >
-                View All
-              </Button>
-            </Link>
-          </div>
-        </CardHeader>
-        <Separator className="opacity-30" />
-        <CardContent className="p-0">
-          {recentMsgs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-              <div className="size-14 rounded-2xl bg-primary/8 flex items-center justify-center mb-3">
-                <IconActivity className="size-6 text-primary/50 animate-pulse" />
-              </div>
-              <p className="text-sm font-medium">Awaiting messages…</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Data streams automatically on connection
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-border/30">
-              {recentMsgs.map((msg: any) => (
-                <div key={msg.id}>
-                  <MessageRow message={msg} />
-                </div>
+      <div className="table-panel">
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Station</th>
+                <th>Connection</th>
+                <th>Observed errors</th>
+                <th>Next step</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attention.slice(0, 5).map((station) => (
+                <tr key={station.identity}>
+                  <td>{station.identity}</td>
+                  <td>
+                    <Status
+                      tone={station.status === "online" ? "mint" : "yellow"}
+                    >
+                      {station.status}
+                    </Status>
+                  </td>
+                  <td>{station.errorCount ?? 0}</td>
+                  <td>
+                    <Link
+                      className="button"
+                      to={`/connection/view/${encodeURIComponent(station.identity)}`}
+                    >
+                      Inspect station
+                    </Link>
+                  </td>
+                </tr>
               ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+              {!attention.length && (
+                <tr>
+                  <td colSpan={4} className="muted">
+                    {stations.data?.length
+                      ? "No station issues in the current records."
+                      : "Station health appears after a connection is observed."}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="section-heading">
+        <h2>Recent traffic</h2>
+        <Link to="/messages">View all messages</Link>
+      </div>
+      <TrafficTable messages={data?.recentMessages.slice(0, 6) ?? []} />
+      <div className="section-heading">
+        <h2>Diagnostics at a glance</h2>
+      </div>
+      <div className="inline-actions">
+        <Link className="button" to="/security">
+          {data?.securityEventCount ?? 0} security events
+        </Link>
+        <Link className="button" to="/diagnostics">
+          {data?.errorCount ?? 0} errors
+        </Link>
+        <Link className="button" to="/diagnostics?tab=system">
+          {data?.systemEventCount ?? 0} lifecycle events
+        </Link>
+      </div>
+    </>
   );
 }

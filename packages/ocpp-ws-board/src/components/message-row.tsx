@@ -12,8 +12,8 @@ interface MessageRowProps {
     type: "CALL" | "CALLRESULT" | "CALLERROR";
     method: string;
     messageId: string;
-    params?: unknown;
-    payload?: unknown;
+    params?: import("@/types").JsonValue;
+    payload?: import("@/types").JsonValue;
     timestamp: string;
     latencyMs?: number;
     protocol: string;

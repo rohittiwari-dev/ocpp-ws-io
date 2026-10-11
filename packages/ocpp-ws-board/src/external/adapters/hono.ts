@@ -11,6 +11,7 @@ import type { BoardOptions } from "../types.js";
 export function honoAdapter(options: BoardOptions) {
   const board = createBoard(options);
   return {
+    ...board,
     subApp: board.app,
     plugin: board.plugin,
     store: board.store,

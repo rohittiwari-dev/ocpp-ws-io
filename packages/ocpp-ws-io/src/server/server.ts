@@ -14,18 +14,12 @@ import type {
   Server as TlsServer,
 } from "node:tls";
 import type { WebSocketServer } from "ws";
-import {
-  HandshakeRejection,
-  type RPCError,
-  TimeoutError,
-} from "../core/errors.js";
+import { HandshakeRejection } from "../core/errors.js";
 import { initLogger } from "../core/init-logger.js";
 import { LRUMap } from "../core/lru-map.js";
 import { assertUniqueProtocols } from "../core/protocol-list.js";
-import { unchecked } from "../core/unchecked.js";
 import {
   createId,
-  createRPCError,
   endpointOf,
   NOOP_LOGGER,
   safeDecodeURIComponent,
@@ -56,10 +50,7 @@ import type {
   BatchResult,
   CheckedAction,
 } from "../types/exact-keys.js";
-import type {
-  SendToClientArgs,
-  VersionNamedSendArgs,
-} from "../types/handlers.js";
+import type { SendToClientArgs } from "../types/handlers.js";
 import type { HandshakeInfo } from "../types/handshake.js";
 import type { JsonObject } from "../types/json.js";
 import type { LoggerLike, LoggerLikeNotOptional } from "../types/logger.js";
@@ -85,6 +76,17 @@ import { checkCORS } from "./cors.js";
 import { EventEmitterBase } from "./emitter-base.js";
 import { assertHealthEndpointAuth, checkHealthAuth } from "./health-auth.js";
 import { assertMaxIdentityLength, identityRefusal } from "./identity.js";
+import {
+  broadcastToAll,
+  broadcastToIdentities,
+  handleBroadcastMessage,
+  handleUnicastMessage,
+  type MessagingContext,
+  type PendingRemoteCall,
+  routeCall,
+  safeRouteCall,
+  sendBatchToClient,
+} from "./messaging.js";
 import {
   awaitShutdownHook,
   guardPluginHook,
@@ -122,27 +124,6 @@ import { createWss, warnIgnoredWssOptions } from "./wss-options.js";
 
 /** RFC 9110 §15.5.2: every 401 carries a challenge; OCPP uses Basic Auth. */
 const BASIC_AUTH_CHALLENGE = 'Basic realm="ocpp-ws-io", charset="UTF-8"';
-
-/** A version-named call has its action, a string, where the other has params. */
-function isVersionNamed(args: SendToClientArgs): args is VersionNamedSendArgs {
-  return typeof args[2] === "string";
-}
-
-/** The parts of sendToClient's arguments, whichever form they take. */
-function parseSendToClientArgs(args: SendToClientArgs): {
-  identity: string;
-  version?: string;
-  method: string;
-  params?: object;
-  options?: CallOptions;
-} {
-  if (isVersionNamed(args)) {
-    const [identity, version, method, params, options] = args;
-    return { identity, version, method, params, options };
-  }
-  const [identity, method, params, options] = args;
-  return { identity, method, params, options };
-}
 
 /** A listening server whose certificate can be replaced in place (HTTPS). */
 function canReloadSecureContext(
@@ -255,25 +236,11 @@ export class OCPPServer<
   private readonly _nodeId = createId();
 
   /** Pending cross-node RPC calls awaiting a correlated response. */
-  private _pendingRemoteCalls = new Map<
-    string,
-    {
-      resolve: (value: unknown) => void;
-      reject: (reason: unknown) => void;
-      timer: ReturnType<typeof setTimeout>;
-      /** Node this call was routed to; only it may answer. */
-      targetNode?: string;
-    }
-  >();
+  private _pendingRemoteCalls = new Map<string, PendingRemoteCall>();
+  /** The routing fields, as server/messaging.ts reads them. */
+  private readonly _messaging: MessagingContext<P> =
+    this._createMessagingContext();
 
-  /** Extra wait on top of the call timeout to absorb cross-node transit. */
-  /**
-   * Default grace added to callTimeoutMs for a cross-node call. Covers a
-   * ROUND TRIP through the adapter (request out, result back), not one hop —
-   * the shipped Redis adapter can take ~1s per direction. Overridable via
-   * ServerOptions.remoteCallGraceMs.
-   */
-  private static readonly _REMOTE_RESPONSE_GRACE_MS = 2000;
   private _sessions: LRUMap<
     string,
     { data: PersistedSession; lastActive: number }
@@ -2894,114 +2861,7 @@ export class OCPPServer<
   ): Promise<TResult | undefined>;
 
   async sendToClient(...args: SendToClientArgs): Promise<unknown> {
-    return await this._sendToClient(args);
-  }
-
-  /** sendToClient, for its arguments in either form. */
-  private async _sendToClient(args: SendToClientArgs): Promise<unknown> {
-    const { identity, version, method, params, options } =
-      parseSendToClientArgs(args);
-
-    // 1. Check local (O(1) identity lookup)
-    const localClient = this._clientsByIdentity.get(identity);
-    if (localClient) {
-      // Forward the version when provided so the call resolves against the
-      // version-specific overload (and version-aware strict validation).
-      // The arguments were checked by the overloads above; here the method
-      // is a string.
-      return version
-        ? await localClient.call(
-            version as P,
-            unchecked(method),
-            params as object,
-            options,
-          )
-        : await localClient.call(unchecked(method), params as object, options);
-    }
-
-    // 2. Check Registry & Unicast (with response correlation — report H1)
-    if (canRoutePresence(this._presence)) {
-      const nodeId = await lookupPresence(this._presence, identity);
-      if (nodeId && !(await this._isNodeAlive(nodeId))) {
-        // The owning node is gone. Its entry would otherwise linger for the
-        // full TTL and every call to this charger would wait out the timeout.
-        this._logger?.warn?.(
-          "Owning node is no longer alive — clearing entry",
-          {
-            identity,
-            nodeId,
-          },
-        );
-        removePresenceFenced(this._presence, identity, nodeId);
-        throw new Error(`Client ${identity} not found`);
-      }
-      if (nodeId) {
-        const correlationId = createId();
-        const timeoutMs =
-          (options?.timeoutMs ?? this._options.callTimeoutMs ?? 30_000) +
-          (this._options.remoteCallGraceMs ??
-            OCPPServer._REMOTE_RESPONSE_GRACE_MS);
-
-        const resultPromise = new Promise<unknown>((resolve, reject) => {
-          const timer = setTimeout(() => {
-            this._pendingRemoteCalls.delete(correlationId);
-            reject(
-              new TimeoutError(
-                `Remote call to "${identity}" via node ${nodeId} timed out after ${timeoutMs}ms`,
-              ),
-            );
-          }, timeoutMs);
-          this._pendingRemoteCalls.set(correlationId, {
-            resolve,
-            reject,
-            timer,
-            // Recorded so the result leg can reject a reply that did not come
-            // from the node we actually asked.
-            targetNode: nodeId,
-          });
-        });
-
-        // Carry `version` across the cluster so the receiving node can
-        // resolve the same version-specific overload.
-        //
-        // The publish is deliberately NOT awaited before resultPromise. An
-        // adapter whose publish() hangs rather than rejecting — a black-holed
-        // Redis connection with no socket timeout — would otherwise park us on
-        // that await while resultPromise's timer fires with nobody observing
-        // it: an unhandled rejection (fatal on Node by default) and a caller
-        // promise pending forever. Awaiting the result instead means the
-        // timeout is always observed, whatever the transport does.
-        this._adapter
-          ?.publish(`ocpp:node:${nodeId}`, {
-            source: this._nodeId,
-            target: identity,
-            version,
-            method,
-            params,
-            options,
-            correlationId,
-          })
-          .catch((err) => {
-            // Publish failed (adapter down) — settle the pending call so
-            // nothing leaks and the caller sees the transport error rather
-            // than waiting out the full timeout.
-            const pending = this._pendingRemoteCalls.get(correlationId);
-            if (pending) {
-              clearTimeout(pending.timer);
-              this._pendingRemoteCalls.delete(correlationId);
-              pending.reject(err);
-            }
-          });
-
-        return await resultPromise;
-      }
-    }
-
-    // 3. Fallback to Broadcast (if configured/needed)
-    // For now, we only broadcast if explicitly called via .broadcast()
-    // But if we want comprehensive routing, we could broadcast here.
-    // Ideally, sendToClient implies targeted. If not found, we throw or return false.
-    throw new Error(`Client ${identity} not found`);
+    return await routeCall(this._messaging, args);
   }
 
   // ─── Safe SendToClient (Best Effort) ──────────────────────────
@@ -3054,22 +2914,7 @@ export class OCPPServer<
   ): Promise<TResult | undefined>;
 
   async safeSendToClient(...args: SendToClientArgs): Promise<unknown> {
-    try {
-      return await this._sendToClient(args);
-    } catch (error) {
-      if (
-        this._logger &&
-        typeof this._logger.warn === "function" &&
-        (error as Error).name !== "TimeoutError"
-      ) {
-        this._logger.warn("SafeSendToClient failed", {
-          identity: args[0],
-          method: parseSendToClientArgs(args).method,
-          error,
-        });
-      }
-      return undefined;
-    }
+    return await safeRouteCall(this._messaging, args);
   }
   // ─── Batch Calls ──────────────────────────────────────────────
 
@@ -3105,63 +2950,7 @@ export class OCPPServer<
     identity: string,
     calls: readonly BatchCall<KnownProtocol<P>>[],
   ): Promise<Array<unknown | undefined>> {
-    if (calls.length === 0) return [];
-
-    const client = this._clientsByIdentity.get(identity);
-    if (!client) {
-      // Not on this node. This used to return an array of `undefined` with a
-      // "future enhancement" note, which is indistinguishable from "every call
-      // failed" — so in a cluster sendBatch silently did nothing for any
-      // charger that happened to live on another node.
-      //
-      // Route each call through sendToClient, which owns the cross-node path.
-      // The local fast path below pipelines through callImmediate; a remote
-      // batch cannot, but these calls are already crossing the network, so the
-      // per-call cost is dominated by transport either way.
-      if (canRoutePresence(this._presence)) {
-        this._logger?.debug?.("sendBatch: routing cross-node", { identity });
-        const remote = await Promise.allSettled(
-          calls.map((c) =>
-            this.sendToClient(
-              identity,
-              unchecked(c.method),
-              c.params,
-              c.options,
-            ),
-          ),
-        );
-        return remote.map((r) => {
-          if (r.status === "fulfilled") return r.value;
-          this._logger?.warn?.("sendBatch: remote call failed", {
-            identity,
-            error: (r.reason as Error)?.message,
-          });
-          return undefined;
-        });
-      }
-
-      this._logger?.warn?.("sendBatch: client not found locally", {
-        identity,
-      });
-      return calls.map(() => undefined);
-    }
-
-    // Bypass the call queue so the batch pipelines in parallel without
-    // mutating the client's configured callConcurrency (report M9).
-    const results = await Promise.allSettled(
-      calls.map((c) =>
-        client.callImmediate(unchecked(c.method), c.params, c.options ?? {}),
-      ),
-    );
-
-    return results.map((r) => {
-      if (r.status === "fulfilled") return r.value;
-      this._logger?.warn?.("sendBatch: individual call failed", {
-        identity,
-        error: (r.reason as Error)?.message,
-      });
-      return undefined;
-    });
+    return await sendBatchToClient(this._messaging, identity, calls);
   }
 
   // ─── Pub/Sub Adapter ─────────────────────────────────────────
@@ -3209,7 +2998,7 @@ export class OCPPServer<
 
     // 1. Subscribe to Broadcast
     await this._adapter.subscribe("ocpp:broadcast", (msg: unknown) =>
-      this._onBroadcast(msg),
+      handleBroadcastMessage(this._messaging, msg),
     );
 
     // 2. Subscribe to Unicast (My Node)
@@ -3304,208 +3093,44 @@ export class OCPPServer<
     return refreshPresence(this._presence, ttlSec);
   }
 
-  private _onBroadcast(msg: unknown) {
-    try {
-      if (!msg || typeof msg !== "object") return;
-      const payload = msg as {
-        source: string;
-        method: string;
-        params: unknown;
-      };
-
-      if (payload.source === this._nodeId) return;
-
-      // The method comes from another node, as a string: not checked by type.
-      for (const client of this._clients) {
-        client
-          .call(unchecked(payload.method), payload.params as object)
-          .catch(() => {});
-      }
-    } catch (err) {
-      this._logger?.error?.("Error processing broadcast message", {
-        error: (err as Error).message,
-      });
-    }
+  /** The server's routing fields, read through getters. */
+  private _createMessagingContext(): MessagingContext<P> {
+    const server = this;
+    return {
+      get presence() {
+        return server._presence;
+      },
+      get nodeId() {
+        return server._nodeId;
+      },
+      get adapter() {
+        return server._adapter;
+      },
+      get logger() {
+        return server._logger;
+      },
+      get clients() {
+        return server._clients;
+      },
+      get clientsByIdentity() {
+        return server._clientsByIdentity;
+      },
+      get pendingRemoteCalls() {
+        return server._pendingRemoteCalls;
+      },
+      get callTimeoutMs() {
+        return server._options.callTimeoutMs;
+      },
+      get remoteCallGraceMs() {
+        return server._options.remoteCallGraceMs;
+      },
+      isNodeAlive: (nodeId) => server._isNodeAlive(nodeId),
+    };
   }
 
-  private _onUnicast(msg: unknown) {
-    try {
-      if (!msg || typeof msg !== "object") return;
-
-      // Response leg: a remote node answering one of our calls
-      const asResponse = msg as {
-        __type?: string;
-        correlationId?: string;
-        source?: string;
-        ok?: boolean;
-        result?: unknown;
-        error?: {
-          code?: string;
-          name?: string;
-          message?: string;
-          details?: Record<string, unknown>;
-        };
-      };
-      if (asResponse.__type === "callResult" && asResponse.correlationId) {
-        const pending = this._pendingRemoteCalls.get(asResponse.correlationId);
-        if (!pending) return; // late or duplicate response
-
-        // Only the node we asked may answer. Correlation ids are unguessable,
-        // so this is a consistency check rather than a security boundary — but
-        // a mis-routed or replayed frame settling an unrelated call is exactly
-        // the kind of bug that is impossible to diagnose after the fact.
-        if (
-          pending.targetNode &&
-          asResponse.source &&
-          asResponse.source !== pending.targetNode
-        ) {
-          this._logger?.warn?.(
-            "Discarding cross-node result from another node",
-            {
-              expected: pending.targetNode,
-              received: asResponse.source,
-            },
-          );
-          return;
-        }
-
-        this._pendingRemoteCalls.delete(asResponse.correlationId);
-        clearTimeout(pending.timer);
-        if (asResponse.ok) {
-          pending.resolve(asResponse.result);
-        } else {
-          // ── #4: preserve the error's identity across the cluster ──
-          // The remote leg reports rpcErrorCode, which a TimeoutError does not
-          // have, so every remote timeout used to arrive as a GenericError.
-          // A caller could not write `catch (e) { if (e instanceof TimeoutError) }`
-          // and have it behave the same locally and cross-node.
-          if (asResponse.error?.name === "TimeoutError") {
-            pending.reject(
-              new TimeoutError(
-                asResponse.error.message ?? "Remote call timed out",
-              ),
-            );
-          } else {
-            pending.reject(
-              createRPCError(
-                asResponse.error?.code ?? "GenericError",
-                asResponse.error?.message,
-                asResponse.error?.details ?? {},
-              ),
-            );
-          }
-        }
-        return;
-      }
-
-      // Request leg: deliver to a locally connected client
-      const payload = msg as {
-        source: string;
-        target: string;
-        version?: string;
-        method: string;
-        params: unknown;
-        options?: CallOptions;
-        correlationId?: string;
-      };
-
-      const client = this._clientsByIdentity.get(payload.target);
-      if (client) {
-        // Forward the version when present so the call resolves against the
-        // version-specific overload, matching local sendToClient behavior.
-        // The method comes from another node, as a string: not checked by type.
-        const delivery = payload.version
-          ? client.call(
-              payload.version as P,
-              unchecked(payload.method),
-              payload.params as object,
-              payload.options,
-            )
-          : client.call(
-              unchecked(payload.method),
-              payload.params as object,
-              payload.options,
-            );
-        delivery.then(
-          (result) => {
-            this._publishRemoteResult(payload, { ok: true, result });
-          },
-          (err) => {
-            this._publishRemoteResult(payload, {
-              ok: false,
-              error: {
-                code:
-                  (err as Partial<RPCError>)?.rpcErrorCode ?? "GenericError",
-                // Carried so the origin can rebuild the same error class it
-                // would have thrown for a local call.
-                name: (err as Error)?.name,
-                message: (err as Error)?.message ?? "",
-                details: (err as Partial<RPCError>)?.details ?? {},
-              },
-            });
-            if ((err as Error).name !== "TimeoutError") {
-              this._logger?.error?.("Error delivering unicast to client", {
-                identity: payload.target,
-                error: err,
-              });
-            }
-          },
-        );
-        return;
-      }
-
-      // Unknown target — the registry is stale. Tell the caller immediately
-      // instead of letting it time out, and clean up the stale entry.
-      this._logger?.warn?.("Received unicast for unknown client", {
-        target: payload.target,
-      });
-      this._publishRemoteResult(payload, {
-        ok: false,
-        error: {
-          code: "GenericError",
-          message: `Client ${payload.target} not found on node ${this._nodeId}`,
-        },
-      });
-      // Fenced: the entry may already name a different node (the charger
-      // migrated while this message sat in the stream). Deleting it
-      // unconditionally disconnected a live client from cross-node routing.
-      removePresenceFenced(this._presence, payload.target);
-    } catch (err) {
-      this._logger?.error?.("Error processing unicast", {
-        error: (err as Error).message,
-      });
-    }
-  }
-
-  /** Publish the result of a remotely requested call back to the origin node. */
-  private _publishRemoteResult(
-    request: { source?: string; correlationId?: string },
-    body: {
-      ok: boolean;
-      result?: unknown;
-      error?: {
-        code?: string;
-        name?: string;
-        message?: string;
-        details?: Record<string, unknown>;
-      };
-    },
-  ): void {
-    if (!request.correlationId || !request.source || !this._adapter) return;
-    this._adapter
-      .publish(`ocpp:node:${request.source}`, {
-        __type: "callResult",
-        correlationId: request.correlationId,
-        // Identifies the answering node so the origin can confirm the reply
-        // came from the node it actually asked.
-        source: this._nodeId,
-        ...body,
-      })
-      .catch((err) => {
-        this._logger?.error?.("Failed to publish remote call result", {
-          error: err,
-        });
-      });
+  /** Test seam: see handleUnicastMessage in server/messaging.ts. */
+  private _onUnicast(msg: unknown): void {
+    handleUnicastMessage(this._messaging, msg);
   }
 
   async publish(channel: string, data: unknown): Promise<void> {
@@ -3532,40 +3157,7 @@ export class OCPPServer<
     method: string,
     params?: object,
   ): Promise<import("../types/index.js").BroadcastResult> {
-    // Every local failure used to be swallowed by `.catch(() => {})` behind a
-    // `Promise<void>`, so a caller could not tell a clean fan-out from one
-    // where every charger rejected. The result reports what is knowable.
-    const targets = Array.from(this._clients);
-    const settled = await Promise.allSettled(
-      targets.map((client) => client.call(unchecked(method), params)),
-    );
-
-    const localFailed: Array<{ identity: string; error: string }> = [];
-    let localDelivered = 0;
-    settled.forEach((r, i) => {
-      if (r.status === "fulfilled") localDelivered++;
-      else
-        localFailed.push({
-          identity: targets[i]?.identity ?? "unknown",
-          error: (r.reason as Error)?.message ?? String(r.reason),
-        });
-    });
-
-    let remotePublished = false;
-    if (this._adapter) {
-      try {
-        await this._adapter.publish("ocpp:broadcast", {
-          source: this._nodeId,
-          method,
-          params,
-        });
-        remotePublished = true;
-      } catch (err) {
-        this._logger?.error?.("Broadcast publish failed", { error: err });
-      }
-    }
-
-    return { localDelivered, localFailed, remotePublished };
+    return await broadcastToAll(this._messaging, method, params);
   }
 
   /**
@@ -3602,71 +3194,12 @@ export class OCPPServer<
     params?: object,
     options?: CallOptions,
   ): Promise<void> {
-    const localIdentities = new Set<string>();
-    const localPromises: Promise<JsonObject | undefined>[] = [];
-
-    // 1. Send to local clients immediately (O(1) lookup via _clientsByIdentity)
-    for (const identity of identities) {
-      const client = this._clientsByIdentity.get(identity);
-      if (client) {
-        localIdentities.add(identity);
-        localPromises.push(
-          client
-            .call(unchecked(method), params, options)
-            .catch(() => undefined),
-        );
-      }
-    }
-
-    // 2. Resolve remote clients
-    const remoteIdentities = identities.filter(
-      (id) => !localIdentities.has(id),
+    await broadcastToIdentities(
+      this._messaging,
+      identities,
+      method,
+      params,
+      options,
     );
-
-    if (remoteIdentities.length > 0 && this._adapter) {
-      // 2a. Fetch presence in batch
-      let presences: (string | null)[] = [];
-      if (this._adapter.getPresenceBatch) {
-        presences = await this._adapter.getPresenceBatch(remoteIdentities);
-      } else if (this._adapter.getPresence) {
-        presences = await Promise.all(
-          remoteIdentities.map((id) => this._adapter!.getPresence!(id)),
-        );
-      }
-
-      // 2b. Prepare batch messages payload
-      const batchMessages: { channel: string; data: unknown }[] = [];
-
-      for (let i = 0; i < remoteIdentities.length; i++) {
-        const nodeId = presences[i];
-        if (nodeId) {
-          batchMessages.push({
-            channel: `ocpp:node:${nodeId}`,
-            data: {
-              source: this._nodeId,
-              target: remoteIdentities[i],
-              method,
-              params,
-              options,
-            },
-          });
-        }
-      }
-
-      // 2c. Publish in batch via adapter
-      if (batchMessages.length > 0) {
-        if (this._adapter.publishBatch) {
-          await this._adapter.publishBatch(batchMessages);
-        } else {
-          await Promise.all(
-            batchMessages.map((bm) =>
-              this._adapter!.publish(bm.channel, bm.data),
-            ),
-          );
-        }
-      }
-    }
-
-    await Promise.all(localPromises);
   }
 }

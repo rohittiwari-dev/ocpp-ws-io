@@ -26,19 +26,29 @@
     "node": ">=20.0.0"
   },
   "type": "module",
-  "main": "dist/index.js",
-  "module": "dist/index.cjs",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.cjs",
-      "require": "./dist/index.js"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./nest": {
-      "types": "./dist/nest.d.ts",
-      "import": "./dist/nest.cjs",
-      "require": "./dist/nest.js"
+      "import": {
+        "types": "./dist/nest.d.ts",
+        "default": "./dist/nest.js"
+      },
+      "require": {
+        "types": "./dist/nest.d.cts",
+        "default": "./dist/nest.cjs"
+      }
     }
   },
   "files": [
@@ -52,7 +62,9 @@
     "format": "biome format --write .",
     "check": "biome check --write .",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.external.json"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.external.json",
+    "test": "npm run build:ui && npm run build:server && tsc --noEmit -p tsconfig.test.json && node --test test/*.test.mjs",
+    "test:browser": "node test/browser-check.mjs"
   },
   "peerDependencies": {
     "ocpp-ws-io": "^3.0.0"

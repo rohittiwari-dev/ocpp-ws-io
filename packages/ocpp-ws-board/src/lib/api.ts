@@ -1,34 +1,32 @@
-const BASE = "/api";
-
+export const BASE_PATH =
+  document.querySelector<HTMLMetaElement>('meta[name="ocpp-board-base"]')
+    ?.content ?? "";
+export const API_BASE = `${BASE_PATH}/api`;
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const response = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
+    headers: { "Content-Type": "application/json", ...init?.headers },
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.error ?? res.statusText);
+  if (!response.ok) {
+    const body: { error?: string } = await response.json().catch(() => ({}));
+    if (response.status === 401)
+      window.dispatchEvent(new Event("board:unauthorized"));
+    throw new ApiError(response.status, body.error ?? response.statusText);
   }
-  return res.json();
+  return response.json() as Promise<T>;
 }
-
 export class ApiError extends Error {
   status: number;
-
   constructor(status: number, message: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
   }
 }
-
 export const api = {
-  get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) =>
+  get: <T>(path: string, signal?: AbortSignal) => request<T>(path, { signal }),
+  post: <T>(path: string, body?: object) =>
     request<T>(path, {
       method: "POST",
       body: body ? JSON.stringify(body) : undefined,

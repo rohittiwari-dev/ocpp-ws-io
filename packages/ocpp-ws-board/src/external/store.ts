@@ -3,6 +3,8 @@ import type {
   BoardStorageAdapter,
   ConnectionRecord,
   ErrorRecord,
+  JsonObject,
+  JsonValue,
   OverviewStats,
   ProxyEvent,
   SecurityEventRecord,
@@ -20,6 +22,8 @@ class CompressedRingBuffer<T> {
   private count = 0;
 
   constructor(private capacity: number) {
+    if (!Number.isInteger(capacity) || capacity < 1)
+      throw new RangeError("Buffer capacity must be a positive integer");
     this.buffer = new Array<Buffer>(capacity);
   }
 
@@ -83,18 +87,19 @@ export class CompressedMemoryStore implements BoardStorageAdapter {
   protected connections = new Map<string, ConnectionRecord>();
   private readonly messages: CompressedRingBuffer<StoredMessage>;
   private readonly proxyEvents: CompressedRingBuffer<ProxyEvent>;
-  private readonly smartChargeHistory: CompressedRingBuffer<unknown>;
+  private readonly smartChargeHistory: CompressedRingBuffer<JsonValue>;
   readonly smartChargeSessions = new Map<string, SmartChargeSession>();
-  smartChargeConfig: Record<string, unknown> = {};
+  smartChargeConfig: JsonObject = {};
   smartChargeConnected = false;
   proxyConnected = false;
-  dispatchErrors: unknown[] = [];
+  dispatchErrors: JsonValue[] = [];
 
   // Observability
   private readonly securityEvents: CompressedRingBuffer<SecurityEventRecord>;
   private readonly errors: CompressedRingBuffer<ErrorRecord>;
   private readonly systemEvents: CompressedRingBuffer<SystemEvent>;
 
+  private lastSampleAt = 0;
   private peakConnections = 0;
   private totalMessageCount = 0;
   private errorTotalCount = 0;
@@ -113,7 +118,7 @@ export class CompressedMemoryStore implements BoardStorageAdapter {
   ) {
     this.messages = new CompressedRingBuffer<StoredMessage>(maxMessages);
     this.proxyEvents = new CompressedRingBuffer<ProxyEvent>(maxProxyEvents);
-    this.smartChargeHistory = new CompressedRingBuffer<unknown>(
+    this.smartChargeHistory = new CompressedRingBuffer<JsonValue>(
       maxSmartChargeHistory,
     );
     this.securityEvents = new CompressedRingBuffer<SecurityEventRecord>(1000);
@@ -172,7 +177,7 @@ export class CompressedMemoryStore implements BoardStorageAdapter {
     this.errors.removeWhere((e) => e.identity === identity);
 
     // Remove all system events for this identity
-    this.systemEvents.removeWhere((e) => (e as any).identity === identity);
+    this.systemEvents.removeWhere((e) => e.identity === identity);
   }
 
   // ── Messages ─────────────────────────────────────────────────────
@@ -180,8 +185,12 @@ export class CompressedMemoryStore implements BoardStorageAdapter {
   async addMessage(msg: StoredMessage): Promise<void> {
     this.messages.push(msg);
     this.totalMessageCount++;
-    this.msgTimestamps.push(Date.now());
-    if (msg.type === "CALLERROR") {
+    const now = Date.now();
+    this.msgTimestamps = this.msgTimestamps.filter(
+      (time) => now - time < 10_000,
+    );
+    this.msgTimestamps.push(now);
+    if (msg.type === "CALLERROR" || msg.type === "CALLRESULTERROR") {
       this.errorTotalCount++;
       if (msg.identity) {
         const conn = this.connections.get(msg.identity);
@@ -226,7 +235,7 @@ export class CompressedMemoryStore implements BoardStorageAdapter {
 
   // ── Smart Charge ─────────────────────────────────────────────────
 
-  async addSmartChargeEvent(event: unknown): Promise<void> {
+  async addSmartChargeEvent(event: JsonValue): Promise<void> {
     this.smartChargeHistory.push(event);
   }
 
@@ -260,11 +269,10 @@ export class CompressedMemoryStore implements BoardStorageAdapter {
 
   async addError(error: ErrorRecord): Promise<void> {
     this.errors.push(error);
-    this.errorTotalCount++;
     if (
       error.identity &&
       error.identity !== "server" &&
-      error.identity !== "unknown"
+      error.identity !== "JsonValue"
     ) {
       const conn = this.connections.get(error.identity);
       if (conn) {
@@ -345,16 +353,18 @@ export class CompressedMemoryStore implements BoardStorageAdapter {
       totalMessages: this.totalMessageCount,
     };
 
-    this.telemetryHistory.push({
-      ...snapshot,
-      time: new Date(now).toLocaleTimeString("en-US", {
-        hour12: false,
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      }),
-    });
-
+    if (this.lastSampleAt + 1900 <= now) {
+      this.lastSampleAt = now;
+      this.telemetryHistory.push({
+        ...snapshot,
+        time: new Date(now).toLocaleTimeString("en-US", {
+          hour12: false,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+      });
+    }
     return snapshot;
   }
 

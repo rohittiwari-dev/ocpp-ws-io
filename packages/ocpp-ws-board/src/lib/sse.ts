@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
+import { API_BASE } from "./api";
 
 /**
  * Hook that subscribes to an SSE endpoint and accumulates events.
  */
-export function useSSE<T>(url: string, eventName = "message") {
+export function useSSE<T>(url: string, eventName = "message", enabled = true) {
   const [data, setData] = useState<T[]>([]);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const es = new EventSource(`/api${url}`, { withCredentials: true });
+    setConnected(false);
+    if (!enabled) return;
+    const es = new EventSource(`${API_BASE}${url}`, { withCredentials: true });
 
     es.addEventListener("connected", () => setConnected(true));
     es.addEventListener(eventName, (e) => {
@@ -23,7 +26,7 @@ export function useSSE<T>(url: string, eventName = "message") {
     es.onerror = () => setConnected(false);
 
     return () => es.close();
-  }, [url, eventName]);
+  }, [url, eventName, enabled]);
 
   return { data, connected };
 }
@@ -36,7 +39,7 @@ export function useSSELatest<T>(url: string, eventName = "telemetry") {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const es = new EventSource(`/api${url}`, { withCredentials: true });
+    const es = new EventSource(`${API_BASE}${url}`, { withCredentials: true });
 
     es.addEventListener("connected", () => setConnected(true));
     es.addEventListener(eventName, (e) => {

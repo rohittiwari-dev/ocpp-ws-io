@@ -14,12 +14,19 @@ export class BoardModule {
     return {
       module: BoardModule,
       providers: [
+        { provide: "BOARD", useValue: board },
         { provide: "BOARD_APP", useValue: board.app },
         { provide: "BOARD_PLUGIN", useValue: board.plugin },
         { provide: "BOARD_STORE", useValue: board.store },
         { provide: "BOARD_CLEANUP", useValue: board.cleanup },
       ],
-      exports: ["BOARD_APP", "BOARD_PLUGIN", "BOARD_STORE", "BOARD_CLEANUP"],
+      exports: [
+        "BOARD",
+        "BOARD_APP",
+        "BOARD_PLUGIN",
+        "BOARD_STORE",
+        "BOARD_CLEANUP",
+      ],
     };
   }
 }

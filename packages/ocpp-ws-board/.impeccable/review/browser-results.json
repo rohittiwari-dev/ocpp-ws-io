@@ -1,0 +1,16 @@
+{
+  "passed": [
+    "Authenticated desktop render at 1440px, prefixed assets/API/SSE, no document overflow",
+    "Favorite toggle, favorite view, and persistence across reload",
+    "Station search, no-result state, pagination, and page reset",
+    "Real authenticated command from browser to core client; accepted response and audit history",
+    "Malformed command JSON blocked before sending",
+    "All 8 workspace sections render without runtime errors or document overflow",
+    "Message pause/resume and filtered JSON download",
+    "Station detail and cancelable destructive-action confirmation",
+    "Light theme, 390px station and command layouts, mobile navigation"
+  ],
+  "pageErrors": [],
+  "fixture": "Synthetic station records; real core RPC client and authenticated board HTTP adapter",
+  "timestamp": "2026-10-11T06:55:47.532Z"
+}
