@@ -45,23 +45,23 @@ export default function SettingsPage() {
         <h2>Working with the board</h2>
         <dl className="detail-list">
           <div>
-            <dt>Stations</dt>
+            <dt>Chargers</dt>
             <dd>
               Search by identity or IP, filter by status and protocol, and star
-              stations for quick access.
+              chargers for quick access.
             </dd>
           </div>
           <div>
             <dt>Messages</dt>
             <dd>
               Pause live updates before inspecting payloads. Correlate exchange
-              filters by station and message ID.
+              filters by charger and message ID.
             </dd>
           </div>
           <div>
             <dt>Commands</dt>
             <dd>
-              Choose an online station and a compatible preset, review the JSON,
+              Choose an online charger and a compatible preset, review the JSON,
               and confirm before sending. Read the returned OCPP status.
             </dd>
           </div>

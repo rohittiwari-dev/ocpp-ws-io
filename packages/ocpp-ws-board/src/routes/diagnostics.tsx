@@ -91,7 +91,7 @@ export default function DiagnosticsPage() {
               setQuery(next);
             }}
           >
-            Clear station: {query.get("identity")}
+            Clear charger: {query.get("identity")}
           </button>
         )}
       </div>
@@ -102,7 +102,7 @@ export default function DiagnosticsPage() {
             <thead>
               <tr>
                 <th>Time</th>
-                <th>Station</th>
+                <th>Charger</th>
                 <th>Category</th>
                 <th>Details</th>
               </tr>

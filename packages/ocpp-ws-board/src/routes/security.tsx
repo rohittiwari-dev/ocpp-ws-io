@@ -50,7 +50,7 @@ export default function SecurityPage() {
             setSearch(value);
             setPage(0);
           }}
-          placeholder="Search station or security event..."
+          placeholder="Search charger or security event..."
         />
         <select
           aria-label="Severity"
@@ -92,7 +92,7 @@ export default function SecurityPage() {
             <thead>
               <tr>
                 <th>Time</th>
-                <th>Station</th>
+                <th>Charger</th>
                 <th>Category</th>
                 <th>Severity</th>
                 <th>Event</th>

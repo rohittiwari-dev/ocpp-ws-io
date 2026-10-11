@@ -21,7 +21,7 @@ export default function OverviewPage() {
     <>
       <PageHeading
         title="Network overview"
-        description="A clear view of your stations, traffic, and operational health."
+        description="A clear view of your chargers, traffic, and operational health."
       >
         <Refresh onClick={resource.refresh} />
         <Export data={data} name="overview" />
@@ -29,9 +29,9 @@ export default function OverviewPage() {
       <Feedback {...resource} retry={resource.refresh} />
       <div className="metric-strip">
         <div className="metric">
-          <span>Online stations</span>
+          <span>Online chargers</span>
           <strong>{data?.connectedClients ?? "\u2014"}</strong>
-          <small>{data?.totalConnections ?? 0} observed stations</small>
+          <small>{data?.totalConnections ?? 0} observed chargers</small>
         </div>
         <div className="metric">
           <span>Message throughput</span>
@@ -55,14 +55,14 @@ export default function OverviewPage() {
       </div>
       <div className="section-heading">
         <h2>Needs attention</h2>
-        <Link to="/connections?view=attention">Open station workspace</Link>
+        <Link to="/connections?view=attention">Open charger workspace</Link>
       </div>
       <div className="table-panel">
         <div className="table-scroll">
           <table>
             <thead>
               <tr>
-                <th>Station</th>
+                <th>Charger</th>
                 <th>Connection</th>
                 <th>Observed errors</th>
                 <th>Next step</th>
@@ -85,7 +85,7 @@ export default function OverviewPage() {
                       className="button"
                       to={`/connection/view/${encodeURIComponent(station.identity)}`}
                     >
-                      Inspect station
+                      Inspect charger
                     </Link>
                   </td>
                 </tr>
@@ -94,8 +94,8 @@ export default function OverviewPage() {
                 <tr>
                   <td colSpan={4} className="muted">
                     {stations.data?.length
-                      ? "No station issues in the current records."
-                      : "Station health appears after a connection is observed."}
+                      ? "No charger issues in the current records."
+                      : "Charger health appears after a connection is observed."}
                   </td>
                 </tr>
               )}

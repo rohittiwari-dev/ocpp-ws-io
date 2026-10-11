@@ -784,6 +784,16 @@ td:first-child:has(.star-button) {
   color: var(--muted-foreground);
   white-space: nowrap;
 }
+.table-row-clickable {
+  cursor: pointer;
+}
+.table-row-clickable:hover {
+  background: var(--accent);
+}
+.table-row-clickable:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
 .row-link {
   display: inline-flex;
   padding: 7px;
@@ -791,6 +801,97 @@ td:first-child:has(.star-button) {
 }
 .row-link:hover {
   color: var(--blue);
+}
+.actions-cell {
+  text-align: right;
+  white-space: nowrap;
+  padding-right: 15px;
+}
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+  transition: all 0.15s ease;
+  cursor: pointer;
+  text-decoration: none;
+  padding: 0;
+}
+.action-btn:hover {
+  background: var(--accent);
+  border-color: var(--border);
+  color: var(--foreground);
+}
+.action-btn.action-disconnect:hover {
+  background: color-mix(in srgb, var(--rose) 15%, transparent);
+  border-color: color-mix(in srgb, var(--rose) 30%, transparent);
+  color: var(--rose);
+}
+.charger-actions-menu {
+  min-width: 190px !important;
+  width: auto !important;
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 9px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3) !important;
+  padding: 5px !important;
+  z-index: 60 !important;
+}
+.charger-actions-menu [data-slot="dropdown-menu-item"] {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+  color: var(--foreground);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.charger-actions-menu [data-slot="dropdown-menu-item"]:hover,
+.charger-actions-menu [data-slot="dropdown-menu-item"]:focus {
+  background: var(--accent);
+  color: var(--foreground);
+  outline: none;
+}
+.charger-actions-menu
+  [data-slot="dropdown-menu-item"][data-variant="destructive"] {
+  color: var(--rose);
+}
+.charger-actions-menu
+  [data-slot="dropdown-menu-item"][data-variant="destructive"]:hover {
+  background: color-mix(in srgb, var(--rose) 12%, transparent);
+}
+.action-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 14px;
+  gap: 10px;
+}
+.action-banner.success {
+  background: color-mix(in srgb, var(--mint) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mint) 30%, transparent);
+  color: var(--mint);
+}
+.action-banner.error {
+  background: color-mix(in srgb, var(--rose) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--rose) 30%, transparent);
+  color: var(--rose);
 }
 .table-footer {
   display: flex;

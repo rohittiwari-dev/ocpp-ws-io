@@ -1,11 +1,25 @@
 import {
   IconArrowUpRight,
+  IconDotsVertical,
+  IconMessage,
   IconPlug,
+  IconPower,
+  IconRoute,
   IconStar,
   IconTerminal2,
+  IconTrash,
+  IconX,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Empty,
   Export,
@@ -17,6 +31,7 @@ import {
   Status,
 } from "@/components/workspace";
 import { useResource } from "@/hooks/use-resource";
+import { api } from "@/lib/api";
 import { time } from "@/lib/export";
 import type { ConnectionRecord } from "@/types";
 export default function ConnectionsPage() {
@@ -74,6 +89,12 @@ export default function ConnectionsPage() {
     else next.delete(key);
     setQuery(next);
   };
+  const navigate = useNavigate();
+  const [busyIdentity, setBusyIdentity] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
   const star = (identity: string) => {
     const next = favorites.includes(identity)
       ? favorites.filter((id) => id !== identity)
@@ -83,6 +104,50 @@ export default function ConnectionsPage() {
       localStorage.setItem("board:favorites", JSON.stringify(next));
     } catch {
       /* Favorites remain available for this session. */
+    }
+  };
+  const handleDisconnect = async (identity: string) => {
+    setBusyIdentity(identity);
+    setActionFeedback(null);
+    try {
+      await api.post(`/connections/${encodeURIComponent(identity)}/disconnect`);
+      setActionFeedback({
+        type: "success",
+        message: `Charger ${identity} disconnected successfully.`,
+      });
+      resource.refresh();
+    } catch (err) {
+      setActionFeedback({
+        type: "error",
+        message:
+          err instanceof Error
+            ? err.message
+            : `Failed to disconnect charger ${identity}.`,
+      });
+    } finally {
+      setBusyIdentity(null);
+    }
+  };
+  const handlePurge = async (identity: string) => {
+    setBusyIdentity(identity);
+    setActionFeedback(null);
+    try {
+      await api.post(`/connections/${encodeURIComponent(identity)}/purge`);
+      setActionFeedback({
+        type: "success",
+        message: `Charger ${identity} records removed.`,
+      });
+      resource.refresh();
+    } catch (err) {
+      setActionFeedback({
+        type: "error",
+        message:
+          err instanceof Error
+            ? err.message
+            : `Failed to remove charger ${identity}.`,
+      });
+    } finally {
+      setBusyIdentity(null);
     }
   };
   const totalCount = resource.data?.length ?? 0;
@@ -104,19 +169,19 @@ export default function ConnectionsPage() {
       <PageHeading
         title={
           view === "favorites"
-            ? "Starred stations"
+            ? "Starred chargers"
             : view === "attention"
               ? "Needs attention"
-              : "All stations"
+              : "All chargers"
         }
-        description="Your charging network, one connection at a time."
+        description="Your charging network, one charger at a time."
       >
         <div className="segmented">
           <Link
             to="/connections"
             className={view !== "favorites" ? "active" : ""}
           >
-            All stations
+            All chargers
           </Link>
           <Link
             to="/connections?view=favorites"
@@ -130,6 +195,22 @@ export default function ConnectionsPage() {
           Send command
         </Link>
       </PageHeading>
+      {actionFeedback && (
+        <div
+          className={`action-banner ${actionFeedback.type}`}
+          role={actionFeedback.type === "error" ? "alert" : "status"}
+        >
+          <span>{actionFeedback.message}</span>
+          <button
+            type="button"
+            className="action-btn"
+            aria-label="Dismiss notification"
+            onClick={() => setActionFeedback(null)}
+          >
+            <IconX size={14} />
+          </button>
+        </div>
+      )}
       <div className="station-meta-bar">
         <div className="fleet-summary">
           <div className="station-stack">
@@ -140,7 +221,7 @@ export default function ConnectionsPage() {
             ))}
           </div>
           <span>
-            <strong>{onlineCount}</strong> stations online
+            <strong>{onlineCount}</strong> chargers online
           </span>
           <span className="summary-divider" />
           <span>
@@ -150,7 +231,7 @@ export default function ConnectionsPage() {
         {recentStations.length > 0 && (
           <div
             className="recent-strip"
-            aria-label="Recently connected stations"
+            aria-label="Recently connected chargers"
           >
             <span className="recent-label">Recently connected:</span>
             <div className="recent-chips">
@@ -171,7 +252,7 @@ export default function ConnectionsPage() {
           </div>
         )}
       </div>
-      <div className="station-filter-strip" aria-label="Station quick filters">
+      <div className="station-filter-strip" aria-label="Charger quick filters">
         <div className="filter-chip-group">
           <span className="filter-group-title">Status:</span>
           <button
@@ -265,7 +346,7 @@ export default function ConnectionsPage() {
         <Search
           value={search}
           onChange={setSearch}
-          placeholder="Search stations or IP address..."
+          placeholder="Search chargers or IP address..."
         />
         <select
           aria-label="Filter status"
@@ -295,19 +376,19 @@ export default function ConnectionsPage() {
           ))}
         </select>
         <select
-          aria-label="Sort stations"
+          aria-label="Sort chargers"
           value={sort}
           onChange={(event) => setSort(event.target.value)}
         >
           <option value="newest">Newest first</option>
-          <option value="name">Station name</option>
+          <option value="name">Charger name</option>
           <option value="errors">Most errors</option>
         </select>
         <Refresh onClick={resource.refresh} />
-        <Export name="stations" data={stations} />
+        <Export name="chargers" data={stations} />
       </div>
       <Feedback {...resource} retry={resource.refresh} />
-      <section className="table-panel" aria-label="Station list">
+      <section className="table-panel" aria-label="Charger list">
         <div className="table-scroll">
           <table>
             <thead>
@@ -315,21 +396,42 @@ export default function ConnectionsPage() {
                 <th className="star-column">
                   <IconStar size={16} aria-label="Favorites" />
                 </th>
-                <th>Station</th>
+                <th>Charger</th>
                 <th>Status</th>
                 <th>Protocol</th>
                 <th>Security</th>
                 <th>Errors</th>
                 <th>Connected</th>
-                <th />
+                <th style={{ textAlign: "right", paddingRight: 20 }}>
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
               {stations
                 .slice(currentPage * 12, currentPage * 12 + 12)
                 .map((station, index) => (
-                  <tr key={station.identity}>
-                    <td>
+                  <tr
+                    key={station.identity}
+                    className="table-row-clickable"
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`View charger ${station.identity}`}
+                    onClick={() =>
+                      navigate(
+                        `/connection/view/${encodeURIComponent(station.identity)}`,
+                      )
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        navigate(
+                          `/connection/view/${encodeURIComponent(station.identity)}`,
+                        );
+                      }
+                    }}
+                  >
+                    <td onClick={(event) => event.stopPropagation()}>
                       <button
                         className={`star-button ${favorites.includes(station.identity) ? "is-starred" : ""}`}
                         aria-label={`${favorites.includes(station.identity) ? "Unstar" : "Star"} ${station.identity}`}
@@ -350,6 +452,7 @@ export default function ConnectionsPage() {
                       <Link
                         className="station-cell"
                         to={`/connection/view/${encodeURIComponent(station.identity)}`}
+                        onClick={(event) => event.stopPropagation()}
                       >
                         <span className={`avatar pastel-${index % 5}`}>
                           {station.identity.slice(0, 1).toUpperCase()}
@@ -399,14 +502,121 @@ export default function ConnectionsPage() {
                     <td className="muted nowrap">
                       {time(station.connectedAt)}
                     </td>
-                    <td>
-                      <Link
-                        className="row-link"
-                        aria-label={`Inspect ${station.identity}`}
-                        to={`/connection/view/${encodeURIComponent(station.identity)}`}
-                      >
-                        <IconArrowUpRight size={18} />
-                      </Link>
+                    <td
+                      className="actions-cell"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <div className="row-actions">
+                        <Link
+                          className="action-btn"
+                          aria-label={`Send command to ${station.identity}`}
+                          title={`Send command to ${station.identity}`}
+                          to={`/commands?identity=${encodeURIComponent(station.identity)}`}
+                        >
+                          <IconTerminal2 size={16} />
+                        </Link>
+                        {station.status === "online" && (
+                          <button
+                            type="button"
+                            className="action-btn action-disconnect"
+                            aria-label={`Disconnect ${station.identity}`}
+                            title={`Disconnect ${station.identity}`}
+                            disabled={busyIdentity === station.identity}
+                            onClick={() =>
+                              void handleDisconnect(station.identity)
+                            }
+                          >
+                            <IconPower size={16} />
+                          </button>
+                        )}
+                        <Link
+                          className="action-btn"
+                          aria-label={`Inspect ${station.identity}`}
+                          title={`Inspect ${station.identity}`}
+                          to={`/connection/view/${encodeURIComponent(station.identity)}`}
+                        >
+                          <IconArrowUpRight size={16} />
+                        </Link>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            className="action-btn"
+                            aria-label={`More actions for ${station.identity}`}
+                            title="More actions"
+                          >
+                            <IconDotsVertical size={16} />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            className="charger-actions-menu"
+                          >
+                            <DropdownMenuLabel>
+                              {station.identity}
+                            </DropdownMenuLabel>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                navigate(
+                                  `/commands?identity=${encodeURIComponent(station.identity)}`,
+                                )
+                              }
+                            >
+                              <IconTerminal2 size={15} />
+                              Send command
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                navigate(
+                                  `/connection/view/${encodeURIComponent(station.identity)}`,
+                                )
+                              }
+                            >
+                              <IconArrowUpRight size={15} />
+                              View details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                navigate(
+                                  `/messages?identity=${encodeURIComponent(station.identity)}`,
+                                )
+                              }
+                            >
+                              <IconMessage size={15} />
+                              Live messages
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() =>
+                                navigate(
+                                  `/diagnostics?identity=${encodeURIComponent(station.identity)}`,
+                                )
+                              }
+                            >
+                              <IconRoute size={15} />
+                              Diagnostics
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            {station.status === "online" ? (
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onClick={() =>
+                                  void handleDisconnect(station.identity)
+                                }
+                              >
+                                <IconPower size={15} />
+                                Disconnect charger
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onClick={() =>
+                                  void handlePurge(station.identity)
+                                }
+                              >
+                                <IconTrash size={15} />
+                                Remove charger records
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -417,13 +627,13 @@ export default function ConnectionsPage() {
           <Empty
             title={
               resource.data?.length
-                ? "No stations match"
-                : "Waiting for your first station"
+                ? "No chargers match"
+                : "Waiting for your first charger"
             }
           >
             {resource.data?.length
               ? "Try another search or change the status and protocol filters."
-              : "Register the board plugin with your OCPP server. Connected stations will appear here automatically."}
+              : "Register the board plugin with your OCPP server. Connected chargers will appear here automatically."}
           </Empty>
         )}
         <Pagination
@@ -433,7 +643,7 @@ export default function ConnectionsPage() {
         />
       </section>
       <p className="table-note">
-        Connections observed by this board instance. Status updates every 5
+        Chargers observed by this board instance. Status updates every 5
         seconds.
       </p>
     </>

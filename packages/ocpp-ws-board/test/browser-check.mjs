@@ -30,7 +30,7 @@ try {
   await page.getByLabel("Password", { exact: true }).fill("preview");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page
-    .getByRole("heading", { name: "All stations", exact: true })
+    .getByRole("heading", { name: "All chargers", exact: true })
     .waitFor();
   await page
     .getByRole("link", { name: "Inspect Harbor-01", exact: true })
@@ -55,7 +55,7 @@ try {
     .getByRole("button", { name: "Star Harbor-01", exact: true })
     .click();
   await page.getByRole("link", { name: "Starred", exact: true }).click();
-  await page.getByRole("heading", { name: "Starred stations" }).waitFor();
+  await page.getByRole("heading", { name: "Starred chargers" }).waitFor();
   assert.equal(await page.locator("tbody tr").count(), 1);
   await page.reload();
   await page
@@ -66,14 +66,14 @@ try {
   await page.goto(`${fixture.url}/connections`);
   await page.getByRole("button", { name: "Next page" }).click();
   assert.equal(await page.locator("tbody tr").count(), 4);
-  await page.getByLabel("Search stations or IP address...").fill("Harbor");
+  await page.getByLabel("Search chargers or IP address...").fill("Harbor");
   assert.equal(await page.locator("tbody tr").count(), 1);
   await page
-    .getByLabel("Search stations or IP address...")
+    .getByLabel("Search chargers or IP address...")
     .fill("nothing-matches");
-  await page.getByRole("heading", { name: "No stations match" }).waitFor();
+  await page.getByRole("heading", { name: "No chargers match" }).waitFor();
   console.log("check", checks.length + 1);
-  checks.push("Station search, no-result state, pagination, and page reset");
+  checks.push("Charger search, no-result state, pagination, and page reset");
   await page.goto(`${fixture.url}/commands?identity=Harbor-01`);
   await page.getByRole("heading", { name: "Command center" }).waitFor();
   await page

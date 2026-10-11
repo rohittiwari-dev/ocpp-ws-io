@@ -26,7 +26,7 @@ import type { ConnectionRecord, TelemetrySnapshot } from "@/types";
 
 const navigation = [
   { to: "/overview", icon: IconLayoutDashboard, label: "Overview" },
-  { to: "/connections", icon: IconPlug, label: "Stations" },
+  { to: "/connections", icon: IconPlug, label: "Chargers" },
   { to: "/messages", icon: IconMessage, label: "Messages" },
   { to: "/commands", icon: IconTerminal2, label: "Commands" },
   { to: "/telemetry", icon: IconActivity, label: "Telemetry" },
@@ -57,7 +57,7 @@ function Workspace({
   const stream = useSSELatest<TelemetrySnapshot>("/telemetry/stream");
   const active =
     navigation.find((item) => location.pathname.startsWith(item.to))?.label ??
-    (location.pathname.startsWith("/connection/") ? "Stations" : "Workspace");
+    (location.pathname.startsWith("/connection/") ? "Chargers" : "Workspace");
   const closeMenu = () => setMenuOpen(false);
   return (
     <div className="workspace">

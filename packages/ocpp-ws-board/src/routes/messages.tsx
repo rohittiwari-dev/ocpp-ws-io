@@ -72,7 +72,7 @@ export default function MessagesPage() {
             setSearch(value);
             setPage(0);
           }}
-          placeholder="Search action, station, ID or payload..."
+          placeholder="Search action, charger, ID or payload..."
         />
         <select
           aria-label="Message direction"

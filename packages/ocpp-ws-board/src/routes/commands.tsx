@@ -28,7 +28,7 @@ export default function CommandsPage() {
   );
   const [timeout, setTimeout] = useState(30000);
   const [description, setDescription] = useState(
-    "Ask the station to report its heartbeat.",
+    "Ask the charger to report its heartbeat.",
   );
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -42,7 +42,7 @@ export default function CommandsPage() {
     event.preventDefault();
     setError("");
     if (!station || station.status !== "online") {
-      setError("Choose an online station.");
+      setError("Choose an online charger.");
       return;
     }
     let params: JsonValue;
@@ -82,7 +82,7 @@ export default function CommandsPage() {
     <>
       <PageHeading
         title="Command center"
-        description="Compose a request, choose a station, and inspect its response."
+        description="Compose a request, choose a charger, and inspect its response."
       >
         <Refresh onClick={history.refresh} />
         <Export data={history.data ?? []} name="command-history" />
@@ -103,7 +103,7 @@ export default function CommandsPage() {
             style={{ border: 0, padding: 0, margin: 0 }}
           >
             <label className="field">
-              <span>Target station</span>
+              <span>Target charger</span>
               <select
                 required
                 value={identity}
@@ -112,7 +112,7 @@ export default function CommandsPage() {
                   setAcknowledged(false);
                 }}
               >
-                <option value="">Choose an online station</option>
+                <option value="">Choose an online charger</option>
                 {(stations.data ?? [])
                   .filter((item) => item.status === "online")
                   .map((item) => (
@@ -161,7 +161,7 @@ export default function CommandsPage() {
                 }}
               />
               <small>
-                Custom actions are supported. Server validation and station
+                Custom actions are supported. Server validation and charger
                 capabilities determine acceptance.
               </small>
             </label>
@@ -202,7 +202,7 @@ export default function CommandsPage() {
                 onChange={(event) => setAcknowledged(event.target.checked)}
               />
               I reviewed the target and payload. This sends a real command to
-              the station.
+              the charger.
             </label>
             <button
               className="button primary"
@@ -213,7 +213,7 @@ export default function CommandsPage() {
               }
             >
               <IconSend size={17} />
-              {busy ? "Waiting for station..." : "Send command"}
+              {busy ? "Waiting for charger..." : "Send command"}
             </button>
           </fieldset>
           {error && (
@@ -233,7 +233,7 @@ export default function CommandsPage() {
           </div>
           {busy ? (
             <p className="notice" role="status">
-              Waiting for the station response, up to {timeout / 1000} seconds?
+              Waiting for the charger response, up to {timeout / 1000} seconds?
             </p>
           ) : result ? (
             <>
@@ -243,7 +243,7 @@ export default function CommandsPage() {
               <JsonView value={result.result ?? result.error ?? null} />
               <p className="notice">
                 A successful RPC means a response arrived. Inspect the response
-                status to confirm whether the station accepted the operation.
+                status to confirm whether the charger accepted the operation.
               </p>
             </>
           ) : (

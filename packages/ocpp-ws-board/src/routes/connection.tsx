@@ -46,10 +46,10 @@ export default function ConnectionPage() {
     <>
       <PageHeading
         title={identity}
-        description="Station connection, session context, and recent exchanges."
+        description="Charger connection, session context, and recent exchanges."
       >
         <Refresh onClick={resource.refresh} />
-        <Export data={connection} name="station" />
+        <Export data={connection} name="charger" />
         <Link
           className="button primary"
           to={`/commands?identity=${encodeURIComponent(identity)}`}
@@ -101,7 +101,7 @@ export default function ConnectionPage() {
             </div>
           </dl>
           <div className="section-heading">
-            <h2>Connection controls</h2>
+            <h2>Charger controls</h2>
           </div>
           <div className="inline-actions">
             <button
@@ -109,14 +109,14 @@ export default function ConnectionPage() {
               disabled={connection.status !== "online" || busy}
               onClick={() => setConfirmation("disconnect")}
             >
-              Disconnect station
+              Disconnect charger
             </button>
             <button
               className="button danger"
               disabled={busy}
               onClick={() => setConfirmation("purge")}
             >
-              Remove station records
+              Remove charger records
             </button>
             <Link
               className="button"
@@ -126,7 +126,7 @@ export default function ConnectionPage() {
             </Link>
           </div>
           <p className="notice">
-            Disconnect closes the local socket. The physical station controls
+            Disconnect closes the local socket. The physical charger controls
             reconnection. Removing records also deletes its retained messages
             and events.
           </p>
@@ -134,12 +134,12 @@ export default function ConnectionPage() {
             <section
               className="confirm-panel"
               role="region"
-              aria-label="Confirm station action"
+              aria-label="Confirm charger action"
             >
               <h3>
                 {confirmation === "purge"
-                  ? "Remove station and retained history?"
-                  : "Disconnect this station?"}
+                  ? "Remove charger and retained history?"
+                  : "Disconnect this charger?"}
               </h3>
               <p>
                 This affects {identity}.
