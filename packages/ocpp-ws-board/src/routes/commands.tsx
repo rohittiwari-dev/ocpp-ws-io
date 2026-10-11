@@ -667,7 +667,7 @@ export default function CommandsPage() {
                   {result.status}
                 </Status>
                 {result.durationMs != null && (
-                  <span className="badge-tag latency-tag">
+                  <span className="badge-tag flex items-center justify-center gap-1 latency-tag">
                     <IconClock size={12} />
                     {result.durationMs} ms
                   </span>

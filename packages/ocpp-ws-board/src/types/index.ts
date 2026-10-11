@@ -93,6 +93,22 @@ export interface StoredMessage {
   source: "ocpp-ws-io" | "smart-charge" | "protocol-proxy";
 }
 
+// ─── Correlated Exchange ──────────────────────────────────────────
+
+export interface CorrelatedExchange {
+  identity: string;
+  messageId: string;
+  method: string;
+  protocol: string;
+  source: "ocpp-ws-io" | "smart-charge" | "protocol-proxy";
+  request?: StoredMessage;
+  response?: StoredMessage;
+  startedAt: string;
+  completedAt?: string;
+  latencyMs?: number;
+  status: "completed" | "error" | "pending";
+}
+
 // ─── Telemetry Snapshot ───────────────────────────────────────────
 
 export interface TelemetrySnapshot {
