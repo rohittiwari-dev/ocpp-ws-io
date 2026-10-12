@@ -297,7 +297,7 @@ This happens the moment a charging station attempts to connect via WebSocket, bu
    - **Execution Level**: Authentication & Acceptance.
    - **Purpose**: Runs _last_ in the HTTP upgrade chain. It looks at everything the middleware prepared, communicates with your database, and definitively calls `accept()` or `reject()`. `accept({ protocol })` may pick any version the charger offered; one it did not offer counts as no shared version.
 8. **Duplicate connection**: with `duplicateConnection: "reject"`, a charger that is already connected → HTTP **409**. By default the new connection replaces the old one once it opens.
-9. **No shared version**: the handshake completes without a `Sec-WebSocket-Protocol` header and the connection is closed with code **1002**, as OCPP-J §3.2 requires. Because steps 1–8 run first, a charger refused for another reason still gets that HTTP status. Otherwise the WebSocket opens.
+9. **No shared version**: the handshake completes without a `Sec-WebSocket-Protocol` header and the connection is closed with code **1002**, as OCPP-J §3.2 requires. Because steps 1–8 run first, a charger refused for another reason still gets that HTTP status. Otherwise the WebSocket opens. A server without a `protocols` list has no version to miss: a charger that offers none connects with no protocol (`client.protocol` is empty), so no version's schemas or typed handlers apply. Give the server a `protocols` list to close such connections as the spec asks; strict mode requires one.
 
 ### 2. The Message Phase (WebSocket Open)
 

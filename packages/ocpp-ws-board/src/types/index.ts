@@ -24,7 +24,7 @@ export interface BoardOptions {
   basePath?: string;
   /** External origin when deployed behind a TLS-terminating reverse proxy. */
   publicOrigin?: string;
-  auth: BoardAuthConfig;
+  auth?: BoardAuthConfig;
   /**
    * Storage configuration.
    * Can be either ring buffer bounds (StoreOptions) or a custom BoardStorageAdapter instance.

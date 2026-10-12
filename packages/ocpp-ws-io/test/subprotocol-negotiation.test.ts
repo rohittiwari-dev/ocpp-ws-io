@@ -207,5 +207,14 @@ describe("subprotocol negotiation", () => {
       });
       expect(clientProtocols).toEqual(["ocpp1.6"]);
     });
+
+    // Kept on purpose (O20): without a list there is no version to miss, so a
+    // charger that offers none connects with no protocol instead of a 1002.
+    it("accepts a charger that offers no version, with no protocol", async () => {
+      const { port, clientProtocols } = await start(undefined);
+
+      expect(await connect(port, [])).toEqual({ kind: "open", protocol: "" });
+      expect(clientProtocols).toEqual([""]);
+    });
   });
 });

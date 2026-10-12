@@ -39,7 +39,7 @@ function isBoardStorageAdapter(
   );
 }
 
-export function createBoard(options: BoardOptions) {
+export function createBoard(options: BoardOptions = {}) {
   const basePath =
     options.basePath && options.basePath !== "/"
       ? `/${options.basePath.split("/").filter(Boolean).join("/")}`
@@ -49,7 +49,7 @@ export function createBoard(options: BoardOptions) {
     : isBoardStorageAdapter(options.store)
       ? options.store
       : new CompressedMemoryStore(options.store);
-  const auth = createAuthLayer(options.auth);
+  const auth = createAuthLayer(options?.auth || { mode: "none" });
   const integrations = createIntegrations(store);
   const messageBroker = new SSEBroker(options.sseHeartbeatMs);
   const telemetryBroker = new SSEBroker(options.sseHeartbeatMs);
