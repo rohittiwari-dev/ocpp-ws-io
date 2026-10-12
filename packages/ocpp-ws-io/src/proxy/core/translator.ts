@@ -161,11 +161,15 @@ export class OCPPTranslator {
     };
   }
 
+  /**
+   * The CSMS's CALLERROR to a charger's call, mapped by the CSMS's protocol
+   * (`ocpp2.1:Error`), the error it receives, into the charger's terms.
+   */
   public async translateCallError(
     message: Extract<OCPPMessage, { type: MessageType.CALLERROR }>,
     context: TranslationContext,
   ): Promise<Extract<OCPPMessage, { type: MessageType.CALLERROR }>> {
-    const errorKey = `${context.sourceProtocol}:Error`;
+    const errorKey = `${context.targetProtocol}:Error`;
     const errors: ByKey<ErrorMapper> | undefined = this.translationMap.errors;
     const errorMapper = errors?.[errorKey];
 

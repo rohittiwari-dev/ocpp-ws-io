@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { OCPPServer, OCPPClient } from "../../src/index.js";
+import { createRPCError } from "../../src/core/util.js";
 import { getStandardValidator } from "../../src/core/validation/standard-validators.js";
 import type { OCPPRequestType } from "../../src/generated/index.js";
 import { OCPPProtocolProxy } from "../../src/proxy/proxy.js";
@@ -38,6 +39,15 @@ describe("OCPPProtocolProxy Integration", () => {
       client.handle("TransactionEvent", () => ({
         idTokenInfo: { status: "Blocked" },
       }));
+
+      // A CALLERROR with a code only 2.x has (1.6 calls it FormationViolation).
+      // rpcErrorMessage carries the description onto the wire: a thrown
+      // FormatViolation would send its class's default text instead (O26).
+      client.handle("DataTransfer", () => {
+        throw Object.assign(createRPCError("FormatViolation", "csms says no"), {
+          rpcErrorMessage: "csms says no",
+        });
+      });
     });
 
     const csmsHttp = await csmsServer.listen(0);
@@ -58,6 +68,7 @@ describe("OCPPProtocolProxy Integration", () => {
       upstream: { ...presets.ocpp16_to_ocpp21.upstream },
       downstream: { ...presets.ocpp16_to_ocpp21.downstream },
       responses: { ...presets.ocpp16_to_ocpp21.responses },
+      errors: { ...presets.ocpp16_to_ocpp21.errors },
     });
 
     await proxy.listenOnAdapter(adapter);
@@ -100,6 +111,15 @@ describe("OCPPProtocolProxy Integration", () => {
       console.error("TEST FAILED WITH ERROR:", e);
       throw e;
     }
+  });
+
+  it("passes a CSMS CALLERROR on to the charger in 1.6's terms", async () => {
+    await expect(
+      mockCharger.call("DataTransfer", { vendorId: "ACME" }),
+    ).rejects.toMatchObject({
+      rpcErrorCode: "FormationViolation",
+      message: "csms says no",
+    });
   });
 
   it("should translate Upstream StartTransaction to TransactionEvent Started transparently", async () => {

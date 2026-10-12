@@ -147,7 +147,10 @@ export type TranslationMap = {
    */
   responses?: { [K in ResponseKey]?: ResponseMapper<ResponseAt<K>> };
 
-  /** Error mappers, keyed by `sourceProtocol:Error` */
+  /**
+   * Error mappers for the CSMS's CALLERROR to a charger's call, keyed by the
+   * CSMS's protocol: `targetProtocol:Error`.
+   */
   errors?: { [K in ErrorKey]?: ErrorMapper };
 };
 

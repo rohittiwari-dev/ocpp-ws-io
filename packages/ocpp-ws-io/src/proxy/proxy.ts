@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { OCPPClient } from "../client/client.js";
+import { RPCGenericError } from "../core/errors.js";
 import { unchecked } from "../core/unchecked.js";
 import type { ISessionStore } from "./core/session.js";
 import { InMemorySessionStore } from "./core/session.js";
@@ -19,6 +20,7 @@ import {
 
 type CallMessage = Extract<OCPPMessage, { type: MessageType.CALL }>;
 type ResultMessage = Extract<OCPPMessage, { type: MessageType.CALLRESULT }>;
+type ErrorMessage = Extract<OCPPMessage, { type: MessageType.CALLERROR }>;
 
 export interface OCPPProtocolProxyOptions {
   upstreamEndpoint: string;
@@ -128,11 +130,31 @@ export class OCPPProtocolProxy extends EventEmitter {
             );
 
             // Forward to CSMS
-            // Forwarded as translated: the action is not checked by type.
-            const rawResponse = await upstreamClient.call(
-              unchecked((postMsg as CallMessage).action),
-              (postMsg as CallMessage).payload,
+            const answer = await this.forwardToCsms(
+              upstreamClient,
+              postMsg as CallMessage,
             );
+
+            if (answer.type === MessageType.CALLERROR) {
+              // The CSMS refused the call: pass its CALLERROR on in the
+              // charger's terms, through the errors map.
+              const preErrMsg = await this.executeMiddlewares(
+                { ...answer, messageId: msg.messageId },
+                context,
+                "error",
+                "pre",
+              );
+              const translatedError = await this.translator.translateCallError(
+                preErrMsg as ErrorMessage,
+                context,
+              );
+              return await this.executeMiddlewares(
+                translatedError,
+                context,
+                "error",
+                "post",
+              );
+            }
 
             const responseMsg: Extract<
               OCPPMessage,
@@ -140,7 +162,7 @@ export class OCPPProtocolProxy extends EventEmitter {
             > = {
               type: MessageType.CALLRESULT,
               messageId: msg.messageId,
-              payload: rawResponse,
+              payload: answer.payload,
             };
 
             // Pre-response middleware
@@ -177,7 +199,9 @@ export class OCPPProtocolProxy extends EventEmitter {
               type: MessageType.CALLERROR,
               messageId: msg.messageId,
               errorCode:
-                (err as Error & { code?: string }).code || "InternalError",
+                err instanceof RPCGenericError
+                  ? err.rpcErrorCode
+                  : "InternalError",
               errorDescription: (err as Error).message,
               errorDetails: {},
             };
@@ -270,6 +294,34 @@ export class OCPPProtocolProxy extends EventEmitter {
         this.emit("disconnect", identity);
       });
     });
+  }
+
+  /** The CSMS's answer to a forwarded call: its result, or its CALLERROR. */
+  private async forwardToCsms(
+    client: OCPPClient,
+    call: CallMessage,
+  ): Promise<ResultMessage | ErrorMessage> {
+    try {
+      // Forwarded as translated: the action is not checked by type.
+      const payload = await client.call(unchecked(call.action), call.payload);
+      return {
+        type: MessageType.CALLRESULT,
+        messageId: call.messageId,
+        payload,
+      };
+    } catch (err) {
+      // A CSMS CALLERROR rejects the call with an RPC error. Anything else (a
+      // timeout, a closed connection) is the proxy's own failure.
+      if (!(err instanceof RPCGenericError)) throw err;
+      return {
+        type: MessageType.CALLERROR,
+        messageId: call.messageId,
+        errorCode: err.rpcErrorCode,
+        errorDescription: err.message,
+        // The details of a CALLERROR are the JSON object the CSMS sent.
+        errorDetails: err.details as ProxyPayload,
+      };
+    }
   }
 
   /** Gracefully close all upstream connections and adapters. */

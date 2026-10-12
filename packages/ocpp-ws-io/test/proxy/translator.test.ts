@@ -30,6 +30,39 @@ const remoteStartAnswer = (t: OCPPTranslator) =>
     makeCtx(),
   );
 
+// The CSMS's CALLERROR is mapped by the CSMS's protocol, the error it is (O25).
+describe("a CSMS's CALLERROR", () => {
+  it("is mapped by the CSMS's protocol", async () => {
+    const t = new OCPPTranslator({
+      upstream: {},
+      downstream: {},
+      errors: {
+        "ocpp2.1:Error": (errorCode, errorDescription, errorDetails) => ({
+          errorCode: errorCode === "FormatViolation" ? "FormationViolation" : errorCode,
+          errorDescription,
+          errorDetails,
+        }),
+      },
+    });
+
+    const out = await t.translateCallError(
+      {
+        type: MessageType.CALLERROR,
+        messageId: "m1",
+        errorCode: "FormatViolation",
+        errorDescription: "csms says no",
+        errorDetails: {},
+      },
+      makeCtx(),
+    );
+
+    expect(out).toMatchObject({
+      errorCode: "FormationViolation",
+      errorDescription: "csms says no",
+    });
+  });
+});
+
 // A charger's answer to a CSMS call is keyed by the charger's protocol and the
 // action it was sent, the answer the mapper receives (O23).
 describe("a charger's answer to a CSMS call", () => {

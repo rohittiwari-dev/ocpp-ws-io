@@ -1,5 +1,6 @@
 import type { Server } from "node:http";
 import type { OCPPClient } from "../../client/client.js";
+import type { RPCError } from "../../core/errors.js";
 import { unchecked } from "../../core/unchecked.js";
 import type { OCPPServer } from "../../server/server.js";
 import {
@@ -9,6 +10,24 @@ import {
   type OCPPMessage,
   type ProxyPayload,
 } from "../core/types.js";
+
+/**
+ * A CALLERROR the proxy answers the charger with. The library sends an RPC
+ * error's own code and description; a plain Error went out as InternalError.
+ */
+class ProxiedCallError extends Error implements RPCError {
+  readonly rpcErrorCode: string;
+  readonly rpcErrorMessage: string;
+  readonly details: ProxyPayload;
+
+  constructor(code: string, description: string, details: ProxyPayload) {
+    super(description);
+    this.name = "ProxiedCallError";
+    this.rpcErrorCode = code;
+    this.rpcErrorMessage = description;
+    this.details = details;
+  }
+}
 
 export class OcppWsIoConnection implements IConnection {
   public identity: string;
@@ -43,12 +62,12 @@ export class OcppWsIoConnection implements IConnection {
           return result.payload;
         }
         if (result.type === MessageType.CALLERROR) {
-          const err: Error & { code?: string } = new Error(
+          throw new ProxiedCallError(
+            result.errorCode,
             result.errorDescription ||
               "Unknown error occurred during proxy processing",
+            result.errorDetails,
           );
-          err.code = result.errorCode;
-          throw err;
         }
       }
       return {};
