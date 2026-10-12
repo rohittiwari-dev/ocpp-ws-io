@@ -220,4 +220,41 @@ describe("OCPPProtocolProxy Integration", () => {
     ).rejects.toMatchObject({ rpcErrorCode: "NotSupported" });
     expect(received).toEqual([]);
   });
+
+  it("answers GetCompositeSchedule with the 2.x schedule", async () => {
+    mockCharger.handle("GetCompositeSchedule", () => ({
+      status: "Accepted",
+      connectorId: 1,
+      scheduleStart: "2026-10-12T10:00:00Z",
+      chargingSchedule: {
+        duration: 600,
+        chargingRateUnit: "A",
+        chargingSchedulePeriod: [{ startPeriod: 0, limit: 16 }],
+      },
+    }));
+    const [proxyClient] = csmsServer.clients;
+    if (!proxyClient) throw new Error("the proxy has not connected");
+
+    const res = await proxyClient.call("GetCompositeSchedule", {
+      evseId: 1,
+      duration: 600,
+    });
+
+    expect(res).toEqual({
+      status: "Accepted",
+      schedule: {
+        evseId: 1,
+        duration: 600,
+        scheduleStart: "2026-10-12T10:00:00Z",
+        chargingRateUnit: "A",
+        chargingSchedulePeriod: [{ startPeriod: 0, limit: 16 }],
+      },
+    });
+    expect(() =>
+      getStandardValidator("ocpp2.1")!.validate(
+        "urn:GetCompositeSchedule.conf",
+        res,
+      ),
+    ).not.toThrow();
+  });
 });

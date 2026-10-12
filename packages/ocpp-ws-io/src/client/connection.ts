@@ -81,7 +81,8 @@ export async function openConnection(client: ClientContext): Promise<{
     const onOpen = () => {
       cleanup();
       client.state = OPEN;
-      client.protocol = ws.protocol;
+      // ws reports no subprotocol as ""; the client has none (undefined).
+      client.protocol = ws.protocol || undefined;
       client.badMessageCount = 0;
       client.badMessageWindowStart = 0;
 

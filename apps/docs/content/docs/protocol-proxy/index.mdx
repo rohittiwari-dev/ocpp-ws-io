@@ -285,6 +285,8 @@ proxy.translate(smartChargingPreset);
 
 What 1.6 cannot hold is refused with a `NotSupported` CALLERROR instead of being sent: a `Dynamic` profile, the purposes `ChargingStationExternalConstraints`, `PriorityCharging` and `LocalGeneration`, more than one schedule, a period without a `limit`, and a transaction the proxy has no 1.6 id for. A charger's 1.6 `NotSupported` answer reaches the CSMS as `Rejected` with `statusInfo.reasonCode` `NotSupported`, since 2.x has no such status.
 
+A 1.6 `GetCompositeSchedule` answer reaches the CSMS as 2.x's `schedule`: `connectorId` becomes `evseId`, and `scheduleStart`, the schedule's `duration`, `chargingRateUnit` and periods are kept. What 1.6 leaves out comes from the request: the `evseId`, the `duration`, and as `scheduleStart` the time the proxy sent it, since 1.6 counts the schedule from when the charger received the request. `minChargingRate` has no place in 2.x's composite schedule and is left out.
+
 ---
 
 ## Custom Translation Overrides

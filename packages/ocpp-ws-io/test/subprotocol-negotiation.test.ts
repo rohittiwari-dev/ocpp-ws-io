@@ -2,6 +2,7 @@ import type { IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
+import { OCPPClient } from "../src/client/client.js";
 import { OCPPServer } from "../src/server/server.js";
 import { SecurityProfile } from "../src/types/index.js";
 
@@ -211,10 +212,30 @@ describe("subprotocol negotiation", () => {
     // Kept on purpose (O20): without a list there is no version to miss, so a
     // charger that offers none connects with no protocol instead of a 1002.
     it("accepts a charger that offers no version, with no protocol", async () => {
-      const { port, clientProtocols } = await start(undefined);
+      const protocols: Array<string | undefined> = [];
+      const { port } = await start(undefined, (s) =>
+        s.on("client", (c) => protocols.push(c.protocol)),
+      );
 
       expect(await connect(port, [])).toEqual({ kind: "open", protocol: "" });
-      expect(clientProtocols).toEqual([""]);
+      // No protocol is undefined, as the type says (O24), not ws's "".
+      expect(protocols).toEqual([undefined]);
+    });
+
+    it("leaves an OCPPClient that negotiated no version without a protocol", async () => {
+      const { port } = await start(undefined);
+      const client = new OCPPClient({
+        identity: "CP-1",
+        endpoint: `ws://localhost:${port}`,
+        reconnect: false,
+        logging: false,
+      });
+      try {
+        await client.connect();
+        expect(client.protocol).toBeUndefined();
+      } finally {
+        await client.close({ force: true });
+      }
     });
   });
 });

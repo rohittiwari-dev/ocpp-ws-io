@@ -55,7 +55,8 @@ export class OCPPServerClient<
     this._state = ConnectionState.OPEN;
     this._identity = this._options.identity;
     this._ws = context.ws;
-    this._protocol = context.protocol ?? context.ws.protocol;
+    // ws reports no subprotocol as ""; the client has none (undefined).
+    this._protocol = context.protocol ?? (context.ws.protocol || undefined);
 
     // Attach WebSocket handlers
     // We do NOT call super._attachWebsocket because we want to intercept messages

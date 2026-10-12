@@ -1,4 +1,4 @@
-import { RPCNotSupportedError } from "../../core/errors.js";
+import { RPCInternalError, RPCNotSupportedError } from "../../core/errors.js";
 import type {
   OCPPRequestType,
   OCPPResponseType,
@@ -16,6 +16,14 @@ type Profile16 = OCPPRequestType<
 type Purpose21 = Profile21["chargingProfilePurpose"];
 type Purpose16 = Profile16["chargingProfilePurpose"];
 type Period16 = Profile16["chargingSchedule"]["chargingSchedulePeriod"][number];
+
+/** A GetCompositeSchedule request as sent, for what the 1.6 answer leaves out. */
+type CompositeScheduleRequest = {
+  evseId: number;
+  duration: number;
+  sentAt: string;
+};
+const COMPOSITE_SCHEDULE_REQUEST = "compositeScheduleRequest";
 
 /**
  * The 2.x purposes 1.6 has. External constraints, priority charging and local
@@ -143,14 +151,22 @@ export const smartChargingPreset: Partial<TranslationMap> = {
         stackLevel: params.chargingProfileCriteria?.stackLevel,
       },
     }),
-    "ocpp2.1:GetCompositeSchedule": (params) => ({
-      action: "GetCompositeSchedule",
-      payload: {
-        connectorId: params.evseId,
+    "ocpp2.1:GetCompositeSchedule": async (params, ctx) => {
+      const request: CompositeScheduleRequest = {
+        evseId: params.evseId,
         duration: params.duration,
-        chargingRateUnit: params.chargingRateUnit,
-      },
-    }),
+        sentAt: new Date().toISOString(),
+      };
+      await ctx.session.set(ctx.identity, COMPOSITE_SCHEDULE_REQUEST, request);
+      return {
+        action: "GetCompositeSchedule",
+        payload: {
+          connectorId: params.evseId,
+          duration: params.duration,
+          chargingRateUnit: params.chargingRateUnit,
+        },
+      };
+    },
   },
   responses: {
     // The answer is the 1.6 charger's, which may be NotSupported; 2.x has only
@@ -167,5 +183,52 @@ export const smartChargingPreset: Partial<TranslationMap> = {
             },
           }
         : { status: params.status },
+    // 1.6 answers connectorId, scheduleStart and a chargingSchedule, each
+    // optional; 2.x answers one schedule that needs them all. What the answer
+    // leaves out comes from the request: 1.6 counts the schedule from when the
+    // charger received it.
+    "ocpp2.1:GetCompositeScheduleResponse": async (
+      params: OCPPResponseType<"ocpp1.6", "GetCompositeSchedule">,
+      ctx: TranslationContext,
+    ): Promise<OCPPResponseType<"ocpp2.1", "GetCompositeSchedule">> => {
+      const schedule = params.chargingSchedule;
+      if (params.status !== "Accepted" || !schedule) {
+        return { status: params.status };
+      }
+      const request = await ctx.session.get<CompositeScheduleRequest>(
+        ctx.identity,
+        COMPOSITE_SCHEDULE_REQUEST,
+      );
+      const evseId = params.connectorId ?? request?.evseId;
+      const duration = schedule.duration ?? request?.duration;
+      const scheduleStart = params.scheduleStart ?? request?.sentAt;
+      if (
+        evseId === undefined ||
+        duration === undefined ||
+        scheduleStart === undefined
+      ) {
+        throw new RPCInternalError(
+          "The OCPP 1.6 composite schedule has no connectorId, duration or scheduleStart, and the request is not known",
+        );
+      }
+      return {
+        status: "Accepted",
+        schedule: {
+          evseId,
+          duration,
+          scheduleStart,
+          chargingRateUnit: schedule.chargingRateUnit,
+          chargingSchedulePeriod: schedule.chargingSchedulePeriod.map(
+            (period) => ({
+              startPeriod: period.startPeriod,
+              limit: period.limit,
+              ...(period.numberPhases !== undefined && {
+                numberPhases: period.numberPhases,
+              }),
+            }),
+          ),
+        },
+      };
+    },
   },
 };

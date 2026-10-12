@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { calls, responses } from "../helpers.js";
 import { getStandardValidator } from "../../../src/core/validation/standard-validators.js";
 import { InMemorySessionStore } from "../../../src/proxy/core/session.js";
@@ -67,6 +67,8 @@ describe("Smart Charging Preset", () => {
       [v16, "urn:ClearChargingProfile.req"],
       [v21, "urn:SetChargingProfile.req"],
       [v21, "urn:SetChargingProfile.conf"],
+      [v16, "urn:GetCompositeSchedule.conf"],
+      [v21, "urn:GetCompositeSchedule.conf"],
     ] as const;
     expect(missing.filter(([v, id]) => !v.hasSchema(id)).map(([, id]) => id)).toEqual([]);
   });
@@ -271,13 +273,123 @@ describe("Smart Charging Preset", () => {
     });
   });
 
-  it("GetCompositeSchedule: maps evseId to connectorId", async () => {
-    const result = await down["ocpp2.1:GetCompositeSchedule"](
-      { evseId: 1, duration: 600, chargingRateUnit: "W" },
-      makeCtx(),
-    );
-    expect(result.payload.connectorId).toBe(1);
-    expect(result.payload.duration).toBe(600);
-    expect(result.payload.chargingRateUnit).toBe("W");
+  describe("GetCompositeSchedule", () => {
+    it("maps evseId to connectorId", async () => {
+      const result = await down["ocpp2.1:GetCompositeSchedule"](
+        { evseId: 1, duration: 600, chargingRateUnit: "W" },
+        makeCtx(),
+      );
+      expect(result.payload.connectorId).toBe(1);
+      expect(result.payload.duration).toBe(600);
+      expect(result.payload.chargingRateUnit).toBe("W");
+    });
+
+    it("answers a 1.6 composite schedule in the 2.x shape", async () => {
+      const ctx = makeCtx();
+      await down["ocpp2.1:GetCompositeSchedule"](
+        { evseId: 2, duration: 600, chargingRateUnit: "W" },
+        ctx,
+      );
+      const answer16 = {
+        status: "Accepted",
+        connectorId: 2,
+        scheduleStart: "2026-10-12T10:00:00Z",
+        chargingSchedule: {
+          duration: 600,
+          chargingRateUnit: "W",
+          chargingSchedulePeriod: [
+            { startPeriod: 0, limit: 11000, numberPhases: 3 },
+            { startPeriod: 300, limit: 7400 },
+          ],
+          minChargingRate: 1000,
+        },
+      };
+      v16.validate("urn:GetCompositeSchedule.conf", answer16);
+
+      const answer = await up["ocpp2.1:GetCompositeScheduleResponse"](
+        answer16,
+        ctx,
+      );
+
+      expect(answer).toEqual({
+        status: "Accepted",
+        schedule: {
+          evseId: 2,
+          duration: 600,
+          scheduleStart: "2026-10-12T10:00:00Z",
+          chargingRateUnit: "W",
+          chargingSchedulePeriod: [
+            { startPeriod: 0, limit: 11000, numberPhases: 3 },
+            { startPeriod: 300, limit: 7400 },
+          ],
+        },
+      });
+      expect(() =>
+        v21.validate("urn:GetCompositeSchedule.conf", answer),
+      ).not.toThrow();
+    });
+
+    // 1.6 counts the schedule from when the charger received the request.
+    it("fills what the 1.6 answer leaves out from the request", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-12T10:00:00Z"));
+      try {
+        const ctx = makeCtx();
+        await down["ocpp2.1:GetCompositeSchedule"](
+          { evseId: 1, duration: 900 },
+          ctx,
+        );
+
+        const answer = await up["ocpp2.1:GetCompositeScheduleResponse"](
+          {
+            status: "Accepted",
+            chargingSchedule: {
+              chargingRateUnit: "A",
+              chargingSchedulePeriod: [{ startPeriod: 0, limit: 16 }],
+            },
+          },
+          ctx,
+        );
+
+        expect(answer).toEqual({
+          status: "Accepted",
+          schedule: {
+            evseId: 1,
+            duration: 900,
+            scheduleStart: "2026-10-12T10:00:00.000Z",
+            chargingRateUnit: "A",
+            chargingSchedulePeriod: [{ startPeriod: 0, limit: 16 }],
+          },
+        });
+        expect(() =>
+          v21.validate("urn:GetCompositeSchedule.conf", answer),
+        ).not.toThrow();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("answers a 1.6 Rejected with Rejected", async () => {
+      const answer = await up["ocpp2.1:GetCompositeScheduleResponse"](
+        { status: "Rejected" },
+        makeCtx(),
+      );
+      expect(answer).toEqual({ status: "Rejected" });
+    });
+
+    it("fails with InternalError when the schedule cannot be completed", async () => {
+      await expect(
+        up["ocpp2.1:GetCompositeScheduleResponse"](
+          {
+            status: "Accepted",
+            chargingSchedule: {
+              chargingRateUnit: "A",
+              chargingSchedulePeriod: [{ startPeriod: 0, limit: 16 }],
+            },
+          },
+          makeCtx(),
+        ),
+      ).rejects.toMatchObject({ rpcErrorCode: "InternalError" });
+    });
   });
 });
