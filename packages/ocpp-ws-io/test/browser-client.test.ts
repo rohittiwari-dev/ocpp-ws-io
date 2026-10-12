@@ -1537,8 +1537,9 @@ describe('BrowserOCPPClient', () => {
 			return out;
 		};
 
-		// 2.0.1 / 2.1 §4.2.3: when the MessageId cannot be read, reply under "-1".
-		it('answers a frame whose message ID cannot be read under "-1"', async () => {
+		// When the MessageId cannot be read, reply under "-1". 1.6J Table 7 has
+		// no RpcFrameworkError, so 1.6 answers GenericError.
+		it('answers a frame whose message ID cannot be read under "-1" with GenericError on 1.6', async () => {
 			let serverClient: OCPPServerClient | undefined;
 			server.on('client', sc => {
 				serverClient = sc;
@@ -1558,9 +1559,46 @@ describe('BrowserOCPPClient', () => {
 			await new Promise(r => setTimeout(r, 100));
 
 			expect(outgoing.map(m => m.slice(0, 3))).toEqual([
-				[4, '-1', 'RpcFrameworkError'],
-				[4, '-1', 'RpcFrameworkError'],
+				[4, '-1', 'GenericError'],
+				[4, '-1', 'GenericError'],
 			]);
+		});
+
+		// 2.0.1 / 2.1 §4.2.3: RpcFrameworkError under "-1".
+		it('answers a frame whose message ID cannot be read under "-1" with RpcFrameworkError on 2.0.1', async () => {
+			const server201 = new OCPPServer({
+				protocols: ['ocpp2.0.1'],
+				logging: false,
+			});
+			let serverClient: OCPPServerClient | undefined;
+			server201.on('client', sc => {
+				serverClient = sc;
+			});
+			const port201 = getPort(await server201.listen(0));
+			let c201: BrowserOCPPClient<'ocpp2.0.1'> | undefined;
+			try {
+				c201 = new BrowserOCPPClient({
+					identity: 'CS201-UNREADABLE',
+					endpoint: `ws://localhost:${port201}`,
+					protocols: ['ocpp2.0.1'],
+					reconnect: false,
+				});
+				await c201.connect();
+				await new Promise(r => setTimeout(r, 100));
+				const outgoing = captureOutgoing(c201);
+
+				serverClient!.sendRaw('not json');
+				serverClient!.sendRaw(JSON.stringify([2, 123, 'Reset', {}]));
+				await new Promise(r => setTimeout(r, 100));
+
+				expect(outgoing.map(m => m.slice(0, 3))).toEqual([
+					[4, '-1', 'RpcFrameworkError'],
+					[4, '-1', 'RpcFrameworkError'],
+				]);
+			} finally {
+				await c201?.close({ force: true }).catch(() => {});
+				await server201.close({ force: true });
+			}
 		});
 
 		// 1.6J Table 7 has no RpcFrameworkError.

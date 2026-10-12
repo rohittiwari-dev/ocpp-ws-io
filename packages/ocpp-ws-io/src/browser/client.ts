@@ -93,6 +93,17 @@ const UNREADABLE_ID_REPLY: BadMessageReply = {
   messageId: "-1",
 };
 
+/**
+ * The code for a frame the RPC layer cannot read. 1.6J Table 7 has no
+ * RpcFrameworkError; GenericError covers "any other error not covered by the
+ * previous ones" there.
+ */
+function frameworkErrorCode(
+  protocol: string | undefined,
+): "GenericError" | "RpcFrameworkError" {
+  return protocol === "ocpp1.6" ? "GenericError" : "RpcFrameworkError";
+}
+
 interface PendingCall {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
@@ -952,7 +963,10 @@ export class BrowserOCPPClient<
     } catch {
       this._onBadMessage(
         raw,
-        createRPCError("RpcFrameworkError", "Message must be a JSON structure"),
+        createRPCError(
+          frameworkErrorCode(this._protocol),
+          "Message must be a JSON structure",
+        ),
         UNREADABLE_ID_REPLY,
       );
       return;
@@ -960,7 +974,10 @@ export class BrowserOCPPClient<
     if (!Array.isArray(message)) {
       this._onBadMessage(
         raw,
-        createRPCError("RpcFrameworkError", "Message must be an array"),
+        createRPCError(
+          frameworkErrorCode(this._protocol),
+          "Message must be an array",
+        ),
         UNREADABLE_ID_REPLY,
       );
       return;
@@ -973,7 +990,10 @@ export class BrowserOCPPClient<
     if (typeof messageType !== "number") {
       this._onBadMessage(
         raw,
-        createRPCError("RpcFrameworkError", "Message type must be a number"),
+        createRPCError(
+          frameworkErrorCode(this._protocol),
+          "Message type must be a number",
+        ),
         UNREADABLE_ID_REPLY,
       );
       return;
@@ -996,7 +1016,10 @@ export class BrowserOCPPClient<
     if (typeof messageId !== "string") {
       this._onBadMessage(
         raw,
-        createRPCError("RpcFrameworkError", "Message ID must be a string"),
+        createRPCError(
+          frameworkErrorCode(this._protocol),
+          "Message ID must be a string",
+        ),
         UNREADABLE_ID_REPLY,
       );
       return;

@@ -27,6 +27,17 @@ export const UNREADABLE_ID_REPLY: BadMessageReply = {
   messageId: "-1",
 };
 
+/**
+ * The code for a frame the RPC layer cannot read. 1.6J Table 7 has no
+ * RpcFrameworkError; GenericError covers "any other error not covered by the
+ * previous ones" there.
+ */
+export function frameworkErrorCode(
+  protocol: string | undefined,
+): "GenericError" | "RpcFrameworkError" {
+  return protocol === "ocpp1.6" ? "GenericError" : "RpcFrameworkError";
+}
+
 /** OCPP-J §4.1.4: "maximum of 36 characters, to allow for UUIDs/GUIDs". */
 const MAX_MESSAGE_ID_LENGTH = 36;
 

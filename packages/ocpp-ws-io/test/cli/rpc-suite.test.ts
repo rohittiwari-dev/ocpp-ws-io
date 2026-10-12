@@ -44,9 +44,12 @@ describe("ocpp test: RPC suite against an ocpp-ws-io server", () => {
   }, 30_000);
 
   // 2.0.1 and 2.1 answer a message ID they cannot read under "-1", with
-  // RpcFrameworkError. 1.6 has no rule for it (O12).
-  it("passes a 2.0.1 answer to an unreadable message ID", async () => {
-    const results = await runSuite("ocpp2.0.1");
+  // RpcFrameworkError. 1.6 has no RpcFrameworkError and answers GenericError.
+  it.each([
+    "ocpp1.6",
+    "ocpp2.0.1",
+  ] as const)("passes the %s answer to an unreadable message ID", async (protocol) => {
+    const results = await runSuite(protocol);
     expect(results.get("Server enforces MessageId is a string")).toEqual({
       passed: true,
     });

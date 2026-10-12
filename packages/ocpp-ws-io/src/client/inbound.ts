@@ -26,6 +26,7 @@ import type { InboundContext } from "./context.js";
 import {
   type BadMessageReply,
   fitErrorDescription,
+  frameworkErrorCode,
   isKnownMessageType,
   MIN_FRAME_LENGTH,
   messageIdError,
@@ -70,7 +71,10 @@ export function handleMessage(
     onBadMessage(
       client,
       rawText(),
-      createRPCError("RpcFrameworkError", "Message must be a JSON structure"),
+      createRPCError(
+        frameworkErrorCode(client.protocol),
+        "Message must be a JSON structure",
+      ),
       UNREADABLE_ID_REPLY,
     );
     return;
@@ -79,7 +83,10 @@ export function handleMessage(
     onBadMessage(
       client,
       rawText(),
-      createRPCError("RpcFrameworkError", "Message must be an array"),
+      createRPCError(
+        frameworkErrorCode(client.protocol),
+        "Message must be an array",
+      ),
       UNREADABLE_ID_REPLY,
     );
     return;
@@ -93,7 +100,10 @@ export function handleMessage(
     onBadMessage(
       client,
       rawText(),
-      createRPCError("RpcFrameworkError", "Message type must be a number"),
+      createRPCError(
+        frameworkErrorCode(client.protocol),
+        "Message type must be a number",
+      ),
       UNREADABLE_ID_REPLY,
     );
     return;
@@ -118,7 +128,10 @@ export function handleMessage(
     onBadMessage(
       client,
       rawText(),
-      createRPCError("RpcFrameworkError", "Message ID must be a string"),
+      createRPCError(
+        frameworkErrorCode(client.protocol),
+        "Message ID must be a string",
+      ),
       UNREADABLE_ID_REPLY,
     );
     return;

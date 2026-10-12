@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { OCPPServer, OCPPClient } from "../../src/index.js";
+import { getStandardValidator } from "../../src/core/validation/standard-validators.js";
+import type { OCPPRequestType } from "../../src/generated/index.js";
 import { OCPPProtocolProxy } from "../../src/proxy/proxy.js";
 import { OcppWsIoAdapter } from "../../src/proxy/adapters/ocpp-ws-io.adapter.js";
 import { presets } from "../../src/proxy/presets/index.js";
@@ -117,29 +119,105 @@ describe("OCPPProtocolProxy Integration", () => {
     expect(res).toHaveProperty("transactionId");
   });
 
+  /** A 2.1 SetChargingProfile with one schedule, as the CSMS sends it. */
+  const setChargingProfile = (
+    chargingProfilePurpose: "TxDefaultProfile" | "PriorityCharging",
+  ): OCPPRequestType<"ocpp2.1", "SetChargingProfile"> => ({
+    evseId: 1,
+    chargingProfile: {
+      id: 1,
+      stackLevel: 0,
+      chargingProfilePurpose,
+      chargingProfileKind: "Absolute",
+      chargingSchedule: [
+        {
+          id: 1,
+          chargingRateUnit: "A",
+          chargingSchedulePeriod: [{ startPeriod: 0, limit: 16 }],
+        },
+      ],
+    },
+  });
+
   it("should translate Downstream SetChargingProfile transparently", async () => {
-    // 1. Mock the EVSE side to handle SetChargingProfile
-    mockCharger.handle("SetChargingProfile", () => ({
-      status: "Accepted",
-    }));
+    // 1. Mock the EVSE side to handle SetChargingProfile, checking the request
+    // against the OCA 1.6 schema as a validating charger does
+    const received: string[] = [];
+    mockCharger.handle("SetChargingProfile", (ctx) => {
+      getStandardValidator("ocpp1.6")!.validate(
+        "urn:SetChargingProfile.req",
+        ctx.params,
+      );
+      received.push(JSON.stringify(ctx.params));
+      return { status: "Accepted" };
+    });
 
     // 2. The upstream client the proxy opened is the CSMS's only client
     const [proxyClient] = csmsServer.clients;
     if (!proxyClient) throw new Error("the proxy has not connected");
 
     // 3. Fire the CALL from CSMS to the Proxy
-    const res = await proxyClient.call("SetChargingProfile", {
-      evseId: 1,
-      chargingProfile: {
-        id: 1,
-        stackLevel: 0,
-        chargingProfilePurpose: "TxDefaultProfile",
-        chargingProfileKind: "Absolute",
-        transactionId: "tx-1234",
-        chargingSchedule: [],
-      },
-    });
+    const res = await proxyClient.call(
+      "SetChargingProfile",
+      setChargingProfile("TxDefaultProfile"),
+    );
 
     expect(res).toHaveProperty("status", "Accepted");
+    expect(received.map((r) => JSON.parse(r))).toEqual([
+      {
+        connectorId: 1,
+        csChargingProfiles: {
+          chargingProfileId: 1,
+          stackLevel: 0,
+          chargingProfilePurpose: "TxDefaultProfile",
+          chargingProfileKind: "Absolute",
+          chargingSchedule: {
+            chargingRateUnit: "A",
+            chargingSchedulePeriod: [{ startPeriod: 0, limit: 16 }],
+          },
+        },
+      },
+    ]);
+  });
+
+  it("answers a 1.6 NotSupported to SetChargingProfile with Rejected", async () => {
+    mockCharger.removeHandler("SetChargingProfile");
+    mockCharger.handle("SetChargingProfile", () => ({
+      status: "NotSupported",
+    }));
+    const [proxyClient] = csmsServer.clients;
+    if (!proxyClient) throw new Error("the proxy has not connected");
+
+    const res = await proxyClient.call(
+      "SetChargingProfile",
+      setChargingProfile("TxDefaultProfile"),
+    );
+
+    expect(res).toEqual({
+      status: "Rejected",
+      statusInfo: {
+        reasonCode: "NotSupported",
+        additionalInfo: "The OCPP 1.6 charger does not support it",
+      },
+    });
+  });
+
+  it("refuses a profile 1.6 cannot hold with NotSupported", async () => {
+    const received: string[] = [];
+    mockCharger.removeHandler("SetChargingProfile");
+    mockCharger.handle("SetChargingProfile", (ctx) => {
+      received.push(JSON.stringify(ctx.params));
+      return { status: "Accepted" };
+    });
+    const [proxyClient] = csmsServer.clients;
+    if (!proxyClient) throw new Error("the proxy has not connected");
+
+    await expect(
+      proxyClient.call(
+        "SetChargingProfile",
+        setChargingProfile("PriorityCharging"),
+      ),
+    ).rejects.toMatchObject({ rpcErrorCode: "NotSupported" });
+    expect(received).toEqual([]);
   });
 });

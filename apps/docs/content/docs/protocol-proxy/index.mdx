@@ -279,6 +279,12 @@ proxy.translate(smartChargingPreset);
 | `reservationPreset` | Reservation | — | `ReserveNow`, `CancelReservation` |
 | `localAuthPreset` | Local Auth List | — | `GetLocalListVersion`, `SendLocalList` |
 
+### Charging profiles
+
+`smartChargingPreset` turns a 2.x `chargingProfile` into 1.6's `csChargingProfiles`: `id` becomes `chargingProfileId`, `ChargingStationMaxProfile` becomes `ChargePointMaxProfile`, the 2.x transaction id becomes the 1.6 id the core preset gave it, and the one schedule becomes an object. Fields 1.6 has no place for are left out: a schedule's `id` and `salesTariff`, a period's `phaseToUse`, and the fields 2.1 added. `ClearChargingProfile` renames the purpose the same way.
+
+What 1.6 cannot hold is refused with a `NotSupported` CALLERROR instead of being sent: a `Dynamic` profile, the purposes `ChargingStationExternalConstraints`, `PriorityCharging` and `LocalGeneration`, more than one schedule, a period without a `limit`, and a transaction the proxy has no 1.6 id for. A charger's 1.6 `NotSupported` answer reaches the CSMS as `Rejected` with `statusInfo.reasonCode` `NotSupported`, since 2.x has no such status.
+
 ---
 
 ## Custom Translation Overrides

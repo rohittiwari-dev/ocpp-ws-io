@@ -150,7 +150,7 @@ export const rpcSuite: TestSuite = {
       },
     );
 
-    // ── 5. Invalid Message ID Type (2.x: "-1", RpcFrameworkError) ──
+    // ── 5. Invalid Message ID Type ("-1": 2.x RpcFrameworkError, 1.6 GenericError)
 
     await check("Server enforces MessageId is a string", "MEDIUM", async () => {
       let ws: WebSocket | undefined;
@@ -164,12 +164,14 @@ export const rpcSuite: TestSuite = {
         const parsed = JSON.parse(msg);
 
         // 2.0.1 and 2.1 answer a message ID they cannot read under "-1", with
-        // RpcFrameworkError (Part 4 §4.2.3). 1.6 has no rule for it.
+        // RpcFrameworkError (Part 4 §4.2.3). 1.6 has no rule for it and no
+        // RpcFrameworkError (Table 7); GenericError is its catch-all.
+        const unreadableIdCode =
+          protocol === "ocpp1.6" ? "GenericError" : "RpcFrameworkError";
         const unreadableIdAnswer =
           Array.isArray(parsed) &&
-          protocol !== "ocpp1.6" &&
           parsed[1] === "-1" &&
-          parsed[2] === "RpcFrameworkError";
+          parsed[2] === unreadableIdCode;
         if (
           Array.isArray(parsed) &&
           parsed[0] === 4 &&
@@ -183,7 +185,7 @@ export const rpcSuite: TestSuite = {
           passed: false,
           issue: `Expected ${
             protocol === "ocpp1.6"
-              ? `${formatViolation} CALLERROR`
+              ? `${formatViolation} CALLERROR, or GenericError under "-1"`
               : 'CALLERROR under "-1" with RpcFrameworkError'
           }, got: ${msg.slice(0, 80)}`,
         };

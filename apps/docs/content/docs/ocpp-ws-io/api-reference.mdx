@@ -659,12 +659,12 @@ Typed methods otherwise take only the actions their protocols define, and reject
 | SEND (6)                                                                                   | Unknown type (see below)                       | Delivered to its handler, never answered       |
 | CALLRESULTERROR (5)                                                                        | Unknown type (see below)                       | `callResultError` event, never answered        |
 | Any other unknown number                                                                   | CALLERROR `MessageTypeNotSupported`, ID `"-1"` | CALLERROR `MessageTypeNotSupported`, ID `"-1"` |
-| Message ID cannot be read (invalid JSON, not an array, type not a number, ID not a string) | CALLERROR `RpcFrameworkError`, ID `"-1"`       | CALLERROR `RpcFrameworkError`, ID `"-1"`       |
+| Message ID cannot be read (invalid JSON, not an array, type not a number, ID not a string) | CALLERROR, ID `"-1"`: `GenericError` on 1.6, `RpcFrameworkError` on 2.0.1 | CALLERROR `RpcFrameworkError`, ID `"-1"`       |
 | Malformed CALL                                                                             | Answered with CALLERROR                        | Answered with CALLERROR                        |
 | Malformed or schema-invalid CALLRESULT                                                     | Not answered                                   | Answered with CALLRESULTERROR                  |
 | Malformed CALLERROR                                                                        | Not answered                                   | Not answered                                   |
 
-An unknown message type counts as a bad message (emitting `badMessage`), and it is answered with a CALLERROR `MessageTypeNotSupported` under message ID `"-1"`, since the frame's own ID is not read for a type the protocol does not define. A frame whose message ID cannot be read is answered the same way with `RpcFrameworkError`, as 2.0.1 and 2.1 §4.2.3 require ("When also the MessageId cannot be read, the CALLERROR SHALL contain "-1""). A CALLERROR otherwise only answers a CALL, so two peers cannot loop by answering each other's errors.
+An unknown message type counts as a bad message (emitting `badMessage`), and it is answered with a CALLERROR `MessageTypeNotSupported` under message ID `"-1"`, since the frame's own ID is not read for a type the protocol does not define. A frame whose message ID cannot be read is answered the same way with `RpcFrameworkError`, as 2.0.1 and 2.1 §4.2.3 require ("When also the MessageId cannot be read, the CALLERROR SHALL contain "-1""), and with `GenericError` on OCPP 1.6, whose error-code table has no `RpcFrameworkError`. A CALLERROR otherwise only answers a CALL, so two peers cannot loop by answering each other's errors.
 
 A CALL that reuses the message ID of a CALL still being handled is answered with `RpcFrameworkError` on OCPP 2.0.1 and 2.1, and with `GenericError` on OCPP 1.6, whose error-code table has no `RpcFrameworkError`.
 
@@ -680,7 +680,7 @@ A message ID is a string of at most 36 characters, unique for the sender across 
 | Incoming CALL / SEND, `idValidator` set | `idValidator` decides, with or without `strictMode`. Returning `false` or throwing rejects the ID.                                                                                         |
 | Incoming CALL / SEND, `strictMode` on   | IDs over 36 characters are rejected.                                                                                                                                                       |
 | Incoming CALL / SEND, otherwise         | Any string is accepted.                                                                                                                                                                    |
-| ID is not a string                      | CALLERROR `RpcFrameworkError` under ID `"-1"` (see Message types).                                                                                                                         |
+| ID is not a string                      | CALLERROR under ID `"-1"`: `RpcFrameworkError` on 2.0.1 and 2.1, `GenericError` on 1.6 (see Message types).                                                                               |
 
 A rejected CALL is answered under message ID `"-1"` with `RpcFrameworkError` on OCPP 2.0.1 and 2.1, and `GenericError` on OCPP 1.6, whose error-code table has no `RpcFrameworkError`. A rejected SEND is not answered. Both count as bad messages. The browser client has no `strictMode`, so it checks incoming IDs only through `idValidator`.
 

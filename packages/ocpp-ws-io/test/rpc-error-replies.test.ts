@@ -57,8 +57,13 @@ describe("RPC error replies", () => {
     return { ws, replies };
   }
 
-  for (const protocol of ["ocpp1.6", "ocpp2.0.1", "ocpp2.1"] as const) {
-    it(`answers a frame whose message ID cannot be read with "-1" on ${protocol}`, async () => {
+  // 1.6J Table 7 has no RpcFrameworkError; GenericError is its catch-all.
+  for (const [protocol, code] of [
+    ["ocpp1.6", "GenericError"],
+    ["ocpp2.0.1", "RpcFrameworkError"],
+    ["ocpp2.1", "RpcFrameworkError"],
+  ] as const) {
+    it(`answers a frame whose message ID cannot be read with "-1" and ${code} on ${protocol}`, async () => {
       const { ws, replies } = await charger(protocol);
 
       ws.send("not json");
@@ -69,7 +74,7 @@ describe("RPC error replies", () => {
       await settle();
 
       expect(replies.map((m) => m.slice(0, 3))).toEqual(
-        Array(5).fill([4, "-1", "RpcFrameworkError"]),
+        Array(5).fill([4, "-1", code]),
       );
     });
   }
