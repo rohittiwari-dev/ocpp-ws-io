@@ -280,5 +280,32 @@ export const corePreset: Partial<TranslationMap> = {
         errorDetails,
       };
     },
+    // A charger's 1.6 CALLERROR on its way to the 2.x CSMS: two codes are
+    // spelt differently in 2.x (1.6 errata spells the second right), the rest
+    // of 1.6's Table 7 is 2.x's too.
+    "ocpp1.6:Error": (
+      errorCode: string,
+      errorDescription: string,
+      errorDetails,
+    ) => {
+      const errorMap: Record<string, string> = {
+        FormationViolation: "FormatViolation",
+        OccurenceConstraintViolation: "OccurrenceConstraintViolation",
+        OccurrenceConstraintViolation: "OccurrenceConstraintViolation",
+        GenericError: "GenericError",
+        InternalError: "InternalError",
+        NotImplemented: "NotImplemented",
+        NotSupported: "NotSupported",
+        PropertyConstraintViolation: "PropertyConstraintViolation",
+        ProtocolError: "ProtocolError",
+        SecurityError: "SecurityError",
+        TypeConstraintViolation: "TypeConstraintViolation",
+      };
+      return {
+        errorCode: errorMap[errorCode] || "InternalError",
+        errorDescription,
+        errorDetails,
+      };
+    },
   },
 };

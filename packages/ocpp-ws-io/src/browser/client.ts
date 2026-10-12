@@ -104,6 +104,41 @@ function frameworkErrorCode(
   return protocol === "ocpp1.6" ? "GenericError" : "RpcFrameworkError";
 }
 
+/**
+ * The CALLERROR that answers a thrown error. A thrown RPC error says what the
+ * peer reads: its code, its own message (else its code's standard text) and
+ * the details it carries. Any other error is an InternalError described by
+ * that code's text, so its message stays on this side. Details the error does
+ * not carry are its plain-object form with respondWithDetailedErrors, else
+ * none.
+ */
+function callErrorFor(
+  err: Error,
+  detailed: boolean,
+): { code: string; description: string; details: OCPPCallError[4] } {
+  const fallbackDetails = detailed ? getErrorPlainObject(err, false) : {};
+  if (
+    err instanceof RPCGenericError ||
+    (err as Partial<RPCError>).rpcErrorCode
+  ) {
+    const rpcErr = err as RPCError;
+    return {
+      code: rpcErr.rpcErrorCode,
+      description: rpcErr.message || rpcErr.rpcErrorMessage || "",
+      details:
+        rpcErr.details && Object.keys(rpcErr.details).length > 0
+          ? rpcErr.details
+          : fallbackDetails,
+    };
+  }
+  const internal = createRPCError("InternalError");
+  return {
+    code: internal.rpcErrorCode,
+    description: internal.rpcErrorMessage,
+    details: fallbackDetails,
+  };
+}
+
 interface PendingCall {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
@@ -1255,24 +1290,18 @@ export class BrowserOCPPClient<
           error: (err as Error).message,
         });
 
-        const rpcErr =
-          err instanceof RPCGenericError || (err as RPCError).rpcErrorCode
-            ? (err as RPCError)
-            : createRPCError("InternalError", (err as Error).message);
-
         // Never ship stack traces to remote peers (report M13)
-        const details = this._options.respondWithDetailedErrors
-          ? getErrorPlainObject(err as Error, false)
-          : {};
+        const answer = callErrorFor(
+          err as Error,
+          Boolean(this._options.respondWithDetailedErrors),
+        );
 
         const errorResponse: OCPPCallError = [
           MessageType.CALLERROR,
           ctxvals.messageId,
-          rpcErr.rpcErrorCode,
-          this._fitErrorDescription(
-            rpcErr.rpcErrorMessage || (err as Error).message || "",
-          ),
-          details,
+          answer.code,
+          this._fitErrorDescription(answer.description),
+          answer.details,
         ];
         this._ws?.send(JSON.stringify(errorResponse));
         this.emit("callError", errorResponse);
@@ -1295,20 +1324,16 @@ export class BrowserOCPPClient<
       // A middleware threw before the handler step (rejecting the call, or
       // failing). Nothing answered the CALL, and OCPP-J requires an answer:
       // without one the peer only learns of it from its own timeout.
-      const rpcErr =
-        err instanceof RPCGenericError || (err as RPCError).rpcErrorCode
-          ? (err as RPCError)
-          : createRPCError("InternalError", (err as Error).message);
+      const answer = callErrorFor(
+        err as Error,
+        Boolean(this._options.respondWithDetailedErrors),
+      );
       const errorResponse: OCPPCallError = [
         MessageType.CALLERROR,
         msgId,
-        rpcErr.rpcErrorCode,
-        this._fitErrorDescription(
-          rpcErr.rpcErrorMessage || (err as Error).message || "",
-        ),
-        this._options.respondWithDetailedErrors
-          ? getErrorPlainObject(err as Error, false)
-          : {},
+        answer.code,
+        this._fitErrorDescription(answer.description),
+        answer.details,
       ];
       this._ws?.send(JSON.stringify(errorResponse));
       this.emit("callError", errorResponse);

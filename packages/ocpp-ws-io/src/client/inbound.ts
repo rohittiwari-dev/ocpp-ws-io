@@ -2,11 +2,10 @@ import type WebSocket from "ws";
 import {
   type RPCError,
   RPCFormatViolationError,
-  RPCGenericError,
   RPCMessageTypeNotSupportedError,
   RPCNotImplementedError,
 } from "../core/errors.js";
-import { createRPCError, getErrorPlainObject } from "../core/util.js";
+import { createRPCError } from "../core/util.js";
 import { isEmptyFrame } from "../core/ws-util.js";
 import type { CallHandler, HandlerContext } from "../types/handlers.js";
 import type { JsonValue } from "../types/json.js";
@@ -25,6 +24,7 @@ import {
 import type { InboundContext } from "./context.js";
 import {
   type BadMessageReply,
+  callErrorFor,
   fitErrorDescription,
   frameworkErrorCode,
   isKnownMessageType,
@@ -527,24 +527,20 @@ async function handleIncomingCall(
       } catch (err) {
         client.pendingResponses.delete(ctxvals.messageId);
 
-        const rpcErr =
-          err instanceof RPCGenericError || (err as RPCError).rpcErrorCode
-            ? (err as RPCError)
-            : createRPCError("InternalError", (err as Error).message);
-
         // Never ship stack traces to remote peers (report M13)
-        const details = client.respondWithDetailedErrors
-          ? getErrorPlainObject(err as Error, false)
-          : {};
+        const answer = callErrorFor(
+          err as Error,
+          client.respondWithDetailedErrors,
+        );
+        const details = answer.details;
 
         // Same treatment as the CALLRESULT path above: a CALLERROR on the
         // wire carries no action name either, so this context is the only
         // place a plugin can make an action-specific decision about one.
         // The declared context exposes the code and description; `details`
         // is not part of it and is sent as produced.
-        let errorCode = rpcErr.rpcErrorCode;
-        let errorDescription =
-          rpcErr.rpcErrorMessage || (err as Error).message || "";
+        let errorCode = answer.code;
+        let errorDescription = answer.description;
         try {
           const outCtx: MiddlewareContext = {
             type: "outgoing_error",
@@ -625,18 +621,13 @@ async function handleIncomingCall(
       error: (err as Error)?.message ?? String(err),
     });
     if (client.state !== OPEN) return;
-    const rpcErr =
-      err instanceof RPCGenericError || (err as RPCError).rpcErrorCode
-        ? (err as RPCError)
-        : createRPCError("InternalError", (err as Error).message);
+    const answer = callErrorFor(err as Error, client.respondWithDetailedErrors);
     sendRpcError(client, [
       MessageType.CALLERROR,
       msgId,
-      rpcErr.rpcErrorCode,
-      rpcErr.rpcErrorMessage || (err as Error).message || "",
-      client.respondWithDetailedErrors
-        ? getErrorPlainObject(err as Error, false)
-        : {},
+      answer.code,
+      answer.description,
+      answer.details,
     ]);
   }
 }

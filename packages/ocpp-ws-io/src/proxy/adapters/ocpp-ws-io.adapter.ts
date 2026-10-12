@@ -1,8 +1,9 @@
 import type { Server } from "node:http";
 import type { OCPPClient } from "../../client/client.js";
-import type { RPCError } from "../../core/errors.js";
+import { RPCGenericError } from "../../core/errors.js";
 import { unchecked } from "../../core/unchecked.js";
 import type { OCPPServer } from "../../server/server.js";
+import { callErrorMessage, ProxiedCallError } from "../core/errors.js";
 import {
   type IConnection,
   type ITransportAdapter,
@@ -10,24 +11,6 @@ import {
   type OCPPMessage,
   type ProxyPayload,
 } from "../core/types.js";
-
-/**
- * A CALLERROR the proxy answers the charger with. The library sends an RPC
- * error's own code and description; a plain Error went out as InternalError.
- */
-class ProxiedCallError extends Error implements RPCError {
-  readonly rpcErrorCode: string;
-  readonly rpcErrorMessage: string;
-  readonly details: ProxyPayload;
-
-  constructor(code: string, description: string, details: ProxyPayload) {
-    super(description);
-    this.name = "ProxiedCallError";
-    this.rpcErrorCode = code;
-    this.rpcErrorMessage = description;
-    this.details = details;
-  }
-}
 
 export class OcppWsIoConnection implements IConnection {
   public identity: string;
@@ -76,16 +59,23 @@ export class OcppWsIoConnection implements IConnection {
 
   public async send(message: OCPPMessage): Promise<OCPPMessage | undefined> {
     if (message.type === MessageType.CALL) {
-      // Passed through from the other side: the action is not checked by type.
-      const rawResult = await this.client.call(
-        unchecked(message.action),
-        message.payload,
-      );
-      return {
-        type: MessageType.CALLRESULT,
-        messageId: message.messageId,
-        payload: rawResult,
-      };
+      try {
+        // Passed through from the other side: the action is not checked by type.
+        const rawResult = await this.client.call(
+          unchecked(message.action),
+          message.payload,
+        );
+        return {
+          type: MessageType.CALLRESULT,
+          messageId: message.messageId,
+          payload: rawResult,
+        };
+      } catch (err) {
+        // The charger answered with a CALLERROR: hand it back as one. Anything
+        // else (a timeout, a closed connection) is a failure to send.
+        if (!(err instanceof RPCGenericError)) throw err;
+        return callErrorMessage(err, message.messageId);
+      }
     }
     return undefined;
   }

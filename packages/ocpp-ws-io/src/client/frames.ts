@@ -1,8 +1,8 @@
-import type { RPCError } from "../core/errors.js";
+import { type RPCError, RPCGenericError } from "../core/errors.js";
 import { supportsSend } from "../core/protocol-list.js";
-import { createRPCError } from "../core/util.js";
+import { createRPCError, getErrorPlainObject } from "../core/util.js";
 import type { ClientOptions } from "../types/client.js";
-import { MessageType } from "../types/protocol.js";
+import { MessageType, type OCPPCallError } from "../types/protocol.js";
 
 // The rules an incoming frame is checked against, by OCPP-J version.
 
@@ -36,6 +36,45 @@ export function frameworkErrorCode(
   protocol: string | undefined,
 ): "GenericError" | "RpcFrameworkError" {
   return protocol === "ocpp1.6" ? "GenericError" : "RpcFrameworkError";
+}
+
+/** The code, description and details of a CALLERROR. */
+export interface CallErrorParts {
+  code: string;
+  description: string;
+  details: OCPPCallError[4];
+}
+
+/**
+ * The CALLERROR that answers a thrown error. A thrown RPC error says what the
+ * peer reads: its code, its own message (else its code's standard text) and
+ * the details it carries. Any other error is an InternalError described by
+ * that code's text, so its message stays on this side. Details the error does
+ * not carry are its plain-object form with respondWithDetailedErrors, else
+ * none.
+ */
+export function callErrorFor(err: Error, detailed: boolean): CallErrorParts {
+  const fallbackDetails = detailed ? getErrorPlainObject(err, false) : {};
+  if (
+    err instanceof RPCGenericError ||
+    (err as Partial<RPCError>).rpcErrorCode
+  ) {
+    const rpcErr = err as RPCError;
+    return {
+      code: rpcErr.rpcErrorCode,
+      description: rpcErr.message || rpcErr.rpcErrorMessage || "",
+      details:
+        rpcErr.details && Object.keys(rpcErr.details).length > 0
+          ? rpcErr.details
+          : fallbackDetails,
+    };
+  }
+  const internal = createRPCError("InternalError");
+  return {
+    code: internal.rpcErrorCode,
+    description: internal.rpcErrorMessage,
+    details: fallbackDetails,
+  };
 }
 
 /** OCPP-J §4.1.4: "maximum of 36 characters, to allow for UUIDs/GUIDs". */

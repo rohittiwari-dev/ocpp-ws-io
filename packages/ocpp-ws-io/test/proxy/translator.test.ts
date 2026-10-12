@@ -63,6 +63,39 @@ describe("a CSMS's CALLERROR", () => {
   });
 });
 
+// A charger's CALLERROR is mapped by the charger's protocol (O27).
+describe("a charger's CALLERROR to a CSMS call", () => {
+  it("is mapped by the charger's protocol", async () => {
+    const t = new OCPPTranslator({
+      upstream: {},
+      downstream: {},
+      errors: {
+        "ocpp1.6:Error": (errorCode, errorDescription, errorDetails) => ({
+          errorCode: errorCode === "FormationViolation" ? "FormatViolation" : errorCode,
+          errorDescription,
+          errorDetails,
+        }),
+      },
+    });
+
+    const out = await t.translateDownstreamError(
+      {
+        type: MessageType.CALLERROR,
+        messageId: "m1",
+        errorCode: "FormationViolation",
+        errorDescription: "charger says no",
+        errorDetails: {},
+      },
+      makeCtx(),
+    );
+
+    expect(out).toMatchObject({
+      errorCode: "FormatViolation",
+      errorDescription: "charger says no",
+    });
+  });
+});
+
 // A charger's answer to a CSMS call is keyed by the charger's protocol and the
 // action it was sent, the answer the mapper receives (O23).
 describe("a charger's answer to a CSMS call", () => {

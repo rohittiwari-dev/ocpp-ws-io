@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import type { OCPPClient } from "../client/client.js";
 import { RPCGenericError } from "../core/errors.js";
 import { unchecked } from "../core/unchecked.js";
+import { callErrorMessage, ProxiedCallError } from "./core/errors.js";
 import type { ISessionStore } from "./core/session.js";
 import { InMemorySessionStore } from "./core/session.js";
 import { OCPPTranslator } from "./core/translator.js";
@@ -229,6 +230,7 @@ export class OCPPProtocolProxy extends EventEmitter {
             payload: ctx.params as ProxyPayload,
           };
 
+        let chargerError: ErrorMessage | undefined;
         try {
           const preMsg = await this.executeMiddlewares(
             downstreamCall,
@@ -251,7 +253,30 @@ export class OCPPProtocolProxy extends EventEmitter {
 
           const evseResponse = await evseConnection.send(postMsg);
 
-          if (evseResponse && evseResponse.type === MessageType.CALLRESULT) {
+          if (evseResponse?.type === MessageType.CALLERROR) {
+            // The charger refused the call: pass its CALLERROR on in the
+            // CSMS's terms, through the errors map.
+            const preErrMsg = await this.executeMiddlewares(
+              evseResponse,
+              context,
+              "error",
+              "pre",
+            );
+            const translatedError =
+              await this.translator.translateDownstreamError(
+                preErrMsg as ErrorMessage,
+                context,
+              );
+            chargerError = (await this.executeMiddlewares(
+              translatedError,
+              context,
+              "error",
+              "post",
+            )) as ErrorMessage;
+          } else if (
+            evseResponse &&
+            evseResponse.type === MessageType.CALLRESULT
+          ) {
             const preResMsg = await this.executeMiddlewares(
               evseResponse,
               context,
@@ -281,6 +306,15 @@ export class OCPPProtocolProxy extends EventEmitter {
         } catch (err) {
           this.emit("translationError", err, downstreamCall, context);
           throw err;
+        }
+        if (chargerError) {
+          // Thrown here, past the catch: a charger's refusal is an answer, not
+          // a failure to translate.
+          throw new ProxiedCallError(
+            chargerError.errorCode,
+            chargerError.errorDescription,
+            chargerError.errorDetails,
+          );
         }
         // No answer from the charger to pass back.
         return undefined;
@@ -313,14 +347,7 @@ export class OCPPProtocolProxy extends EventEmitter {
       // A CSMS CALLERROR rejects the call with an RPC error. Anything else (a
       // timeout, a closed connection) is the proxy's own failure.
       if (!(err instanceof RPCGenericError)) throw err;
-      return {
-        type: MessageType.CALLERROR,
-        messageId: call.messageId,
-        errorCode: err.rpcErrorCode,
-        errorDescription: err.message,
-        // The details of a CALLERROR are the JSON object the CSMS sent.
-        errorDetails: err.details as ProxyPayload,
-      };
+      return callErrorMessage(err, call.messageId);
     }
   }
 

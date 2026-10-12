@@ -166,7 +166,7 @@ describe('OCPPClient', () => {
 
 		await expect(
 			client.call(unchecked('UnhandledAction'), {})
-		).rejects.toThrow(/not known|NotImplemented/);
+		).rejects.toThrow(/not implemented/);
 	});
 
 	it('should support abort signal on calls', async () => {
@@ -592,7 +592,7 @@ describe('OCPPClient - Advanced Features', () => {
 					reject(new Error('Should have thrown'));
 				} catch (e: unknown) {
 					expect((e as Error).message).toMatch(
-						/not known|NotImplemented/i
+						/not implemented/i
 					);
 					resolve();
 				}

@@ -838,3 +838,14 @@ import {
 	RPCMessageTypeNotSupportedError,
 } from 'ocpp-ws-io';
 ```
+
+A handler or connection middleware that throws an RPC error answers the CALL with it: its code, its own message as the description (the code's standard text when it has none), and the `details` it carries. Any other error is answered `InternalError` with that code's standard text, so its message stays on your side; with `respondWithDetailedErrors` its properties go in `details`.
+
+```typescript
+import { createRPCError } from 'ocpp-ws-io';
+
+client.handle('Reset', () => {
+	throw createRPCError('NotSupported', 'Reset is off on this site', { retryAfter: 3600 });
+});
+// The peer receives [4, id, "NotSupported", "Reset is off on this site", { "retryAfter": 3600 }]
+```

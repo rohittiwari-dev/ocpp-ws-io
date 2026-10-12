@@ -142,7 +142,7 @@ The `presets.ocpp16_to_ocpp21` object includes translation mappings for:
 - **Upstream** (EVSE→CSMS): `BootNotification`, `Authorize`, `StartTransaction`→`TransactionEvent`, `StopTransaction`, `MeterValues`, `StatusNotification`, `Heartbeat`, and more
 - **Downstream** (CSMS→EVSE): `RemoteStartTransaction`←`RequestStartTransaction`, `RemoteStopTransaction`←`RequestStopTransaction`, `ChangeAvailability`, `Reset`, `UnlockConnector`, `TriggerMessage`, `SetChargingProfile`, and more
 - **Responses**: Maps the CSMS's 2.1 answers back to 1.6, and a charger's 1.6 answers (`SetChargingProfile`, `GetCompositeSchedule`) on to 2.1
-- **Errors**: Maps 2.1 error codes to 1.6 equivalents
+- **Errors**: Maps a CSMS's 2.1 error codes to 1.6 (`"ocpp2.1:Error"`), and a charger's 1.6 codes to 2.x (`"ocpp1.6:Error"`)
 
 </Step>
 

@@ -390,3 +390,26 @@ describe("Core Preset — Error Mapping", () => {
     expect(result.errorCode).toBe("InternalError");
   });
 });
+
+// A charger's 1.6 CALLERROR on its way to a 2.x CSMS (O27).
+describe("Core Preset — Charger errors", () => {
+  const errorMappers = errors(corePreset.errors);
+
+  it.each([
+    ["FormationViolation", "FormatViolation"],
+    ["OccurenceConstraintViolation", "OccurrenceConstraintViolation"],
+    ["OccurrenceConstraintViolation", "OccurrenceConstraintViolation"],
+    ["NotSupported", "NotSupported"],
+    ["GenericError", "GenericError"],
+    ["CompletelyUnknown", "InternalError"],
+  ])("maps 1.6's %s to 2.x's %s", async (code16, code2x) => {
+    const result = await errorMappers["ocpp1.6:Error"](
+      code16, "desc", { field: "type" }, makeCtx(),
+    );
+    expect(result).toEqual({
+      errorCode: code2x,
+      errorDescription: "desc",
+      errorDetails: { field: "type" },
+    });
+  });
+});

@@ -88,9 +88,10 @@ sends what the handler produced and logs the failure. A broken middleware must n
 leave a charge point waiting for a CALLRESULT that never arrives.
 
 A middleware that throws on an `incoming_call` before calling `next()` rejects the call:
-the peer is answered with a CALLERROR carrying the error's RPC code
-(`createRPCError("SecurityError")`, for example), or `InternalError` for any other
-error, and the handler does not run. One that throws on an `incoming_result` or an
+the peer is answered with a CALLERROR carrying the error's RPC code and its own message
+(`createRPCError("SecurityError", "Signature does not verify")`, for example), or
+`InternalError` with that code's standard text for any other error, and the handler
+does not run. One that throws on an `incoming_result` or an
 `incoming_error` rejects the waiting `call()` with that error. This holds for the
 server, the Node client and the browser client.
 

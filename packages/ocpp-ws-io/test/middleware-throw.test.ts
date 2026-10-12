@@ -79,8 +79,9 @@ describe("a middleware that throws before next()", () => {
 
     const error = await client.call("Heartbeat", {}).catch((e: Error) => e);
 
-    // Described with the code's standard text, as a handler's error is.
+    // Described with the error's own message, as a handler's error is (O26).
     expect(error).toBeInstanceOf(RPCSecurityError);
+    expect((error as Error).message).toBe("Signature does not verify");
     expect(handled()).toBe(0);
   });
 

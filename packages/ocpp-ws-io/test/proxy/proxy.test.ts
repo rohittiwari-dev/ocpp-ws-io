@@ -277,4 +277,32 @@ describe("OCPPProtocolProxy Integration", () => {
       ),
     ).not.toThrow();
   });
+
+  it("passes a charger's CALLERROR on to the CSMS in 2.x's terms", async () => {
+    mockCharger.handle("Reset", () => {
+      throw createRPCError("FormationViolation", "charger says no", {
+        field: "type",
+      });
+    });
+    const translationErrors: string[] = [];
+    const onTranslationError = (err: Error) =>
+      translationErrors.push(err.message);
+    proxy.on("translationError", onTranslationError);
+    const [proxyClient] = csmsServer.clients;
+    if (!proxyClient) throw new Error("the proxy has not connected");
+
+    try {
+      await expect(
+        proxyClient.call("Reset", { type: "Immediate" }),
+      ).rejects.toMatchObject({
+        rpcErrorCode: "FormatViolation",
+        message: "charger says no",
+        details: { field: "type" },
+      });
+      // A charger's refusal is an answer, not a failure to translate.
+      expect(translationErrors).toEqual([]);
+    } finally {
+      proxy.off("translationError", onTranslationError);
+    }
+  });
 });

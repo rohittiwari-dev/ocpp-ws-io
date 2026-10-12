@@ -916,6 +916,35 @@ describe('BrowserOCPPClient', () => {
 				expect(err.rpcErrorCode).toBe('InternalError');
 			}
 		});
+
+		// O26: a thrown RPC error says what the peer reads.
+		it('answers a thrown RPC error with its own message and details', async () => {
+			let serverClient: OCPPServerClient | undefined;
+			server.on('client', sc => {
+				serverClient = sc;
+			});
+			client = new BrowserOCPPClient({
+				identity: 'CS-O26',
+				endpoint: `ws://localhost:${port}`,
+				protocols: ['ocpp1.6'],
+				reconnect: false,
+			});
+			client.handle('Reset', () => {
+				throw createRPCError('NotSupported', 'Reset is off here', {
+					hint: 'try later',
+				});
+			});
+			await client.connect();
+			await new Promise(r => setTimeout(r, 100));
+
+			await expect(
+				serverClient!.call('Reset', { type: 'Hard' })
+			).rejects.toMatchObject({
+				rpcErrorCode: 'NotSupported',
+				message: 'Reset is off here',
+				details: { hint: 'try later' },
+			});
+		});
 	});
 
 	// ─── Middleware ──────────────────────────────────────────────

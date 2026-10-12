@@ -176,7 +176,7 @@ describe("next() called without await", () => {
         next();
       });
       await expect(client.call(unchecked("NoSuchAction"), {})).rejects.toThrow(
-        "Requested method is not known",
+        'Method "NoSuchAction" not implemented',
       );
       await sleep(20);
       expect(unhandled).toEqual([]);
@@ -188,7 +188,7 @@ describe("next() called without await", () => {
         await sleep(100); // the CALLERROR arrives before this returns
       });
       await expect(client.call(unchecked("NoSuchAction"), {})).rejects.toThrow(
-        "Requested method is not known",
+        'Method "NoSuchAction" not implemented',
       );
       await sleep(20);
       expect(unhandled).toEqual([]);
