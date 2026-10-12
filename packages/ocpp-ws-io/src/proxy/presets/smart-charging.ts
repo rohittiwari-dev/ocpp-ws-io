@@ -169,10 +169,10 @@ export const smartChargingPreset: Partial<TranslationMap> = {
     },
   },
   responses: {
-    // The answer is the 1.6 charger's, which may be NotSupported; 2.x has only
-    // Accepted and Rejected.
-    "ocpp2.1:SetChargingProfileResponse": (
-      params: OCPPResponseType<"ocpp1.6", "SetChargingProfile">,
+    // The 1.6 charger may answer NotSupported; 2.x has only Accepted and
+    // Rejected.
+    "ocpp1.6:SetChargingProfileResponse": (
+      params,
     ): OCPPResponseType<"ocpp2.1", "SetChargingProfile"> =>
       params.status === "NotSupported"
         ? {
@@ -187,9 +187,9 @@ export const smartChargingPreset: Partial<TranslationMap> = {
     // optional; 2.x answers one schedule that needs them all. What the answer
     // leaves out comes from the request: 1.6 counts the schedule from when the
     // charger received it.
-    "ocpp2.1:GetCompositeScheduleResponse": async (
-      params: OCPPResponseType<"ocpp1.6", "GetCompositeSchedule">,
-      ctx: TranslationContext,
+    "ocpp1.6:GetCompositeScheduleResponse": async (
+      params,
+      ctx,
     ): Promise<OCPPResponseType<"ocpp2.1", "GetCompositeSchedule">> => {
       const schedule = params.chargingSchedule;
       if (params.status !== "Accepted" || !schedule) {

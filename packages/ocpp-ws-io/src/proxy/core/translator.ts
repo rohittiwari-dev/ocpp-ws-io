@@ -17,6 +17,9 @@ import {
 type ByKey<F> = Record<string, F | undefined>;
 
 export class OCPPTranslator {
+  /** Deprecated response keys already warned about, once each. */
+  private warnedResponseKeys = new Set<string>();
+
   constructor(private translationMap: TranslationMap) {}
 
   public updateMap(map: Partial<TranslationMap>) {
@@ -112,6 +115,50 @@ export class OCPPTranslator {
 
     // Default passthrough if no mapper
     return message;
+  }
+
+  /**
+   * A charger's answer to a CSMS call. Its mapper is keyed by the charger's
+   * protocol and the action it was sent (`ocpp1.6:SetChargingProfileResponse`),
+   * so it is typed as the answer it receives. A mapper keyed by the CSMS's
+   * protocol and action (`ocpp2.1:SetChargingProfileResponse`), as before
+   * 3.1.0, is still used when there is none, with a deprecation warning.
+   */
+  public async translateDownstreamResult(
+    message: Extract<OCPPMessage, { type: MessageType.CALLRESULT }>,
+    sentAction: string,
+    originalAction: string,
+    context: TranslationContext,
+  ): Promise<Extract<OCPPMessage, { type: MessageType.CALLRESULT }>> {
+    const responses: ByKey<ResponseMapper<never>> | undefined =
+      this.translationMap.responses;
+    const key = `${context.sourceProtocol}:${sentAction}Response`;
+    let responseMapper = responses?.[key];
+
+    if (!responseMapper) {
+      const deprecatedKey = `${context.targetProtocol}:${originalAction}Response`;
+      responseMapper = responses?.[deprecatedKey];
+      if (responseMapper && !this.warnedResponseKeys.has(deprecatedKey)) {
+        this.warnedResponseKeys.add(deprecatedKey);
+        process.emitWarning(
+          `Proxy response mapper "${deprecatedKey}" maps a charger's answer; key it "${key}", the charger's protocol and the action it was sent.`,
+          { type: "DeprecationWarning", code: "OCPP_PROXY_RESPONSE_KEY" },
+        );
+      }
+    }
+
+    if (!responseMapper) {
+      return message;
+    }
+    const translatedPayload = await responseMapper(
+      message.payload as never,
+      context,
+    );
+    return {
+      type: MessageType.CALLRESULT,
+      messageId: message.messageId,
+      payload: translatedPayload as ProxyPayload,
+    };
   }
 
   public async translateCallError(

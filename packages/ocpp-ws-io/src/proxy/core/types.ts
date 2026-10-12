@@ -140,7 +140,11 @@ export type TranslationMap = {
   /** CSMS -> EVSE call mappers, keyed by `targetProtocol:Action` */
   downstream: { [K in ActionKey]?: CallMapper<RequestAt<K>> };
 
-  /** Response payload mappers, keyed by `targetProtocol:ActionResponse` */
+  /**
+   * Answer mappers, keyed by the answer they receive: `targetProtocol:ActionResponse`
+   * for the CSMS's answer to an upstream call, `sourceProtocol:ActionResponse`
+   * for a charger's answer to a downstream call (the action it was sent).
+   */
   responses?: { [K in ResponseKey]?: ResponseMapper<ResponseAt<K>> };
 
   /** Error mappers, keyed by `sourceProtocol:Error` */

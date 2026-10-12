@@ -87,7 +87,7 @@ npm install ocpp-ws-io@beta
 | `from "ocpp-protocol-proxy/presets"` | `from "ocpp-ws-io/proxy/presets"` |
 | `from "ocpp-protocol-proxy/adapters"` | `from "ocpp-ws-io/proxy/adapters"` |
 
-The API is the same, with stricter types: a translation map is keyed by `protocol:Action`, so a misspelt key or a wrong field is a compile error (see [Writing a Translation Mapper](#writing-a-translation-mapper)), and the session store holds `ProxyValue`s. Two presets changed: remote start and stop from a 2.x CSMS (`RequestStartTransaction`, `RequestStopTransaction`) are now translated, and the firmware preset reads only 2.x fields.
+The API is the same, with stricter types: a translation map is keyed by `protocol:Action`, so a misspelt key or a wrong field is a compile error (see [Writing a Translation Mapper](#writing-a-translation-mapper)), and the session store holds `ProxyValue`s. Two presets changed: remote start and stop from a 2.x CSMS (`RequestStartTransaction`, `RequestStopTransaction`) are now translated, and the firmware preset reads only 2.x fields. A response mapper for a charger's answer to a CSMS call is keyed by the charger's protocol and the action it was sent (`"ocpp1.6:RemoteStartTransactionResponse"`), so it is typed as that answer. One keyed by the CSMS's protocol and action (`"ocpp2.1:RequestStartTransactionResponse"`) still works when there is none, and emits a `DeprecationWarning` (code `OCPP_PROXY_RESPONSE_KEY`) once.
 
 ### Requirements
 
@@ -141,7 +141,7 @@ proxy.translate(presets.ocpp16_to_ocpp21);
 The `presets.ocpp16_to_ocpp21` object includes translation mappings for:
 - **Upstream** (EVSE→CSMS): `BootNotification`, `Authorize`, `StartTransaction`→`TransactionEvent`, `StopTransaction`, `MeterValues`, `StatusNotification`, `Heartbeat`, and more
 - **Downstream** (CSMS→EVSE): `RemoteStartTransaction`←`RequestStartTransaction`, `RemoteStopTransaction`←`RequestStopTransaction`, `ChangeAvailability`, `Reset`, `UnlockConnector`, `TriggerMessage`, `SetChargingProfile`, and more
-- **Responses**: Maps 2.1 response payloads back to 1.6 format
+- **Responses**: Maps the CSMS's 2.1 answers back to 1.6, and a charger's 1.6 answers (`SetChargingProfile`, `GetCompositeSchedule`) on to 2.1
 - **Errors**: Maps 2.1 error codes to 1.6 equivalents
 
 </Step>
@@ -333,7 +333,7 @@ A key names a protocol and an action the types know, such as `"ocpp1.6:StartTran
 
 | Argument | Type | Description |
 | :--- | :--- | :--- |
-| `params` | the request of the action the key names | The source message payload, typed: `OCPPRequestType<"ocpp1.6", "StartTransaction">` for `"ocpp1.6:StartTransaction"`; a response mapper gets that action's response |
+| `params` | the request of the action the key names | The source message payload, typed: `OCPPRequestType<"ocpp1.6", "StartTransaction">` for `"ocpp1.6:StartTransaction"`; a response mapper gets the answer its key names: `"ocpp2.1:TransactionEventResponse"` the CSMS's answer to an upstream call, `"ocpp1.6:SetChargingProfileResponse"` a charger's answer to a downstream call (its protocol and the action it was sent) |
 | `ctx` | `TranslationContext` | Context with `identity`, `sourceProtocol`, `targetProtocol`, and `session` |
 
 And returns a `TranslationResult`:

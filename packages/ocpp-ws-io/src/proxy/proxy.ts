@@ -235,14 +235,16 @@ export class OCPPProtocolProxy extends EventEmitter {
               "pre",
             );
 
-            const mappedResponse = await this.translator.translateCallResult(
-              preResMsg as Extract<
-                OCPPMessage,
-                { type: MessageType.CALLRESULT }
-              >,
-              downstreamCall.action,
-              context,
-            );
+            const mappedResponse =
+              await this.translator.translateDownstreamResult(
+                preResMsg as Extract<
+                  OCPPMessage,
+                  { type: MessageType.CALLRESULT }
+                >,
+                (postMsg as CallMessage).action,
+                downstreamCall.action,
+                context,
+              );
 
             const postResMsg = await this.executeMiddlewares(
               mappedResponse,

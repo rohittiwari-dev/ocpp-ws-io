@@ -204,7 +204,7 @@ describe("Smart Charging Preset", () => {
         },
       ],
     ])("answers a 1.6 %s with a 2.x status", async (status, expected) => {
-      const answer = await up["ocpp2.1:SetChargingProfileResponse"](
+      const answer = await up["ocpp1.6:SetChargingProfileResponse"](
         { status },
         makeCtx(),
       );
@@ -306,7 +306,7 @@ describe("Smart Charging Preset", () => {
       };
       v16.validate("urn:GetCompositeSchedule.conf", answer16);
 
-      const answer = await up["ocpp2.1:GetCompositeScheduleResponse"](
+      const answer = await up["ocpp1.6:GetCompositeScheduleResponse"](
         answer16,
         ctx,
       );
@@ -340,7 +340,7 @@ describe("Smart Charging Preset", () => {
           ctx,
         );
 
-        const answer = await up["ocpp2.1:GetCompositeScheduleResponse"](
+        const answer = await up["ocpp1.6:GetCompositeScheduleResponse"](
           {
             status: "Accepted",
             chargingSchedule: {
@@ -370,7 +370,7 @@ describe("Smart Charging Preset", () => {
     });
 
     it("answers a 1.6 Rejected with Rejected", async () => {
-      const answer = await up["ocpp2.1:GetCompositeScheduleResponse"](
+      const answer = await up["ocpp1.6:GetCompositeScheduleResponse"](
         { status: "Rejected" },
         makeCtx(),
       );
@@ -379,7 +379,7 @@ describe("Smart Charging Preset", () => {
 
     it("fails with InternalError when the schedule cannot be completed", async () => {
       await expect(
-        up["ocpp2.1:GetCompositeScheduleResponse"](
+        up["ocpp1.6:GetCompositeScheduleResponse"](
           {
             status: "Accepted",
             chargingSchedule: {
