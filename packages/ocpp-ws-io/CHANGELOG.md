@@ -1,5 +1,11 @@
 # ocpp-ws-io
 
+## Unreleased
+
+### Fixed
+
+- **`ocpp-ws-io/browser` no longer brings Node's types into a front end.** Its declarations reached the server's through shared modules, and with them `@types/node`, `ws`'s types and `undici-types`, so in a front end that imported it, `setTimeout()` returned `NodeJS.Timeout` instead of a number. The browser entry's declarations now load only `ajv`'s and `voltlog-io/client`'s besides the package's own. The build checks this with a front-end project: DOM types, no Node types, `skipLibCheck: false`. Types only: `ConnectionOf`, the route handler types and the two middleware helpers moved to modules of their own, and every entry exports the same names.
+
 ## v3.1.0-beta.2 - Error replies by the specification, proxy translation fixes and a smaller package (2026-10-13)
 
 Three changes reach the wire; [Upgrading to 3.1](https://ocpp-ws-io.rohittiwari.me/docs/ocpp-ws-io/upgrading-to-v3-1) lists them with what to do. On OCPP 1.6, a frame whose message ID cannot be read is answered with `GenericError`. A thrown RPC error's own message and details reach the peer. `client.protocol` is `undefined` when no subprotocol was negotiated. The protocol proxy now translates charging profiles, composite schedules and CALLERRORs in both directions, and the package is 675 kB packed (was 1.6 MB).

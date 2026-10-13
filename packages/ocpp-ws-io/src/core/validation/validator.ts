@@ -1,6 +1,6 @@
 import Ajv, { type ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
-import type { AnyOCPPProtocol } from "../../types/index.js";
+import type { AnyOCPPProtocol } from "../../types/protocol.js";
 import { createRPCError } from "../util.js";
 
 // ─── Validation Error Mapping ───────────────────────────────────

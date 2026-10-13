@@ -1,5 +1,7 @@
 /** Logger contract and logging options. */
-import type { LogEntry } from "voltlog-io";
+// From the browser entry: the same LogEntry, without the main entry's Node
+// types (NodeJS.WritableStream), which the browser client's options reach.
+import type { LogEntry } from "voltlog-io/client";
 
 // ─── Logger Interface ────────────────────────────────────────────
 

@@ -46,20 +46,6 @@ export type StrictModeMethod<P extends AnyOCPPProtocol = AnyOCPPProtocol> =
 export type StrictModeMethodsFor<P extends AnyOCPPProtocol> = {
   strictModeMethods?: readonly Configured<StrictModeMethod<P>>[];
 };
-/**
- * The connection type of a server or route, for storing its connections:
- * `new Map<string, ConnectionOf<typeof server>>()`.
- */
-export type ConnectionOf<S> =
-  S extends import("../server/server.js").OCPPServer<
-    infer P extends AnyOCPPProtocol
-  >
-    ? import("../server/server-client.js").OCPPServerClient<P>
-    : S extends import("../server/router.js").OCPPRouter<
-          infer P extends AnyOCPPProtocol
-        >
-      ? import("../server/server-client.js").OCPPServerClient<P>
-      : never;
 // ─── Connection State ────────────────────────────────────────────
 
 export const ConnectionState = {

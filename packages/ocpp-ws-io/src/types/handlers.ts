@@ -1,6 +1,5 @@
 /** Handlers and the argument forms of handle() and sendToClient(). */
 import type { CallOptions } from "./calls.js";
-import type { AnyOCPPProtocol } from "./protocol.js";
 
 // ─── Handler Types ───────────────────────────────────────────────
 
@@ -27,16 +26,6 @@ export type CallHandler<TParams = unknown, TResult = unknown> = (
 export type WildcardHandler = (
   context: HandlerContext,
 ) => unknown | Promise<unknown>;
-export interface RouterHandlerContext<
-  T = unknown,
-  P extends AnyOCPPProtocol = AnyOCPPProtocol,
-> extends HandlerContext<T> {
-  /** The specific server client that issued the message. */
-  client: import("../server/server-client.js").OCPPServerClient<P>;
-}
-/** A route's wildcard handler: its context has the connection, typed for P. */
-export type RouterWildcardHandler<P extends AnyOCPPProtocol = AnyOCPPProtocol> =
-  (context: RouterHandlerContext<unknown, P>) => unknown | Promise<unknown>;
 /**
  * `handle()`'s arguments as its implementation reads them, whichever overload
  * was called: a wildcard handler, an action and its handler, or a version, an
@@ -60,24 +49,6 @@ export type HandleArgs<
  */
 export interface HandlesByArgs {
   handle(...args: HandleArgs): void;
-}
-/**
- * A route's `handle()` arguments: its handlers' contexts have the connection.
- * An action's handler takes `never` params, as in HandleArgs.
- * @internal
- */
-export type RouteHandleArgs<P extends AnyOCPPProtocol> = HandleArgs<
-  RouterWildcardHandler<P>,
-  (context: RouterHandlerContext<never, P>) => unknown
->;
-/**
- * A route's `handle()` by its implementation's arguments, for code that
- * registers handlers named only at runtime: the NestJS explorer, from its
- * decorators' metadata.
- * @internal
- */
-export interface RoutesByArgs {
-  handle(...args: RouteHandleArgs<AnyOCPPProtocol>): unknown;
 }
 /** `sendToClient()`'s arguments naming an action. @internal */
 export type PlainSendArgs = [

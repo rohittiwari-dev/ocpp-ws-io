@@ -25,3 +25,7 @@ export async function frontEnd(): Promise<void> {
   );
   void boot.status;
 }
+
+// In a front end, timers are the DOM's: they return a number. Node's types
+// (NodeJS.Timeout) must not reach this program through the package.
+export const timer: number = setTimeout(() => {}, 0);

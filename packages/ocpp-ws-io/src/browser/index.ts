@@ -10,7 +10,7 @@ export type {
 export {
   createLoggingMiddleware,
   defineRpcMiddleware,
-} from "../helpers/index.js";
+} from "../helpers/middleware.js";
 export { type AnyBrowserOCPPClient, BrowserOCPPClient } from "./client.js";
 // ─── Errors ──────────────────────────────────────────────────────
 export {

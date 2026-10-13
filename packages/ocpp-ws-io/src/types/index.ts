@@ -28,6 +28,7 @@ export type {
 } from "./auth.js";
 export type { CallOptions, CloseOptions, NoReplyCallOptions } from "./calls.js";
 export type { ClientOptions } from "./client.js";
+export type { ConnectionOf } from "./connection.js";
 export type {
   BroadcastResult,
   ClientEvents,
@@ -54,10 +55,6 @@ export type {
   HandlerContext,
   HandlesByArgs,
   PlainSendArgs,
-  RouteHandleArgs,
-  RouterHandlerContext,
-  RouterWildcardHandler,
-  RoutesByArgs,
   SendsToClientByArgs,
   SendToClientArgs,
   VersionNamedSendArgs,
@@ -78,7 +75,6 @@ export type { MiddlewareContext, WireCall } from "./middleware.js";
 export type { OCPPPlugin, PluginHookResult } from "./plugins.js";
 export type {
   AnyOCPPProtocol,
-  ConnectionOf,
   KnownProtocol,
   MessageIdGenerator,
   MessageIdValidator,
@@ -105,6 +101,12 @@ export {
   NOREPLY,
   SecurityProfile,
 } from "./protocol.js";
+export type {
+  RouteHandleArgs,
+  RouterHandlerContext,
+  RouterWildcardHandler,
+  RoutesByArgs,
+} from "./route-handlers.js";
 export type {
   CORSOptions,
   HealthEndpointAuth,
