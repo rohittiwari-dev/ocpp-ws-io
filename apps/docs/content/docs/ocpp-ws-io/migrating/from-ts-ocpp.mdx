@@ -1,0 +1,215 @@
+---
+title: From @voltbras/ts-ocpp
+description: Move a @voltbras/ts-ocpp central system or charge point to ocpp-ws-io — one handler per action instead of a switch, promises instead of Either, and what changes for validation, errors and connections.
+---
+
+`@voltbras/ts-ocpp` (last release 2.7.3, March 2022) speaks OCPP 1.6 over WebSocket (OCPP-J) and OCPP 1.5 over SOAP. ocpp-ws-io speaks OCPP-J 1.6, 2.0.1 and 2.1, but has nothing for SOAP. Keep a SOAP 1.5 charge point on ts-ocpp, or move it to OCPP-J 1.6 first.
+
+Every difference on this page was checked against ts-ocpp 2.7.3's code and with ocpp-ws-io 3.1.0-beta.2.
+
+## Install
+
+```bash
+npm uninstall @voltbras/ts-ocpp
+npm install ocpp-ws-io@beta
+```
+
+This guide is for ocpp-ws-io 3.1, which is on npm's `beta` tag until it is released. It needs Node.js 20 or later.
+
+## Central system
+
+ts-ocpp:
+
+```ts
+import { CentralSystem } from "@voltbras/ts-ocpp";
+
+const centralSystem = new CentralSystem(3000, (req, { chargePointId }) => {
+  switch (req.action) {
+    case "BootNotification":
+      return {
+        action: req.action,
+        ocppVersion: "v1.6-json",
+        status: "Accepted",
+        currentTime: new Date().toISOString(),
+        interval: 300,
+      };
+    case "Heartbeat":
+      return {
+        action: req.action,
+        ocppVersion: "v1.6-json",
+        currentTime: new Date().toISOString(),
+      };
+  }
+  throw new Error("message not supported");
+});
+
+centralSystem.addConnectionListener((cpId, status) => {
+  console.log(cpId, status);
+});
+```
+
+ocpp-ws-io:
+
+```ts
+import { OCPPServer } from "ocpp-ws-io";
+
+const server = new OCPPServer({ protocols: ["ocpp1.6"], strictMode: true });
+
+server.on("client", (client) => {
+  console.log(client.identity, "connected");
+  client.on("close", () => console.log(client.identity, "disconnected"));
+
+  client.handle("BootNotification", () => ({
+    status: "Accepted",
+    currentTime: new Date().toISOString(),
+    interval: 300,
+  }));
+  client.handle("Heartbeat", () => ({ currentTime: new Date().toISOString() }));
+});
+
+await server.listen(3000);
+```
+
+What changes:
+
+- **One handler per action, instead of one function with a `switch`.** The handler returns the payload alone, without `action` and `ocppVersion`, and TypeScript checks it against that action's answer, so no type assertions are needed. An action without a handler is answered with `NotImplemented`. To keep a single function, register a wildcard handler, `client.handle(({ method, params }) => …)`, which takes every action that has no handler of its own.
+- **`chargePointId` becomes `client.identity`.** Both take the last segment of the URL path. ocpp-ws-io percent-decodes it and leaves out the query string; ts-ocpp kept everything after the last `/`, query string included.
+- **The handler's other metadata.** `httpRequest` becomes `client.handshake.request`. `validationError` has no equivalent: see [Validation](#validation).
+- **`addConnectionListener()` becomes the server's `client` event**, and each client's `close` event.
+- **`new CentralSystem(port, handler, { host })` becomes `server.listen(port, host)`.** `server.close()` ends every connection and the HTTP server.
+- **The server accepts the versions in `protocols`.** ts-ocpp accepted `ocpp1.6` only. `protocols: ["ocpp2.0.1", "ocpp1.6"]` serves both versions on one port, preferring the first.
+
+## Sending a request to a charge point
+
+ts-ocpp:
+
+```ts
+const response = await centralSystem.sendRequest({
+  chargePointId: "123",
+  ocppVersion: "v1.6-json",
+  action: "GetConfiguration",
+  payload: {},
+});
+
+response.map(({ configurationKey }) => configurationKey);
+const unsafeResponse = response.unsafeCoerce();
+```
+
+ocpp-ws-io:
+
+```ts
+// Rejects on an error answer, a timeout, or an identity that isn't connected.
+const config = await server.sendToClient("123", "GetConfiguration", {});
+
+// Resolves to undefined instead of rejecting, and logs failures other than timeouts.
+const maybeConfig = await server.safeSendToClient("123", "GetConfiguration", {});
+```
+
+ts-ocpp returned an `Either` and never threw; `sendToClient()` returns a Promise that rejects. What was in the `Left`:
+
+| ts-ocpp | ocpp-ws-io |
+| --- | --- |
+| `OCPPRequestError` with `errorCode`, `errorDescription`, `errorDetails` | The RPC error class for the code (`RPCNotSupportedError`, …), with `rpcErrorCode`, `message` and `details`. Every one extends `RPCGenericError` |
+| `OCPPRequestTimedOutError`, after `websocketRequestTimeout` (30000) | `TimeoutError`, after `callTimeoutMs` (30000) |
+| `"there is no connection to this charge point"` | An `Error`, `Client 123 not found` |
+| `OCPPApplicationError`, when the request failed validation | An RPC error with the validation code, in strict mode only. The request is not sent |
+
+With several connections from one charge point, ts-ocpp sent the request on the oldest one still open. ocpp-ws-io keeps one connection per identity: when a charge point connects again, the older connection is dropped (`duplicateConnection: "replace"`).
+
+## Charge point
+
+ts-ocpp:
+
+```ts
+import { ChargePoint } from "@voltbras/ts-ocpp";
+
+const chargePoint = new ChargePoint(
+  "123",
+  (req) => {
+    if (req.action === "RemoteStartTransaction")
+      return { action: req.action, ocppVersion: req.ocppVersion, status: "Accepted" };
+    throw new Error("no handler defined");
+  },
+  "ws://localhost:3000/ocpp",
+);
+
+await chargePoint.connect();
+const response = await chargePoint.sendRequest({
+  action: "Heartbeat",
+  ocppVersion: "v1.6-json",
+  payload: {},
+});
+```
+
+ocpp-ws-io:
+
+```ts
+import { OCPPClient } from "ocpp-ws-io";
+
+const client = new OCPPClient({
+  identity: "123",
+  endpoint: "ws://localhost:3000/ocpp",
+  protocols: ["ocpp1.6"],
+});
+
+client.handle("RemoteStartTransaction", () => ({ status: "Accepted" }));
+
+await client.connect();
+const { currentTime } = await client.call("Heartbeat", {});
+```
+
+- **The URL is the same.** ocpp-ws-io adds a `/` and the percent-encoded identity to `endpoint`. ts-ocpp joined them with a `/` without encoding, so an endpoint ending in `/` gave `//`.
+- **`connect()` rejects when the connection fails.** ts-ocpp's `connect()` waited until the socket opened and only logged errors.
+- **The client reconnects.** ts-ocpp never did. ocpp-ws-io reconnects after a dropped connection, waiting 1 s, then doubling up to 30 s. Set `reconnect: false` to keep the old behaviour.
+- **`close()` returns a Promise.** It waits for the answers to calls in flight; `close({ awaitPending: false })` rejects them instead.
+
+## Validation
+
+ts-ocpp validated every request it received against the 1.6 schemas, and every request it sent, but no answers. With `rejectInvalidRequests: false`, an invalid request still reached the handler, with `validationError` set.
+
+ocpp-ws-io validates nothing unless you set `strictMode: true`. Strict mode then checks both directions: requests and answers, sent and received.
+
+- An invalid request is answered with the error code for what was wrong (`OccurenceConstraintViolation`, `TypeConstraintViolation`, …), and the handler is not called.
+- A request you send that is invalid rejects without being sent.
+- `strictValidationFailure` reports each failure.
+
+There is no option to pass an invalid request on to its handler.
+
+## Errors
+
+| When | ts-ocpp sends | ocpp-ws-io sends |
+| --- | --- | --- |
+| A handler throws | `GenericError`, with the description `[OCPPApplicationError] on handling chargepoint request: <message>` and the error object as details | An RPC error from `createRPCError(code, message, details)` is sent as it is. Any other error becomes `InternalError` with the code's standard text, and goes to the `handlerError` event |
+| A request is invalid | `GenericError` | The code for what was wrong, in strict mode |
+| No handler for the action | `GenericError`, from your `throw` | `NotImplemented` |
+
+To answer with a specific code, throw it:
+
+```ts
+import { createRPCError } from "ocpp-ws-io";
+
+client.handle("UnlockConnector", () => {
+  throw createRPCError("NotSupported", "This charger has fixed cables");
+});
+```
+
+## Options and hooks
+
+| ts-ocpp | ocpp-ws-io |
+| --- | --- |
+| `host` | `server.listen(port, host)` |
+| `websocketPingInterval` | `pingIntervalMs` (30000). ts-ocpp 2.7.3 pinged every 30 s whatever this was set to |
+| `websocketRequestTimeout` (30000) | `callTimeoutMs` (30000), or `{ timeoutMs }` on one call |
+| `rejectInvalidRequests` | `strictMode` ([Validation](#validation)) |
+| `onWebsocketRequestResponse`, `onRawWebsocketData` | Each client's `message` event, `{ message, direction, ctx }`, for every frame sent or received |
+| `onWebsocketError` | Each client's `error` event |
+| `onRawSocketData`, `onRawSoapData` | None |
+
+## Types
+
+| ts-ocpp | ocpp-ws-io |
+| --- | --- |
+| `Request<"StartTransaction">` | `OCPPRequestType<"ocpp1.6", "StartTransaction">` |
+| `Response<"StartTransaction">` | `OCPPResponseType<"ocpp1.6", "StartTransaction">` |
+
+A handler registered with `handle()` and a `call()` or `sendToClient()` get these types without being annotated. See [Type safety](/docs/ocpp-ws-io/type-safety).

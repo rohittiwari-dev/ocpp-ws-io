@@ -1,0 +1,16 @@
+{
+  // A front end's settings: the DOM's types, no Node.js types, and the
+  // package's own declarations checked (skipLibCheck: false). The browser
+  // entry must type-check here without @types/node.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": [],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": false
+  },
+  "include": ["."]
+}

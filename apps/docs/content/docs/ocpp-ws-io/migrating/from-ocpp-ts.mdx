@@ -1,0 +1,215 @@
+---
+title: From ocpp-ts
+description: Move an ocpp-ts central system or charging point to ocpp-ws-io — handle() and return values instead of action events and callbacks, server.auth() instead of the authorization event, and the timeouts, defaults and error replies that change.
+---
+
+`ocpp-ts` (last release 0.3.0, December 2021) speaks OCPP-J 1.6. ocpp-ws-io speaks 1.6, 2.0.1 and 2.1, so a 1.6 system moves over as it is and can add the newer versions later.
+
+Every difference on this page was checked against ocpp-ts 0.3.0's code and with ocpp-ws-io 3.1.0-beta.2.
+
+## Install
+
+```bash
+npm uninstall ocpp-ts
+npm install ocpp-ws-io@beta
+```
+
+This guide is for ocpp-ws-io 3.1, which is on npm's `beta` tag until it is released. It needs Node.js 20 or later.
+
+## Central system
+
+ocpp-ts:
+
+```ts
+import {
+  OcppServer,
+  OcppClientConnection,
+  BootNotificationRequest,
+  BootNotificationResponse,
+} from "ocpp-ts";
+
+const centralSystem = new OcppServer();
+
+centralSystem.on("authorization", (cpId, req, cb) => {
+  if (req.headers.authorization === expectedAuthorization(cpId)) cb();
+  else cb(new Error("Unauthorized"));
+});
+
+centralSystem.on("connection", (client: OcppClientConnection) => {
+  console.log(`Client ${client.getCpId()} connected`);
+  client.on("close", (code: number, reason: Buffer) => {
+    console.log(`Client ${client.getCpId()} closed connection`, code, reason.toString());
+  });
+  client.on(
+    "BootNotification",
+    (request: BootNotificationRequest, cb: (response: BootNotificationResponse) => void) => {
+      cb({ status: "Accepted", currentTime: new Date().toISOString(), interval: 60 });
+    },
+  );
+});
+
+centralSystem.listen(9220);
+```
+
+ocpp-ws-io:
+
+```ts
+import { OCPPServer } from "ocpp-ws-io";
+
+const server = new OCPPServer({ protocols: ["ocpp1.6"], strictMode: true });
+
+server.auth((ctx) => {
+  const { identity, headers } = ctx.handshake;
+  if (headers.authorization !== expectedAuthorization(identity)) {
+    ctx.reject(401, "Unauthorized");
+  }
+  ctx.accept();
+});
+
+server.on("client", (client) => {
+  console.log(`Client ${client.identity} connected`);
+  client.on("close", ({ code, reason }) => {
+    console.log(`Client ${client.identity} closed connection`, code, reason);
+  });
+  client.handle("BootNotification", () => ({
+    status: "Accepted",
+    currentTime: new Date().toISOString(),
+    interval: 60,
+  }));
+});
+
+await server.listen(9220);
+```
+
+What changes:
+
+- **`client.on("Action", (request, cb) => cb(response))` becomes `client.handle("Action", ({ params }) => response)`.** `request` is `params`. The handler returns the answer, or a Promise of it, instead of calling `cb`. TypeScript types both from the action, with no annotations.
+- **`getCpId()` becomes `client.identity`.** Both are the last segment of the URL path, without the query string. ocpp-ws-io percent-decodes all of it. ocpp-ts's `decodeURI` left reserved characters encoded: `CP%3A9` stayed `CP%3A9`, and is now `CP:9`.
+- **The `authorization` event becomes `server.auth()`.** `cb()` becomes `ctx.accept()`. `cb(err)` becomes `ctx.reject(code, message)`, with any HTTP status; ocpp-ts always answered 401. `ctx.reject()` throws, so nothing after it runs. For Basic Auth, read the password from `ctx.handshake.password` (a `Buffer`) instead of parsing the header: see [Security profiles](/docs/ocpp-ws-io/security).
+- **The `close` event passes `{ code, reason }`**, with `reason` as a string, instead of `(code, reason)` with a `Buffer`.
+- **`listen()` needs the port.** ocpp-ts used 9220 when you gave none; ocpp-ws-io then takes a free port that the OS picks. `listen()` returns a Promise.
+- **TLS:** `listen(port, { cert, key })` becomes the `securityProfile` and `tls` options, as in [Security profiles](/docs/ocpp-ws-io/security).
+
+## Calling a charging point
+
+ocpp-ts:
+
+```ts
+const response = await client.callRequest("Reset", { type: "Soft" });
+```
+
+ocpp-ws-io:
+
+```ts
+const response = await client.call("Reset", { type: "Soft" });
+
+// Or from anywhere, by identity:
+const answer = await server.sendToClient("CP1111", "Reset", { type: "Soft" });
+```
+
+| | ocpp-ts | ocpp-ws-io |
+| --- | --- | --- |
+| No answer | Rejects after 10 s, a fixed time, with `OcppError` `InternalError` "No response from the client" | Rejects after `callTimeoutMs` (30000 by default), or `{ timeoutMs }` on one call, with `TimeoutError` |
+| Error answer | Rejects with `OcppError`, with `code`, `message` and `details` | Rejects with the RPC error class for the code (`RPCNotSupportedError`, …), with `rpcErrorCode`, `message` and `details`. Every one extends `RPCGenericError` |
+| Not connected | Throws `Charging point not connected to central system` | Rejects |
+
+## Charging point
+
+ocpp-ts:
+
+```ts
+import { OcppClient, BootNotificationResponse, ResetRequest, ResetResponse } from "ocpp-ts";
+
+const chargingPoint = new OcppClient("CP1111");
+
+chargingPoint.on("error", (err: Error) => console.log(err.message));
+chargingPoint.on("close", () => console.log("Connection closed"));
+chargingPoint.on("Reset", (request: ResetRequest, cb: (response: ResetResponse) => void) => {
+  cb({ status: "Accepted" });
+});
+chargingPoint.on("connect", async () => {
+  const boot: BootNotificationResponse = await chargingPoint.callRequest("BootNotification", {
+    chargePointVendor: "eParking",
+    chargePointModel: "NECU-T2",
+  });
+});
+
+chargingPoint.connect("ws://localhost:9220/", { Authorization: basicAuth });
+```
+
+ocpp-ws-io:
+
+```ts
+import { OCPPClient, SecurityProfile } from "ocpp-ws-io";
+
+const client = new OCPPClient({
+  identity: "CP1111",
+  endpoint: "ws://localhost:9220",
+  protocols: ["ocpp1.6"],
+  securityProfile: SecurityProfile.BASIC_AUTH,
+  password: "my-password",
+});
+
+client.on("error", (err) => console.log(err.message));
+client.on("close", () => console.log("Connection closed"));
+client.handle("Reset", () => ({ status: "Accepted" }));
+
+await client.connect();
+const boot = await client.call("BootNotification", {
+  chargePointVendor: "eParking",
+  chargePointModel: "NECU-T2",
+});
+```
+
+- **`connect(url, headers)` becomes the `endpoint` and `headers` options.** ocpp-ts appended the identity to the URL as given, so the URL needed its trailing `/`, and it didn't encode the identity. ocpp-ws-io adds the `/` when it is missing and percent-encodes the identity.
+- **Basic Auth:** an `Authorization` header in `headers` still works. Or set `securityProfile` and `password`, and the client builds the header itself, with the identity as the username.
+- **The `connect` event becomes `await client.connect()`**, which rejects if the connection fails, and the `open` event.
+- **The client reconnects.** ocpp-ts never did. ocpp-ws-io reconnects after a dropped connection, waiting 1 s, then doubling up to 30 s. `open` fires again on every reconnection, so put work that belongs to each connection, such as `BootNotification`, in an `open` listener. Set `reconnect: false` to keep the old behaviour.
+
+## Errors on the wire
+
+What the other side receives when it calls you:
+
+| When | ocpp-ts sends | ocpp-ws-io sends |
+| --- | --- | --- |
+| The handler throws an error with a code: `new OcppError(code, message, details)` in ocpp-ts, `createRPCError(code, message, details)` in ocpp-ws-io | Its code, message and details, but only if the listener threw before returning. An `async` listener's error was an unhandled rejection, and the call got `InternalError` after 10 s | Its code, message and details, from an `async` handler too |
+| The handler throws any other error | A CALLERROR whose error code is `null`, with the error's message | `InternalError`, with the code's standard text. The error itself goes to the `handlerError` event |
+| The handler doesn't answer | `InternalError`, "No response from the handler", after 10 s | Nothing: there is no handler timeout, so the caller's own timeout ends the call |
+| No handler for the action | `NotImplemented`, `Listener for action "X" not set` | `NotImplemented`, `Method "X" not implemented` |
+| An action that 1.6 doesn't have | `NotImplemented`, "Action X not found" | `NotImplemented`, unless a wildcard handler, `client.handle((ctx) => …)`, takes it |
+| A request that breaks the schema | `FormationViolation`, with the schema errors as details | In strict mode, the code for what was wrong (`OccurenceConstraintViolation`, `TypeConstraintViolation`, …), with empty details. Without strict mode, it reaches the handler |
+| A frame that isn't valid JSON or isn't an OCPP message | Nothing; it is logged | An error (`GenericError` on 1.6). After 50 in a row, the connection closes with 1002 |
+
+To answer with a code, replace `OcppError` with `createRPCError()`, and the `ERROR_…` constants with the code names:
+
+```ts
+import { createRPCError } from "ocpp-ws-io";
+
+client.handle("UnlockConnector", () => {
+  throw createRPCError("NotSupported", "This charger has fixed cables");
+});
+```
+
+## Validation
+
+ocpp-ts validated every request it received against the 1.6 schemas, but not answers, and not the requests it sent. ocpp-ws-io validates nothing unless you set `strictMode: true`. Strict mode then checks requests and answers in both directions:
+
+- an invalid request received is answered with an error, and its handler isn't called;
+- an invalid request you send rejects without being sent.
+
+## Other differences
+
+| | ocpp-ts | ocpp-ws-io | To keep ocpp-ts's |
+| --- | --- | --- | --- |
+| Keep-alive | No pings | Pings every 30 s, and drops a connection whose pong doesn't arrive in time | `pingIntervalMs: 0` |
+| Largest frame accepted | 100 MiB, the `ws` default | 64 KB. A larger frame closes the connection with 1009 | `maxPayloadBytes` |
+| The same identity connects again | Both connections stay | The older connection is dropped | `duplicateConnection: "reject"` keeps the older one and refuses the newer with HTTP 409 |
+
+## Types
+
+| ocpp-ts | ocpp-ws-io |
+| --- | --- |
+| `BootNotificationRequest` | `OCPPRequestType<"ocpp1.6", "BootNotification">` |
+| `BootNotificationResponse` | `OCPPResponseType<"ocpp1.6", "BootNotification">` |
+
+`handle()`, `call()` and `sendToClient()` get these types without annotations. See [Type safety](/docs/ocpp-ws-io/type-safety).

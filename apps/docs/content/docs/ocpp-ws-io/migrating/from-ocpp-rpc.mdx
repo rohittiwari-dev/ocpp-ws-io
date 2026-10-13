@@ -1,0 +1,400 @@
+---
+title: From ocpp-rpc
+description: Move an ocpp-rpc server or charging station to ocpp-ws-io — the renamed classes and options, the auth callback's single argument, handlers without reply(), events, and the defaults and replies that differ on the wire.
+---
+
+ocpp-ws-io keeps ocpp-rpc's model:
+
+- a server that gives you one client object per charging station;
+- `handle()` to answer calls and `call()` to make them;
+- an auth callback that accepts or rejects the WebSocket upgrade;
+- strict mode with the official schemas;
+- `createRPCError()`, `createValidator()` and `NOREPLY`.
+
+Most code moves over by renaming. The part that needs a decision is [Defaults and replies that differ](#defaults-and-replies-that-differ): ocpp-ws-io's defaults are stricter, and some replies differ on the wire.
+
+Every difference on this page was checked by running the same scenario against ocpp-rpc 2.2.1 and ocpp-ws-io 3.1.0-beta.2.
+
+## Install
+
+```bash
+npm uninstall ocpp-rpc
+npm install ocpp-ws-io@beta
+```
+
+This guide is for ocpp-ws-io 3.1, which is on npm's `beta` tag until it is released. It needs Node.js 20 or later (ocpp-rpc needs 17.3). It loads with `import` or `require()`.
+
+## Names
+
+| ocpp-rpc | ocpp-ws-io |
+| --- | --- |
+| `RPCServer` | `OCPPServer` |
+| `RPCClient` | `OCPPClient` |
+| `RPCServerClient`, the server's `client` event argument | `OCPPServerClient` |
+| `createRPCError`, `createValidator`, `NOREPLY` | Same names |
+| `RPCGenericError`, `RPCNotImplementedError` and the other `RPC…Error` classes, `TimeoutError`, `UnexpectedHttpResponse`, `WebsocketUpgradeError` | Same names |
+| `RPCError`, the base class | A type only. Every RPC error class extends `RPCGenericError`, so test with `err instanceof RPCGenericError`, or read `err.rpcErrorCode`. In JavaScript, `err instanceof RPCError` now throws a `TypeError`, because `RPCError` is `undefined` |
+
+`err.name` is the class name, such as `"RPCNotImplementedError"`. Don't use `err.constructor.name`: the published build is minified.
+
+## A server
+
+ocpp-rpc:
+
+```js
+const { RPCServer, createRPCError } = require("ocpp-rpc");
+
+const server = new RPCServer({ protocols: ["ocpp1.6"], strictMode: true });
+
+server.auth((accept, reject, handshake) => {
+  accept({ sessionId: "XYZ123" });
+});
+
+server.on("client", (client) => {
+  client.handle("BootNotification", ({ params }) => ({
+    status: "Accepted",
+    interval: 300,
+    currentTime: new Date().toISOString(),
+  }));
+  client.handle("Heartbeat", () => ({ currentTime: new Date().toISOString() }));
+  client.handle(({ method }) => {
+    throw createRPCError("NotImplemented", `${method} is not handled`);
+  });
+});
+
+await server.listen(3000);
+```
+
+ocpp-ws-io:
+
+```ts
+import { OCPPServer, createRPCError } from "ocpp-ws-io";
+
+const server = new OCPPServer({ protocols: ["ocpp1.6"], strictMode: true });
+
+server.auth((ctx) => {
+  ctx.accept({ session: { sessionId: "XYZ123" } });
+});
+
+server.on("client", (client) => {
+  client.handle("BootNotification", ({ params }) => ({
+    status: "Accepted",
+    interval: 300,
+    currentTime: new Date().toISOString(),
+  }));
+  client.handle("Heartbeat", () => ({ currentTime: new Date().toISOString() }));
+  client.handle(({ method }) => {
+    throw createRPCError("NotImplemented", `${method} is not handled`);
+  });
+});
+
+await server.listen(3000);
+```
+
+With `protocols` written out like this, TypeScript knows each action's request and answer. Above, `params` is the 1.6 `BootNotification` request, and an answer with a missing field or a wrong value does not compile. See [Type safety](/docs/ocpp-ws-io/type-safety).
+
+## Server options
+
+| ocpp-rpc | ocpp-ws-io |
+| --- | --- |
+| `protocols` | Same. Required with `strictMode`, as in ocpp-rpc |
+| `callTimeoutMs` (30000), `pingIntervalMs` (30000), `deferPingsOnActivity`, `respondWithDetailedErrors`, `callConcurrency` (1) | Same names and defaults |
+| `strictMode`, `strictModeValidators` | Same. `createValidator(subprotocol, schemas)` takes the same arguments |
+| `maxBadMessages` (`Infinity`) | Same name. The default is **50** |
+| `wssOptions` | Same name. It doesn't take the options the server sets itself; those are dropped with a logged warning. The frame size limit is `maxPayloadBytes` (default 64 KB), and compression is `compression` |
+
+The other options are in the [API reference](/docs/ocpp-ws-io/api-reference).
+
+## Server methods and events
+
+| ocpp-rpc | ocpp-ws-io |
+| --- | --- |
+| `server.auth(callback)` | Same name. The callback takes one `ctx` argument ([below](#the-auth-callback)) |
+| `server.handleUpgrade` | Same. It still works when you pass it unbound to an HTTP server's `upgrade` event |
+| `server.listen(port, host, { signal })` | Same, and it resolves to the `http.Server`. Pass `{ server }` to attach to a server you created |
+| `server.reconfigure(options)` | Same |
+| `server.close({ code, reason, awaitPending, force })` | Same options |
+| The `client`, `error`, `closing` and `close` events | Same |
+| `upgradeAborted` `{ error, socket, request, identity }` | `{ identity, reason, socket, request }`. `reason` is the error's message, a string |
+
+## The auth callback
+
+ocpp-rpc:
+
+```js
+server.auth((accept, reject, handshake, signal) => {
+  if (handshake.identity !== "TEST") {
+    reject(401, "I don't recognise you");
+    return;
+  }
+  accept({ sessionId: "XYZ123" }, "ocpp1.6");
+});
+```
+
+ocpp-ws-io:
+
+```ts
+server.auth((ctx) => {
+  if (ctx.handshake.identity !== "TEST") {
+    ctx.reject(401, "I don't recognise you");
+  }
+  ctx.accept({ session: { sessionId: "XYZ123" }, protocol: "ocpp1.6" });
+});
+```
+
+| ocpp-rpc | ocpp-ws-io |
+| --- | --- |
+| `accept(session, protocol)` | `ctx.accept({ session, protocol })`. The session is an object whose values are JSON, so it can be stored and shared between nodes, and TypeScript enforces this. Wrap a session that isn't an object: `{ session: { value } }` |
+| `reject(code, message)`. Defaults to `400` and `""`, and returns | `ctx.reject(code, message)`. Defaults to **`401`** and `"Unauthorized"`. It **throws**, so nothing after it runs. The rejection stands even if a `try`/`catch` catches the throw |
+| `handshake` | `ctx.handshake`. It has the same fields: `identity`, `password` (a `Buffer`), `endpoint`, `query`, `protocols`, `remoteAddress`, `headers` and `request`. It adds `pathname`, `url`, `params`, `clientCertificate` and `securityProfile` |
+| `signal` | `ctx.signal` |
+
+Calling `accept()` or `reject()` later still works, for example from a timer or a callback. An `async` callback works too. If the callback decides nothing, ocpp-ws-io ends the upgrade after `handshakeTimeoutMs` (30 s).
+
+Without an auth callback, both libraries accept every connection that agrees on a subprotocol.
+
+## Handlers
+
+| ocpp-rpc | ocpp-ws-io |
+| --- | --- |
+| `client.handle(method, handler)`, and `client.handle(handler)` for every other method | Same. Also `client.handle("ocpp1.6", "BootNotification", handler)`, which handles the action for one version only |
+| The context is `{ method, params, signal, messageId, reply }` | `{ method, params, signal, messageId, protocol }`. There is no `reply` |
+| You answer by returning, throwing or calling `reply()` | You answer by returning a value or a Promise, or by throwing. `NOREPLY` and `sendRaw()` work as before |
+| Calling `handle()` for a method that already has a handler replaces it | It throws `Handler for 'Heartbeat' is already registered.` Call `client.removeHandler("Heartbeat")` first |
+| `removeHandler(method)`, `removeHandler()` for the wildcard, `removeAllHandlers()` | Same |
+
+If a handler answered through `reply()` from a callback, make it return a Promise instead:
+
+```js
+// ocpp-rpc
+client.handle("Authorize", ({ params, reply }) => {
+  tags.lookup(params.idTag, (err, tag) => {
+    if (err) reply(err);
+    else reply({ idTagInfo: { status: tag ? "Accepted" : "Invalid" } });
+  });
+});
+```
+
+```ts
+// ocpp-ws-io
+import { promisify } from "node:util";
+
+const lookupTag = promisify(tags.lookup.bind(tags));
+
+client.handle("Authorize", async ({ params }) => {
+  const tag = await lookupTag(params.idTag);
+  return { idTagInfo: { status: tag ? "Accepted" : "Invalid" } };
+});
+```
+
+[Errors on the wire](#errors-on-the-wire) lists what each thrown error sends.
+
+## Charging stations
+
+ocpp-rpc:
+
+```js
+const { RPCClient } = require("ocpp-rpc");
+
+const client = new RPCClient({
+  endpoint: "ws://localhost:3000",
+  identity: "EXAMPLE",
+  protocols: ["ocpp1.6"],
+  password: "hunter2",
+  backoff: { initialDelay: 1000, maxDelay: 10000 },
+});
+
+client.handle("Reset", () => ({ status: "Accepted" }));
+await client.connect();
+
+const boot = await client.call(
+  "BootNotification",
+  { chargePointVendor: "Acme", chargePointModel: "X1" },
+  { callTimeoutMs: 10000 },
+);
+```
+
+ocpp-ws-io:
+
+```ts
+import { OCPPClient, SecurityProfile } from "ocpp-ws-io";
+
+const client = new OCPPClient({
+  endpoint: "ws://localhost:3000",
+  identity: "EXAMPLE",
+  protocols: ["ocpp1.6"],
+  securityProfile: SecurityProfile.BASIC_AUTH,
+  password: "hunter2",
+  backoffMin: 1000,
+  backoffMax: 10000,
+});
+
+client.handle("Reset", () => ({ status: "Accepted" }));
+await client.connect();
+
+const boot = await client.call(
+  "BootNotification",
+  { chargePointVendor: "Acme", chargePointModel: "X1" },
+  { timeoutMs: 10000 },
+);
+```
+
+### Client options
+
+| ocpp-rpc | ocpp-ws-io |
+| --- | --- |
+| `endpoint`, `identity`, `protocols`, `headers`, `query` | Same |
+| `password` | Same, but it is sent only with `securityProfile: SecurityProfile.BASIC_AUTH` (on `ws://`) or `SecurityProfile.TLS_BASIC_AUTH` (on `wss://`). Without one of these, the password is not sent |
+| `callTimeoutMs` (60000) | Same name. The default is **30000** |
+| `pingIntervalMs`, `deferPingsOnActivity`, `respondWithDetailedErrors`, `callConcurrency`, `strictMode`, `strictModeValidators` | Same |
+| `reconnect` (`true`), `maxReconnects` (`Infinity`) | Same. As in ocpp-rpc, reconnecting starts only after a first successful connection. `retryInitialConnect: true` also retries a first `connect()` that failed |
+| `backoff` (`initialDelay` 1000, `maxDelay` 10000) | `backoffMin` (1000) and `backoffMax` (**30000**). The wait doubles each time, plus up to 25% at random |
+| `maxBadMessages` (`Infinity`) | Same name. The default is **50** |
+| `wsOpts` | Same, for the other `ws` options (`agent`, `localAddress`, …). TLS settings move to `tls`: `cert`, `key`, `ca`, `minVersion` and the rest. If you leave them in `wsOpts`, they are dropped with a logged warning |
+
+### Client methods
+
+| ocpp-rpc | ocpp-ws-io |
+| --- | --- |
+| `connect()`, which resolves to `{ response }` | Same |
+| `close({ code, reason, awaitPending, force })` | Same options, but `awaitPending` defaults to **`true`** (ocpp-rpc: `false`). `close()` waits for the answers to this side's calls in flight instead of rejecting them |
+| `call(method, params, { callTimeoutMs, signal, noReply })` | `call(method, params, { timeoutMs, signal, noReply })`. It also takes `retries` and `idempotencyKey` |
+| A `call()` made while connecting waits for the connection | It rejects with `Cannot call: client is in state 0`. With `offlineQueue: true`, calls are held until the connection opens |
+| `sendRaw()`, `reconfigure()`, `identity`, `protocol` | Same |
+| `state`, and `RPCClient.OPEN` and the other state constants (0–3) | `state`, and `OCPPClient.OPEN` and the others, with the same values |
+
+## Events
+
+| ocpp-rpc | ocpp-ws-io |
+| --- | --- |
+| `open` `{ response }`; `close` and `disconnect` `{ code, reason }`; `closing` | Same |
+| `connecting` | Same, with `{ url }` |
+| `message` `{ message, outbound }`, where `message` is the text or Buffer | `{ message, direction, ctx }`. `message` is the parsed frame (`[2, id, action, params]`, …), `direction` is `"IN"` or `"OUT"`, and `ctx` has the action, a timestamp, and `latencyMs` on answers |
+| `call` `{ messageId, outbound, payload }`, in both directions | The CALL frame, for calls received only |
+| `callResult` `{ messageId, outbound, method, params, result }` | The CALLRESULT frame, received or sent |
+| `callError` `{ messageId, outbound, method, params, error }` | The CALLERROR frame, received or sent |
+| `response` `{ outbound, payload }` | None. Use `message` |
+| `badMessage` `{ buffer, error, response }` | `{ message, error }`, where `message` is the text received |
+| `strictValidationFailure` `{ error, messageId, method, params, result, outbound, isCall }` | `{ message, error }`. `message` is the payload that failed, and `error.rpcErrorCode` is the validation code |
+| `ping` `{ rtt }`, when a pong arrives | `pong`, without a round-trip time. In ocpp-ws-io, `ping` means a ping was received from the peer |
+| `protocol` | None. Read `client.protocol` in `open` |
+| `socketError` | `error` |
+
+## Errors on the wire
+
+What the peer receives:
+
+| When | ocpp-rpc sends | ocpp-ws-io sends |
+| --- | --- | --- |
+| A handler throws an RPC error (`createRPCError(…)`) | Its code, message and details | Same |
+| A handler throws any other error | `GenericError`, with the error's message | `InternalError`, with the code's standard text. The error itself goes to the `handlerError` event. To send a message, throw `createRPCError("GenericError", message)` |
+| OCPP 1.6: a handler throws `FormatViolation` | `FormationViolation`, 1.6's name for it | `FormatViolation`, as thrown. On 1.6, throw `FormationViolation` |
+| OCPP 1.6, strict mode: a request breaks an occurrence rule, such as a missing field | `OccurrenceConstraintViolation`, with the schema errors as details | `OccurenceConstraintViolation`, as 1.6 Part 4 spells it, with empty details |
+| Strict mode: your handler's answer breaks the schema | `InternalError` | The validation error's code and message |
+| No handler for the action | `NotImplemented`, "Unable to handle 'X' calls" | `NotImplemented`, `Method "X" not implemented` |
+| OCPP 1.6: the message ID is not a string | `RpcFrameworkError` | `GenericError`. 1.6's error codes have no `RpcFrameworkError` |
+| Strict mode: the message ID is longer than 36 characters | Nothing: it is accepted | An error (OCPP-J §4.1.4), under message ID `"-1"`. `idValidator` replaces this check |
+
+An `OCPPClient` may get a call in its first second, before that action's handler is registered. It then waits for the handler (`handlerGraceMs`, 1000 ms) instead of answering `NotImplemented` straight away.
+
+On the calling side, `call()` rejects with the class of the error received (`RPCNotImplementedError`, …), as in ocpp-rpc. A timeout rejects with `TimeoutError` in both.
+
+## Defaults and replies that differ
+
+| | ocpp-rpc | ocpp-ws-io | To keep ocpp-rpc's |
+| --- | --- | --- | --- |
+| Largest frame accepted | 100 MiB, the `ws` default | 64 KB. A larger frame closes the connection with 1009 | `maxPayloadBytes` |
+| Bad messages in a row before the connection closes (1002) | No limit | 50 | `maxBadMessages: Infinity` |
+| A charging station's call timeout | 60 s | 30 s | `callTimeoutMs: 60000` |
+| Longest reconnect wait | 10 s | 30 s | `backoffMax: 10000` |
+| `call()` while connecting | Waits for the connection | Rejects | `offlineQueue: true` |
+| `client.close()` with calls in flight | Rejects them | Waits for their answers | `close({ awaitPending: false })` |
+| `server.close()` while a handler is running | Sends its answer | Closes the connection, so the answer is lost | — |
+| The connection drops while a handler is running | The handler's `signal` is aborted | The handler's `signal` is not aborted in 3.1.0-beta.2 | — |
+| A charging station offers no subprotocol to a server with `protocols` | Accepted, with no protocol | Handshake completed, then closed with 1002 | — |
+| The same identity connects again | Both connections stay | The older connection is dropped | `duplicateConnection: "reject"` keeps the older one and refuses the newer with HTTP 409 |
+| Strict mode on 2.0.1 and 2.1: an identity with `:` or other characters outside identifierString | Accepted | HTTP 400 (OCPP-J §3.1.1) | — |
+| A handler throws a plain `Error` | `GenericError` with its message | `InternalError` with the standard text | Throw `createRPCError("GenericError", message)` |
+
+## Security profiles
+
+### Profile 1: Basic Auth
+
+ocpp-rpc sends `password` whenever it is set. ocpp-ws-io sends it only under security profile 1 or 2, so set the profile on the charging station:
+
+```ts
+import { OCPPClient, SecurityProfile } from "ocpp-ws-io";
+
+const client = new OCPPClient({
+  endpoint: "ws://localhost:3000",
+  identity: "AzureDiamond",
+  protocols: ["ocpp1.6"],
+  securityProfile: SecurityProfile.BASIC_AUTH,
+  password: "hunter2",
+});
+```
+
+On the server, the auth callback reads `ctx.handshake.password`. It is a `Buffer`, as in ocpp-rpc, and parsed the same way: the username is matched against the identity, so a 1.6 identity and a password may contain colons.
+
+```ts
+import { OCPPServer, SecurityProfile } from "ocpp-ws-io";
+
+const server = new OCPPServer({
+  protocols: ["ocpp1.6"],
+  securityProfile: SecurityProfile.BASIC_AUTH,
+});
+
+server.auth((ctx) => {
+  const { identity, password } = ctx.handshake;
+  if (identity !== "AzureDiamond" || password?.toString("utf8") !== "hunter2") {
+    ctx.reject(401);
+  }
+  ctx.accept();
+});
+```
+
+When the server has `securityProfile` 1 or 2, a connection without Basic Auth credentials gets HTTP 401 before your callback runs (`requireBasicAuth`, default `true`).
+
+In 3.1.0-beta.2, a `Buffer` password is sent as UTF-8 text. Bytes that aren't valid UTF-8 don't arrive intact, whereas ocpp-rpc sends the bytes as they are.
+
+### Profiles 2 and 3: TLS
+
+ocpp-rpc leaves TLS to an `https` server that you create and attach with `handleUpgrade`. That still works with ocpp-ws-io: `httpsServer.on("upgrade", server.handleUpgrade)`. `ctx.handshake.request` is the same request object, so reading the TLS socket from it works as before.
+
+Or let the server create the HTTPS server, with `securityProfile` and `tls`:
+
+```ts
+import { readFileSync } from "node:fs";
+import { OCPPServer, SecurityProfile } from "ocpp-ws-io";
+
+const server = new OCPPServer({
+  protocols: ["ocpp1.6"],
+  securityProfile: SecurityProfile.TLS_CLIENT_CERT,
+  tls: {
+    cert: [readFileSync("./server.crt"), readFileSync("./ec_server.crt")],
+    key: [readFileSync("./server.key"), readFileSync("./ec_server.key")],
+    ca: readFileSync("./ca.crt"),
+  },
+});
+
+server.auth((ctx) => {
+  const cert = ctx.handshake.clientCertificate;
+  if (!cert || cert.subject?.CN !== ctx.handshake.identity) {
+    ctx.reject(401);
+  }
+  ctx.accept();
+});
+
+await server.listen(443);
+```
+
+Profile 3 requests the client certificate and refuses one that doesn't verify against `ca` (`rejectUnauthorized`, default `true`). `minVersion` is Node's default, `"TLSv1.2"`.
+
+On the charging station:
+
+| ocpp-rpc | ocpp-ws-io |
+| --- | --- |
+| Profile 2: `password` and `wsOpts: { minVersion: "TLSv1.2" }` | `securityProfile: SecurityProfile.TLS_BASIC_AUTH`, `password` and `tls: { minVersion: "TLSv1.2" }` |
+| Profile 3: `wsOpts: { cert, key, minVersion }` | `securityProfile: SecurityProfile.TLS_CLIENT_CERT` and `tls: { cert, key, minVersion }` |
+
+More on each profile is in [Security profiles](/docs/ocpp-ws-io/security).

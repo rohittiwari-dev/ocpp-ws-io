@@ -23,13 +23,14 @@ The **ocpp-ws-io ecosystem** was engineered from the ground up to solve these ch
 
 ## 1. Feature Matrix Overview
 
-| Feature / Capability | `ocpp-ws-io` | `@voltbras/ts-ocpp` | `ocpp-rpc` / `node-ocpp` | `ocpp-eliftech` | `CitrineOS` (LF Energy) |
+| Feature / Capability | `ocpp-ws-io` | `@voltbras/ts-ocpp` | `ocpp-rpc` | `ocpp-eliftech` | `CitrineOS` (LF Energy) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **OCPP 1.6-J Support** | ✅ Full + Ajv Schema | ✅ Supported | ⚠️ Partial / Unmaintained | ✅ Supported | ✅ Supported |
-| **OCPP 2.0.1 Support** | ✅ Full + OCA Schemas | ❌ Limited | ❌ No | ❌ No | ✅ Full |
-| **OCPP 2.1 Support** | ✅ Full + OCA Schemas | ❌ No | ❌ No | ❌ No | ⚠️ In Progress |
+| **Last npm release** | 3.1.0-beta.2, October 2026 | 2.7.3, March 2022 | 2.2.1, July 2025 | 1.0.2, April 2019 | — |
+| **OCPP 1.6-J Support** | ✅ Full + Ajv Schema | ✅ Supported (and OCPP 1.5 over SOAP) | ✅ Supported + schemas in strict mode | ✅ Supported | ✅ Supported |
+| **OCPP 2.0.1 Support** | ✅ Full + OCA Schemas | ❌ No | ✅ Supported + schemas in strict mode | ❌ No | ✅ Full |
+| **OCPP 2.1 Support** | ✅ Full + OCA Schemas | ❌ No | ✅ Supported + schemas in strict mode | ❌ No | ⚠️ In Progress |
 | **NestJS First-Class Module** | ✅ Native `@OcppGateway` | ❌ Manual boilerplate | ❌ No | ❌ No | ❌ No (Fastify stack) |
-| **TypeScript Type Safety** | ✅ Zero `any`, OCA schemas | ✅ Good OOP types | ❌ Legacy JS | ❌ Community defs | ✅ TypeScript |
+| **TypeScript Type Safety** | ✅ Zero `any`, OCA schemas | ✅ Good OOP types | ⚠️ `.d.ts` shipped, payloads typed `any` / `unknown` | ❌ No type declarations | ✅ TypeScript |
 | **Redis Multi-Pod Clustering** | ✅ Built-in `RedisAdapter` | ❌ Memory-only | ❌ No | ❌ No | ⚠️ RabbitMQ based |
 | **Smart Charging Engine** | ✅ `ocpp-ws-io/smart-charge` | ❌ No | ❌ No | ❌ No | ⚠️ Module based |
 | **Live Protocol Translation** | ✅ `ocpp-ws-io/proxy` | ❌ No | ❌ No | ❌ No | ❌ No |
@@ -54,17 +55,19 @@ The **ocpp-ws-io ecosystem** was engineered from the ground up to solve these ch
 
 ---
 
-## 3. Comparing with `ocpp-rpc` & `node-ocpp`
+## 3. Comparing with `ocpp-rpc`
 
-Early Node.js projects often relied on packages titled `ocpp-rpc` or `node-ocpp`.
+`ocpp-rpc` is the most downloaded OCPP-J library on npm. It is an RPC layer: a server and a client, an auth callback, handlers, and strict-mode validation.
 
-### Context
-- Many of these repositories were designed during the early OCPP 1.6 days and have since become unmaintained or archived.
-- They lack modern TypeScript typings, often rely on permissive `any` types, and do not validate payloads against official Open Charge Alliance (OCA) schemas.
+### Key Strengths
+- A small, well-documented API.
+- Strict mode validates against the schemas of OCPP 1.6, 2.0.1 and 2.1.
+- Security profiles 1 to 3. Basic Auth passwords are kept as raw bytes, and TLS comes from your own `https` server.
 
 ### `ocpp-ws-io` Approach
-- **Official OCA Schema Validation**: Every message payload is validated at the WebSocket boundary using Ajv and official OCA JSON Schemas. Malformed packets automatically return spec-compliant `FormatViolation` CallErrors before hitting application logic.
-- **OCPP 2.0.1 and 2.1 Ready**: Native support for modern EV charging protocols, including ISO 15118 vehicle certificates and bidirectional charging.
+- **The same model, typed per action**: ocpp-ws-io keeps ocpp-rpc's server, handlers, auth callback and strict mode. It also types each action's request and answer from `protocols`. ocpp-rpc types payloads as `any` / `unknown`.
+- **More than the RPC layer**: Redis clustering, routing by URL, framework adapters, the protocol proxy and the smart charge engine.
+- **Moving over**: [Migrating from ocpp-rpc](/docs/ocpp-ws-io/migrating/from-ocpp-rpc) maps the API, and lists the defaults and error replies that differ.
 
 ---
 
@@ -75,9 +78,11 @@ Early Node.js projects often relied on packages titled `ocpp-rpc` or `node-ocpp`
 ### Key Strengths
 - Clean class-based object-oriented API.
 - Strong typing for OCPP 1.6-J messages.
+- OCPP 1.5 over SOAP, which `ocpp-ws-io` does not support.
 - Established community adoption.
 
 ### `ocpp-ws-io` Approach
+- **Moving over**: [Migrating from @voltbras/ts-ocpp](/docs/ocpp-ws-io/migrating/from-ts-ocpp) maps the API, and lists what changes for validation, errors and connections.
 - **Horizontal Scaling & Clustering**: `ts-ocpp` manages connections in-memory on a single process. Scaling across Kubernetes pods requires developers to build custom pub/sub routing. `ocpp-ws-io` includes an out-of-the-box `RedisAdapter` with O(1) station routing and presence heartbeats.
 - **Multi-Protocol Negotiation**: `ocpp-ws-io` provides complete support for OCPP 2.0.1 and OCPP 2.1 alongside 1.6, allowing single servers to negotiate multiple protocols simultaneously.
 - **Built-in Rate Limiting**: Built-in token-bucket rate limiters drop rogue station floods (such as high-frequency `MeterValues`) before JSON deserialization.
@@ -108,3 +113,4 @@ Early Node.js projects often relied on packages titled `ocpp-rpc` or `node-ocpp`
 | Translate legacy 1.6 chargers to a 2.1 central backend on the wire | **`ocpp-ws-io/proxy`** |
 | Deploy a standalone platform CSMS with RabbitMQ and PostgreSQL | **`CitrineOS`** |
 | Interactive terminal simulator for QA and stress-testing | **`ocpp` CLI (`ocpp-ws-io`)** |
+| Move an existing `ocpp-rpc`, `@voltbras/ts-ocpp` or `ocpp-ts` project | **[Migration guides](/docs/ocpp-ws-io/migrating)** |

@@ -1,0 +1,28 @@
+---
+title: Migrating to ocpp-ws-io
+description: Guides for moving a central system or charging station from ocpp-rpc, @voltbras/ts-ocpp or ocpp-ts to ocpp-ws-io, each checked against both libraries.
+---
+
+import { Cards, Card } from "fumadocs-ui/components/card";
+
+Each guide maps one library's API to ocpp-ws-io, and lists what changes on the wire: defaults, error replies and connection behaviour. The other library's code and ocpp-ws-io's were run side by side, and every snippet on these pages type-checks against the library it is written for.
+
+<Cards>
+  <Card
+    title="From ocpp-rpc"
+    description="The closest model: renamed classes and options, the auth callback's single argument, handlers without reply(), and stricter defaults."
+    href="/docs/ocpp-ws-io/migrating/from-ocpp-rpc"
+  />
+  <Card
+    title="From @voltbras/ts-ocpp"
+    description="One handler per action instead of a switch, promises instead of Either, and validation that you switch on."
+    href="/docs/ocpp-ws-io/migrating/from-ts-ocpp"
+  />
+  <Card
+    title="From ocpp-ts"
+    description="handle() and return values instead of action events and callbacks, server.auth() instead of the authorization event."
+    href="/docs/ocpp-ws-io/migrating/from-ocpp-ts"
+  />
+</Cards>
+
+A charging station and a central system don't have to move together: an ocpp-ws-io server serves charging stations that still run the other library, and the other way round.
