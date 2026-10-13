@@ -1,6 +1,10 @@
 /// <reference lib="dom" />
 
-import { abortHandlers, runHandler } from "../core/handler-run.js";
+import {
+  abortHandlers,
+  runHandler,
+  waitForAnswers,
+} from "../core/handler-run.js";
 import {
   type MiddlewareFunction,
   MiddlewareStack,
@@ -230,6 +234,8 @@ export class BrowserOCPPClient<
   private _pendingResponses = new Set<string>();
   /** Controllers of the handlers' signals, aborted when the connection closes. */
   private _runningHandlers = new Set<AbortController>();
+  /** Incoming calls being answered; close() with awaitPending waits for them. */
+  private _answering = new Set<Promise<void>>();
   private _callQueue: Queue;
   private _closePromise: Promise<{ code: number; reason: string }> | null =
     null;
@@ -435,6 +441,9 @@ export class BrowserOCPPClient<
     this.emit("closing");
 
     if (!force && awaitPending) {
+      // The answers to the peer's calls already being handled go out first,
+      // waited for at most callTimeoutMs.
+      const answering = [...this._answering];
       const pendingPromises = Array.from(this._pendingCalls.values()).map(
         (p) =>
           new Promise<void>((resolve) => {
@@ -450,8 +459,11 @@ export class BrowserOCPPClient<
             };
           }),
       );
-      if (pendingPromises.length > 0) {
-        await Promise.allSettled(pendingPromises);
+      if (pendingPromises.length > 0 || answering.length > 0) {
+        await Promise.allSettled([
+          ...pendingPromises,
+          waitForAnswers(answering, this._options.callTimeoutMs),
+        ]);
       }
     }
 
@@ -1106,9 +1118,15 @@ export class BrowserOCPPClient<
     this._resetBadMessageCount();
 
     switch (messageType) {
-      case MessageType.CALL:
-        this._handleIncomingCall(message as OCPPCall);
+      case MessageType.CALL: {
+        // Tracked until answered, so close() with awaitPending lets the
+        // answer out. _handleIncomingCall settles every error itself.
+        const answering = this._handleIncomingCall(message as OCPPCall);
+        this._answering.add(answering);
+        const forget = () => this._answering.delete(answering);
+        answering.then(forget, forget);
         break;
+      }
       case MessageType.SEND:
         this._handleIncomingSend(message as OCPPSend);
         break;

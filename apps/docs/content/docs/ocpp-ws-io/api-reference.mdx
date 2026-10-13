@@ -251,7 +251,12 @@ await client.send('NotifyPeriodicEventStream', {
 
 Close the connection gracefully or forcefully.
 
-By default, calling `close()` will wait for all pending RPC requests to complete before terminating the socket to prevent interrupting in-flight operations.
+By default (`awaitPending: true`), `close()` waits before closing the socket, so in-flight operations aren't cut off. It waits for two things:
+
+- The answers to this side's calls.
+- The answers to the peer's calls that handlers are still working on. This wait lasts at most `callTimeoutMs`. A handler still running then has its `signal` aborted when the connection closes.
+
+`server.close()` closes each connection this way. A call that arrives once `close()` has begun is not handled.
 
 ```typescript
 // Graceful close (waits for pending calls, sends 1000 code)

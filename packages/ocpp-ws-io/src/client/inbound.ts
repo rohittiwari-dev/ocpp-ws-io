@@ -205,9 +205,15 @@ export function handleMessage(
   resetBadMessageCount(client);
 
   switch (messageType) {
-    case MessageType.CALL:
-      handleIncomingCall(client, message as OCPPCall);
+    case MessageType.CALL: {
+      // Tracked until answered, so close() with awaitPending lets the answer
+      // out. handleIncomingCall settles every error itself and never rejects.
+      const answering = handleIncomingCall(client, message as OCPPCall);
+      client.answering.add(answering);
+      const forget = () => client.answering.delete(answering);
+      answering.then(forget, forget);
       break;
+    }
     case MessageType.SEND:
       handleIncomingSend(client, message as OCPPSend);
       break;
@@ -507,7 +513,18 @@ async function handleIncomingCall(
         if (result === NOREPLY) return;
 
         if (client.strictMode && client.protocol) {
-          client.validateOutbound(ctxvals.method, result, "conf");
+          try {
+            client.validateOutbound(ctxvals.method, result, "conf");
+          } catch (validationError) {
+            // OCPP-J's error codes describe the payload received: a schema
+            // code here would tell the peer its request was malformed. Not an
+            // RPC error, so the peer gets InternalError with the standard
+            // text; strictValidationFailure and handlerError keep the cause.
+            throw new Error(
+              `The answer to ${ctxvals.method} does not match its schema: ${(validationError as Error).message}`,
+              { cause: validationError },
+            );
+          }
         }
 
         // Run the response through the middleware chain before sending it.

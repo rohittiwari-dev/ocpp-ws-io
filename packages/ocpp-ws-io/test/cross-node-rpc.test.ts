@@ -25,7 +25,11 @@ describe("cross-node RPC", () => {
   const clients: OCPPClient[] = [];
 
   afterEach(async () => {
-    await Promise.all(clients.splice(0).map((c) => c.close().catch(() => {})));
+    // force: a charger whose handler never answers would keep a graceful
+    // close() waiting for that answer, up to its callTimeoutMs (30 s).
+    await Promise.all(
+      clients.splice(0).map((c) => c.close({ force: true }).catch(() => {})),
+    );
     await Promise.all(servers.splice(0).map((s) => s.close().catch(() => {})));
   });
 

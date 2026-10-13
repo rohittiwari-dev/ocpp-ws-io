@@ -51,6 +51,32 @@ export async function runHandler<T>(
   }
 }
 
+/** The longest delay setTimeout takes; a longer one fires at once. */
+const MAX_TIMER_MS = 2_147_483_647;
+
+/**
+ * Wait for the answers to the peer's calls being handled, at most `limitMs`:
+ * callTimeoutMs, the bound this side's own calls have. A handler that never
+ * settles must not keep close() waiting for ever; past the limit the
+ * connection closes, and abortHandlers() aborts what still runs.
+ */
+export function waitForAnswers(
+  answering: readonly Promise<void>[],
+  limitMs: number,
+): Promise<void> {
+  if (answering.length === 0) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(
+      resolve,
+      Math.min(Math.max(limitMs, 0), MAX_TIMER_MS),
+    );
+    void Promise.allSettled(answering).then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
 /** The connection closed: abort the signal of every handler still running. */
 export function abortHandlers(
   running: Set<AbortController>,

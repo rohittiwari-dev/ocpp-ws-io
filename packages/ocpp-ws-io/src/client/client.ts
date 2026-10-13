@@ -150,6 +150,8 @@ export class OCPPClient<
   private _pendingResponses = new Set<string>();
   /** Controllers of the handlers' signals, aborted when the connection closes. */
   private _runningHandlers = new Set<AbortController>();
+  /** Incoming calls being answered; close() with awaitPending waits for them. */
+  private _answering = new Set<Promise<void>>();
   private _callQueue: Queue;
   private _pingTimer: ReturnType<typeof setTimeout> | null = null;
   protected _pongTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1033,6 +1035,9 @@ export class OCPPClient<
       },
       get runningHandlers() {
         return client._runningHandlers;
+      },
+      get answering() {
+        return client._answering;
       },
       get handlerTimeoutMs() {
         return client._options.handlerTimeoutMs ?? 0;

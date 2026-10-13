@@ -1,5 +1,6 @@
 import WebSocket from "ws";
 import { UnexpectedHttpResponse } from "../core/errors.js";
+import { waitForAnswers } from "../core/handler-run.js";
 import { isValidStatusCode } from "../core/ws-util.js";
 import type { CloseOptions } from "../types/calls.js";
 import type { ClientOptions } from "../types/client.js";
@@ -243,7 +244,11 @@ async function closeConnection(
   }
 
   if (!force && awaitPending) {
-    // Wait for pending calls to resolve
+    // Wait for pending calls to resolve, and for the answers to the peer's
+    // calls already being handled, at most callTimeoutMs: without these, a
+    // closing CSMS dropped the answers to requests its handlers were working
+    // on. A call that arrives after this point is not handled (CLOSING).
+    const answering = [...client.answering];
     const pendingPromises = Array.from(client.pendingCalls.values()).map(
       (p) =>
         new Promise<void>((resolve) => {
@@ -259,8 +264,11 @@ async function closeConnection(
           };
         }),
     );
-    if (pendingPromises.length > 0) {
-      await Promise.allSettled(pendingPromises);
+    if (pendingPromises.length > 0 || answering.length > 0) {
+      await Promise.allSettled([
+        ...pendingPromises,
+        waitForAnswers(answering, client.options.callTimeoutMs),
+      ]);
     }
   }
 

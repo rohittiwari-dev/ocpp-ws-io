@@ -57,6 +57,11 @@ export interface InboundContext extends MessageIdRules {
   readonly pendingResponses: Set<string>;
   /** The handlers running, by their signal's controller; aborted on close. */
   readonly runningHandlers: Set<AbortController>;
+  /**
+   * Incoming calls being answered: middleware, handler and the answer's send.
+   * close() with awaitPending waits for them.
+   */
+  readonly answering: Set<Promise<void>>;
   /** handlerTimeoutMs; 0 when off. */
   readonly handlerTimeoutMs: number;
   /** noReply calls whose answer can still arrive, with the timer that forgets each. */

@@ -46,7 +46,13 @@ export interface CloseOptions {
   code?: number;
   /** Close reason string */
   reason?: string;
-  /** Wait for pending calls to complete before closing */
+  /**
+   * Before closing, wait for this side's calls to be answered, and for the
+   * answers to the peer's calls that handlers are working on to go out. The
+   * second wait lasts at most `callTimeoutMs`; a handler still running then
+   * has its `signal` aborted when the connection closes. A call that arrives
+   * once `close()` has begun is not handled. (default: true)
+   */
   awaitPending?: boolean;
   /** Force-close without waiting */
   force?: boolean;

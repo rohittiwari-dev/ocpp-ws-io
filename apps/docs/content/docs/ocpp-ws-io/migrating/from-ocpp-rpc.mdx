@@ -289,7 +289,6 @@ What the peer receives:
 | A handler throws an RPC error (`createRPCError(…)`) | Its code, message and details | Same |
 | A handler throws any other error | `GenericError`, with the error's message | `InternalError`, with the code's standard text. The error itself goes to the `handlerError` event. To send a message, throw `createRPCError("GenericError", message)` |
 | OCPP 1.6, strict mode: a request breaks an occurrence rule, such as a missing field | `OccurrenceConstraintViolation`, with the schema errors as details | `OccurenceConstraintViolation`, as 1.6 Part 4 spells it and the 1.6-J errata (§5.1) keep it, with empty details |
-| Strict mode: your handler's answer breaks the schema | `InternalError` | The validation error's code and message |
 | No handler for the action | `NotImplemented`, "Unable to handle 'X' calls" | `NotImplemented`, `Method "X" not implemented` |
 | OCPP 1.6: the message ID is not a string | `RpcFrameworkError` | `GenericError`. 1.6's error codes have no `RpcFrameworkError` |
 | Strict mode: the message ID is longer than 36 characters | Nothing: it is accepted | An error (OCPP-J §4.1.4), under message ID `"-1"`. `idValidator` replaces this check |
@@ -308,7 +307,7 @@ On the calling side, `call()` rejects with the class of the error received (`RPC
 | Longest reconnect wait | 10 s | 30 s | `backoffMax: 10000` |
 | `call()` while connecting | Waits for the connection | Rejects | `offlineQueue: true` |
 | `client.close()` with calls in flight | Rejects them | Waits for their answers | `close({ awaitPending: false })` |
-| `server.close()` while a handler is running | Sends its answer | Closes the connection, so the answer is lost | — |
+| `close()` while a handler is answering the peer's call | Waits until the handler settles | Waits at most `callTimeoutMs`, then closes and aborts the handler's `signal` | — |
 | A charging station offers no subprotocol to a server with `protocols` | Accepted, with no protocol | Handshake completed, then closed with 1002 | — |
 | The same identity connects again | Both connections stay | The older connection is dropped | `duplicateConnection: "reject"` keeps the older one and refuses the newer with HTTP 409 |
 | Strict mode on 2.0.1 and 2.1: an identity with `:` or other characters outside identifierString | Accepted | HTTP 400 (OCPP-J §3.1.1) | — |
