@@ -68,7 +68,7 @@
     "test:browser": "node test/browser-check.mjs"
   },
   "peerDependencies": {
-    "ocpp-ws-io": "^3.0.0"
+    "ocpp-ws-io": "^3.0.0 || ^3.1.0-beta.0"
   },
   "peerDependenciesMeta": {
     "ocpp-ws-io": {
