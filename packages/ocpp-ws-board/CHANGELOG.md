@@ -1,5 +1,11 @@
 # ocpp-ws-board
 
+## Unreleased
+
+### Fixed
+
+- **The Security and Diagnostics pages no longer recompute on every render.** Their event and error lists were rebuilt as a new array on each render (`… ?? []`), so the statistics and filters memoised on them were recalculated every time. The lists are now memoised on the data they come from.
+
 ## 1.0.0 (2026-10-11)
 
 ### Features & Highlights

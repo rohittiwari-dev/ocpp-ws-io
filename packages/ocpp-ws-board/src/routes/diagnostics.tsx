@@ -76,8 +76,12 @@ export default function DiagnosticsPage() {
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(6);
 
-  const rawErrors = errors.data?.errors ?? [];
-  const rawEvents = events.data ?? [];
+  // Kept across renders: a new `[]` each render would rerun every memo below.
+  const rawErrors = useMemo(
+    () => errors.data?.errors ?? [],
+    [errors.data?.errors],
+  );
+  const rawEvents = useMemo(() => events.data ?? [], [events.data]);
 
   // Error KPI metrics
   const errorStats = useMemo(() => {

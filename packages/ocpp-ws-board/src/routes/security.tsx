@@ -76,7 +76,11 @@ export default function SecurityPage() {
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(6);
 
-  const rawEvents = resource.data?.events ?? [];
+  // Kept across renders: a new `[]` each render would rerun every memo below.
+  const rawEvents = useMemo(
+    () => resource.data?.events ?? [],
+    [resource.data?.events],
+  );
 
   // Security KPI metrics
   const stats = useMemo(() => {
