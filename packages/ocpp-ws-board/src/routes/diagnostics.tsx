@@ -830,7 +830,7 @@ export default function DiagnosticsPage() {
                     {isExpanded && (
                       <tr key={`${row.id}-expanded`} className="expanded-row">
                         <td colSpan={6} className="expanded-cell">
-                          <div className="telemetry-sample-expanded-card !m-0 !mt-2">
+                          <div className="telemetry-sample-expanded-card m-0! mt-2!">
                             <div className="telemetry-sample-expanded-header">
                               <div className="flex items-center gap-2">
                                 {isError ? (
