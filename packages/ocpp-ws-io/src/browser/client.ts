@@ -1210,6 +1210,8 @@ export class BrowserOCPPClient<
 
   private async _handleIncomingCall(message: OCPPCall): Promise<void> {
     const [, msgId, method, params] = message;
+    // The socket this call came in on: its answer goes there or nowhere.
+    const ws = this._ws;
 
     const ctx: MiddlewareContext = {
       type: "incoming_call",
@@ -1287,7 +1289,8 @@ export class BrowserOCPPClient<
           ctxvals.messageId,
           result,
         ];
-        this._ws?.send(JSON.stringify(response));
+        if (this._connectionGone(ws, ctxvals.method, ctxvals.messageId)) return;
+        ws?.send(JSON.stringify(response));
         this.emit("callResult", response);
       } catch (err) {
         this._pendingResponses.delete(ctxvals.messageId);
@@ -1310,7 +1313,8 @@ export class BrowserOCPPClient<
           this._fitErrorDescription(answer.description),
           answer.details,
         ];
-        this._ws?.send(JSON.stringify(errorResponse));
+        if (this._connectionGone(ws, ctxvals.method, ctxvals.messageId)) return;
+        ws?.send(JSON.stringify(errorResponse));
         this.emit("callError", errorResponse);
       }
     });
@@ -1327,6 +1331,7 @@ export class BrowserOCPPClient<
       });
       // Past the handler step, the CALL was already answered.
       if (reachedHandler || this._state !== OPEN) return;
+      if (this._connectionGone(ws, method, msgId)) return;
 
       // A middleware threw before the handler step (rejecting the call, or
       // failing). Nothing answered the CALL, and OCPP-J requires an answer:
@@ -1342,7 +1347,7 @@ export class BrowserOCPPClient<
         this._fitErrorDescription(answer.description),
         answer.details,
       ];
-      this._ws?.send(JSON.stringify(errorResponse));
+      ws?.send(JSON.stringify(errorResponse));
       this.emit("callError", errorResponse);
     }
   }
@@ -1549,6 +1554,28 @@ export class BrowserOCPPClient<
   }
 
   // ─── Internal: Close handling ────────────────────────────────
+
+  /**
+   * Whether the socket a call came in on has closed, or a reconnect replaced
+   * it; its answer is then dropped (logged). On the new connection it would
+   * answer a call that connection never made. The socket, not the client's
+   * state: while close() waits for pending calls the socket still carries
+   * answers.
+   */
+  private _connectionGone(
+    ws: WebSocket | null,
+    method: string,
+    messageId: string,
+  ): boolean {
+    if (ws !== null && this._ws === ws && ws.readyState === ws.OPEN) {
+      return false;
+    }
+    this._logger?.debug?.(
+      "Answer dropped: the connection the call came in on has closed",
+      { method, messageId },
+    );
+    return true;
+  }
 
   /**
    * Run a handler with a signal the connection's close aborts, within

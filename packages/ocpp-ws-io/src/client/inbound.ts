@@ -368,6 +368,30 @@ function handlerTimeoutError(
   );
 }
 
+/**
+ * The socket a call came in on has closed, or a reconnect replaced it. Its
+ * answer cannot reach the caller, and on the new connection it would answer
+ * a call that connection never made: under message IDs counted per
+ * connection, another call with the same ID. The socket, not the client's
+ * state: while close() waits for pending calls the client is CLOSING, and
+ * the socket still carries answers.
+ */
+function connectionGone(client: InboundContext, ws: WebSocket | null): boolean {
+  return ws === null || client.ws !== ws || ws.readyState !== ws.OPEN;
+}
+
+/** An answer whose connection is gone is dropped; nothing reports it sent. */
+function logDroppedAnswer(
+  client: InboundContext,
+  method: string,
+  messageId: string,
+): void {
+  client.logger?.debug?.(
+    "Answer dropped: the connection the call came in on has closed",
+    { method, messageId },
+  );
+}
+
 /** A handler past its time limit has settled; what it returned answers nothing. */
 function logLateHandler(
   client: InboundContext,
@@ -385,6 +409,8 @@ async function handleIncomingCall(
   message: OCPPCall,
 ): Promise<void> {
   const [, msgId, method, params] = message;
+  // The socket this call came in on: its answer goes there or nowhere.
+  const ws = client.ws;
 
   const ctx: MiddlewareContext = {
     type: "incoming_call",
@@ -546,7 +572,11 @@ async function handleIncomingCall(
           return result;
         }
 
-        client.safeSend(client.ws, JSON.stringify(response));
+        if (connectionGone(client, ws)) {
+          logDroppedAnswer(client, ctxvals.method, ctxvals.messageId);
+          return result;
+        }
+        client.safeSend(ws, JSON.stringify(response));
         // Emit outbound CALLRESULT message event for observability
         client.emitMessageEvent(response, "OUT", {
           type: "outgoing_result",
@@ -620,7 +650,15 @@ async function handleIncomingCall(
           throw err;
         }
 
-        client.safeSend(client.ws, JSON.stringify(errorResponse));
+        if (connectionGone(client, ws)) {
+          logDroppedAnswer(client, ctxvals.method, ctxvals.messageId);
+          client.emitter.emit("handlerError", {
+            method: ctxvals.method,
+            error: err as Error,
+          });
+          throw err;
+        }
+        client.safeSend(ws, JSON.stringify(errorResponse));
         // Emit outbound CALLERROR message event for observability
         client.emitMessageEvent(errorResponse, "OUT", {
           type: "outgoing_error",
@@ -656,6 +694,10 @@ async function handleIncomingCall(
       error: (err as Error)?.message ?? String(err),
     });
     if (client.state !== OPEN) return;
+    if (connectionGone(client, ws)) {
+      logDroppedAnswer(client, method, msgId);
+      return;
+    }
     const answer = callErrorFor(err as Error, client.respondWithDetailedErrors);
     sendRpcError(client, [
       MessageType.CALLERROR,

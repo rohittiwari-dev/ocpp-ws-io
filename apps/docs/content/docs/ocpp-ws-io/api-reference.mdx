@@ -232,6 +232,8 @@ server.on("client", (client) => {
 
 `handlerTimeoutMs` is off by default. Keep it below the peer's own call timeout, so the peer gets the `InternalError` before it gives up. For an OCPP 2.1 SEND, which is never answered, only the signal aborts.
 
+An answer goes only on the connection its call came in on. If that connection closes before the handler settles, the answer is dropped and logged at debug level, and no `callResult`, `callError` or `message` event reports it. The same happens when the client has reconnected in the meantime: on the new connection, the answer would reply to a call that connection never made.
+
 #### `send(method, params)`
 
 Send an OCPP 2.1 unconfirmed message (RPC type SEND, message type 6). It resolves once the frame is written, because no response exists. It does not wait behind an outstanding `call()`, as the spec allows a SEND at any time. It works on `ocpp2.1` and on a custom protocol, whose SEND messages you declare in `OCPPSendMethodMap` (`ocpp generate` does), and throws on OCPP 1.6 and 2.0.1, whose RPC framework has no SEND: a peer answers one with `MessageTypeNotSupported`. Under `strictMode` the payload is validated against the message's schema, `$id` `urn:<Message>`.
