@@ -76,6 +76,24 @@ export type ProxyMiddleware = (
   phase: MiddlewarePhase,
 ) => Promise<OCPPMessage | undefined>;
 
+/**
+ * Receives a translation step's latency, from its `pre` middleware to its
+ * `post`: the action of a call (`undefined` for an answer or an error), the
+ * milliseconds, the connection's context and the step's direction.
+ */
+export type LatencyListener = (
+  action: string | undefined,
+  ms: number,
+  context: TranslationContext,
+  direction: MiddlewareDirection,
+) => void;
+
+/** Options of `createTelemetryMiddleware()`. */
+export interface TelemetryOptions {
+  /** Called with each translation step's latency. */
+  onLatency?: LatencyListener;
+}
+
 /** `"ocpp1.6:BootNotification"`: a protocol and one of its actions. */
 export type ActionKey = {
   [V in OCPPProtocolKey]: `${V}:${AllMethodNames<V>}`;

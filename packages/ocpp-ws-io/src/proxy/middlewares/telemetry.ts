@@ -1,39 +1,46 @@
-import type {
-  MiddlewareDirection,
-  MiddlewarePhase,
-  OCPPMessage,
-  ProxyMiddleware,
-  TranslationContext,
+import {
+  MessageType,
+  type ProxyMiddleware,
+  type TelemetryOptions,
 } from "../core/types.js";
 
+/** When a translation step began, kept from its `pre` middleware to its `post`. */
+type StepStart = { at: number; action?: string };
+
 /**
- * Example built-in middleware that tracks translation latency.
- * In production, push metrics to Datadog, Prometheus, or OpenTelemetry.
+ * A middleware that measures each translation step, from its `pre`
+ * middleware to its `post`, and passes the latency to `onLatency`: push it to
+ * Datadog, Prometheus or OpenTelemetry there.
  */
-export const TelemetryMiddleware: ProxyMiddleware = async (
-  message: OCPPMessage,
-  context: TranslationContext,
-  _direction: MiddlewareDirection,
-  phase: MiddlewarePhase,
-): Promise<OCPPMessage | undefined> => {
-  if (phase === "pre") {
-    await context.session.set(
-      context.identity,
-      `telemetryStart_${message.messageId}`,
-      Date.now(),
-    );
-  } else if (phase === "post") {
-    const startTime = await context.session.get<number>(
-      context.identity,
-      `telemetryStart_${message.messageId}`,
-    );
-    if (startTime) {
-      await context.session.delete(
-        context.identity,
-        `telemetryStart_${message.messageId}`,
-      );
-      // Emit or log the latency here: Date.now() - startTime.
+export function createTelemetryMiddleware(
+  options: TelemetryOptions = {},
+): ProxyMiddleware {
+  return async (message, context, direction, phase) => {
+    const key = `telemetryStart_${message.messageId}`;
+    if (phase === "pre") {
+      const start: StepStart = {
+        at: Date.now(),
+        ...(message.type === MessageType.CALL && { action: message.action }),
+      };
+      await context.session.set(context.identity, key, start);
+    } else if (phase === "post") {
+      const start = await context.session.get<StepStart>(context.identity, key);
+      if (start) {
+        await context.session.delete(context.identity, key);
+        options.onLatency?.(
+          start.action,
+          Date.now() - start.at,
+          context,
+          direction,
+        );
+      }
     }
-  }
-  return undefined;
-};
+    return undefined;
+  };
+}
+
+/**
+ * Measures each translation step but reports it nowhere. Use
+ * `createTelemetryMiddleware({ onLatency })` to receive the latencies.
+ */
+export const TelemetryMiddleware: ProxyMiddleware = createTelemetryMiddleware();

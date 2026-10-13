@@ -32,7 +32,11 @@ export default defineConfig([
       ...dts,
       entry: { ...nodeEntries, browser: "src/browser/index.ts" },
     },
-    splitting: false,
+    // One copy of the library for every entry: shared code goes to chunks,
+    // so `ocpp-ws-io/proxy` and `ocpp-ws-io/nestjs` use the main entry's
+    // classes instead of bundling their own (and `instanceof` holds across
+    // entries).
+    splitting: true,
     sourcemap: false,
     clean: false,
     outDir: "dist",

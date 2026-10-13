@@ -231,6 +231,7 @@
 		}
 	},
 	"dependencies": {
+		"@types/ws": "^8.18.2",
 		"ajv": "^8.20.0",
 		"ajv-formats": "^3.0.1",
 		"voltlog-io": "^1.0.8",
@@ -245,7 +246,6 @@
 		"@types/express": "^5.0.6",
 		"@types/ioredis-mock": "^8.2.8",
 		"@types/node": "^20.19.43",
-		"@types/ws": "^8.18.2",
 		"@vitest/coverage-v8": "5.0.3",
 		"cac": "^6.7.14",
 		"express": "^5.2.1",

@@ -436,17 +436,24 @@ const validationMiddleware: ProxyMiddleware = async (
 
 ### Built-in Telemetry Middleware
 
-The package includes a `TelemetryMiddleware` that tracks translation latency via the session store:
+`createTelemetryMiddleware` measures each translation step, from its `pre` middleware to its `post`, and passes the latency to `onLatency`: the action of a call (`undefined` for an answer or an error), the milliseconds, the context and the direction. The start of each step is kept in the session store.
 
 ```typescript
-import { TelemetryMiddleware } from "ocpp-ws-io/proxy";
+import { createTelemetryMiddleware } from "ocpp-ws-io/proxy";
 
 const proxy = new OCPPProtocolProxy({
   upstreamEndpoint: "ws://csms:9000",
   upstreamProtocol: "ocpp2.1",
-  middlewares: [TelemetryMiddleware],
+  middlewares: [
+    createTelemetryMiddleware({
+      onLatency: (action, ms, ctx, direction) =>
+        metrics.histogram("proxy.translation_ms", ms, { action, direction }),
+    }),
+  ],
 });
 ```
+
+`TelemetryMiddleware`, the same without `onLatency`, is still exported; it measures but reports nothing.
 
 ---
 
