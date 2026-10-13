@@ -878,3 +878,5 @@ client.handle('Reset', () => {
 });
 // The peer receives [4, id, "NotSupported", "Reset is off on this site", { "retryAfter": 3600 }]
 ```
+
+A format violation goes out under the name of the connection's version, whichever of the two names was thrown: `FormationViolation` on OCPP 1.6, `FormatViolation` on 2.0.1 and 2.1. OCPP-J 1.6 §4.2.3 names it `FormationViolation`, and the 1.6-J errata (§5.2) keep that name on the wire. Every other code goes out as thrown. That includes 1.6's `OccurenceConstraintViolation`, which the errata keep as well (§5.1).

@@ -288,8 +288,7 @@ What the peer receives:
 | --- | --- | --- |
 | A handler throws an RPC error (`createRPCError(…)`) | Its code, message and details | Same |
 | A handler throws any other error | `GenericError`, with the error's message | `InternalError`, with the code's standard text. The error itself goes to the `handlerError` event. To send a message, throw `createRPCError("GenericError", message)` |
-| OCPP 1.6: a handler throws `FormatViolation` | `FormationViolation`, 1.6's name for it | `FormatViolation`, as thrown. On 1.6, throw `FormationViolation` |
-| OCPP 1.6, strict mode: a request breaks an occurrence rule, such as a missing field | `OccurrenceConstraintViolation`, with the schema errors as details | `OccurenceConstraintViolation`, as 1.6 Part 4 spells it, with empty details |
+| OCPP 1.6, strict mode: a request breaks an occurrence rule, such as a missing field | `OccurrenceConstraintViolation`, with the schema errors as details | `OccurenceConstraintViolation`, as 1.6 Part 4 spells it and the 1.6-J errata (§5.1) keep it, with empty details |
 | Strict mode: your handler's answer breaks the schema | `InternalError` | The validation error's code and message |
 | No handler for the action | `NotImplemented`, "Unable to handle 'X' calls" | `NotImplemented`, `Method "X" not implemented` |
 | OCPP 1.6: the message ID is not a string | `RpcFrameworkError` | `GenericError`. 1.6's error codes have no `RpcFrameworkError` |

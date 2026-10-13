@@ -38,6 +38,23 @@ export function frameworkErrorCode(
   return protocol === "ocpp1.6" ? "GenericError" : "RpcFrameworkError";
 }
 
+/**
+ * A thrown error's code as the protocol names it. OCPP-J 1.6 §4.2.3 names the
+ * format violation FormationViolation, and the 1.6-J errata (§5.2) keep that
+ * name on the wire: "Do not fix, this is a message level change, might break
+ * implementations". 2.0.1 and 2.1 name it FormatViolation. Any other code is
+ * sent as thrown, 1.6's OccurenceConstraintViolation too (errata §5.1).
+ */
+export function errorCodeForProtocol(
+  protocol: string | undefined,
+  code: string,
+): string {
+  if (protocol === "ocpp1.6") {
+    return code === "FormatViolation" ? "FormationViolation" : code;
+  }
+  return code === "FormationViolation" ? "FormatViolation" : code;
+}
+
 /** The code, description and details of a CALLERROR. */
 export interface CallErrorParts {
   code: string;

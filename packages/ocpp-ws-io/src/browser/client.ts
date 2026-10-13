@@ -106,6 +106,21 @@ function frameworkErrorCode(
 }
 
 /**
+ * A thrown error's code as the protocol names it: FormationViolation on 1.6,
+ * which the 1.6-J errata (§5.2) keep on the wire, FormatViolation on 2.0.1
+ * and 2.1. Any other code is sent as thrown.
+ */
+function errorCodeForProtocol(
+  protocol: string | undefined,
+  code: string,
+): string {
+  if (protocol === "ocpp1.6") {
+    return code === "FormatViolation" ? "FormationViolation" : code;
+  }
+  return code === "FormationViolation" ? "FormatViolation" : code;
+}
+
+/**
  * The CALLERROR that answers a thrown error. A thrown RPC error says what the
  * peer reads: its code, its own message (else its code's standard text) and
  * the details it carries. Any other error is an InternalError described by
@@ -1309,7 +1324,7 @@ export class BrowserOCPPClient<
         const errorResponse: OCPPCallError = [
           MessageType.CALLERROR,
           ctxvals.messageId,
-          answer.code,
+          errorCodeForProtocol(this._protocol, answer.code),
           this._fitErrorDescription(answer.description),
           answer.details,
         ];
@@ -1343,7 +1358,7 @@ export class BrowserOCPPClient<
       const errorResponse: OCPPCallError = [
         MessageType.CALLERROR,
         msgId,
-        answer.code,
+        errorCodeForProtocol(this._protocol, answer.code),
         this._fitErrorDescription(answer.description),
         answer.details,
       ];

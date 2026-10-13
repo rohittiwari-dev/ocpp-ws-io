@@ -27,6 +27,7 @@ import type { InboundContext } from "./context.js";
 import {
   type BadMessageReply,
   callErrorFor,
+  errorCodeForProtocol,
   fitErrorDescription,
   frameworkErrorCode,
   isKnownMessageType,
@@ -604,7 +605,7 @@ async function handleIncomingCall(
         // place a plugin can make an action-specific decision about one.
         // The declared context exposes the code and description; `details`
         // is not part of it and is sent as produced.
-        let errorCode = answer.code;
+        let errorCode = errorCodeForProtocol(client.protocol, answer.code);
         let errorDescription = answer.description;
         try {
           const outCtx: MiddlewareContext = {
@@ -702,7 +703,7 @@ async function handleIncomingCall(
     sendRpcError(client, [
       MessageType.CALLERROR,
       msgId,
-      answer.code,
+      errorCodeForProtocol(client.protocol, answer.code),
       answer.description,
       answer.details,
     ]);
