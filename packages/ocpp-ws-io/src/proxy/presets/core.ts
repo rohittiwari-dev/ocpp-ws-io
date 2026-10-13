@@ -262,7 +262,7 @@ export const corePreset: Partial<TranslationMap> = {
       errorDetails,
     ) => {
       const errorMap: Record<string, string> = {
-        SecurityError: "InternalError",
+        SecurityError: "SecurityError",
         FormatViolation: "FormationViolation",
         MessageTypeNotSupported: "NotSupported",
         PropertyConstraintViolation: "PropertyConstraintViolation",
@@ -272,7 +272,8 @@ export const corePreset: Partial<TranslationMap> = {
         NotImplemented: "NotImplemented",
         NotSupported: "NotSupported",
         ProtocolError: "ProtocolError",
-        RpcFrameworkError: "InternalError",
+        // 1.6 has no RpcFrameworkError; GenericError is its catch-all.
+        RpcFrameworkError: "GenericError",
       };
       return {
         errorCode: errorMap[errorCode] || "InternalError",

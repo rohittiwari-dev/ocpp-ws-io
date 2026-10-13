@@ -362,11 +362,12 @@ describe("Core Preset — Responses", () => {
 describe("Core Preset — Error Mapping", () => {
   const errorMappers = errors(corePreset.errors);
 
-  it("maps SecurityError to InternalError", async () => {
+  // 1.6J Table 7 has SecurityError too.
+  it("keeps SecurityError", async () => {
     const result = await errorMappers["ocpp2.1:Error"](
       "SecurityError", "desc", {}, makeCtx(),
     );
-    expect(result.errorCode).toBe("InternalError");
+    expect(result.errorCode).toBe("SecurityError");
   });
 
   it("maps FormatViolation to FormationViolation", async () => {
@@ -376,11 +377,12 @@ describe("Core Preset — Error Mapping", () => {
     expect(result.errorCode).toBe("FormationViolation");
   });
 
-  it("maps RpcFrameworkError to InternalError", async () => {
+  // 1.6 has no RpcFrameworkError; GenericError is its catch-all (O12).
+  it("maps RpcFrameworkError to GenericError", async () => {
     const result = await errorMappers["ocpp2.1:Error"](
       "RpcFrameworkError", "desc", {}, makeCtx(),
     );
-    expect(result.errorCode).toBe("InternalError");
+    expect(result.errorCode).toBe("GenericError");
   });
 
   it("falls back to InternalError for unknown codes", async () => {
