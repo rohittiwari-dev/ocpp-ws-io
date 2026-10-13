@@ -162,7 +162,7 @@ const boot = await client.call("BootNotification", {
 ```
 
 - **`connect(url, headers)` becomes the `endpoint` and `headers` options.** ocpp-ts appended the identity to the URL as given, so the URL needed its trailing `/`, and it didn't encode the identity. ocpp-ws-io adds the `/` when it is missing and percent-encodes the identity.
-- **Basic Auth:** an `Authorization` header in `headers` still works. Or set `securityProfile` and `password`, and the client builds the header itself, with the identity as the username.
+- **Basic Auth:** an `Authorization` header in `headers` still works. Or set `password`, and the client builds the header itself, with the identity as the username. Setting `securityProfile` as well, as above, makes the profile explicit.
 - **The `connect` event becomes `await client.connect()`**, which rejects if the connection fails, and the `open` event.
 - **The client reconnects.** ocpp-ts never did. ocpp-ws-io reconnects after a dropped connection, waiting 1 s, then doubling up to 30 s. `open` fires again on every reconnection, so put work that belongs to each connection, such as `BootNotification`, in an `open` listener. Set `reconnect: false` to keep the old behaviour.
 

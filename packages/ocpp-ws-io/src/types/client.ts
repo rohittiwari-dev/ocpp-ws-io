@@ -73,7 +73,12 @@ export interface ClientOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
   endpoint: string;
   /** OCPP Security Profile (default: NONE) */
   securityProfile?: SecurityProfile;
-  /** Password for Basic Auth (Profile 1 & 2) */
+  /**
+   * Password for HTTP Basic Auth, with the identity as the username. Sent
+   * whenever it is set, on any security profile; profiles 1 and 2 require it.
+   * A `Buffer` is sent as its bytes (1.6's AuthorizationKey is binary), a
+   * string as UTF-8.
+   */
   password?: string | Buffer;
   /**
    * TLS settings for a `wss://` endpoint, used on every security profile:

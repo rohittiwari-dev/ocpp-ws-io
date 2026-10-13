@@ -36,6 +36,8 @@ const client = new OCPPClient({
 });
 ```
 
+The client sends `password` whenever it is set, with the identity as the username. A `Buffer` is sent as its bytes, so a binary key, such as 1.6's `AuthorizationKey`, arrives intact.
+
 **Server:**
 
 ```typescript

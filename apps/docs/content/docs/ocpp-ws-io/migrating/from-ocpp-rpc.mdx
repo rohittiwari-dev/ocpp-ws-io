@@ -244,7 +244,7 @@ const boot = await client.call(
 | ocpp-rpc | ocpp-ws-io |
 | --- | --- |
 | `endpoint`, `identity`, `protocols`, `headers`, `query` | Same |
-| `password` | Same, but it is sent only with `securityProfile: SecurityProfile.BASIC_AUTH` (on `ws://`) or `SecurityProfile.TLS_BASIC_AUTH` (on `wss://`). Without one of these, the password is not sent |
+| `password` | Same: sent whenever it is set, a `Buffer` as its bytes. Setting `securityProfile: SecurityProfile.BASIC_AUTH` (on `ws://`) or `SecurityProfile.TLS_BASIC_AUTH` (on `wss://`) as well makes the profile explicit |
 | `callTimeoutMs` (60000) | Same name. The default is **30000** |
 | `pingIntervalMs`, `deferPingsOnActivity`, `respondWithDetailedErrors`, `callConcurrency`, `strictMode`, `strictModeValidators` | Same |
 | `reconnect` (`true`), `maxReconnects` (`Infinity`) | Same. As in ocpp-rpc, reconnecting starts only after a first successful connection. `retryInitialConnect: true` also retries a first `connect()` that failed |
@@ -318,7 +318,7 @@ On the calling side, `call()` rejects with the class of the error received (`RPC
 
 ### Profile 1: Basic Auth
 
-ocpp-rpc sends `password` whenever it is set. ocpp-ws-io sends it only under security profile 1 or 2, so set the profile on the charging station:
+Both libraries send `password` whenever it is set. On the charging station, setting the security profile as well makes it explicit:
 
 ```ts
 import { OCPPClient, SecurityProfile } from "ocpp-ws-io";
@@ -353,7 +353,7 @@ server.auth((ctx) => {
 
 When the server has `securityProfile` 1 or 2, a connection without Basic Auth credentials gets HTTP 401 before your callback runs (`requireBasicAuth`, default `true`).
 
-In 3.1.0-beta.2, a `Buffer` password is sent as UTF-8 text. Bytes that aren't valid UTF-8 don't arrive intact, whereas ocpp-rpc sends the bytes as they are.
+A `Buffer` password is sent as its bytes, as in ocpp-rpc, so a binary key arrives intact. In 3.1.0-beta.2 and earlier, it was sent as UTF-8 text, and only on profile 1 or 2.
 
 ### Profiles 2 and 3: TLS
 

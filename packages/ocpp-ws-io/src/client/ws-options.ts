@@ -2,7 +2,7 @@ import type WebSocket from "ws";
 import { getPackageIdent } from "../core/util.js";
 import type { ClientOptions } from "../types/client.js";
 import type { LoggerLike } from "../types/logger.js";
-import { type AnyOCPPProtocol, SecurityProfile } from "../types/protocol.js";
+import type { AnyOCPPProtocol } from "../types/protocol.js";
 import type { ManagedWsClientOption } from "../types/transport.js";
 
 /**
@@ -117,17 +117,19 @@ export function buildWsOptions<P extends AnyOCPPProtocol>(
     (options as ClientOptions).connectTimeoutMs ?? 30_000;
   opts.handshakeTimeout = connectTimeoutMs > 0 ? connectTimeoutMs : undefined;
 
-  const profile = options.securityProfile ?? SecurityProfile.NONE;
-
-  // Profile 1 & 2: Basic Auth header
-  if (
-    (profile === SecurityProfile.BASIC_AUTH ||
-      profile === SecurityProfile.TLS_BASIC_AUTH) &&
-    options.password
-  ) {
-    const credentials = Buffer.from(
-      `${identity}:${options.password.toString()}`,
-    ).toString("base64");
+  // Basic Auth whenever a password is set, the identity as the username.
+  // Profiles 1 and 2 require it; on the others it used to be dropped without
+  // a word, so a client given a password connected without credentials.
+  if (options.password) {
+    // Joined as bytes: a Buffer password (1.6's AuthorizationKey is binary)
+    // goes out as given. Decoding it as a string replaced every byte that is
+    // not valid UTF-8 with EF BF BD. A string password is sent as UTF-8.
+    const credentials = Buffer.concat([
+      Buffer.from(`${identity}:`),
+      typeof options.password === "string"
+        ? Buffer.from(options.password)
+        : options.password,
+    ]).toString("base64");
     // Merged rather than assigned, so it replaces an `authorization` header
     // from `headers` whatever its case.
     opts.headers = mergeHeaders(opts.headers, {
