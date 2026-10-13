@@ -19,6 +19,7 @@ export function buildClientOptions<P extends AnyOCPPProtocol>(
     identity,
     endpoint: "",
     callTimeoutMs: routeConfig?.callTimeoutMs ?? options.callTimeoutMs,
+    handlerTimeoutMs: options.handlerTimeoutMs,
     pingIntervalMs: routeConfig?.pingIntervalMs ?? options.pingIntervalMs,
     deferPingsOnActivity:
       routeConfig?.deferPingsOnActivity ?? options.deferPingsOnActivity,

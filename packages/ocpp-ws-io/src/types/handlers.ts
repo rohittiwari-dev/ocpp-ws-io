@@ -12,7 +12,13 @@ export interface HandlerContext<T = unknown> {
   protocol: string | undefined;
   /** Request parameters */
   params: T;
-  /** Abort signal */
+  /**
+   * Aborts when the answer can no longer be delivered: the connection closed
+   * before the handler settled (reason: an `Error`, `Connection closed
+   * (code: reason)`), or the handler ran past `handlerTimeoutMs` (reason: a
+   * `TimeoutError`). Pass it on to `fetch()` or a database driver, or check
+   * `signal.aborted` before a side effect. It does not stop the handler.
+   */
   signal: AbortSignal;
   /**
    * True for an OCPP 2.1 SEND message. Nothing is sent back for it: the

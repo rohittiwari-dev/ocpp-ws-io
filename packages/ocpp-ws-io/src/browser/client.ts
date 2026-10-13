@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 
+import { abortHandlers, runHandler } from "../core/handler-run.js";
 import {
   type MiddlewareFunction,
   MiddlewareStack,
@@ -212,6 +213,8 @@ export class BrowserOCPPClient<
    */
   private _noReplyCalls = new Map<string, ReturnType<typeof setTimeout>>();
   private _pendingResponses = new Set<string>();
+  /** Controllers of the handlers' signals, aborted when the connection closes. */
+  private _runningHandlers = new Set<AbortController>();
   private _callQueue: Queue;
   private _closePromise: Promise<{ code: number; reason: string }> | null =
     null;
@@ -1161,20 +1164,24 @@ export class BrowserOCPPClient<
           return;
         }
 
-        const context: HandlerContext = {
-          messageId: ctxvals.messageId,
-          method: ctxvals.method,
-          protocol: this._protocol,
-          params: ctxvals.params,
-          signal: new AbortController().signal,
-          unconfirmed: true,
-        };
         try {
-          if (handler) {
-            await handler(context);
-          } else {
-            await this._wildcardHandler?.(context);
-          }
+          await this._runHandler(
+            ctxvals.method,
+            ctxvals.messageId,
+            (signal) => {
+              const context: HandlerContext = {
+                messageId: ctxvals.messageId,
+                method: ctxvals.method,
+                protocol: this._protocol,
+                params: ctxvals.params,
+                signal,
+                unconfirmed: true,
+              };
+              return handler
+                ? handler(context)
+                : this._wildcardHandler?.(context);
+            },
+          );
         } catch (err) {
           this._logger?.warn?.("Handler failed for SEND message", {
             method: ctxvals.method,
@@ -1255,21 +1262,21 @@ export class BrowserOCPPClient<
 
         this._pendingResponses.add(ctxvals.messageId);
 
-        const ac = new AbortController();
-        const context: HandlerContext = {
-          messageId: ctxvals.messageId,
-          method: ctxvals.method,
-          protocol: this._protocol,
-          params: ctxvals.params,
-          signal: ac.signal,
-        };
-
-        let result: unknown;
-        if (specificHandler) {
-          result = await specificHandler(context);
-        } else if (this._wildcardHandler) {
-          result = await this._wildcardHandler(context);
-        }
+        const result: unknown = await this._runHandler(
+          ctxvals.method,
+          ctxvals.messageId,
+          (signal) => {
+            const context: HandlerContext = {
+              messageId: ctxvals.messageId,
+              method: ctxvals.method,
+              protocol: this._protocol,
+              params: ctxvals.params,
+              signal,
+            };
+            if (specificHandler) return specificHandler(context);
+            return this._wildcardHandler?.(context);
+          },
+        );
 
         this._pendingResponses.delete(ctxvals.messageId);
 
@@ -1544,6 +1551,32 @@ export class BrowserOCPPClient<
   // ─── Internal: Close handling ────────────────────────────────
 
   /**
+   * Run a handler with a signal the connection's close aborts, within
+   * handlerTimeoutMs; see runHandler in core/handler-run.ts.
+   */
+  private _runHandler<T>(
+    method: string,
+    messageId: string,
+    invoke: (signal: AbortSignal) => T | Promise<T>,
+  ): Promise<T> {
+    const timeoutMs = this._options.handlerTimeoutMs ?? 0;
+    return runHandler(
+      this._runningHandlers,
+      timeoutMs,
+      () =>
+        new TimeoutError(
+          `Handler for "${method}" did not settle within ${timeoutMs}ms`,
+        ),
+      invoke,
+      () =>
+        this._logger?.debug?.(
+          "Handler settled after handlerTimeoutMs; its result was dropped",
+          { method, messageId },
+        ),
+    );
+  }
+
+  /**
    * Reject all in-flight calls and clear pending state.
    */
   private _rejectPendingCalls(reason: string): void {
@@ -1573,6 +1606,11 @@ export class BrowserOCPPClient<
 
   private _onClose(code: number, reason: string): void {
     this._rejectPendingCalls(`Connection closed (${code}: ${reason})`);
+    // Nothing a running handler returns can reach the peer now.
+    abortHandlers(
+      this._runningHandlers,
+      new Error(`Connection closed (${code}: ${reason})`),
+    );
 
     if (this._state !== CLOSING) {
       // Unexpected close — emit disconnect (transient, reconnect may follow)

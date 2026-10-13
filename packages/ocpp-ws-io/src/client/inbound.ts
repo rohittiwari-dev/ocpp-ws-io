@@ -4,7 +4,9 @@ import {
   RPCFormatViolationError,
   RPCMessageTypeNotSupportedError,
   RPCNotImplementedError,
+  TimeoutError,
 } from "../core/errors.js";
+import { runHandler } from "../core/handler-run.js";
 import { createRPCError } from "../core/util.js";
 import { isEmptyFrame } from "../core/ws-util.js";
 import type { CallHandler, HandlerContext } from "../types/handlers.js";
@@ -300,20 +302,26 @@ async function handleIncomingSend(
         }
       }
 
-      const context: HandlerContext = {
-        messageId: ctxvals.messageId,
-        method: ctxvals.method,
-        protocol: client.protocol,
-        params: ctxvals.params,
-        signal: new AbortController().signal,
-        unconfirmed: true,
-      };
       try {
-        if (handler) {
-          await handler(context);
-        } else {
-          await client.wildcardHandler?.(context);
-        }
+        await runHandler(
+          client.runningHandlers,
+          client.handlerTimeoutMs,
+          () => handlerTimeoutError(client, ctxvals.method),
+          (signal) => {
+            const context: HandlerContext = {
+              messageId: ctxvals.messageId,
+              method: ctxvals.method,
+              protocol: client.protocol,
+              params: ctxvals.params,
+              signal,
+              unconfirmed: true,
+            };
+            return handler
+              ? handler(context)
+              : client.wildcardHandler?.(context);
+          },
+          () => logLateHandler(client, ctxvals.method, ctxvals.messageId),
+        );
       } catch (err) {
         client.logger?.warn?.("Handler failed for SEND message", {
           method: ctxvals.method,
@@ -345,6 +353,31 @@ function handleCallResultError(
     errorDescription,
   });
   client.emitter.emit("callResultError", message);
+}
+
+/**
+ * What a handler past handlerTimeoutMs fails with. Not an RPC error, so the
+ * call is answered InternalError with the code's standard text.
+ */
+function handlerTimeoutError(
+  client: InboundContext,
+  method: string,
+): TimeoutError {
+  return new TimeoutError(
+    `Handler for "${method}" did not settle within ${client.handlerTimeoutMs}ms`,
+  );
+}
+
+/** A handler past its time limit has settled; what it returned answers nothing. */
+function logLateHandler(
+  client: InboundContext,
+  method: string,
+  messageId: string,
+): void {
+  client.logger?.debug?.(
+    "Handler settled after handlerTimeoutMs; its result was dropped",
+    { method, messageId },
+  );
 }
 
 async function handleIncomingCall(
@@ -424,21 +457,23 @@ async function handleIncomingCall(
 
         client.pendingResponses.add(ctxvals.messageId);
 
-        const ac = new AbortController();
-        const context: HandlerContext = {
-          messageId: ctxvals.messageId,
-          method: ctxvals.method,
-          protocol: client.protocol,
-          params: ctxvals.params,
-          signal: ac.signal,
-        };
-
-        let result: unknown;
-        if (specificHandler) {
-          result = await specificHandler(context);
-        } else if (client.wildcardHandler) {
-          result = await client.wildcardHandler(context);
-        }
+        const result: unknown = await runHandler(
+          client.runningHandlers,
+          client.handlerTimeoutMs,
+          () => handlerTimeoutError(client, ctxvals.method),
+          (signal) => {
+            const context: HandlerContext = {
+              messageId: ctxvals.messageId,
+              method: ctxvals.method,
+              protocol: client.protocol,
+              params: ctxvals.params,
+              signal,
+            };
+            if (specificHandler) return specificHandler(context);
+            return client.wildcardHandler?.(context);
+          },
+          () => logLateHandler(client, ctxvals.method, ctxvals.messageId),
+        );
 
         client.pendingResponses.delete(ctxvals.messageId);
 

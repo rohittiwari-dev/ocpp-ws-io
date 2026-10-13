@@ -148,6 +148,8 @@ export class OCPPClient<
    */
   private _noReplyCalls = new Map<string, ReturnType<typeof setTimeout>>();
   private _pendingResponses = new Set<string>();
+  /** Controllers of the handlers' signals, aborted when the connection closes. */
+  private _runningHandlers = new Set<AbortController>();
   private _callQueue: Queue;
   private _pingTimer: ReturnType<typeof setTimeout> | null = null;
   protected _pongTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1028,6 +1030,12 @@ export class OCPPClient<
       },
       get pendingResponses() {
         return client._pendingResponses;
+      },
+      get runningHandlers() {
+        return client._runningHandlers;
+      },
+      get handlerTimeoutMs() {
+        return client._options.handlerTimeoutMs ?? 0;
       },
       get noReplyCalls() {
         return client._noReplyCalls;

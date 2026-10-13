@@ -310,7 +310,6 @@ On the calling side, `call()` rejects with the class of the error received (`RPC
 | `call()` while connecting | Waits for the connection | Rejects | `offlineQueue: true` |
 | `client.close()` with calls in flight | Rejects them | Waits for their answers | `close({ awaitPending: false })` |
 | `server.close()` while a handler is running | Sends its answer | Closes the connection, so the answer is lost | — |
-| The connection drops while a handler is running | The handler's `signal` is aborted | The handler's `signal` is not aborted in 3.1.0-beta.2 | — |
 | A charging station offers no subprotocol to a server with `protocols` | Accepted, with no protocol | Handshake completed, then closed with 1002 | — |
 | The same identity connects again | Both connections stay | The older connection is dropped | `duplicateConnection: "reject"` keeps the older one and refuses the newer with HTTP 409 |
 | Strict mode on 2.0.1 and 2.1: an identity with `:` or other characters outside identifierString | Accepted | HTTP 400 (OCPP-J §3.1.1) | — |

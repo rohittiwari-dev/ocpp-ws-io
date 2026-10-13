@@ -55,6 +55,10 @@ export interface InboundContext extends MessageIdRules {
   readonly pendingCalls: Map<string, PendingCall>;
   /** Incoming calls being handled, by message ID. */
   readonly pendingResponses: Set<string>;
+  /** The handlers running, by their signal's controller; aborted on close. */
+  readonly runningHandlers: Set<AbortController>;
+  /** handlerTimeoutMs; 0 when off. */
+  readonly handlerTimeoutMs: number;
   /** noReply calls whose answer can still arrive, with the timer that forgets each. */
   readonly noReplyCalls: Map<string, ReturnType<typeof setTimeout>>;
   /** Bad messages in a row, and when the current run began. */

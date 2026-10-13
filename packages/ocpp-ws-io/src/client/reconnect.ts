@@ -1,3 +1,4 @@
+import { abortHandlers } from "../core/handler-run.js";
 import { ConnectionState } from "../types/protocol.js";
 import type { ClientContext } from "./context.js";
 import { drainOfflineQueue, rejectPendingCalls } from "./outbound.js";
@@ -31,6 +32,11 @@ export function handleClose(
   }
   const reasonStr = reason.toString();
   rejectPendingCalls(client, `Connection closed (${code}: ${reasonStr})`);
+  // Nothing a running handler returns can reach the peer now.
+  abortHandlers(
+    client.runningHandlers,
+    new Error(`Connection closed (${code}: ${reasonStr})`),
+  );
 
   if (client.state !== CLOSING) {
     // Unexpected close — emit disconnect (transient, reconnect may follow)

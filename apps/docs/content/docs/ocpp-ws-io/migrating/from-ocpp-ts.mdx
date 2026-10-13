@@ -174,7 +174,7 @@ What the other side receives when it calls you:
 | --- | --- | --- |
 | The handler throws an error with a code: `new OcppError(code, message, details)` in ocpp-ts, `createRPCError(code, message, details)` in ocpp-ws-io | Its code, message and details, but only if the listener threw before returning. An `async` listener's error was an unhandled rejection, and the call got `InternalError` after 10 s | Its code, message and details, from an `async` handler too |
 | The handler throws any other error | A CALLERROR whose error code is `null`, with the error's message | `InternalError`, with the code's standard text. The error itself goes to the `handlerError` event |
-| The handler doesn't answer | `InternalError`, "No response from the handler", after 10 s | Nothing: there is no handler timeout, so the caller's own timeout ends the call |
+| The handler doesn't answer | `InternalError`, "No response from the handler", after 10 s, a fixed time | Nothing by default, so the caller's own timeout ends the call. With `handlerTimeoutMs: 10000`, `InternalError` with the code's standard text after 10 s, and the handler's `signal` aborts |
 | No handler for the action | `NotImplemented`, `Listener for action "X" not set` | `NotImplemented`, `Method "X" not implemented` |
 | An action that 1.6 doesn't have | `NotImplemented`, "Action X not found" | `NotImplemented`, unless a wildcard handler, `client.handle((ctx) => …)`, takes it |
 | A request that breaks the schema | `FormationViolation`, with the schema errors as details | In strict mode, the code for what was wrong (`OccurenceConstraintViolation`, `TypeConstraintViolation`, …), with empty details. Without strict mode, it reaches the handler |

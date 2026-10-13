@@ -118,6 +118,16 @@ export interface ClientOptions<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
   backoffMax?: number;
   /** Call timeout in ms (default: 30000) */
   callTimeoutMs?: number | undefined;
+  /**
+   * How long (ms) a handler may take to answer an incoming call. Past it, the
+   * call is answered `InternalError` with the code's standard text, the
+   * handler's `signal` aborts with a `TimeoutError`, and `handlerError`
+   * reports that error. The handler is not stopped: what it returns later is
+   * dropped. Keep it below the peer's own call timeout, so the peer gets the
+   * answer. For an OCPP 2.1 SEND, which is never answered, only the signal
+   * aborts. `0` turns it off. (default: 0)
+   */
+  handlerTimeoutMs?: number | undefined;
   /** Ping interval in ms (default: 30000, 0 to disable) */
   pingIntervalMs?: number | undefined;
   /** Defer pings if activity detected (default: false) */

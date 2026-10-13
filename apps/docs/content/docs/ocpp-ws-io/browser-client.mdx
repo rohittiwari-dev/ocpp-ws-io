@@ -83,6 +83,7 @@ const client = new BrowserOCPPClient(options: BrowserClientOptions);
 | `backoffMin`                | `number`                           | `1000`     | First reconnect delay (ms), doubled after each failed attempt; every wait adds up to 25% at random                                                                                       |
 | `backoffMax`                | `number`                           | `30000`    | Where the doubling stops (ms); the random 25% still applies on top                                                                                                                       |
 | `callTimeoutMs`             | `number`                           | `30000`    | Default RPC call timeout (ms)                                                                                                                                                            |
+| `handlerTimeoutMs`          | `number`                           | `0` (off)  | How long a handler may take to answer an incoming call. Past it, the call is answered `InternalError`, the handler's `signal` aborts with a `TimeoutError`, and the error is logged       |
 | `callConcurrency`           | `number`                           | `1`        | Outbound CALLs in flight at once. `1` follows OCPP-J §4.1.1 (Synchronicity): a new CALL waits until the previous one is answered or has timed out. Above 1 only for a CSMS known to cope |
 | `maxBadMessages`            | `number`                           | `50`       | Close on the Nth bad message in a row; a valid message resets the count and empty frames are ignored. `0` = zero tolerance, `Infinity` = no limit.                                       |
 | `badMessageWindowMs`        | `number`                           | —          | Also reset a run of bad messages once it is older than this many ms.                                                                                                                     |
@@ -379,6 +380,7 @@ Unlike the constructor which creates a new connection, `reconfigure()` allows yo
 | `backoffMin`                | **Immediate** — Used for next reconnect calculation      |
 | `backoffMax`                | **Immediate** — Used for next reconnect calculation      |
 | `callTimeoutMs`             | **Immediate** — Applies to all future `.call()`s         |
+| `handlerTimeoutMs`          | **Immediate** — Applies to handlers started after it     |
 | `callConcurrency`           | **Immediate** — Dynamically resizes the processing queue |
 | `maxBadMessages`            | **Immediate** — Applies to future malformed messages     |
 | `badMessageWindowMs`        | **Immediate** — Applies to future bad-message windows    |

@@ -2,8 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- **`handlerTimeoutMs`: a time limit for handlers.** A handler that never settled left the peer's call unanswered until the peer's own timeout, and a charger waits for that answer before it sends its next call. With `handlerTimeoutMs` set, a handler that runs past it is answered `InternalError` with the code's standard text, its `signal` aborts with a `TimeoutError`, and `handlerError` reports that error. The handler is not stopped: what it returns later is dropped. Off by default (`0`). On `OCPPClient`, `BrowserOCPPClient` (which logs the error) and `OCPPServer`, whose connections take it when they connect; `reconfigure()` changes it for handlers started afterwards. For an OCPP 2.1 SEND, which is never answered, only the signal aborts.
+
 ### Fixed
 
+- **A handler's `signal` aborts when the connection closes.** `ctx.signal` never aborted, so a handler could not learn that its answer could no longer be delivered, and went on with its side effects for a charger that had gone. It now aborts when the connection closes before the handler settles, with an `Error` reading `Connection closed (code: reason)` as the reason, as ocpp-rpc's does. On the server, `OCPPClient` and `BrowserOCPPClient`, for CALLs and OCPP 2.1 SENDs.
 - **`ocpp-ws-io/browser` no longer brings Node's types into a front end.** Its declarations reached the server's through shared modules, and with them `@types/node`, `ws`'s types and `undici-types`, so in a front end that imported it, `setTimeout()` returned `NodeJS.Timeout` instead of a number. The browser entry's declarations now load only `ajv`'s and `voltlog-io/client`'s besides the package's own. The build checks this with a front-end project: DOM types, no Node types, `skipLibCheck: false`. Types only: `ConnectionOf`, the route handler types and the two middleware helpers moved to modules of their own, and every entry exports the same names.
 
 ## v3.1.0-beta.2 - Error replies by the specification, proxy translation fixes and a smaller package (2026-10-13)

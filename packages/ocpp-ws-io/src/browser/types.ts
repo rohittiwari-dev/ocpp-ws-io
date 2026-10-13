@@ -133,6 +133,13 @@ export interface BrowserClientOptions<
   backoffMax?: number;
   /** Call timeout in ms (default: 30000) */
   callTimeoutMs?: number;
+  /**
+   * How long (ms) a handler may take to answer an incoming call. Past it, the
+   * call is answered `InternalError` with the code's standard text, the
+   * handler's `signal` aborts with a `TimeoutError`, and the error is logged.
+   * What the handler returns later is dropped. `0` turns it off. (default: 0)
+   */
+  handlerTimeoutMs?: number;
   /** Maximum concurrent outbound calls (default: 1) */
   callConcurrency?: number;
   /**

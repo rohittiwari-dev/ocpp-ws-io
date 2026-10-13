@@ -185,6 +185,12 @@ interface ServerOptionsBase<P extends AnyOCPPProtocol> {
   tls?: TLSOptions;
   /** Call timeout in ms — inherited by server clients (default: 30000) */
   callTimeoutMs?: number;
+  /**
+   * How long (ms) a handler may take to answer a charger's call — inherited
+   * by server clients; see `ClientOptions.handlerTimeoutMs`. `0` turns it
+   * off. (default: 0)
+   */
+  handlerTimeoutMs?: number;
   /** Ping interval in ms — inherited by server clients (default: 30000) */
   pingIntervalMs?: number;
   /** Defer pings if activity detected — inherited (default: false) */
