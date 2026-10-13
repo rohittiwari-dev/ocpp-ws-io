@@ -76,7 +76,7 @@
     },
     "packages/ocpp-ws-board": {
       "name": "ocpp-ws-board",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "dependencies": {
         "hono": "^4.13.12",
       },

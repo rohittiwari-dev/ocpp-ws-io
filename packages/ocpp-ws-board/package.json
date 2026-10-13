@@ -1,6 +1,6 @@
 {
   "name": "ocpp-ws-board",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Monitoring UI and backend integration for ocpp-ws-io. Type-safe TypeScript toolkit for EV charging, CSMS backends, Redis scaling, and protocol validation.",
   "repository": {
     "type": "git",

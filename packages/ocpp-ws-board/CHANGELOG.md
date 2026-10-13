@@ -1,6 +1,10 @@
 # ocpp-ws-board
 
-## Unreleased
+## 1.0.1 (2026-10-13)
+
+### Changed
+
+- **`createBoard()` takes its options as optional, and `auth` too.** Left out, `auth` is `{ mode: "none" }`: anyone who can reach the board uses it, the Command Center included. Set `auth` wherever the board is reachable by others. Before, `auth` was required by the types, and `createBoard()` without it threw a `TypeError`.
 
 ### Fixed
 
