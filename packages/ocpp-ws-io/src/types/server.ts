@@ -167,7 +167,8 @@ interface ServerOptionsBase<P extends AnyOCPPProtocol> {
    * What to do when a charging station connects while its identity is already
    * connected to this server; OCPP does not say. `"replace"` closes the old
    * connection, usually a dead link the charger has not noticed yet after a
-   * network change. `"reject"` refuses the new one with HTTP 409.
+   * network change, with code 4000 and the reason "Evicted by new connection".
+   * `"reject"` refuses the new one with HTTP 409.
    * (default: "replace")
    */
   duplicateConnection?: DuplicateConnectionPolicy;

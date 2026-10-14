@@ -193,7 +193,7 @@ const server = new OCPPServer({
 });
 ```
 
-**Duplicate connection.** OCPP does not say what to do when a charger connects while it is already connected. By default the new connection replaces the old one, which is usually a dead link the charger has not noticed yet after a network change (`onEviction` plugin hook). Set `duplicateConnection: "reject"` to keep the old connection and refuse the new one with HTTP 409 instead. Both apply to connections on this server instance.
+**Duplicate connection.** OCPP does not say what to do when a charger connects while it is already connected. By default the new connection replaces the old one, which is usually a dead link the charger has not noticed yet after a network change (`onEviction` plugin hook). The old connection is closed with code 4000 and the reason "Evicted by new connection". A peer that does not answer the close frame is cut off after `ws`'s `closeTimeout` (30 s; set it in `wssOptions`). Set `duplicateConnection: "reject"` to keep the old connection and refuse the new one with HTTP 409 instead. Both apply to connections on this server instance.
 
 ## Payload Size Limit
 

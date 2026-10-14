@@ -188,6 +188,18 @@ describe("identity checks", () => {
       expect(await closed(first.ws)).toBe(true);
     });
 
+    it('closes the replaced connection with 4000, "Evicted by new connection"', async () => {
+      const { port } = await start("replace");
+      const first = await connect(port, "CP-DUP");
+      const closeFrame = new Promise<{ code: number; reason: string }>((resolve) =>
+        first.ws.once("close", (code, reason) => resolve({ code, reason: reason.toString() })),
+      );
+      const second = await connect(port, "CP-DUP");
+
+      expect(second.outcome).toEqual({ opened: true });
+      expect(await closeFrame).toEqual({ code: 4000, reason: "Evicted by new connection" });
+    });
+
     it('refuses the new connection with 409 when set to "reject"', async () => {
       const { server, port } = await start("reject");
       const events: SecurityEvent[] = [];

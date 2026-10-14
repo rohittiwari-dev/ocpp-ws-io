@@ -159,12 +159,16 @@ export function registerClient<P extends AnyOCPPProtocol>(
         reportPluginError(server.logger, plugin.name, "onEviction", err);
       }
     }
-    // Fire-and-forget force close — don't await, don't block the new connection
+    // Fire-and-forget — don't await, don't block the new connection. A close
+    // frame, not a terminate, so the charger reads why it was dropped: force
+    // sent no frame, and the charger saw 1006 instead of 4000. Nothing is
+    // waited for on the old connection; a peer that never answers the close
+    // frame is terminated by ws after its closeTimeout (wssOptions).
     existingClient
       .close({
         code: 4000,
         reason: "Evicted by new connection",
-        force: true,
+        awaitPending: false,
       })
       .catch(() => {});
     // Immediately remove from tracking to prevent race
