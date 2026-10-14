@@ -1,6 +1,15 @@
 # ocpp-ws-io
 
-## Unreleased
+## v3.1.0-beta.3 - Handler time limits, answers on their own connection and error codes by version (2026-10-14)
+
+Seven changes reach the wire. Five changes can affect a peer or your code, and [Upgrading to 3.1](https://ocpp-ws-io.rohittiwari.me/docs/ocpp-ws-io/upgrading-to-v3-1) lists them with what to do:
+- a client sends its `password` on every security profile;
+- a thrown format violation goes out under the version's name;
+- strict mode answers `InternalError` when a handler's own answer breaks the schema;
+- `close()` waits for the answers that handlers are working on;
+- a handler's `signal` aborts when its connection closes.
+
+The rest correct what was sent. A `Buffer` password arrives as its bytes. A replaced connection gets a close frame with 4000. A client no longer answers a call on a connection the call did not come in on. New: `handlerTimeoutMs`, a time limit for handlers.
 
 ### Changed
 

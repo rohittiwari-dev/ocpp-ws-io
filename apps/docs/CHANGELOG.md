@@ -1,5 +1,14 @@
 # docs
 
+## 2.4.0
+
+### Minor Changes
+
+- **Migration guides**: from `ocpp-rpc`, `@voltbras/ts-ocpp` and `ocpp-ts`, under `/docs/ocpp-ws-io/migrating`. Each maps the options, methods, events and errors. They also list the defaults and replies that differ and what to set to keep the old behaviour. Every difference was checked against that library and ocpp-ws-io 3.1.0-beta.3.
+- **Comparison page**: each library's last npm release; ocpp-rpc's 2.0.1 and 2.1 support and its type declarations corrected; a link to the migration guides.
+- **ocpp-ws-io reference**: `handlerTimeoutMs` and when a handler's `signal` aborts; `server.on("message")` with the connection; what `close()` waits for; a replaced connection closed with 4000; the Basic Auth `password` sent whenever it is set, as its bytes.
+- **Upgrading to 3.1**: the 3.1.0-beta.3 changes that can affect a peer or your code.
+
 ## 2.3.0
 
 ### Minor Changes

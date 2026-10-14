@@ -5,7 +5,7 @@ description: Move an ocpp-ts central system or charging point to ocpp-ws-io — 
 
 `ocpp-ts` (last release 0.3.0, December 2021) speaks OCPP-J 1.6. ocpp-ws-io speaks 1.6, 2.0.1 and 2.1, so a 1.6 system moves over as it is and can add the newer versions later.
 
-Every difference on this page was checked against ocpp-ts 0.3.0's code and with ocpp-ws-io 3.1.0-beta.2.
+Every difference on this page was checked against ocpp-ts 0.3.0's code and with ocpp-ws-io 3.1.0-beta.3.
 
 ## Install
 
@@ -172,7 +172,7 @@ What the other side receives when it calls you:
 
 | When | ocpp-ts sends | ocpp-ws-io sends |
 | --- | --- | --- |
-| The handler throws an error with a code: `new OcppError(code, message, details)` in ocpp-ts, `createRPCError(code, message, details)` in ocpp-ws-io | Its code, message and details, but only if the listener threw before returning. An `async` listener's error was an unhandled rejection, and the call got `InternalError` after 10 s | Its code, message and details, from an `async` handler too |
+| The handler throws an error with a code: `new OcppError(code, message, details)` in ocpp-ts, `createRPCError(code, message, details)` in ocpp-ws-io | Its code, message and details, but only if the listener threw before returning. An `async` listener's error was an unhandled rejection, and the call got `InternalError` after 10 s | Its code, message and details, from an `async` handler too. `FormatViolation` goes out as `FormationViolation`, 1.6's name for it (1.6-J errata §5.2) |
 | The handler throws any other error | A CALLERROR whose error code is `null`, with the error's message | `InternalError`, with the code's standard text. The error itself goes to the `handlerError` event |
 | The handler doesn't answer | `InternalError`, "No response from the handler", after 10 s, a fixed time | Nothing by default, so the caller's own timeout ends the call. With `handlerTimeoutMs: 10000`, `InternalError` with the code's standard text after 10 s, and the handler's `signal` aborts |
 | No handler for the action | `NotImplemented`, `Listener for action "X" not set` | `NotImplemented`, `Method "X" not implemented` |

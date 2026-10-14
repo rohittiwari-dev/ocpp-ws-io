@@ -5,7 +5,7 @@ description: Move a @voltbras/ts-ocpp central system or charge point to ocpp-ws-
 
 `@voltbras/ts-ocpp` (last release 2.7.3, March 2022) speaks OCPP 1.6 over WebSocket (OCPP-J) and OCPP 1.5 over SOAP. ocpp-ws-io speaks OCPP-J 1.6, 2.0.1 and 2.1, but has nothing for SOAP. Keep a SOAP 1.5 charge point on ts-ocpp, or move it to OCPP-J 1.6 first.
 
-Every difference on this page was checked against ts-ocpp 2.7.3's code and with ocpp-ws-io 3.1.0-beta.2.
+Every difference on this page was checked against ts-ocpp 2.7.3's code and with ocpp-ws-io 3.1.0-beta.3.
 
 ## Install
 
@@ -179,7 +179,7 @@ There is no option to pass an invalid request on to its handler.
 
 | When | ts-ocpp sends | ocpp-ws-io sends |
 | --- | --- | --- |
-| A handler throws | `GenericError`, with the description `[OCPPApplicationError] on handling chargepoint request: <message>` and the error object as details | An RPC error from `createRPCError(code, message, details)` is sent as it is. Any other error becomes `InternalError` with the code's standard text, and goes to the `handlerError` event |
+| A handler throws | `GenericError`, with the description `[OCPPApplicationError] on handling chargepoint request: <message>` and the error object as details | An RPC error from `createRPCError(code, message, details)` is sent with its code, message and details; `FormatViolation` goes out as `FormationViolation`, 1.6's name for it (1.6-J errata §5.2). Any other error becomes `InternalError` with the code's standard text, and goes to the `handlerError` event |
 | A request is invalid | `GenericError` | The code for what was wrong, in strict mode |
 | No handler for the action | `GenericError`, from your `throw` | `NotImplemented` |
 

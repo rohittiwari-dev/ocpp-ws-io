@@ -13,7 +13,7 @@ ocpp-ws-io keeps ocpp-rpc's model:
 
 Most code moves over by renaming. The part that needs a decision is [Defaults and replies that differ](#defaults-and-replies-that-differ): ocpp-ws-io's defaults are stricter, and some replies differ on the wire.
 
-Every difference on this page was checked by running the same scenario against ocpp-rpc 2.2.1 and ocpp-ws-io 3.1.0-beta.2.
+Every difference on this page was checked by running the same scenario against ocpp-rpc 2.2.1 and ocpp-ws-io 3.1.0-beta.3.
 
 ## Install
 
@@ -286,7 +286,7 @@ What the peer receives:
 
 | When | ocpp-rpc sends | ocpp-ws-io sends |
 | --- | --- | --- |
-| A handler throws an RPC error (`createRPCError(…)`) | Its code, message and details | Same |
+| A handler throws an RPC error (`createRPCError(…)`) | Its code, message and details. On 1.6, `FormatViolation` goes out as `FormationViolation`, and `OccurenceConstraintViolation` as `OccurrenceConstraintViolation` | Its code, message and details. On 1.6, `FormatViolation` goes out as `FormationViolation`, as in ocpp-rpc. `OccurenceConstraintViolation` keeps 1.6's spelling, as the 1.6-J errata (§5.1) keep it |
 | A handler throws any other error | `GenericError`, with the error's message | `InternalError`, with the code's standard text. The error itself goes to the `handlerError` event. To send a message, throw `createRPCError("GenericError", message)` |
 | OCPP 1.6, strict mode: a request breaks an occurrence rule, such as a missing field | `OccurrenceConstraintViolation`, with the schema errors as details | `OccurenceConstraintViolation`, as 1.6 Part 4 spells it and the 1.6-J errata (§5.1) keep it, with empty details |
 | No handler for the action | `NotImplemented`, "Unable to handle 'X' calls" | `NotImplemented`, `Method "X" not implemented` |

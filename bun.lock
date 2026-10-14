@@ -35,7 +35,7 @@
     },
     "apps/docs": {
       "name": "docs",
-      "version": "2.3.0",
+      "version": "2.4.0",
       "dependencies": {
         "@fuma-translate/react": "^1.0.2",
         "@radix-ui/react-collapsible": "^1.1.20",
@@ -123,7 +123,7 @@
     },
     "packages/ocpp-ws-io": {
       "name": "ocpp-ws-io",
-      "version": "3.1.0-beta.2",
+      "version": "3.1.0-beta.3",
       "bin": {
         "ocpp": "./dist/cli.mjs",
         "ocpp-ws-io": "./dist/cli.mjs",
