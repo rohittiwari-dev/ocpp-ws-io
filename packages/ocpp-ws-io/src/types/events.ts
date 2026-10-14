@@ -175,8 +175,11 @@ export interface ServerEvents<P extends AnyOCPPProtocol = AnyOCPPProtocol> {
   close: [];
   /** I3: Structured security event for SIEM/audit pipelines */
   securityEvent: [SecurityEvent];
-  /** Enriched message event with direction and context */
-  message: [MessageEventPayload];
+  /**
+   * Every frame of every connection, in and out: the connection's own
+   * `message` event, with the connection as the second argument.
+   */
+  message: [MessageEventPayload, OCPPServerClient<P>];
   // Native WebSocketServer events
   connection: [
     socket: import("ws").WebSocket,

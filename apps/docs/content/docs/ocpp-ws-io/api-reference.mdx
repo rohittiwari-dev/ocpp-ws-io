@@ -513,6 +513,16 @@ server.on('client', client => {
 });
 ```
 
+#### `on("message", handler)`
+
+Every frame of every connection, received (`"IN"`) and sent (`"OUT"`). This is each connection's own `message` event, with the connection added as the second argument.
+
+```typescript
+server.on('message', ({ message, direction, ctx }, client) => {
+	audit.log(client.identity, direction, message);
+});
+```
+
 #### `updateTLS(options)`
 
 Hot-reload TLS certificates on all active HTTPS servers without dropping connections.

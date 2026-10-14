@@ -476,6 +476,9 @@ export class OCPPServer<
       emitClient: (client) => {
         server.emit("client", client);
       },
+      emitMessage: (payload, client) => {
+        server.emit("message", payload, client);
+      },
     };
   }
 

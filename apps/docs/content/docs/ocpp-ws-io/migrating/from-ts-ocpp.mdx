@@ -201,7 +201,7 @@ client.handle("UnlockConnector", () => {
 | `websocketPingInterval` | `pingIntervalMs` (30000). ts-ocpp 2.7.3 pinged every 30 s whatever this was set to |
 | `websocketRequestTimeout` (30000) | `callTimeoutMs` (30000), or `{ timeoutMs }` on one call |
 | `rejectInvalidRequests` | `strictMode` ([Validation](#validation)) |
-| `onWebsocketRequestResponse`, `onRawWebsocketData` | Each client's `message` event, `{ message, direction, ctx }`, for every frame sent or received |
+| `onWebsocketRequestResponse`, `onRawWebsocketData` | The server's `message` event, `({ message, direction, ctx }, client)`, for every frame sent or received on any connection; `client.identity` is the charge point id. Each client also has its own `message` event |
 | `onWebsocketError` | Each client's `error` event |
 | `onRawSocketData`, `onRawSoapData` | None |
 

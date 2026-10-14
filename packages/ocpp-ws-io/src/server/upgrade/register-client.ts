@@ -3,6 +3,7 @@ import type { WebSocket } from "ws";
 import type { LRUMap } from "../../core/lru-map.js";
 import type { EventAdapterInterface } from "../../types/adapter.js";
 import type { AuthAccept, ConnectionContext } from "../../types/auth.js";
+import type { MessageEventPayload } from "../../types/events.js";
 import type { HandshakeInfo } from "../../types/handshake.js";
 import type { LoggerLike } from "../../types/logger.js";
 import type { OCPPPlugin } from "../../types/plugins.js";
@@ -38,6 +39,8 @@ export interface RegistrationContext<P extends AnyOCPPProtocol> {
   readonly workerPool: WorkerPool | null;
   /** Emit the server's "client" event. */
   emitClient(client: OCPPServerClient<P>): void;
+  /** Emit the server's "message" event. */
+  emitMessage(payload: MessageEventPayload, client: OCPPServerClient<P>): void;
 }
 
 /** A connection that has passed auth, with its socket upgraded. */
@@ -245,12 +248,13 @@ export function registerClient<P extends AnyOCPPProtocol>(
     router._emitClient(client);
   }
 
-  client.on("message", () => {
+  client.on("message", (payload) => {
     recordSessionActivity(
       server.sessionCache,
       server.adapter,
       identity,
       client.session,
     );
+    server.emitMessage(payload, client);
   });
 }

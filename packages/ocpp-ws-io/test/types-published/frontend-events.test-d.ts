@@ -3,6 +3,7 @@ import {
   OCPPClient,
   OCPPServer,
   type CallOptions,
+  type MessageEventPayload,
   type OCPPServerClient,
   unchecked,
 } from "ocpp-ws-io";
@@ -66,6 +67,11 @@ export function roleBasedConnections() {
   const server = new OCPPServer({ protocols: ["ocpp1.6", "frontend-v1"] });
   server.on("client", (client: OCPPServerClient) => {
     if (client.session.role === "ADMIN") clients.set(client.identity, client);
+  });
+  // Every connection's frames, with the connection that carried them.
+  server.on("message", (payload: MessageEventPayload, client: OCPPServerClient) => {
+    expectTypeOf(payload.direction).toEqualTypeOf<"IN" | "OUT">();
+    expectTypeOf(client.identity).toEqualTypeOf<string>();
   });
   clients.forEach((client) => {
     void client.send("ChargerLog", { message: "connected" });
