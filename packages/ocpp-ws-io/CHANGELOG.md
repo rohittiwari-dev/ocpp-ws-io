@@ -1,5 +1,10 @@
 # ocpp-ws-io
 
+## v3.1.0 - Handler time limits, answers on their own connection and error codes by version (2026-11-14)
+
+Seven changes reach the wire. Five changes can affect a peer or your code, and [Upgrading to 3.1](https://ocpp-ws-io.rohittiwari.me/docs/ocpp-ws-io/upgrading-to-v3-1) lists them with what to do:
+- everything in beta 3, beta 1 and beta 2
+
 ## v3.1.0-beta.3 - Handler time limits, answers on their own connection and error codes by version (2026-10-14)
 
 Seven changes reach the wire. Five changes can affect a peer or your code, and [Upgrading to 3.1](https://ocpp-ws-io.rohittiwari.me/docs/ocpp-ws-io/upgrading-to-v3-1) lists them with what to do:

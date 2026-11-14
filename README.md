@@ -30,7 +30,7 @@ Historically, building an OCPP-compliant network has been an infrastructure nigh
 
 ### The Packages at a Glance
 
-From 3.1.0 (on npm's `beta` tag until it is released: `npm install ocpp-ws-io@beta`), the protocol proxy, the smart charge engine and the CLI ship in `ocpp-ws-io`. Their old packages, `ocpp-protocol-proxy`, `ocpp-smart-charge-engine` and `ocpp-ws-cli`, are deprecated: their last releases only re-export or run `ocpp-ws-io`.
+From 3.1.0 (on npm's `beta` tag until it is released: `npm install ocpp-ws-io`), the protocol proxy, the smart charge engine and the CLI ship in `ocpp-ws-io`. Their old packages, `ocpp-protocol-proxy`, `ocpp-smart-charge-engine` and `ocpp-ws-cli`, are deprecated: their last releases only re-export or run `ocpp-ws-io`.
 
 | Package | Description | Status |
 |---------|-------------|--------|
@@ -179,8 +179,8 @@ Testing physical chargers is expensive. We built tools to let you test immediate
 **Example:**
 
 ```bash
-# Install globally (or run once: npx ocpp-ws-io@beta simulate)
-npm i -g ocpp-ws-io@beta
+# Install globally (or run once: npx ocpp-ws-io simulate)
+npm i -g ocpp-ws-io
 
 # Start an interactive CLI Simulator
 ocpp simulate
